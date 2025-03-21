@@ -1,0 +1,139 @@
+# Cline Rules for deezel Project
+
+## Project Intelligence
+
+This document captures important patterns, preferences, and project intelligence for the deezel project. These insights help Cline work more effectively with the codebase and maintain consistency across development sessions.
+
+## Code Organization
+
+### Module Structure
+
+- Core functionality is organized into distinct modules:
+  - `wallet`: Bitcoin wallet functionality using BDK
+  - `monitor`: Block monitoring and transaction tracking
+  - `transaction`: Transaction construction and signing
+  - `rpc`: Sandshrew RPC client implementation
+
+### File Naming Conventions
+
+- Use snake_case for file names
+- Module implementation files should be named `mod.rs`
+- Test files should be prefixed with `test_`
+- Example files should be prefixed with `example_`
+
+## Coding Patterns
+
+### Error Handling
+
+- Use the `anyhow` crate for error propagation
+- Create custom error types for domain-specific errors
+- Use `Result<T, Error>` for functions that can fail
+- Provide context with `.context()` or `.with_context()`
+
+### Asynchronous Programming
+
+- Use Tokio for async runtime
+- Prefer `async/await` over manual future handling
+- Use `tokio::spawn` for concurrent tasks
+- Implement proper cancellation for long-running tasks
+
+### Testing Approach
+
+- Write unit tests for all public functions
+- Use mock objects for external dependencies
+- Implement integration tests for component interactions
+- Use feature flags to conditionally compile test code
+
+## Bitcoin-Specific Patterns
+
+### BDK Integration
+
+- Use descriptor-based wallets
+- Implement custom blockchain backends
+- Handle UTXO selection carefully
+- Consider ordinal and rune constraints
+
+### Transaction Construction
+
+- Follow Runestone protocol for OP_RETURN outputs
+- Implement proper fee estimation
+- Verify transactions before broadcasting
+- Handle change outputs appropriately
+
+### Blockchain Monitoring
+
+- Implement appropriate polling intervals
+- Handle potential chain reorganizations
+- Track transaction confirmations
+- Implement proper error recovery
+
+## Project Preferences
+
+### Code Style
+
+- Follow Rust standard formatting (rustfmt)
+- Use clippy for linting
+- Document public APIs with rustdoc
+- Keep functions focused and small
+
+### Dependency Management
+
+- Minimize external dependencies
+- Pin dependency versions for stability
+- Review security implications of new dependencies
+- Prefer well-maintained, actively developed crates
+
+### Performance Considerations
+
+- Profile code for performance bottlenecks
+- Optimize hot paths
+- Use appropriate data structures
+- Consider memory usage for long-running processes
+
+## Implementation Notes
+
+### RPC Integration
+
+#### Bitcoin RPC Integration
+- Configurable via `--bitcoin-rpc-url` command-line argument
+- Default URL: http://bitcoinrpc:bitcoinrpc@localhost:8332
+- Content-Type: application/json
+- Key methods:
+  - getblockcount: Used to check current block height
+
+#### Metashrew RPC Integration
+- Configurable via `--metashrew-rpc-url` command-line argument
+- Default URL: http://localhost:8080
+- Content-Type: application/json
+- Key methods:
+  - metashrew_view: For general blockchain data
+  - metashrew_height: To verify block height
+  - spendablesbyaddress: For UTXO selection via protobuf scheme
+
+#### Implementation Notes
+- Always verify that metashrew_height response is +1 compared to getblockcount result
+- Only use spendablesbyaddress after confirming height synchronization
+
+### DIESEL Token Minting
+
+- Protocol tag: 1
+- Message cellpack: [2, 0, 77]
+- Dust output value: 546 sats
+- Transaction vout for tracing: tx.output.len() + 1
+- Reversed txid bytes for trace calls
+
+## Known Challenges
+
+- Handling Bitcoin network variability
+- Managing transaction fees effectively
+- Ensuring reliable operation during network congestion
+- Dealing with potential chain reorganizations
+- Sandshrew API rate limiting
+- Long-term resource usage optimization
+
+## Development Workflow
+
+- Use feature branches for new functionality
+- Write tests before implementation when possible
+- Document changes in Memory Bank
+- Update progress.md with completed items
