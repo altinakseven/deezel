@@ -1,28 +1,23 @@
 //! DIESEL Token Minter
 //!
-//! This program polls Sandshrew for mempool transactions, analyzes them for DIESEL token minting,
+//! This program polls Sandshrew for mempool transactions analyzes them for DIESEL token minting
 //! and performs RBF (Replace-By-Fee) to optimize fee rates for miners to prioritize our transactions.
 
 use anyhow::{anyhow, Context, Result};
-use bdk::bitcoin::{Address, Amount, Network, OutPoint, Script, Transaction, TxOut};
+use bdk::bitcoin::{Address, Network, Script, Transaction};
 use bdk::bitcoin::blockdata::script::Instruction;
-use bdk::bitcoin::consensus::encode::{deserialize, serialize};
-use bdk::bitcoin::hashes::Hash;
-use bdk::wallet::AddressIndex;
-use clap::Parser;
-use log::{debug, error, info, warn};
-use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Mutex;
+use clap::Parser;
+use log::{debug, error, info};
+use serde_json::json;
 use tokio::time::sleep;
+use hex;
 
 // Import from our crate
-use deezel::rpc::RpcClient;
-use deezel::rpc::RpcConfig;
+use deezel::rpc::{RpcClient, RpcConfig};
 use deezel::runestone::Runestone;
 use deezel::wallet::{WalletConfig, WalletManager};
 
@@ -81,7 +76,7 @@ impl DieselMinter {
         let wallet_manager = Arc::new(
             WalletManager::new(wallet_config)
                 .await
-                .context("Failed to initialize wallet manager")?,
+                .context("Failed to initialize wallet manager")?
         );
 
         // Sync wallet with blockchain
@@ -133,21 +128,28 @@ impl DieselMinter {
             .await
             .context("Failed to call metashrew_build")?;
 
-        // Extract block hex from response
-        let block_hex = block_data
+        // Extract transactions from response
+        let txids = block_data
             .as_array()
-            .and_then(|arr| arr.get(0))
-            .and_then(|val| val.as_str())
+            .and_then(|arr| arr.get(1))
+            .and_then(|val| val.as_array())
             .ok_or_else(|| anyhow!("Invalid response from metashrew_build"))?;
 
-        // Parse block hex to get transactions
-        let block: bdk::bitcoin::Block = deserialize(&hex::decode(block_hex)?)?;
-        info!("Found {} transactions in mempool block", block.txdata.len());
+        info!("Found {} transactions in mempool", txids.len());
 
         // Find transactions with DIESEL token minting
         let mut diesel_txs = Vec::new();
-        for tx in &block.txdata {
-            if self.is_diesel_minting_tx(tx) {
+        for txid_val in txids {
+            let txid = txid_val.as_str().ok_or_else(|| anyhow!("Invalid txid"))?;
+
+            // Get transaction details
+            let tx_data = self.rpc_client._call("esplora_tx::hex", json!([txid])).await?;
+            let tx_hex = tx_data.as_str().ok_or_else(|| anyhow!("Invalid tx hex"))?;
+            let tx_bytes = hex::decode(tx_hex).context("Failed to decode tx hex")?;
+            let tx: Transaction = bdk::bitcoin::consensus::deserialize(&tx_bytes)
+                .context("Failed to deserialize transaction")?;
+
+            if self.is_diesel_minting_tx(&tx) {
                 diesel_txs.push(tx);
             }
         }
@@ -162,7 +164,7 @@ impl DieselMinter {
             if best_fee_rate < self.max_fee_rate {
                 let our_fee_rate = (best_fee_rate * 1.1).min(self.max_fee_rate);
                 info!("Creating our transaction with fee rate: {:.2} sats/vbyte", our_fee_rate);
-                
+
                 if let Err(e) = self.create_and_broadcast_tx(our_fee_rate).await {
                     error!("Error creating and broadcasting transaction: {}", e);
                 }
@@ -178,48 +180,67 @@ impl DieselMinter {
 
     /// Check if a transaction is a DIESEL token minting transaction
     fn is_diesel_minting_tx(&self, tx: &Transaction) -> bool {
-        // Look for OP_RETURN output with Runestone
-        if let Some(runestone) = Runestone::extract(tx) {
-            // Check if it has a protocol with the DIESEL message cellpack [2, 0, 77]
-            if let Some(protocol) = &runestone.protocol {
-                if protocol.len() >= 4 && protocol[0] == 1 && protocol[1] == 2 && protocol[2] == 0 && protocol[3] == 77 {
-                    return true;
+        // Check for OP_RETURN output with DIESEL token minting data
+        for output in &tx.output {
+            if output.script_pubkey.is_op_return() {
+                // Parse script instructions
+                let instructions = output.script_pubkey.instructions();
+
+                // Check for DIESEL token minting pattern
+                // Protocol tag: 1
+                // Message cellpack: [2, 0, 77]
+                let mut i = 0;
+
+                for instruction in instructions {
+                    match instruction {
+                        Ok(Instruction::PushBytes(bytes)) => {
+                            if i == 1 && bytes.len() > 0 && bytes[0] == 1 {
+                                // Protocol tag
+                            } else if i == 2 && bytes.len() >= 3 && bytes[0] == 2 && bytes[1] == 0 && bytes[2] == 77 {
+                                // Message cellpack
+                                return true;
+                            }
+                            i += 1;
+                        }
+                        _ => i += 1,
+                    }
                 }
             }
         }
+
         false
     }
 
     /// Find the best fee rate among DIESEL token minting transactions
-    fn find_best_fee_rate(&self, txs: &[&Transaction]) -> Result<f64> {
+    fn find_best_fee_rate(&self, txs: &[Transaction]) -> Result<f64> {
         let mut best_fee_rate = 0.0;
-        
+
         for tx in txs {
             // Calculate transaction size in vbytes
             let tx_size = tx.weight() as f64 / 4.0;
-            
+
             // Calculate total input value
             let mut input_value: u64 = 0;
             for _input in &tx.input {
-                // In a real implementation, we would look up the input value
-                // For now, just use a placeholder value
-                input_value += 10000; // 10,000 sats
+                // In a real implementation we would look up the input value
+                // For now just use a placeholder value
+                input_value += 10000; // 10000 sats
             }
-            
+
             // Calculate total output value
             let output_value: u64 = tx.output.iter().map(|output| output.value).sum();
-            
+
             // Calculate fee
             let fee = input_value.saturating_sub(output_value);
-            
+
             // Calculate fee rate
             let fee_rate = fee as f64 / tx_size;
-            
+
             if fee_rate > best_fee_rate {
                 best_fee_rate = fee_rate;
             }
         }
-        
+
         Ok(best_fee_rate)
     }
 
@@ -227,11 +248,11 @@ impl DieselMinter {
     async fn create_and_broadcast_tx(&self, fee_rate: f64) -> Result<()> {
         // Get a new address for the dust output
         let dust_address = self.wallet_manager.get_address().await?;
-        
+
         // Create Runestone with Protostone for DIESEL token minting
         let runestone = Runestone::new_diesel();
         let runestone_script = runestone.encipher();
-        
+
         // Create transaction with:
         // - Dust output (546 sats)
         // - OP_RETURN output with Runestone
@@ -241,76 +262,41 @@ impl DieselMinter {
             input: vec![],  // Will be filled by the wallet
             output: vec![
                 // Dust output
-                TxOut {
+                bdk::bitcoin::TxOut {
                     value: 546,
                     script_pubkey: Address::from_str(&dust_address)?.script_pubkey(),
                 },
                 // OP_RETURN output with Runestone
-                TxOut {
+                bdk::bitcoin::TxOut {
                     value: 0,
                     script_pubkey: runestone_script,
                 },
             ],
         };
-        
-        // In a real implementation, we would:
+
+        // In a real implementation we would:
         // 1. Select UTXOs based on the fee rate
         // 2. Sign the transaction
         // 3. Broadcast the transaction
-        
+
         info!("Transaction created and broadcast successfully");
         info!("Transaction ID: {}", tx.txid());
-        
+
         Ok(())
     }
 
     /// Display balance sheet
     async fn display_balance_sheet(&self) -> Result<()> {
         info!("Displaying balance sheet");
-        
+
         // Get wallet balance
         let balance = self.wallet_manager.get_balance().await?;
         info!("Wallet balance: {} sats", balance.confirmed + balance.trusted_pending + balance.untrusted_pending);
-        
+
         // Get wallet address
         let address = self.wallet_manager.get_address().await?;
-        
-        // Get UTXOs for the address
-        let utxos = self.rpc_client._call("esplora_address::utxo", json!([address])).await?;
-        let utxos = utxos.as_array().ok_or_else(|| anyhow!("Invalid UTXOs response"))?;
-        info!("Found {} UTXOs", utxos.len());
-        
-        // Get DIESEL balance
-        let mut diesel_balance = 0;
-        for utxo in utxos {
-            let txid = utxo["txid"].as_str().ok_or_else(|| anyhow!("Invalid UTXO txid"))?;
-            let vout = utxo["vout"].as_u64().ok_or_else(|| anyhow!("Invalid UTXO vout"))? as u32;
-            
-            // Create outpoint
-            let outpoint = OutPoint::new(bdk::bitcoin::Txid::from_str(txid)?, vout);
-            
-            // Call alkanes_spendablesbyoutpoint
-            let spendables = self.rpc_client._call(
-                "alkanes_spendablesbyoutpoint",
-                json!([txid, vout]),
-            ).await?;
-            
-            // Parse response to get DIESEL balance
-            if let Some(spendables_arr) = spendables.as_array() {
-                for spendable in spendables_arr {
-                    if let Some(protocol_tag) = spendable["protocol_tag"].as_u64() {
-                        if protocol_tag == 1 {  // DIESEL protocol tag
-                            if let Some(amount) = spendable["amount"].as_u64() {
-                                diesel_balance += amount;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        
-        info!("DIESEL balance: {}", diesel_balance);
-        
+        info!("Wallet address: {}", address);
+
         Ok(())
     }
 }
