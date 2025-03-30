@@ -10,10 +10,12 @@
 // Export submodules
 pub mod bitcoin;
 pub mod esplora;
+pub mod metashrew;
 
 // Re-export key types
 pub use bitcoin::BitcoinRpcClient;
 pub use esplora::EsploraRpcClient;
+pub use metashrew::MetashrewRpcClient;
 
 use anyhow::{Context, Result, anyhow};
 use log::debug;
@@ -64,7 +66,7 @@ struct RpcError {
     message: String,
 }
 
-/// Generic RPC client for Bitcoin and Metashrew
+/// Generic RPC client for Bitcoin, Esplora, and Metashrew
 pub struct RpcClient {
     /// HTTP client
     client: Client,
@@ -76,6 +78,8 @@ pub struct RpcClient {
     bitcoin_client: Option<BitcoinRpcClient>,
     /// Esplora RPC client
     esplora_client: Option<EsploraRpcClient>,
+    /// Metashrew RPC client
+    metashrew_client: Option<MetashrewRpcClient>,
 }
 
 impl RpcClient {
@@ -89,16 +93,20 @@ impl RpcClient {
         
         // Create Bitcoin RPC client
         let bitcoin_client = Some(BitcoinRpcClient::from_rpc_config(&config));
-        
+
         // Create Esplora RPC client
         let esplora_client = Some(EsploraRpcClient::from_rpc_config(&config));
-        
+
+        // Create Metashrew RPC client
+        let metashrew_client = Some(MetashrewRpcClient::from_rpc_config(&config));
+
         Self {
             client,
             config,
             request_id: std::sync::atomic::AtomicU64::new(0),
             bitcoin_client,
             esplora_client,
+            metashrew_client,
         }
     }
     
@@ -110,6 +118,11 @@ impl RpcClient {
     /// Get the Esplora RPC client
     pub fn esplora(&self) -> &EsploraRpcClient {
         self.esplora_client.as_ref().expect("Esplora RPC client not initialized")
+    }
+
+    /// Get the Metashrew RPC client
+    pub fn metashrew(&self) -> &MetashrewRpcClient {
+        self.metashrew_client.as_ref().expect("Metashrew RPC client not initialized")
     }
     
     /// Generic method to call any RPC method
@@ -167,57 +180,34 @@ impl RpcClient {
     
     /// Get the current block height from Metashrew RPC
     pub async fn get_metashrew_height(&self) -> Result<u64> {
-        debug!("Getting block height from Metashrew RPC");
-        
-        let result = self._call("metashrew_height", json!([])).await?;
-        
-        let height = result.as_u64().context("Invalid block height")?;
-        debug!("Current Metashrew height: {}", height);
-        Ok(height)
+        self.metashrew().get_height().await
     }
     
     /// Get spendable UTXOs by address from Metashrew RPC
     pub async fn get_spendables_by_address(&self, address: &str) -> Result<Value> {
-        debug!("Getting spendables for address: {}", address);
-        
-        let result = self._call("spendablesbyaddress", json!([address])).await?;
-        
-        debug!("Got spendables for address: {}", address);
-        Ok(result)
+        let utxos = self.metashrew().get_spendables_by_address(address).await?;
+        Ok(serde_json::to_value(utxos)?)
     }
     
     /// Get ordinal address information from Metashrew RPC
     pub async fn get_ord_address(&self, address: &str) -> Result<Value> {
-        debug!("Getting ordinal info for address: {}", address);
-        
-        let result = self._call("ord_address", json!([address])).await?;
-        
-        debug!("Got ordinal info for address: {}", address);
-        Ok(result)
+        self.metashrew().get_ord_address(address).await
     }
     
     /// Get DIESEL token balance from Metashrew RPC
     pub async fn get_protorunes_by_address(&self, address: &str) -> Result<Value> {
-        debug!("Getting protorunes for address: {}", address);
-        
-        let result = self._call("alkanes_protorunesbyaddress", json!([address])).await?;
-        
-        debug!("Got protorunes for address: {}", address);
-        Ok(result)
+        let balances = self.metashrew().get_protorunes_by_address(address).await?;
+        Ok(serde_json::to_value(balances)?)
     }
     
     /// Trace a transaction for DIESEL token minting
     pub async fn trace_transaction(&self, txid: &str, vout: usize) -> Result<Value> {
-        debug!("Tracing transaction: {} vout: {}", txid, vout);
-        
-        // In a real implementation, we would reverse the txid bytes
-        // For now, just use the txid as-is
-        let reversed_txid = txid.to_string();
-        
-        let result = self._call("alkanes_trace", json!([reversed_txid, vout])).await?;
-        
-        debug!("Trace result for transaction: {}", txid);
-        Ok(result)
+        self.metashrew().trace_transaction(txid, vout).await
+    }
+
+    /// Build a block with mempool transactions
+    pub async fn build_block(&self) -> Result<Value> {
+        self.metashrew().build_block().await
     }
     
     

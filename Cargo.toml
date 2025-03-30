@@ -85,3 +85,4 @@ js_bindings = [] # Enable when ready to implement JavaScript bindings
 [dev-dependencies]
 tempfile = "3.8.1"
 mockito = "1.0.0"
+mockall = "0.11.4"
