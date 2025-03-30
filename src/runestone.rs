@@ -134,8 +134,7 @@ impl Runestone {
 mod tests {
     use super::*;
     use bdk::bitcoin::{Amount, Transaction, TxOut};
-    use bdk::bitcoin::blockdata::locktime::absolute::LockTime;
-    use bdk::bitcoin::transaction::Version;
+use bdk::bitcoin::blockdata::locktime::LockTime;
     
     #[test]
     fn test_new_diesel() {
@@ -172,12 +171,12 @@ mod tests {
         let script = runestone.encipher();
         
         let tx = Transaction {
-            version: Version(2),
-            lock_time: LockTime::ZERO,
+            version: 2,
+            lock_time: LockTime::ZERO.into(),
             input: Vec::new(),
             output: vec![
                 TxOut {
-                    value: Amount::from_sat(0),
+                    value: 0,
                     script_pubkey: script,
                 },
             ],

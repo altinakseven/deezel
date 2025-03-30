@@ -5,6 +5,15 @@
 //! - Communication with Metashrew RPC
 //! - Request/response serialization
 //! - Error handling and retries
+//! - Rate limiting and connection pooling
+
+// Export submodules
+pub mod bitcoin;
+pub mod esplora;
+
+// Re-export key types
+pub use bitcoin::BitcoinRpcClient;
+pub use esplora::EsploraRpcClient;
 
 use anyhow::{Context, Result, anyhow};
 use log::debug;
@@ -55,7 +64,7 @@ struct RpcError {
     message: String,
 }
 
-/// RPC client for Bitcoin and Metashrew
+/// Generic RPC client for Bitcoin and Metashrew
 pub struct RpcClient {
     /// HTTP client
     client: Client,
@@ -63,6 +72,10 @@ pub struct RpcClient {
     config: RpcConfig,
     /// Request ID counter
     request_id: std::sync::atomic::AtomicU64,
+    /// Bitcoin RPC client
+    bitcoin_client: Option<BitcoinRpcClient>,
+    /// Esplora RPC client
+    esplora_client: Option<EsploraRpcClient>,
 }
 
 impl RpcClient {
@@ -74,11 +87,29 @@ impl RpcClient {
             .build()
             .expect("Failed to create HTTP client");
         
+        // Create Bitcoin RPC client
+        let bitcoin_client = Some(BitcoinRpcClient::from_rpc_config(&config));
+        
+        // Create Esplora RPC client
+        let esplora_client = Some(EsploraRpcClient::from_rpc_config(&config));
+        
         Self {
             client,
             config,
             request_id: std::sync::atomic::AtomicU64::new(0),
+            bitcoin_client,
+            esplora_client,
         }
+    }
+    
+    /// Get the Bitcoin RPC client
+    pub fn bitcoin(&self) -> &BitcoinRpcClient {
+        self.bitcoin_client.as_ref().expect("Bitcoin RPC client not initialized")
+    }
+    
+    /// Get the Esplora RPC client
+    pub fn esplora(&self) -> &EsploraRpcClient {
+        self.esplora_client.as_ref().expect("Esplora RPC client not initialized")
     }
     
     /// Generic method to call any RPC method
@@ -131,13 +162,7 @@ impl RpcClient {
     
     /// Get the current block count from Bitcoin RPC
     pub async fn get_block_count(&self) -> Result<u64> {
-        debug!("Getting block count from Bitcoin RPC");
-        
-        let result = self._call("btc_getblockcount", json!([])).await?;
-        
-        let height = result.as_u64().context("Invalid block height")?;
-        debug!("Current block height: {}", height);
-        Ok(height)
+        self.bitcoin().get_block_count().await
     }
     
     /// Get the current block height from Metashrew RPC

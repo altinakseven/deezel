@@ -1,186 +1,196 @@
-# Technical Context
+# Deezel Technical Context
 
-## Technologies Used
+## Architecture
 
-### Core Technologies
+Deezel is designed as a modular Rust library with a focus on:
 
-1. **Rust**
-   - Primary implementation language
-   - Used for all core functionality
-   - Provides memory safety and performance
-   - Edition: 2024
+1. **Modularity**: Each component is designed to be used independently or as part of the whole system.
+2. **Performance**: Rust's performance characteristics are leveraged for computationally intensive operations.
+3. **Safety**: Rust's memory safety guarantees help prevent common bugs and security issues.
+4. **Extensibility**: The architecture allows for easy addition of new protocols and features.
 
-2. **Bitcoin Development Kit (BDK)**
-   - Provides wallet functionality
-   - Handles transaction construction and signing
-   - Manages UTXO tracking
-   - Supports descriptor-based wallet architecture
+### Core Components
 
-3. **Bitcoin Core Libraries**
-   - Used for Bitcoin protocol implementation
-   - Provides transaction and block parsing
-   - Handles cryptographic operations
+#### Account Module
 
-### Protocol Implementations
+The account module provides functionality for HD wallet management with support for multiple address types:
 
-1. **Runestone Protocol**
-   - Implementation for creating OP_RETURN outputs with special data
-   - Used for embedding Protostones in transactions
-   - Handles serialization and deserialization of protocol data
+- Legacy (P2PKH)
+- Nested SegWit (P2SH-P2WPKH)
+- Native SegWit (P2WPKH)
+- Taproot (P2TR)
 
-2. **Protostone Protocol**
-   - Extension of Runestone for DIESEL token operations
-   - Defines message format for token minting
-   - Implements protocol tag and message cellpack encoding
+It implements BIP32/39/44 for hierarchical deterministic wallet generation and management.
 
-### External Services
+#### Signer Module
 
-1. **Bitcoin RPC API**
-   - Used for querying current block height
-   - Configurable via `--bitcoin-rpc-url` command-line argument
-   - Default endpoint: http://bitcoinrpc:bitcoinrpc@localhost:8332
-   - Primary method used: `getblockcount`
+The signer module handles transaction signing for all address types, as well as message signing and verification. It works closely with the account module to derive private keys from mnemonics and sign transactions.
 
-2. **Metashrew RPC API**
-   - Primary data source for blockchain information and DIESEL token operations
-   - Configurable via `--metashrew-rpc-url` command-line argument
-   - Default endpoint: http://localhost:8080
-   - Key methods:
-     - `metashrew_view`: For general blockchain data
-     - `metashrew_height`: To verify block height (should be Bitcoin height + 1)
-     - `spendablesbyaddress`: For UTXO selection via protobuf scheme
+#### RPC Client Module
 
-## Development Setup
+The RPC client module provides a unified interface for interacting with various Bitcoin RPC services:
 
-### Build System
+- Bitcoin Core RPC
+- Esplora API
+- Metashrew API
+- Alkanes API
+- Ord API
 
-- **Cargo**: Rust's package manager and build system
-- **Rust Edition**: 2024
-- **Target Platforms**: Linux, macOS, Windows
+#### Transaction Module
 
-### Project Structure
+The transaction module handles transaction construction, PSBT creation, fee estimation, and UTXO selection. It works closely with the signer module to create and sign transactions.
 
-```
-deezel/
-├── src/                  # Source code
-│   ├── main.rs           # Application entry point
-│   ├── wallet/           # Wallet implementation
-│   ├── monitor/          # Block monitoring
-│   ├── transaction/      # Transaction construction
-│   └── rpc/              # RPC client implementation
-├── reference/            # Reference implementations and protocols
-├── Cargo.toml            # Project manifest
-└── memory-bank/          # Project documentation
-```
+#### Monitor Module
 
-### Testing Strategy
+The monitor module provides functionality for monitoring the blockchain, tracking transactions, and handling confirmations and chain reorganizations.
 
-1. **Unit Tests**
-   - Test individual components in isolation
-   - Mock external dependencies
-   - Focus on core business logic
+#### Protocol Modules
 
-2. **Integration Tests**
-   - Test component interactions
-   - Use test networks (testnet/regtest)
-   - Verify end-to-end workflows
+The protocol modules implement support for various Bitcoin protocols:
 
-3. **Simulation Tests**
-   - Test against simulated blockchain data
-   - Verify behavior across various scenarios
-   - Test error handling and recovery
+- **Alkanes**: Contract deployment, token minting, and transfer
+- **BRC20**: Token deployment, minting, and transfer
+- **Rune**: Rune etching, minting, and transfer
+- **Collectible**: NFT creation and transfer
 
-## Technical Constraints
+#### CLI Module
 
-### Bitcoin Network Constraints
+The CLI module provides a command-line interface for all functionality, making it easy to use the library from the command line.
 
-1. **Block Time Variability**
-   - Bitcoin blocks are mined approximately every 10 minutes
-   - Actual time between blocks can vary significantly
-   - Application must handle irregular block timing
+### Design Decisions
 
-2. **Transaction Fee Considerations**
-   - Fees fluctuate based on network congestion
-   - Application must implement fee estimation
-   - Balance between timely confirmation and cost efficiency
+#### Rust vs. TypeScript
 
-3. **Confirmation Requirements**
-   - Transactions require confirmations for security
-   - Application must track confirmation status
-   - Handle potential chain reorganizations
+The decision to reimplement oyl-sdk in Rust was driven by several factors:
 
-### API Constraints
+1. **Performance**: Rust's performance characteristics are better suited for computationally intensive operations like cryptography and transaction processing.
+2. **Safety**: Rust's memory safety guarantees help prevent common bugs and security issues.
+3. **Ecosystem**: The Rust ecosystem has excellent libraries for Bitcoin development, such as rust-bitcoin, BDK, and miniscript.
+4. **Compilation**: Rust's compilation model allows for better optimization and error detection at compile time.
 
-1. **Rate Limiting**
-   - RPC APIs may have rate limits
-   - Application must implement appropriate throttling
-   - Handle potential temporary service unavailability
+#### Modular Architecture
 
-2. **Data Consistency**
-   - External API data may have delays or inconsistencies
-   - Application must handle potential data discrepancies
-   - Implement retry mechanisms for transient failures
-   - Verify Metashrew height is Bitcoin height + 1 before using spendablesbyaddress
+The modular architecture was chosen to allow for:
 
-### Resource Constraints
+1. **Flexibility**: Users can use only the components they need.
+2. **Testability**: Each component can be tested independently.
+3. **Maintainability**: Changes to one component don't affect others.
+4. **Extensibility**: New protocols and features can be added without modifying existing code.
 
-1. **Memory Usage**
-   - Application should maintain reasonable memory footprint
-   - Avoid unnecessary caching of blockchain data
-   - Implement efficient data structures
+#### BDK Integration
 
-2. **CPU Usage**
-   - Balance between responsiveness and resource usage
-   - Implement appropriate polling intervals
-   - Avoid unnecessary computation
+Bitcoin Development Kit (BDK) was chosen as the foundation for wallet functionality because:
 
-## Dependencies
+1. **Maturity**: BDK is a mature and well-tested library for Bitcoin wallet development.
+2. **Features**: BDK provides a rich set of features for wallet management, transaction construction, and signing.
+3. **Community**: BDK has a strong community and is actively maintained.
+4. **Compatibility**: BDK is compatible with other Bitcoin libraries in the Rust ecosystem.
 
-### Direct Dependencies
+#### Error Handling
 
-1. **Bitcoin Development Kit (BDK)**
-   - Core wallet functionality
-   - Transaction handling
-   - UTXO management
+The error handling strategy uses the `anyhow` and `thiserror` crates for:
 
-2. **Reqwest**
-   - HTTP client for API communication
-   - Async support for efficient network operations
+1. **Context**: Errors include context about where they occurred.
+2. **Propagation**: Errors can be easily propagated up the call stack.
+3. **Custom Errors**: Domain-specific errors can be defined and handled appropriately.
+4. **User-Friendly Messages**: Errors can be presented to users in a friendly way.
 
-3. **Serde**
-   - Serialization/deserialization of JSON data
-   - Used for API communication and data persistence
+#### Async/Await
 
-4. **Tokio**
-   - Async runtime for concurrent operations
-   - Efficient handling of network requests
+The async/await pattern is used for:
 
-5. **Clap**
-   - Command-line argument parsing
-   - Support for `--bitcoin-rpc-url` and `--metashrew-rpc-url` arguments
+1. **Concurrency**: Multiple operations can be performed concurrently.
+2. **I/O Efficiency**: I/O-bound operations don't block the thread.
+3. **Readability**: Async code is more readable than callback-based code.
+4. **Composability**: Async operations can be easily composed.
 
-### Indirect Dependencies
+### Technical Considerations
 
-1. **Bitcoin Core Libraries**
-   - Used by BDK for core Bitcoin functionality
-   - Transaction and block parsing
-   - Cryptographic operations
+#### Cross-Platform Compatibility
 
-2. **Rust Standard Library**
-   - Core language functionality
-   - File I/O for persistence
-   - Error handling
+Deezel is designed to be cross-platform, with support for:
 
-### Development Dependencies
+- Linux
+- macOS
+- Windows
 
-1. **Cargo Tools**
-   - Build system
-   - Package management
-   - Testing framework
+This is achieved by:
 
-2. **Clippy**
-   - Static code analysis
-   - Code quality enforcement
+1. Using platform-agnostic APIs
+2. Avoiding platform-specific features
+3. Using cross-platform libraries
 
-3. **Rust Formatter**
-   - Code style consistency
+#### JavaScript/TypeScript Bindings
+
+To maintain compatibility with existing oyl-sdk users, JavaScript/TypeScript bindings will be provided using NAPI-RS. This will allow:
+
+1. **Gradual Migration**: Existing users can migrate gradually from oyl-sdk to deezel.
+2. **API Compatibility**: The JavaScript/TypeScript API will be compatible with oyl-sdk.
+3. **Performance**: The Rust implementation will provide better performance than the TypeScript implementation.
+
+#### Testing Strategy
+
+The testing strategy includes:
+
+1. **Unit Tests**: Each component is tested in isolation.
+2. **Integration Tests**: Components are tested together.
+3. **End-to-End Tests**: The entire system is tested as a whole.
+4. **Property-Based Tests**: Randomized inputs are used to test edge cases.
+5. **Fuzz Testing**: Random inputs are used to find bugs and security issues.
+
+#### Documentation
+
+The documentation strategy includes:
+
+1. **API Documentation**: Each function and type is documented with examples.
+2. **User Guide**: A comprehensive guide for users.
+3. **Examples**: Example code for common use cases.
+4. **Migration Guide**: A guide for migrating from oyl-sdk to deezel.
+
+## Technical Debt
+
+### Current Technical Debt
+
+1. **Placeholder Implementations**: Many functions have placeholder implementations that need to be filled in.
+2. **Missing Tests**: Most modules don't have tests yet.
+3. **Incomplete Documentation**: Documentation is minimal at this point.
+4. **RPC Client Implementation**: The RPC client implementation is incomplete.
+5. **Transaction Construction**: Transaction construction is not fully implemented.
+
+### Plan to Address Technical Debt
+
+1. **Prioritize Core Functionality**: Focus on implementing core functionality first.
+2. **Add Tests**: Add tests as functionality is implemented.
+3. **Improve Documentation**: Improve documentation as functionality is implemented.
+4. **Refactor as Needed**: Refactor code as patterns emerge.
+5. **Regular Reviews**: Conduct regular code reviews to identify and address technical debt.
+
+## Future Considerations
+
+### Performance Optimization
+
+1. **Profiling**: Profile the code to identify performance bottlenecks.
+2. **Optimization**: Optimize critical paths.
+3. **Parallelization**: Use parallelism for computationally intensive operations.
+4. **Caching**: Cache frequently used data.
+
+### Security
+
+1. **Code Reviews**: Conduct regular code reviews with a focus on security.
+2. **Dependency Audits**: Regularly audit dependencies for security issues.
+3. **Fuzzing**: Use fuzz testing to find security issues.
+4. **Security Best Practices**: Follow security best practices for cryptographic operations.
+
+### Scalability
+
+1. **Resource Usage**: Monitor and optimize resource usage.
+2. **Connection Pooling**: Use connection pooling for RPC clients.
+3. **Batching**: Batch operations where possible.
+4. **Caching**: Cache frequently used data.
+
+### Maintainability
+
+1. **Code Style**: Follow Rust's code style guidelines.
+2. **Documentation**: Keep documentation up to date.
+3. **Tests**: Maintain high test coverage.
+4. **Refactoring**: Refactor code as needed to maintain clarity and simplicity.

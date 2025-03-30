@@ -1,172 +1,152 @@
-# Project Progress
+# Deezel Project Progress
 
-## Current Status
+## Overview
 
-The project is in the **initial development phase**. We have established the project structure, gathered reference implementations, created comprehensive documentation, and implemented the basic module structure. The core functionality implementation is in progress.
+This document tracks the progress of replacing oyl-sdk with deezel, a Rust-based implementation of the same functionality.
 
-### Development Status by Component
+## Completed Tasks
 
-| Component | Status | Progress |
-|-----------|--------|----------|
-| Project Setup | Completed | 100% |
-| Wallet Module | In Progress | 45% |
-| Block Monitor | In Progress | 30% |
-| Transaction Constructor | In Progress | 30% |
-| RPC Client | In Progress | 35% |
-| Integration | Not Started | 0% |
-| Testing | In Progress | 15% |
-| Documentation | In Progress | 60% |
+### Core Infrastructure
 
-## What Works
+- [x] Project structure setup
+- [x] Cargo.toml configuration
+- [x] Module organization
+- [x] Basic documentation
 
-At this stage, the following components are operational:
+### Account Module
 
-1. **Project Structure**
-   - Complete project setup with Cargo.toml and dependencies
-   - Library and binary structure
-   - Main application with CLI argument parsing
-   - Module structure for all core components
-   - Reference files for protocol understanding
+- [x] Account structure definition
+- [x] BIP32/39/44 wallet support
+- [x] Multiple address types (legacy, nested segwit, native segwit, taproot)
+- [x] Account generation and import
+- [x] Spend strategy implementation
+- [x] Password-based encryption
+- [x] Account serialization and deserialization
+- [x] Account backup and restore
 
-2. **Documentation**
-   - Memory Bank structure established
-   - Project brief created
-   - Technical documentation initiated
-   - Architecture and design patterns documented
+### Signer Module
 
-3. **Core Module Implementation**
-   - Wallet module with BDK integration structure
-   - Custom Esplora backend for Sandshrew RPC with proper mapping to Esplora REST API
-   - Block monitor with polling mechanism
-   - Transaction constructor with DIESEL token minting structure
-   - RPC client for Bitcoin and Metashrew communication with unified API access
-   - Runestone protocol implementation for DIESEL token minting
+- [x] Signer structure definition
+- [x] Transaction signing for all address types
+- [x] Message signing and verification
+- [x] PSBT handling
 
-4. **DIESEL Token Minter**
-   - Mempool transaction analysis
-   - Fee rate optimization with RBF
-   - Balance sheet tracking
-   - Automated DIESEL token minting
+### Utils Module
 
-## What's Left to Build
+- [x] Fee calculation
+- [x] UTXO selection
+- [x] Transaction size estimation
+- [x] Conversion utilities
+- [x] Cryptographic utilities
 
-### Core Components
+### Protocol Support
 
-1. **Wallet Module**
-   - ✅ BDK integration
-   - ✅ Custom Esplora backend for Sandshrew RPC
-   - Persistent wallet state management
-   - UTXO tracking and management
-   - Key management and address generation
-   - Command-line argument parsing for RPC URLs
+- [x] Alkanes module structure
+- [x] BRC20 module structure
+- [x] Rune module structure
+- [x] Collectible module structure
 
-2. **Runestone Protocol**
-   - ✅ Runestone implementation for DIESEL token minting
-   - ✅ Protocol tag and message cellpack encoding
-   - ✅ OP_RETURN script generation
-   - ✅ Transaction construction with Runestone
+### CLI
 
-2. **Block Monitor**
-   - Bitcoin RPC integration for `getblockcount`
-   - Metashrew RPC integration for `metashrew_height`
-   - Block height verification (Metashrew height = Bitcoin height + 1)
-   - Rate limiting implementation
-   - Confirmation tracking
-   - Error handling and recovery
-   - Event notification system
+- [x] CLI structure
+- [x] Command-line argument parsing
+- [x] Configuration handling
+- [x] Command handlers (placeholder implementations)
 
-3. **Transaction Constructor**
-   - Runestone/Protostone creation
-   - UTXO selection using `spendablesbyaddress` via protobuf
-   - Output consolidation mechanism
-   - Transaction signing and verification
-   - Fee estimation and management
+## In Progress Tasks
 
-4. **RPC Client**
-   - ✅ Bitcoin RPC client implementation
-   - ✅ Metashrew RPC client implementation
-   - ✅ Esplora API methods for custom backend
-   - Error handling and retries
-   - Response parsing and validation
-   - Rate limit compliance
+### RPC Client
 
-### Integration and Testing
+- [x] Bitcoin RPC client implementation
+- [x] Esplora RPC client implementation
+- [ ] Metashrew RPC client implementation
+- [ ] Alkanes RPC client implementation
+- [ ] Ord RPC client implementation
 
-1. **Component Integration**
-   - Connect all modules
-   - Implement event handling
-   - Create unified error handling
-   - Develop logging and monitoring
+### Transaction Module
 
-2. **Testing Infrastructure**
-   - Unit tests for each module
-   - Integration tests for component interactions
-   - End-to-end tests for complete workflows
-   - Simulation tests for various scenarios
+- [ ] Transaction construction
+- [ ] PSBT creation
+- [ ] Fee estimation
+- [ ] UTXO selection
 
-3. **Operational Tools**
-   - Monitoring and alerting
-   - Backup and recovery procedures
-   - Performance optimization
-   - Deployment scripts
+### Monitor Module
 
-## Implementation Roadmap
+- [ ] Block monitoring
+- [ ] Transaction tracking
+- [ ] Confirmation handling
+- [ ] Chain reorganization handling
 
-### Phase 1: Core Infrastructure (Current)
-- Complete project setup
-- Implement basic wallet functionality
-- Create simple block monitoring
-- Develop initial RPC client
+### Protocol Implementation
 
-### Phase 2: Basic Functionality
-- Implement transaction construction
-- Develop UTXO management
-- Create basic token minting
-- Implement simple persistence
+#### Alkanes
 
-### Phase 3: Advanced Features
-- Add output consolidation
-- Implement fee optimization
-- Develop robust error handling
-- Create comprehensive logging
+- [ ] Contract deployment
+- [ ] Token minting
+- [ ] Token transfer
+- [ ] Contract interaction
+- [ ] Balance tracking
 
-### Phase 4: Optimization and Hardening
-- Performance optimization
-- Security hardening
-- Comprehensive testing
-- Documentation completion
+#### BRC20
 
-## Known Issues
+- [ ] Token deployment
+- [ ] Token minting
+- [ ] Token transfer
+- [ ] Balance tracking
 
-As the project is in its initial phase, there are no implementation-specific issues yet. However, several challenges have been identified:
+#### Rune
 
-1. **Technical Challenges**
-   - Handling Bitcoin network variability
-   - Managing transaction fees effectively
-   - Ensuring reliable operation during network congestion
-   - Dealing with potential chain reorganizations
+- [ ] Rune etching
+- [ ] Rune minting
+- [ ] Rune transfer
+- [ ] Balance tracking
 
-2. **Integration Challenges**
-   - Sandshrew API rate limiting
-   - Potential API changes or downtime
-   - Consistency of external data sources
-   - Handling network latency and timeouts
+#### Collectible
 
-3. **Operational Challenges**
-   - Long-term resource usage optimization
-   - Handling increasing UTXO sets
-   - Maintaining performance over time
-   - Ensuring data integrity during failures
+- [ ] Collectible creation
+- [ ] Collectible transfer
+- [ ] Collection management
 
-## Next Milestone
+### CLI Implementation
 
-**Basic Wallet Implementation**
+- [ ] Wallet commands
+- [ ] DIESEL commands
+- [ ] BRC20 commands
+- [ ] Rune commands
+- [ ] Collectible commands
+- [ ] Alkanes commands
 
-Target completion: TBD
+## Future Tasks
 
-Key deliverables:
-- ✅ Functional BDK integration
-- ✅ Custom Esplora backend for Sandshrew RPC
-- Basic wallet operations (create, load, save)
-- Simple UTXO tracking
-- Initial Sandshrew RPC integration
+### JavaScript/TypeScript Bindings
+
+- [ ] NAPI-RS setup
+- [ ] TypeScript type definitions
+- [ ] API compatibility layer
+- [ ] Documentation
+
+### Testing
+
+- [x] Account module tests
+- [ ] Signer module tests
+- [ ] Transaction module tests
+- [ ] RPC client tests
+- [ ] Protocol module tests
+- [ ] CLI tests
+- [ ] Integration tests
+- [ ] End-to-end tests
+- [ ] Performance benchmarks
+
+### Documentation
+
+- [ ] API documentation
+- [ ] User guide
+- [ ] Examples
+- [ ] Migration guide from oyl-sdk
+
+## Notes
+
+- The current implementation focuses on structure and interfaces, with many placeholder implementations that need to be filled in.
+- The RPC client implementation is a critical next step, as it's required for most functionality.
+- Transaction construction and signing are also high priority, as they're used by all protocol implementations.
+- The CLI implementation can be done incrementally as the underlying functionality is implemented.

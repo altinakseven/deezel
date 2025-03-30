@@ -1,9 +1,13 @@
 [package]
 name = "deezel"
 version = "0.1.0"
-edition = "2024"
-description = "A Bitcoin wallet CLI tool for automated DIESEL token minting and management"
+edition = "2021"
+description = "A comprehensive Bitcoin wallet SDK and CLI tool for token management"
 authors = ["Deezel Team"]
+repository = "https://github.com/deezel/deezel"
+license = "MIT"
+readme = "README.md"
+keywords = ["bitcoin", "wallet", "sdk", "defi", "diesel"]
 
 [lib]
 name = "deezel"
@@ -13,9 +17,20 @@ path = "src/lib.rs"
 name = "diesel_minter"
 path = "src/bin/diesel_minter.rs"
 
+[[bin]]
+name = "deezel_cli"
+path = "src/bin/deezel_cli.rs"
+
 [dependencies]
 # Bitcoin Development Kit
 bdk = { version = "0.28.0", features = ["all-keys"] }
+
+# Bitcoin and cryptography
+bitcoin = { version = "0.29.2", features = ["rand", "serde"] }
+secp256k1 = { version = "0.24.3", features = ["rand", "serde"] }
+bip39 = "2.0.0"
+bip32 = "0.4.0"
+miniscript = "9.0.0"
 
 # Esplora client
 esplora-client = "0.6.0"
@@ -29,6 +44,8 @@ reqwest = { version = "0.11", features = ["json"] }
 # Serialization/Deserialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+bincode = "1.3.3"
+cbor = "0.4.1"
 
 # Command-line argument parsing
 clap = { version = "4.3", features = ["derive"] }
@@ -40,7 +57,31 @@ thiserror = "1.0"
 # Logging
 log = "0.4"
 env_logger = "0.10"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Utilities
 hex = "0.4"
 async-trait = "0.1"
+rand = "0.8"
+base64 = "0.21"
+chrono = { version = "0.4", features = ["serde"] }
+url = "2.4"
+lazy_static = "1.4"
+dirs = "5.0"
+
+# Encryption
+aes-gcm = "0.10.2"
+argon2 = "0.5.2"
+
+# JavaScript/TypeScript bindings (optional)
+# napi = { version = "2.12", features = ["napi4"], optional = true }
+# napi-derive = { version = "2.12", optional = true }
+
+[features]
+default = []
+js_bindings = [] # Enable when ready to implement JavaScript bindings
+
+[dev-dependencies]
+tempfile = "3.8.1"
+mockito = "1.0.0"

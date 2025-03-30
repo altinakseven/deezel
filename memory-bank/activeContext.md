@@ -1,137 +1,102 @@
-# Active Context
+# Deezel Active Context
 
-## Current Work Focus
+## Current State
 
-The project is currently in its implementation phase. The basic module structure has been established, and we have implemented the core functionality for DIESEL token minting and management.
-
-### Active Development Areas
-
-1. **Core Infrastructure Setup** ✅
-   - Project structure and organization
-   - Dependency configuration
-   - Build system setup
-   - Command-line argument parsing for RPC URLs
-   - Library and binary structure
-
-2. **Wallet Implementation** 🔄
-   - BDK integration for Bitcoin wallet functionality ✅
-   - Custom Esplora backend for Sandshrew RPC ✅
-   - UTXO management with ordinal and rune constraints 🔄
-   - Wallet state persistence 🔄
-
-3. **Block Monitoring** 🔄
-   - Bitcoin RPC integration for `getblockcount`
-   - Metashrew RPC integration for `metashrew_height`
-   - Block height verification (Metashrew height = Bitcoin height + 1)
-   - Rate limiting implementation
-
-4. **Transaction Construction** 🔄
-   - Runestone with Protostone creation
-   - Protocol-specific message encoding
-   - Output consolidation logic
-   - UTXO selection using `spendablesbyaddress` via protobuf
-
-## Recent Changes
-
-The project has been significantly advanced with the implementation of the basic module structure:
-
-1. **Project Setup Completed**
-   - Cargo.toml with all required dependencies
-   - Main application with CLI argument parsing
-   - Module structure for all core components
-
-2. **Module Structure Implementation**
-   - Wallet module with BDK integration structure
-   - Block monitor with polling mechanism
-   - Transaction constructor with DIESEL token minting structure
-   - RPC client for Bitcoin and Metashrew communication
-
-3. **Documentation Updates**
-   - Progress tracking updated
-   - Active context updated to reflect current state
-
-## Next Steps
-
-The following tasks are prioritized for immediate implementation:
-
-1. **Wallet Module Implementation**
-   - [x] Create basic BDK wallet integration structure
-   - [x] Implement custom Esplora backend for Sandshrew RPC
-   - [x] Map Sandshrew RPC calls to Esplora REST API
-   - [ ] Complete persistent wallet state management
-   - [ ] Finalize UTXO tracking and management
-
-2. **Block Monitor Implementation**
-   - [x] Create block polling mechanism structure
-   - [ ] Complete rate limiting implementation
-   - [ ] Finalize confirmation tracking
-   - [ ] Implement comprehensive error handling and recovery
-
-3. **Transaction Constructor Implementation**
-   - [x] Create Runestone/Protostone structure
-   - [x] Implement Runestone protocol for DIESEL token minting
-   - [x] Create dust output and OP_RETURN output
-   - [ ] Implement UTXO selection logic
-   - [ ] Complete output consolidation mechanism
-   - [ ] Finalize transaction signing and verification
-
-4. **RPC Client Implementation**
-   - [x] Create Sandshrew RPC client structure
-   - [ ] Complete implementation of required API methods
-   - [ ] Finalize error handling and retries
-   - [ ] Complete response parsing and validation
-
-5. **Integration and Testing**
-   - [ ] Integrate all components
-   - [ ] Complete unit tests for each module
-   - [ ] Develop integration tests
-   - [ ] Implement end-to-end testing
-
-## Active Decisions and Considerations
-
-### Technical Decisions Under Consideration
-
-1. **Concurrency Model**
-   - Evaluating between thread-based and async approaches
-   - Considering Tokio for async runtime
-   - Assessing performance implications for long-running processes
-
-2. **Error Handling Strategy**
-   - Determining appropriate error propagation
-   - Considering retry policies for transient failures
-   - Evaluating logging and monitoring requirements
-
-3. **Persistence Strategy**
-   - Evaluating file-based vs. database storage for wallet state
-   - Considering encryption requirements for sensitive data
-   - Assessing backup and recovery mechanisms
-
-4. **Fee Estimation Approach**
-   - Determining optimal fee estimation strategy
-   - Considering dynamic fee adjustment based on confirmation time
-   - Evaluating balance between cost efficiency and confirmation speed
-
-### Open Questions
-
-1. **Scaling Considerations**
-   - How will the application handle increasing UTXO sets?
-   - What are the performance implications of monitoring multiple wallets?
-   - How can we optimize for long-term operation?
-
-2. **Security Concerns**
-   - What are the security implications of persistent key storage?
-   - How should we handle potential chain reorganizations?
-   - What measures are needed to protect against potential attacks?
-
-3. **Operational Considerations**
-   - What monitoring and alerting are required for production use?
-   - How should the application handle network outages?
-   - What recovery procedures are needed for various failure scenarios?
+As of March 29, 2025, the Deezel project is in the early stages of development. We have set up the project structure and implemented the basic module structure for the core functionality and protocol support. The current focus is on implementing the core functionality and protocol support.
 
 ## Current Priorities
 
-1. Implement core wallet functionality with BDK
-2. Develop block monitoring with Sandshrew RPC
-3. Create transaction construction with Runestone/Protostone
-4. Integrate components for end-to-end operation
-5. Implement comprehensive testing
+1. **Core Functionality**:
+   - Implement the account module
+   - Implement the signer module
+   - Implement the RPC client module
+   - Implement the transaction module
+   - Implement the monitor module
+
+2. **Protocol Support**:
+   - Implement the Alkanes module
+   - Implement the BRC20 module
+   - Implement the Rune module
+   - Implement the Collectible module
+
+3. **CLI Tool**:
+   - Implement the CLI module
+   - Implement the command handlers
+
+## Next Steps
+
+1. **Account Module**:
+   - Implement account creation from mnemonic
+   - Implement account creation from extended private key
+   - Implement address generation for all address types
+   - Implement account serialization and deserialization
+
+2. **Signer Module**:
+   - Implement transaction signing for all address types
+   - Implement message signing and verification
+   - Implement PSBT handling
+
+3. **RPC Client Module**:
+   - Implement Bitcoin RPC client
+   - Implement Esplora RPC client
+   - Implement Metashrew RPC client
+   - Implement Alkanes RPC client
+   - Implement Ord RPC client
+
+## Current Challenges
+
+1. **RPC Integration**:
+   - Integration with various RPC services may be complex
+   - Different services may have different APIs and response formats
+   - Error handling may be challenging
+
+2. **Protocol Implementation**:
+   - Implementing all protocols and features may be challenging
+   - Different protocols may have different requirements and constraints
+   - Testing may be challenging
+
+## Current Decisions
+
+1. **Rust vs. TypeScript**:
+   - We have decided to implement Deezel in Rust for performance, safety, and ecosystem reasons
+   - We will provide JavaScript/TypeScript bindings for compatibility with oyl-sdk
+
+2. **Modular Architecture**:
+   - We have decided to use a modular architecture for flexibility, testability, and maintainability
+   - Each module has a clear responsibility and interface
+
+3. **Error Handling**:
+   - We have decided to use the `anyhow` and `thiserror` crates for error handling
+   - We will provide context for errors and use custom error types where appropriate
+
+4. **Async/Await**:
+   - We have decided to use the async/await pattern for asynchronous operations
+   - We will use Tokio as the async runtime
+
+## Current Questions
+
+1. **API Compatibility**:
+   - How closely should we match the oyl-sdk API?
+   - What are the most important API features to maintain compatibility with?
+
+2. **Protocol Support**:
+   - Which protocols should we prioritize?
+   - What are the most important features of each protocol?
+
+3. **Testing Strategy**:
+   - How should we test the RPC client integration?
+   - How should we test the protocol implementations?
+
+## Current Risks
+
+1. **Schedule Risk**:
+   - The project timeline may be too ambitious
+   - Unforeseen technical challenges may delay the project
+
+2. **Technical Risk**:
+   - Integration with various RPC services may be more complex than anticipated
+   - Protocol implementations may be more challenging than anticipated
+
+3. **Resource Risk**:
+   - Limited resources for development and maintenance
+   - Limited expertise in certain areas

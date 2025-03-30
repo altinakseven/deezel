@@ -12,8 +12,8 @@ use anyhow::{Context, Result};
 use bdk::bitcoin::Network;
 use bdk::database::MemoryDatabase;
 use bdk::wallet::AddressIndex;
-use bdk::{Wallet, SyncOptions};
-use log::{debug, info, warn, error};
+use bdk::Wallet;
+use log::{debug, info, warn};
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -196,7 +196,10 @@ mod tests {
             
             // Test getting the RPC client
             let rpc_client = manager.get_rpc_client();
-            assert!(!Arc::ptr_eq(&rpc_client, &Arc::new(())));
+            assert!(!Arc::ptr_eq(&rpc_client, &Arc::new(RpcClient::new(crate::rpc::RpcConfig {
+                bitcoin_rpc_url: "".to_string(),
+                metashrew_rpc_url: "".to_string(),
+            }))));
             
             // Test getting the backend
             let _backend = manager.get_backend();
