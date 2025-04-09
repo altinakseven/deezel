@@ -1,17 +1,9 @@
 [package]
-name = "deezel"
+name = "deezel-cli"
 version = "0.1.0"
 edition = "2024"
 description = "A Bitcoin wallet CLI tool for automated DIESEL token minting and management"
 authors = ["Deezel Team"]
-
-[lib]
-name = "deezel"
-path = "src/lib.rs"
-
-[[bin]]
-name = "diesel_minter"
-path = "src/bin/diesel_minter.rs"
 
 [dependencies]
 # Bitcoin Development Kit
@@ -44,3 +36,7 @@ env_logger = "0.10"
 # Utilities
 hex = "0.4"
 async-trait = "0.1"
+
+# Alkanes-rs crates
+ordinals = { path = "reference/alkanes-rs/crates/ordinals" }
+protorune-support = { path = "reference/alkanes-rs/crates/protorune-support" }

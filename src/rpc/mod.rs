@@ -180,7 +180,6 @@ impl RpcClient {
         debug!("Got protorunes for address: {}", address);
         Ok(result)
     }
-    
     /// Trace a transaction for DIESEL token minting
     pub async fn trace_transaction(&self, txid: &str, vout: usize) -> Result<Value> {
         debug!("Tracing transaction: {} vout: {}", txid, vout);
@@ -193,6 +192,91 @@ impl RpcClient {
         
         debug!("Trace result for transaction: {}", txid);
         Ok(result)
+    }
+    
+    /// Get protorunes by outpoint
+    pub async fn get_protorunes_by_outpoint(&self, txid: &str, vout: u32) -> Result<Value> {
+        debug!("Getting protorunes for outpoint: {}:{}", txid, vout);
+        
+        let result = self._call("alkanes_protorunesbyoutpoint", json!([txid, vout])).await?;
+        
+        debug!("Got protorunes for outpoint: {}:{}", txid, vout);
+        Ok(result)
+    }
+    
+    /// Trace a block
+    pub async fn trace_block(&self, height: u64) -> Result<Value> {
+        debug!("Tracing block at height: {}", height);
+        
+        let result = self._call("alkanes_traceblock", json!([height])).await?;
+        
+        debug!("Trace result for block at height: {}", height);
+        Ok(result)
+    }
+    
+    /// Simulate a contract execution
+    pub async fn simulate(&self, block: &str, tx: &str, inputs: &[String]) -> Result<Value> {
+        debug!("Simulating contract execution: {}:{} with {} inputs", block, tx, inputs.len());
+        
+        // Create params array with block, tx, and inputs
+        let mut params = Vec::new();
+        params.push(json!(block));
+        params.push(json!(tx));
+        for input in inputs {
+            params.push(json!(input));
+        }
+        
+        let result = self._call("alkanes_simulate", json!(params)).await?;
+        
+        debug!("Simulation result for contract: {}:{}", block, tx);
+        Ok(result)
+    }
+    
+    /// Get contract metadata
+    pub async fn get_contract_meta(&self, block: &str, tx: &str) -> Result<Value> {
+        debug!("Getting metadata for contract: {}:{}", block, tx);
+        
+        let result = self._call("alkanes_meta", json!([block, tx])).await?;
+        
+        debug!("Got metadata for contract: {}:{}", block, tx);
+        Ok(result)
+    }
+    
+    /// Get contract bytecode
+    pub async fn get_bytecode(&self, block: &str, tx: &str) -> Result<String> {
+        debug!("Getting bytecode for contract: {}:{}", block, tx);
+        
+        let result = self._call(
+            "metashrew_view",
+            json!([{
+                "method": "getbytecode",
+                "params": [block, tx]
+            }])
+        ).await?;
+        
+        let bytecode = result.as_str()
+            .context("Invalid bytecode response")?
+            .to_string();
+        
+        debug!("Got bytecode for contract: {}:{}", block, tx);
+        Ok(bytecode)
+    }
+    
+    /// Get transaction hex by transaction ID
+    pub async fn get_transaction_hex(&self, txid: &str) -> Result<String> {
+        debug!("Getting transaction hex for txid: {}", txid);
+        
+        let result = self._call(
+            "esplora_gettransaction",
+            json!([txid])
+        ).await?;
+        
+        let tx_hex = result.as_str()
+            .context("Invalid transaction hex response")?
+            .to_string();
+        
+        debug!("Got transaction hex for txid: {}", txid);
+        Ok(tx_hex)
     }
     
     
