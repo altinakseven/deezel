@@ -5,10 +5,28 @@
 
 use anyhow::{anyhow, Result};
 use bdk::bitcoin::Transaction;
+use bitcoin;
 use bdk::bitcoin::blockdata::script::{Instruction, Script};
 use bdk::bitcoin::blockdata::opcodes;
 use log::debug;
 use serde_json::{json, Value};
+use ordinals::{Artifact, runestone::{Runestone}};
+use protorune_support::protostone::Protostone;
+
+
+fn from_packed(v: bdk::bitcoin::absolute::PackedLockTime) -> bitcoin::absolute::LockTime {
+  bitcoin::absolute::LockTime::from_consensus(v.to_consensus_u32())
+}
+
+fn from_bdk(v: bdk::bitcoin::Transaction) -> bitcoin::Transaction {
+    bitcoin::Transaction {
+      version: bitcoin::transaction::Version(v.version),
+      lock_time: v.lock_time,
+      input: v.input.into(),
+      output: v.output.into()
+    }
+}
+
 
 /// Decode a Runestone from a transaction
 pub fn decode_runestone(tx: &Transaction) -> Result<Value> {
@@ -246,178 +264,10 @@ fn decode_varint(bytes: &[u8]) -> Result<(u128, usize)> {
     Ok((result, i))
 }
 
-/// Format a Runestone for display
-pub fn format_runestone(tx: &Transaction) -> String {
-    match decode_runestone(tx) {
-        Ok(data) => {
-            let mut output = String::new();
-            
-            output.push_str(&format!("Transaction ID: {}\n", tx.txid()));
-            output.push_str(&format!("Version: {}\n", tx.version));
-            output.push_str(&format!("Inputs: {}\n", tx.input.len()));
-            output.push_str(&format!("Outputs: {}\n", tx.output.len()));
-            
-            output.push_str("\nRunestone found!\n");
-            output.push_str(&format!("Output Index: {}\n", data["output_index"]));
-            
-            // Protocol tag
-            if let Some(protocol_tag) = data.get("protocol_tag") {
-                output.push_str(&format!("\nProtocol Tag: {}\n", protocol_tag));
-            }
-            
-            // Protocol data
-            if let Some(protocol_data) = data.get("protocol_data") {
-                if let Some(protocol_array) = protocol_data.as_array() {
-                    if !protocol_array.is_empty() {
-                        output.push_str("\nProtocol data:\n");
-                        for (i, value) in protocol_array.iter().enumerate() {
-                            if let Some(num) = value.as_u64() {
-                                output.push_str(&format!("  Value {}: {} (0x{:x})\n", i, num, num));
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // Message bytes
-            if let Some(message_bytes) = data.get("message_bytes") {
-                if let Some(message_array) = message_bytes.as_array() {
-                    if !message_array.is_empty() {
-                        output.push_str("\nMessage bytes:\n");
-                        for (i, byte) in message_array.iter().enumerate() {
-                            if let Some(b) = byte.as_u64() {
-                                output.push_str(&format!("  Byte {}: {} (0x{:02x})\n", i, b, b));
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // Protostone data
-            if let Some(protostone) = data.get("protostone") {
-                output.push_str("\nProtostone data:\n");
-                
-                if let Some(protostone_type) = protostone.get("type") {
-                    output.push_str(&format!("  Type: {}\n", protostone_type));
-                }
-                
-                if let Some(operation) = protostone.get("operation") {
-                    output.push_str(&format!("  Operation: {}\n", operation));
-                }
-                
-                if let Some(cellpack) = protostone.get("cellpack") {
-                    output.push_str("  Cellpack structure:\n");
-                    
-                    // Handle different cellpack structures based on the protostone type
-                    if let Some(protostone_type) = protostone.get("type") {
-                        match protostone_type.as_str() {
-                            Some("DIESEL") => {
-                                if let Some(message_type) = cellpack.get("message_type") {
-                                    output.push_str(&format!("    Message type: {}\n", message_type));
-                                }
-                                
-                                if let Some(reserved) = cellpack.get("reserved") {
-                                    output.push_str(&format!("    Reserved: {}\n", reserved));
-                                }
-                                
-                                if let Some(action) = cellpack.get("action") {
-                                    output.push_str(&format!("    Action: {}\n", action));
-                                }
-                            },
-                            Some("Alkane") => {
-                                if let Some(call_type) = cellpack.get("call_type") {
-                                    output.push_str(&format!("    Call type: {}\n", call_type));
-                                }
-                                
-                                if let Some(data) = cellpack.get("data") {
-                                    if let Some(data_array) = data.as_array() {
-                                        output.push_str("    Data bytes:\n");
-                                        for (i, byte) in data_array.iter().enumerate() {
-                                            if let Some(b) = byte.as_u64() {
-                                                output.push_str(&format!("      Byte {}: {} (0x{:02x})\n", i, b, b));
-                                            }
-                                        }
-                                    }
-                                }
-                            },
-                            Some("Protorune") => {
-                                if let Some(operation_type) = cellpack.get("operation_type") {
-                                    output.push_str(&format!("    Operation type: {}\n", operation_type));
-                                }
-                                
-                                if let Some(operation_name) = cellpack.get("operation_name") {
-                                    output.push_str(&format!("    Operation name: {}\n", operation_name));
-                                }
-                                
-                                if let Some(data) = cellpack.get("data") {
-                                    if let Some(data_array) = data.as_array() {
-                                        output.push_str("    Data bytes:\n");
-                                        for (i, byte) in data_array.iter().enumerate() {
-                                            if let Some(b) = byte.as_u64() {
-                                                output.push_str(&format!("      Byte {}: {} (0x{:02x})\n", i, b, b));
-                                            }
-                                        }
-                                    }
-                                }
-                            },
-                            _ => {
-                                // Generic cellpack display for unknown types
-                                if let Some(cellpack_array) = cellpack.as_array() {
-                                    output.push_str("    Raw bytes:\n");
-                                    for (i, byte) in cellpack_array.iter().enumerate() {
-                                        if let Some(b) = byte.as_u64() {
-                                            output.push_str(&format!("      Byte {}: {} (0x{:02x})\n", i, b, b));
-                                        }
-                                    }
-                                } else {
-                                    output.push_str(&format!("    {}\n", cellpack));
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // All tags
-            if let Some(all_tags) = data.get("all_tags") {
-                if let Some(tags_obj) = all_tags.as_object() {
-                    if !tags_obj.is_empty() {
-                        output.push_str("\nAll tags:\n");
-                        for (tag, values) in tags_obj {
-                            output.push_str(&format!("  Tag {}: ", tag));
-                            if let Some(values_array) = values.as_array() {
-                                let values_str: Vec<String> = values_array.iter()
-                                    .map(|v| v.to_string())
-                                    .collect();
-                                output.push_str(&format!("[{}]\n", values_str.join(", ")));
-                            } else {
-                                output.push_str(&format!("{}\n", values));
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // Output details
-            output.push_str("\nOutputs:\n");
-            for (i, output_tx) in tx.output.iter().enumerate() {
-                output.push_str(&format!("  Output {}: {} sats\n", i, output_tx.value));
-                output.push_str(&format!("    Script: {}\n", output_tx.script_pubkey));
-            }
-            
-            output
-        },
-        Err(e) => {
-            format!("Transaction ID: {}\nVersion: {}\nInputs: {}\nOutputs: {}\n\nNo Runestone found: {}\n\nOutputs:\n{}",
-                tx.txid(),
-                tx.version,
-                tx.input.len(),
-                tx.output.len(),
-                e,
-                tx.output.iter().enumerate().map(|(i, o)| {
-                    format!("  Output {}: {} sats\n    Script: {}", i, o.value, o.script_pubkey)
-                }).collect::<Vec<_>>().join("\n")
-            )
-        }
-    }
+pub fn format_runestone(tx: &Transaction) -> Result<Vec<Protostone>> {
+  match Runestone::decipher(&from_bdk(tx.clone())).ok_or("").map_err(|_| anyhow!("no runestone"))? {
+    Artifact::Runestone(ref runestone) => { Ok(Protostone::from_runestone(runestone)?)  },
+    _ => { Err(anyhow!("no runestone")) }
+  }
 }
+

@@ -1,13 +1,15 @@
 [package]
 name = "deezel-cli"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 description = "A Bitcoin wallet CLI tool for automated DIESEL token minting and management"
 authors = ["Deezel Team"]
 
 [dependencies]
 # Bitcoin Development Kit
-bdk = { version = "0.28.0", features = ["all-keys"] }
+bdk = { version = "0.30.2", features = ["all-keys"] }
+ordinals = { git = "https://github.com/kungfuflex/alkanes-rs" }
+protorune-support = { git = "https://github.com/kungfuflex/alkanes-rs" }
 
 # Esplora client
 esplora-client = "0.6.0"
@@ -36,7 +38,6 @@ env_logger = "0.10"
 # Utilities
 hex = "0.4"
 async-trait = "0.1"
+bitcoin = "0.32.5"
 
 # Alkanes-rs crates
-ordinals = { path = "reference/alkanes-rs/crates/ordinals" }
-protorune-support = { path = "reference/alkanes-rs/crates/protorune-support" }
