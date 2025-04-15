@@ -9,15 +9,15 @@ The project is in the **initial development phase**. We have established the pro
 | Component | Status | Progress |
 |-----------|--------|----------|
 | Project Setup | Completed | 100% |
-| Wallet Module | In Progress | 45% |
-| Block Monitor | In Progress | 30% |
-| Transaction Constructor | In Progress | 30% |
-| RPC Client | In Progress | 60% |
-| Runestone/Protostone Decoder | In Progress | 40% |
-| Integration | In Progress | 20% |
-| Testing | In Progress | 15% |
+| Wallet Module | In Progress | 60% |
+| Block Monitor | In Progress | 50% |
+| Transaction Constructor | In Progress | 40% |
+| RPC Client | In Progress | 70% |
+| Runestone/Protostone Decoder | In Progress | 60% |
+| Integration | In Progress | 30% |
+| Testing | In Progress | 20% |
 | Documentation | In Progress | 80% |
-| Alkanes Metaprotocol Compatibility | In Progress | 50% |
+| Alkanes Metaprotocol Compatibility | In Progress | 60% |
 
 ## What Works
 
@@ -47,7 +47,7 @@ At this stage, the following components are operational:
    - Extended RPC client with methods for all required alkanes operations
    - Runestone protocol implementation for protostones
    - CLI binary for interacting with Bitcoin and the alkanes metaprotocol
-   - Basic Runestone decoder for extracting protocol data
+   - Enhanced Runestone decoder for extracting protocol data
 
 4. **CLI Commands**
    - `deezel metashrew height`
@@ -61,6 +61,7 @@ At this stage, the following components are operational:
    - `deezel alkanes simulate <block:tx:input1:input2...>`
    - `deezel alkanes meta <block:tx>`
    - `deezel runestone <txid_or_hex>`
+   - `deezel walletinfo`
 
 ## What's Left to Build
 
@@ -79,20 +80,20 @@ At this stage, the following components are operational:
    - ✅ Protocol tag and message cellpack encoding
    - ✅ OP_RETURN script generation
    - ✅ Transaction construction with Runestone
-   - Enhanced Runestone decoder for all protostones
-   - Comprehensive cellpack structure interpretation
+   - ✅ Enhanced Runestone decoder for all protostones
+   - Complete cellpack structure interpretation for all protostone types
 
 3. **Block Monitor**
-   - Bitcoin RPC integration for `getblockcount`
-   - Metashrew RPC integration for `metashrew_height`
-   - Block height verification (Metashrew height = Bitcoin height + 1)
+   - ✅ Bitcoin RPC integration for `getblockcount`
+   - ✅ Metashrew RPC integration for `metashrew_height`
+   - ✅ Block height verification (Metashrew height = Bitcoin height + 1)
    - Rate limiting implementation
    - Confirmation tracking
    - Error handling and recovery
    - Event notification system
 
 4. **Transaction Constructor**
-   - Runestone/Protostone creation
+   - ✅ Runestone/Protostone creation
    - UTXO selection using `spendablesbyaddress` via protobuf
    - Output consolidation mechanism
    - Transaction signing and verification
@@ -113,10 +114,10 @@ At this stage, the following components are operational:
     - ✅ CLI binary for interacting with Bitcoin and the alkanes metaprotocol
     - ✅ Read-only commands for alkanes functionality
     - ✅ Basic Runestone decoding command
+    - ✅ Enhanced Runestone decoder for all protostones
     - API compatibility with alkanes methods
     - Transaction execution functionality
     - Consistent behavior for key operations
-    - Enhanced Runestone decoder for all protostones
 
 ### Integration and Testing
 
@@ -147,18 +148,19 @@ At this stage, the following components are operational:
 - Define compatibility requirements
 
 ### Phase 1: Core Infrastructure (Current)
-- Complete project setup
-- Implement basic wallet functionality
-- Create simple block monitoring
-- Develop initial RPC client
-- Implement basic Runestone decoder
+- Complete project setup ✅
+- Implement basic wallet functionality ✅
+- Create simple block monitoring ✅
+- Develop initial RPC client ✅
+- Implement basic Runestone decoder ✅
+- Implement enhanced Runestone decoder ✅
 
 ### Phase 2: Basic Functionality
-- Implement transaction construction
-- Develop UTXO management
-- Create basic token minting
+- Implement transaction construction 🔄
+- Develop UTXO management 🔄
+- Create basic token minting 🔄
 - Implement simple persistence
-- Enhance Runestone decoder for all protostones
+- Complete Protostone decoding for all types
 
 ### Phase 3: Advanced Features
 - Add output consolidation
@@ -219,17 +221,32 @@ Key deliverables:
 - ✅ CLI binary for interacting with Bitcoin and the alkanes metaprotocol
 - ✅ Read-only commands for alkanes functionality
 - ✅ Basic Runestone decoding command
+- ✅ Enhanced Runestone decoder for all protostones
 - Transaction execution functionality
-- Enhanced Runestone decoder for all protostones
 - Consistent behavior with alkanes metaprotocol for various operations
 
-### Milestone 3: Enhanced Runestone Decoder
+### Milestone 3: Transaction Construction and Execution
 
 Target completion: TBD
 
 Key deliverables:
 - ✅ Basic Runestone extraction from transactions
 - ✅ Protocol tag and message parsing
-- Complete Protostone decoding for all types
-- Comprehensive cellpack structure interpretation
-- Support for various alkanes operations
+- UTXO selection using `spendablesbyaddress`
+- Output consolidation mechanism
+- Transaction signing and verification
+- Fee estimation and management
+- Transaction execution functionality
+
+### Milestone 4: Full Integration and Testing
+
+Target completion: TBD
+
+Key deliverables:
+- Component integration
+- Event handling system
+- Unified error handling
+- Comprehensive logging
+- Unit tests for all modules
+- Integration tests
+- End-to-end testing

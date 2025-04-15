@@ -128,7 +128,7 @@ impl Runestone {
     }
     
     /// Encode the Runestone as a Bitcoin script
-    pub fn encipher(&self) -> ScriptBuf {
+    pub fn encipher(&self) -> bdk::bitcoin::ScriptBuf {
         let mut payload = Vec::new();
         
         // Encode protocol tag and message
@@ -139,17 +139,37 @@ impl Runestone {
             }
         }
         
-        // Create script with OP_RETURN and magic number
-        let mut builder = Builder::new()
-            .push_opcode(opcodes::all::OP_RETURN)
-            .push_opcode(Runestone::MAGIC_NUMBER);
+        // Create a script manually with OP_RETURN, magic number, and payload
+        let mut script_bytes = Vec::new();
         
-        // Add payload in chunks to avoid exceeding max script element size
+        // Add OP_RETURN
+        script_bytes.push(0x6a); // OP_RETURN opcode
+        
+        // Add magic number (OP_PUSHNUM_13)
+        script_bytes.push(0x5d); // OP_PUSHNUM_13 opcode
+        
+        // Add payload in chunks
         for chunk in payload.chunks(MAX_SCRIPT_ELEMENT_SIZE) {
-            builder = builder.push_slice(chunk);
+            if chunk.len() <= 75 {
+                // Direct push for small chunks
+                script_bytes.push(chunk.len() as u8);
+                script_bytes.extend_from_slice(chunk);
+            } else if chunk.len() <= 255 {
+                // OP_PUSHDATA1 for medium chunks
+                script_bytes.push(0x4c); // OP_PUSHDATA1
+                script_bytes.push(chunk.len() as u8);
+                script_bytes.extend_from_slice(chunk);
+            } else {
+                // OP_PUSHDATA2 for larger chunks
+                script_bytes.push(0x4d); // OP_PUSHDATA2
+                script_bytes.push((chunk.len() & 0xff) as u8);
+                script_bytes.push((chunk.len() >> 8) as u8);
+                script_bytes.extend_from_slice(chunk);
+            }
         }
         
-        builder.into_script()
+        // Create a ScriptBuf from the bytes
+        bdk::bitcoin::ScriptBuf::from_bytes(script_bytes)
     }
     
     /// Extract a Runestone from a transaction if present
@@ -174,7 +194,7 @@ impl Runestone {
             for result in instructions {
                 match result {
                     Ok(Instruction::PushBytes(push)) => {
-                        payload.extend_from_slice(push);
+                        payload.extend_from_slice(push.as_bytes());
                     }
                     Ok(Instruction::Op(_)) => {
                         // Invalid opcode in Runestone payload

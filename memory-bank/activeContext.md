@@ -22,23 +22,23 @@ We have created a comprehensive reference document (`oyl-sdk-alkanes-reference.m
    - Wallet state persistence 🔄
 
 3. **Block Monitoring** 🔄
-   - Bitcoin RPC integration for `getblockcount`
-   - Metashrew RPC integration for `metashrew_height`
-   - Block height verification (Metashrew height = Bitcoin height + 1)
-   - Rate limiting implementation
+   - Bitcoin RPC integration for `getblockcount` ✅
+   - Metashrew RPC integration for `metashrew_height` ✅
+   - Block height verification (Metashrew height = Bitcoin height + 1) ✅
+   - Rate limiting implementation 🔄
 
 4. **Transaction Construction** 🔄
-   - Runestone with Protostone creation
-   - Protocol-specific message encoding
-   - Output consolidation logic
-   - UTXO selection using `spendablesbyaddress` via protobuf
-   - Compatibility with alkanes metaprotocol functionality
+   - Runestone with Protostone creation ✅
+   - Protocol-specific message encoding ✅
+   - Output consolidation logic 🔄
+   - UTXO selection using `spendablesbyaddress` via protobuf 🔄
+   - Compatibility with alkanes metaprotocol functionality 🔄
 
 5. **Alkanes Metaprotocol Integration** 🔄
-   - Runestone decoding for all protostones (not just DIESEL)
-   - Metashrew view function rendering via RPC
-   - Protostone parsing and interpretation
-   - Support for various alkanes operations
+   - Runestone decoding for all protostones (not just DIESEL) ✅
+   - Metashrew view function rendering via RPC ✅
+   - Protostone parsing and interpretation 🔄
+   - Support for various alkanes operations 🔄
 
 ## Recent Changes
 
@@ -74,6 +74,7 @@ The following tasks are prioritized for immediate implementation:
 
 2. **Block Monitor Implementation**
    - [x] Create block polling mechanism structure
+   - [x] Implement block height verification
    - [ ] Complete rate limiting implementation
    - [ ] Finalize confirmation tracking
    - [ ] Implement comprehensive error handling and recovery
@@ -89,13 +90,15 @@ The following tasks are prioritized for immediate implementation:
 4. **RPC Client Implementation**
    - [x] Create Sandshrew RPC client structure
    - [x] Implement metashrew_view RPC calls
-   - [ ] Complete implementation of required API methods
+   - [x] Implement basic API methods
+   - [ ] Complete implementation of all required API methods
    - [ ] Finalize error handling and retries
    - [ ] Complete response parsing and validation
 
 5. **Runestone/Protostone Decoding**
    - [x] Basic Runestone extraction from transactions
    - [x] Protocol tag and message parsing
+   - [x] Enhanced Runestone decoder for all protostones
    - [ ] Complete Protostone decoding for all types
    - [ ] Implement cellpack structure interpretation
    - [ ] Support for various alkanes operations

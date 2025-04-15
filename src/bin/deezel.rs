@@ -5,7 +5,9 @@
 
 use anyhow::{anyhow, Context, Result};
 use clap::{Parser, Subcommand};
+#[allow(unused_imports)]
 use log::{debug, error, info};
+#[allow(unused_imports)]
 use serde_json::{json, Value};
 use std::str::FromStr;
 use std::sync::Arc;
@@ -185,8 +187,17 @@ fn parse_simulation_params(params: &str) -> Result<(String, String, Vec<String>)
 /// Analyze a transaction for Runestone data
 fn analyze_runestone_tx(tx: &Transaction) {
     // Use the enhanced format_runestone function
-    let formatted = format_runestone(tx);
-    println!("{}", formatted);
+    match format_runestone(tx) {
+        Ok(protostones) => {
+            println!("Found {} protostones:", protostones.len());
+            for (i, protostone) in protostones.iter().enumerate() {
+                println!("Protostone {}: {:?}", i+1, protostone);
+            }
+        },
+        Err(e) => {
+            println!("Error decoding runestone: {}", e);
+        }
+    }
 }
 
 /// Decode a transaction from hex

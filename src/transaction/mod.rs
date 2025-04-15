@@ -7,7 +7,7 @@
 //! - Transaction signing and verification
 
 use anyhow::{Context, Result};
-use bdk::bitcoin::{Address, Network, Script, Transaction, TxOut};
+use bdk::bitcoin::{Address, Network, ScriptBuf, Transaction, TxOut};
 use bdk::bitcoin::consensus::encode::serialize;
 use log::{debug, info};
 use std::sync::Arc;
@@ -79,9 +79,9 @@ impl TransactionConstructor {
         
         // Get a new address for the dust output
         let dust_address = self.wallet_manager.get_address().await?;
-        let dust_script = Address::from_str(&dust_address)
-            .context("Failed to parse dust address")?
-            .script_pubkey();
+        let address = Address::from_str(&dust_address)
+            .context("Failed to parse dust address")?;
+        let dust_script = address.assume_checked().script_pubkey();
         
         // Create Runestone with Protostone for DIESEL token minting
         let runestone = Runestone::new_diesel();
@@ -106,7 +106,7 @@ impl TransactionConstructor {
         // - OP_RETURN output with Runestone
         let tx = Transaction {
             version: 2,
-            lock_time: bdk::bitcoin::PackedLockTime(0),
+            lock_time: bdk::bitcoin::absolute::LockTime::ZERO,
             input: vec![],
             output: vec![
                 // Dust output
@@ -174,7 +174,7 @@ impl TransactionConstructor {
     }
     
     /// Create a Runestone with Protostone
-    fn create_runestone(&self) -> Result<Script> {
+    fn create_runestone(&self) -> Result<bdk::bitcoin::ScriptBuf> {
         // TODO: Implement actual Runestone creation
         // This is a placeholder implementation
         
@@ -184,7 +184,7 @@ impl TransactionConstructor {
         // - Include message cellpack [2, 0, 77]
         
         // For now, return a placeholder script
-        Ok(Script::new())
+        Ok(bdk::bitcoin::ScriptBuf::new())
     }
 }
 
