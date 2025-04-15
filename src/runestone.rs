@@ -27,6 +27,8 @@ pub mod tag {
 
 /// Varint encoding/decoding utilities
 pub mod varint {
+    use anyhow::{anyhow, Result};
+
     /// Encode a u128 as a variable-length integer
     pub fn encode(mut value: u128) -> Vec<u8> {
         let mut result = Vec::new();
@@ -52,6 +54,50 @@ pub mod varint {
     /// Encode a u128 to a vector
     pub fn encode_to_vec(value: u128, vec: &mut Vec<u8>) {
         vec.extend(encode(value));
+    }
+    
+    /// Decode a variable-length integer from bytes
+    pub fn decode(bytes: &[u8]) -> Result<(u128, usize)> {
+        let mut result: u128 = 0;
+        let mut shift = 0;
+        let mut i = 0;
+        
+        loop {
+            if i >= bytes.len() {
+                return Err(anyhow!("Truncated varint"));
+            }
+            
+            let byte = bytes[i];
+            i += 1;
+            
+            result |= u128::from(byte & 0x7f) << shift;
+            
+            if byte & 0x80 == 0 {
+                break;
+            }
+            
+            shift += 7;
+            
+            if shift > 127 {
+                return Err(anyhow!("Varint too large"));
+            }
+        }
+        
+        Ok((result, i))
+    }
+    
+    /// Decode all integers from a payload
+    pub fn decode_all(payload: &[u8]) -> Result<Vec<u128>> {
+        let mut integers = Vec::new();
+        let mut i = 0;
+        
+        while i < payload.len() {
+            let (integer, length) = decode(&payload[i..])?;
+            integers.push(integer);
+            i += length;
+        }
+        
+        Ok(integers)
     }
 }
 
@@ -82,7 +128,7 @@ impl Runestone {
     }
     
     /// Encode the Runestone as a Bitcoin script
-    pub fn encipher(&self) -> ScriptBuf {
+    pub fn encipher(&self) -> bdk::bitcoin::ScriptBuf {
         let mut payload = Vec::new();
         
         // Encode protocol tag and message
@@ -93,17 +139,37 @@ impl Runestone {
             }
         }
         
-        // Create script with OP_RETURN and magic number
-        let mut builder = Builder::new()
-            .push_opcode(opcodes::all::OP_RETURN)
-            .push_opcode(Runestone::MAGIC_NUMBER);
+        // Create a script manually with OP_RETURN, magic number, and payload
+        let mut script_bytes = Vec::new();
         
-        // Add payload in chunks to avoid exceeding max script element size
+        // Add OP_RETURN
+        script_bytes.push(0x6a); // OP_RETURN opcode
+        
+        // Add magic number (OP_PUSHNUM_13)
+        script_bytes.push(0x5d); // OP_PUSHNUM_13 opcode
+        
+        // Add payload in chunks
         for chunk in payload.chunks(MAX_SCRIPT_ELEMENT_SIZE) {
-            builder = builder.push_slice(chunk);
+            if chunk.len() <= 75 {
+                // Direct push for small chunks
+                script_bytes.push(chunk.len() as u8);
+                script_bytes.extend_from_slice(chunk);
+            } else if chunk.len() <= 255 {
+                // OP_PUSHDATA1 for medium chunks
+                script_bytes.push(0x4c); // OP_PUSHDATA1
+                script_bytes.push(chunk.len() as u8);
+                script_bytes.extend_from_slice(chunk);
+            } else {
+                // OP_PUSHDATA2 for larger chunks
+                script_bytes.push(0x4d); // OP_PUSHDATA2
+                script_bytes.push((chunk.len() & 0xff) as u8);
+                script_bytes.push((chunk.len() >> 8) as u8);
+                script_bytes.extend_from_slice(chunk);
+            }
         }
         
-        builder.into_script()
+        // Create a ScriptBuf from the bytes
+        bdk::bitcoin::ScriptBuf::from_bytes(script_bytes)
     }
     
     /// Extract a Runestone from a transaction if present
@@ -122,11 +188,86 @@ impl Runestone {
                 continue;
             }
             
-            // Found a Runestone
-            return Some(Self::default());
+            // Construct the payload by concatenating remaining data pushes
+            let mut payload = Vec::new();
+            
+            for result in instructions {
+                match result {
+                    Ok(Instruction::PushBytes(push)) => {
+                        payload.extend_from_slice(push.as_bytes());
+                    }
+                    Ok(Instruction::Op(_)) => {
+                        // Invalid opcode in Runestone payload
+                        return None;
+                    }
+                    Err(_) => {
+                        // Invalid script in Runestone payload
+                        return None;
+                    }
+                }
+            }
+            
+            // Decode the integers from the payload
+            let integers = match varint::decode_all(&payload) {
+                Ok(ints) => ints,
+                Err(_) => return None,
+            };
+            
+            // Parse the Runestone data
+            let mut protocol_data = Vec::new();
+            let mut i = 0;
+            
+            while i < integers.len() {
+                let tag = integers[i];
+                i += 1;
+                
+                // Tag 13 is the protocol tag
+                if tag == tag::PROTOCOL && i < integers.len() {
+                    protocol_data.push(integers[i]);
+                    i += 1;
+                } else {
+                    // Skip other tags and their values
+                    if i < integers.len() {
+                        i += 1;
+                    }
+                }
+            }
+            
+            if !protocol_data.is_empty() {
+                return Some(Self {
+                    protocol: Some(protocol_data),
+                });
+            }
         }
         
         None
+    }
+    
+    /// Get the protocol tag (first element in protocol)
+    pub fn protocol_tag(&self) -> Option<u128> {
+        self.protocol.as_ref().and_then(|p| p.first().copied())
+    }
+    
+    /// Get the message bytes (all elements after the first in protocol)
+    pub fn message_bytes(&self) -> Option<Vec<u8>> {
+        self.protocol.as_ref().map(|p| {
+            p.iter()
+                .skip(1)
+                .map(|&n| n as u8)
+                .collect()
+        })
+    }
+    
+    /// Check if this is a DIESEL token minting Runestone
+    pub fn is_diesel(&self) -> bool {
+        if let Some(tag) = self.protocol_tag() {
+            if tag == 1 {
+                if let Some(message) = self.message_bytes() {
+                    return message == [2, 0, 77];
+                }
+            }
+        }
+        false
     }
 }
 
