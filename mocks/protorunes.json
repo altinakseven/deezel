@@ -1,0 +1,18 @@
+{
+  "jsonrpc": "2.0",
+  "result": [
+    {
+      "id": 1010,
+      "name": "Test Alkane 1010",
+      "balance": "150000000",
+      "last_seen": "f4184fc596403b9d638783cf57adfe4c75c605f6356fbc91338530e9831e9e16:0"
+    },
+    {
+      "id": 1011,
+      "name": "Test Alkane 1011",
+      "balance": "750000000",
+      "last_seen": "a1075db55d416d3ca199f55b6084e2115b9345e16c5cf302fc80e9d5fbf5d48d:1"
+    }
+  ],
+  "id": 1
+}

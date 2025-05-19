@@ -1,0 +1,16 @@
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "success": true,
+    "runetype": "DIESEL",
+    "operations": [
+      {
+        "type": "mint",
+        "id": 1,
+        "output": 0,
+        "amount": "1000000000"
+      }
+    ]
+  },
+  "id": 1
+}

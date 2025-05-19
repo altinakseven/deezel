@@ -14,10 +14,11 @@ The project is in the **initial development phase**. We have established the pro
 | Transaction Constructor | In Progress | 40% |
 | RPC Client | In Progress | 70% |
 | Runestone/Protostone Decoder | In Progress | 60% |
+| Runestone Input Implementation | In Progress | 70% |
 | Integration | In Progress | 30% |
 | Testing | In Progress | 20% |
 | Documentation | In Progress | 80% |
-| Alkanes Metaprotocol Compatibility | In Progress | 60% |
+| Alkanes Metaprotocol Compatibility | In Progress | 70% |
 
 ## What Works
 
@@ -60,6 +61,7 @@ At this stage, the following components are operational:
    - `deezel alkanes trace <txid:vout>`
    - `deezel alkanes simulate <block:tx:input1:input2...>`
    - `deezel alkanes meta <block:tx>`
+   - `deezel alkanes execute [--execute <namespace,contract_id,opcode>] [--input <input>] [--validate]`
    - `deezel runestone <txid_or_hex>`
    - `deezel walletinfo`
 
@@ -115,9 +117,25 @@ At this stage, the following components are operational:
     - ✅ Read-only commands for alkanes functionality
     - ✅ Basic Runestone decoding command
     - ✅ Enhanced Runestone decoder for all protostones
+    - ✅ Execute functionality with namespace,contract_id,opcode format
+    - ✅ Input functionality for complex token operations and authentication contexts
+    - ✅ Alkane validation against user holdings
     - API compatibility with alkanes methods
     - Transaction execution functionality
     - Consistent behavior for key operations
+
+7. **Runestone Execute and Input Implementation**
+    - ✅ ExecuteParams and ExecuteContext structures
+    - ✅ Execute parameter parsing in namespace,contract_id,opcode format
+    - ✅ Input structure for token operations
+    - ✅ Runestone with execute parameters and optional inputs
+    - ✅ Input parsing from input strings
+    - ✅ Input validation against user's alkane holdings
+    - ✅ CLI command with execute and input parameters
+    - ✅ Backward compatibility for DIESEL operations
+    - Multi-output token transfers
+    - Output targeting for tokens
+    - Full transaction construction with multiple outputs
 
 ### Integration and Testing
 
@@ -232,8 +250,13 @@ Target completion: TBD
 Key deliverables:
 - ✅ Basic Runestone extraction from transactions
 - ✅ Protocol tag and message parsing
+- ✅ Execute support with namespace,contract_id,opcode format
+- ✅ Input support for complex token operations and authentication contexts
+- ✅ Combined execute and input functionality for vault deposits
+- ✅ Input validation against user holdings
 - UTXO selection using `spendablesbyaddress`
 - Output consolidation mechanism
+- Multi-output token transfers
 - Transaction signing and verification
 - Fee estimation and management
 - Transaction execution functionality

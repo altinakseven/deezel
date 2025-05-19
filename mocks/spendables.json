@@ -1,0 +1,16 @@
+{
+  "jsonrpc": "2.0",
+  "result": [
+    {
+      "outpoint": "f4184fc596403b9d638783cf57adfe4c75c605f6356fbc91338530e9831e9e16:0",
+      "value": 5000000,
+      "script_pubkey": "001442d829047570aaaef74fc57adfe4c75c605f63"
+    },
+    {
+      "outpoint": "a1075db55d416d3ca199f55b6084e2115b9345e16c5cf302fc80e9d5fbf5d48d:1",
+      "value": 10000000,
+      "script_pubkey": "001442d829047570aaaef74fc57adfe4c75c605f63"
+    }
+  ],
+  "id": 1
+}

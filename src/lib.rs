@@ -10,6 +10,7 @@ pub mod transaction;
 pub mod rpc;
 pub mod runestone;
 pub mod runestone_enhanced;
+pub mod runestone_input;
 
 // Re-export key types for convenience
 pub use wallet::WalletManager;
@@ -18,4 +19,5 @@ pub use transaction::TransactionConstructor;
 pub use rpc::RpcClient;
 pub use runestone::Runestone;
 pub use network::NetworkParams;
-pub use runestone_enhanced::{decode_runestone, format_runestone};
+pub use runestone_enhanced::{decode_runestone, format_runestone}; 
+pub use runestone_input::{Input, ExecuteParams, ExecuteContext};
