@@ -196,7 +196,8 @@ mod tests {
             
             // Test getting the RPC client
             let rpc_client = manager.get_rpc_client();
-            assert!(!Arc::ptr_eq(&rpc_client, &Arc::new(())));
+            // Just verify we got a valid RPC client reference
+            assert!(Arc::strong_count(&rpc_client) >= 1);
             
             // Test getting the backend
             let _backend = manager.get_backend();

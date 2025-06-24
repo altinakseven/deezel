@@ -38,6 +38,9 @@ env_logger = "0.10"
 # Utilities
 hex = "0.4"
 async-trait = "0.1"
-bitcoin = "0.32.5"
+bitcoin = "0.32.6"
 
 # Alkanes-rs crates
+alkanes-support = { git = "https://github.com/kungfuflex/alkanes-rs" }
+metashrew-support = { git = "https://github.com/sandshrewmetaprotocols/metashrew" }
+protobuf = "3.7"

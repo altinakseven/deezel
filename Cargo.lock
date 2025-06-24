@@ -27,6 +27,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "alkanes-support"
+version = "0.2.3"
+source = "git+https://github.com/kungfuflex/alkanes-rs#fb2bcb3041e7930f664792450146aa2dad5389a8"
+dependencies = [
+ "anyhow",
+ "bitcoin 0.32.6",
+ "flate2",
+ "hex",
+ "metashrew-support",
+ "protobuf 3.7.2",
+ "protobuf-codegen 3.7.2",
+ "protoc-bin-vendored",
+ "protoc-rust",
+ "protorune-support",
+ "serde",
+]
+
+[[package]]
 name = "android-tzdata"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -236,9 +254,9 @@ dependencies = [
 
 [[package]]
 name = "bitcoin"
-version = "0.32.5"
+version = "0.32.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce6bc65742dea50536e35ad42492b234c27904a27f0abdcbce605015cb4ea026"
+checksum = "ad8929a18b8e33ea6b3c09297b687baaa71fb1b97353243a3f1029fad5c59c5b"
 dependencies = [
  "base58ck",
  "bech32 0.11.0",
@@ -503,16 +521,19 @@ dependencies = [
 name = "deezel-cli"
 version = "0.1.0"
 dependencies = [
+ "alkanes-support",
  "anyhow",
  "async-trait",
  "bdk",
- "bitcoin 0.32.5",
+ "bitcoin 0.32.6",
  "clap",
  "env_logger",
  "esplora-client",
  "hex",
  "log",
+ "metashrew-support",
  "ordinals",
+ "protobuf 3.7.2",
  "protorune-support",
  "reqwest",
  "serde",
@@ -1216,12 +1237,12 @@ checksum = "78ca9ab1a0babb1e7d5695e3530886289c18cf2f87ec19a575a0abdce112e3a3"
 
 [[package]]
 name = "metashrew-support"
-version = "8.5.1"
-source = "git+https://github.com/sandshrewmetaprotocols/metashrew#6dc7e43b15755348e3b7938a54b9634fc94f3fb0"
+version = "9.0.0"
+source = "git+https://github.com/sandshrewmetaprotocols/metashrew#291ea4e7ce322633c91d0a1e02ad39d8c34725cf"
 dependencies = [
  "anyhow",
  "bech32 0.11.0",
- "bitcoin 0.32.5",
+ "bitcoin 0.32.6",
  "flate2",
  "hex",
  "protobuf 3.7.2",
@@ -1360,10 +1381,10 @@ dependencies = [
 
 [[package]]
 name = "ordinals"
-version = "0.2.0"
-source = "git+https://github.com/kungfuflex/alkanes-rs#6c21fcef0885be87e183319fc7caa9fd33d20f12"
+version = "0.2.3"
+source = "git+https://github.com/kungfuflex/alkanes-rs#fb2bcb3041e7930f664792450146aa2dad5389a8"
 dependencies = [
- "bitcoin 0.32.5",
+ "bitcoin 0.32.6",
  "derive_more",
  "serde",
  "serde_with",
@@ -1613,12 +1634,12 @@ dependencies = [
 
 [[package]]
 name = "protorune-support"
-version = "0.2.0"
-source = "git+https://github.com/kungfuflex/alkanes-rs#6c21fcef0885be87e183319fc7caa9fd33d20f12"
+version = "0.2.3"
+source = "git+https://github.com/kungfuflex/alkanes-rs#fb2bcb3041e7930f664792450146aa2dad5389a8"
 dependencies = [
  "anyhow",
  "bech32 0.11.0",
- "bitcoin 0.32.5",
+ "bitcoin 0.32.6",
  "hex",
  "metashrew-support",
  "ordinals",

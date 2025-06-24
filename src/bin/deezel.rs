@@ -82,6 +82,12 @@ enum Commands {
         #[clap(subcommand)]
         command: AlkanesCommands,
     },
+    /// View commands for querying blockchain data
+    View {
+        /// View subcommand
+        #[clap(subcommand)]
+        command: ViewCommands,
+    },
 }
 
 /// Metashrew subcommands
@@ -140,6 +146,132 @@ enum AlkanesCommands {
     Meta {
         /// Contract ID (block:tx)
         contract_id: String,
+    },
+}
+
+/// Block tag for specifying which block to query
+#[derive(Debug, Clone)]
+enum BlockTag {
+    Latest,
+    Pending,
+    Height(u64),
+}
+
+impl std::str::FromStr for BlockTag {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "latest" => Ok(BlockTag::Latest),
+            "pending" => Ok(BlockTag::Pending),
+            _ => {
+                let height = s.parse::<u64>()
+                    .context("Block tag must be 'latest', 'pending', or a block height number")?;
+                Ok(BlockTag::Height(height))
+            }
+        }
+    }
+}
+
+/// View subcommands for querying blockchain data
+#[derive(Subcommand, Debug)]
+enum ViewCommands {
+    /// Get bytecode for a smart contract
+    Getbytecode {
+        /// Contract ID (block:tx)
+        contract_id: String,
+        /// Block tag (latest, pending, or block height)
+        #[clap(long, default_value = "latest")]
+        block_tag: BlockTag,
+    },
+    /// Get block data
+    Getblock {
+        /// Block height
+        height: u64,
+        /// Block tag (latest, pending, or block height)
+        #[clap(long, default_value = "latest")]
+        block_tag: BlockTag,
+    },
+    /// Get protorunes by address
+    Protorunesbyaddress {
+        /// Bitcoin address
+        address: String,
+        /// Protocol tag
+        #[clap(long, default_value = "1")]
+        protocol_tag: u64,
+        /// Block tag (latest, pending, or block height)
+        #[clap(long, default_value = "latest")]
+        block_tag: BlockTag,
+    },
+    /// Get transaction by ID
+    Transactionbyid {
+        /// Transaction ID
+        txid: String,
+        /// Block tag (latest, pending, or block height)
+        #[clap(long, default_value = "latest")]
+        block_tag: BlockTag,
+    },
+    /// Get spendables by address
+    Spendablesbyaddress {
+        /// Bitcoin address
+        address: String,
+        /// Block tag (latest, pending, or block height)
+        #[clap(long, default_value = "latest")]
+        block_tag: BlockTag,
+    },
+    /// Get protorunes by height
+    Protorunesbyheight {
+        /// Block height
+        height: u64,
+        /// Protocol tag
+        #[clap(long, default_value = "1")]
+        protocol_tag: u64,
+    },
+    /// Get protorunes by outpoint
+    Protorunesbyoutpoint {
+        /// Outpoint (txid:vout)
+        outpoint: String,
+        /// Protocol tag
+        #[clap(long, default_value = "1")]
+        protocol_tag: u64,
+    },
+    /// Trace a transaction
+    Trace {
+        /// Outpoint (txid:vout)
+        outpoint: String,
+    },
+    /// Simulate a contract execution
+    Simulate {
+        /// Alkanes transfers (format: block:tx:amount,block:tx:amount,...)
+        #[clap(long)]
+        alkanes: Option<String>,
+        /// Transaction hex
+        #[clap(long)]
+        transaction: String,
+        /// Block height
+        #[clap(long)]
+        height: u64,
+        /// Block hex
+        #[clap(long)]
+        block: String,
+        /// Transaction index
+        #[clap(long)]
+        txindex: u32,
+        /// Inputs (comma-separated)
+        #[clap(long)]
+        inputs: String,
+        /// Output index
+        #[clap(long)]
+        vout: u32,
+        /// Pointer
+        #[clap(long)]
+        pointer: u32,
+        /// Refund pointer
+        #[clap(long, name = "refund-pointer")]
+        refund_pointer: u32,
+        /// Block tag (latest, pending, or block height)
+        #[clap(long, default_value = "latest")]
+        block_tag: BlockTag,
     },
 }
 
@@ -384,6 +516,86 @@ async fn main() -> Result<()> {
                 let result = rpc_client.get_contract_meta(&block, &tx).await?;
                 println!("{}", serde_json::to_string_pretty(&result)?);
             },
+        },
+        Commands::View { command } => {
+            // Convert BlockTag to string for RPC calls
+            let block_tag_to_string = |tag: &BlockTag| -> String {
+                match tag {
+                    BlockTag::Latest => "latest".to_string(),
+                    BlockTag::Pending => "pending".to_string(),
+                    BlockTag::Height(h) => h.to_string(),
+                }
+            };
+
+            match command {
+                ViewCommands::Getbytecode { contract_id, block_tag } => {
+                    let (block, tx) = parse_contract_id(&contract_id)?;
+                    let tag_str = block_tag_to_string(&block_tag);
+                    let bytecode = rpc_client.get_bytecode_with_tag(&block, &tx, &tag_str).await?;
+                    println!("{}", bytecode);
+                },
+                ViewCommands::Getblock { height, block_tag } => {
+                    let tag_str = block_tag_to_string(&block_tag);
+                    let result = rpc_client.get_block(height, &tag_str).await?;
+                    println!("{}", result);
+                },
+                ViewCommands::Protorunesbyaddress { address, protocol_tag, block_tag } => {
+                    let tag_str = block_tag_to_string(&block_tag);
+                    let result = rpc_client.get_protorunes_by_address_with_tags(&address, protocol_tag, &tag_str).await?;
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                },
+                ViewCommands::Transactionbyid { txid, block_tag } => {
+                    let tag_str = block_tag_to_string(&block_tag);
+                    let result = rpc_client.get_transaction_by_id(&txid, &tag_str).await?;
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                },
+                ViewCommands::Spendablesbyaddress { address, block_tag } => {
+                    let tag_str = block_tag_to_string(&block_tag);
+                    let result = rpc_client.get_spendables_by_address_with_tag(&address, &tag_str).await?;
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                },
+                ViewCommands::Protorunesbyheight { height, protocol_tag } => {
+                    let result = rpc_client.get_protorunes_by_height(height, protocol_tag).await?;
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                },
+                ViewCommands::Protorunesbyoutpoint { outpoint, protocol_tag } => {
+                    let (txid, vout) = parse_outpoint(&outpoint)?;
+                    let result = rpc_client.get_protorunes_by_outpoint_with_protocol(&txid, vout, protocol_tag).await?;
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                },
+                ViewCommands::Trace { outpoint } => {
+                    let (txid, vout) = parse_outpoint(&outpoint)?;
+                    let result = rpc_client.trace_outpoint(&txid, vout).await?;
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                },
+                ViewCommands::Simulate {
+                    alkanes,
+                    transaction,
+                    height,
+                    block,
+                    txindex,
+                    inputs,
+                    vout,
+                    pointer,
+                    refund_pointer,
+                    block_tag
+                } => {
+                    let tag_str = block_tag_to_string(&block_tag);
+                    let result = rpc_client.simulate_detailed(
+                        alkanes.as_deref(),
+                        &transaction,
+                        height,
+                        &block,
+                        txindex,
+                        &inputs,
+                        vout,
+                        pointer,
+                        refund_pointer,
+                        &tag_str
+                    ).await?;
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                },
+            }
         },
     }
 

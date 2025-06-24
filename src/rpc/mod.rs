@@ -12,6 +12,11 @@ use reqwest::{Client, header};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::time::Duration;
+use alkanes_support::proto::alkanes::{
+    BlockRequest, BlockResponse, BytecodeRequest, TraceBlockRequest, TraceBlockResponse,
+    AlkaneInventoryRequest, AlkaneInventoryResponse, AlkaneIdToOutpointRequest, AlkaneIdToOutpointResponse
+};
+use protobuf::Message;
 
 /// RPC client configuration
 #[derive(Clone, Debug)]
@@ -208,7 +213,19 @@ impl RpcClient {
     pub async fn trace_block(&self, height: u64) -> Result<Value> {
         debug!("Tracing block at height: {}", height);
         
-        let result = self._call("alkanes_traceblock", json!([height])).await?;
+        // Create and encode the TraceBlockRequest protobuf message
+        let mut trace_request = TraceBlockRequest::new();
+        trace_request.block = height;
+        
+        // Serialize to bytes and hex encode with 0x prefix
+        let encoded_bytes = trace_request.write_to_bytes()
+            .context("Failed to encode TraceBlockRequest")?;
+        let hex_input = format!("0x{}", hex::encode(encoded_bytes));
+        
+        let result = self._call(
+            "metashrew_view",
+            json!(["traceblock", hex_input, "latest"])
+        ).await?;
         
         debug!("Trace result for block at height: {}", height);
         Ok(result)
@@ -246,12 +263,38 @@ impl RpcClient {
     pub async fn get_bytecode(&self, block: &str, tx: &str) -> Result<String> {
         debug!("Getting bytecode for contract: {}:{}", block, tx);
         
+        // Create and encode the BytecodeRequest protobuf message
+        let mut bytecode_request = BytecodeRequest::new();
+        let mut alkane_id = alkanes_support::proto::alkanes::AlkaneId::new();
+        
+        // Parse block and tx as u128 values
+        let block_u128 = block.parse::<u128>()
+            .context("Invalid block number")?;
+        let tx_u128 = tx.parse::<u128>()
+            .context("Invalid tx number")?;
+        
+        // Convert to Uint128 protobuf format
+        let mut block_uint128 = alkanes_support::proto::alkanes::Uint128::new();
+        block_uint128.lo = (block_u128 & 0xFFFFFFFFFFFFFFFF) as u64;
+        block_uint128.hi = (block_u128 >> 64) as u64;
+        
+        let mut tx_uint128 = alkanes_support::proto::alkanes::Uint128::new();
+        tx_uint128.lo = (tx_u128 & 0xFFFFFFFFFFFFFFFF) as u64;
+        tx_uint128.hi = (tx_u128 >> 64) as u64;
+        
+        alkane_id.block = protobuf::MessageField::some(block_uint128);
+        alkane_id.tx = protobuf::MessageField::some(tx_uint128);
+        
+        bytecode_request.id = protobuf::MessageField::some(alkane_id);
+        
+        // Serialize to bytes and hex encode with 0x prefix
+        let encoded_bytes = bytecode_request.write_to_bytes()
+            .context("Failed to encode BytecodeRequest")?;
+        let hex_input = format!("0x{}", hex::encode(encoded_bytes));
+        
         let result = self._call(
             "metashrew_view",
-            json!([{
-                "method": "getbytecode",
-                "params": [block, tx]
-            }])
+            json!(["getbytecode", hex_input, "latest"])
         ).await?;
         
         let bytecode = result.as_str()
@@ -279,6 +322,252 @@ impl RpcClient {
         Ok(tx_hex)
     }
     
+    
+    /// Get block data by height
+    pub async fn get_block(&self, height: u64, block_tag: &str) -> Result<String> {
+        debug!("Getting block data for height: {} with block tag: {}", height, block_tag);
+        
+        // Create and encode the BlockRequest protobuf message
+        let mut block_request = BlockRequest::new();
+        block_request.height = height as u32;
+        
+        // Serialize to bytes and hex encode with 0x prefix
+        let encoded_bytes = block_request.write_to_bytes()
+            .context("Failed to encode BlockRequest")?;
+        let hex_input = format!("0x{}", hex::encode(encoded_bytes));
+
+        let result = self._call(
+            "metashrew_view",
+            json!(["getblock", hex_input, block_tag])
+        ).await?;
+        
+        let result_hex = result.as_str()
+            .context("Invalid response format - expected hex string")?;
+
+        // Decode the hex response (remove 0x prefix if present)
+        let hex_data = if result_hex.starts_with("0x") {
+            &result_hex[2..]
+        } else {
+            result_hex
+        };
+
+        let response_bytes = hex::decode(hex_data)
+            .context("Failed to decode hex response")?;
+        let block_response = BlockResponse::parse_from_bytes(&response_bytes)
+            .context("Failed to parse BlockResponse")?;
+        
+        debug!("Got block data for height: {}", height);
+        // Return the block data as hex string
+        Ok(hex::encode(&block_response.block))
+    }
+    
+    /// Get transaction by ID
+    pub async fn get_transaction_by_id(&self, txid: &str, block_tag: &str) -> Result<Value> {
+        debug!("Getting transaction by ID: {} with block tag: {}", txid, block_tag);
+        
+        let result = self._call(
+            "metashrew_view",
+            json!([{
+                "method": "transactionbyid",
+                "params": [txid]
+            }])
+        ).await?;
+        
+        debug!("Got transaction by ID: {}", txid);
+        Ok(result)
+    }
+    
+    /// Get protorunes by height
+    pub async fn get_protorunes_by_height(&self, height: u64, protocol_tag: u64) -> Result<Value> {
+        debug!("Getting protorunes for height: {} with protocol tag: {}", height, protocol_tag);
+        
+        let result = self._call(
+            "metashrew_view",
+            json!([{
+                "method": "protorunesbyheight",
+                "params": [height, protocol_tag]
+            }])
+        ).await?;
+        
+        debug!("Got protorunes for height: {}", height);
+        Ok(result)
+    }
+    
+    /// Get protorunes by address with protocol tag and block tag
+    pub async fn get_protorunes_by_address_with_tags(&self, address: &str, protocol_tag: u64, block_tag: &str) -> Result<Value> {
+        debug!("Getting protorunes for address: {} with protocol tag: {} and block tag: {}", address, protocol_tag, block_tag);
+        
+        let result = self._call(
+            "metashrew_view",
+            json!([{
+                "method": "protorunesbyaddress",
+                "params": [address, protocol_tag]
+            }])
+        ).await?;
+        
+        debug!("Got protorunes for address: {}", address);
+        Ok(result)
+    }
+    
+    /// Get protorunes by outpoint with protocol tag
+    pub async fn get_protorunes_by_outpoint_with_protocol(&self, txid: &str, vout: u32, protocol_tag: u64) -> Result<Value> {
+        debug!("Getting protorunes for outpoint: {}:{} with protocol tag: {}", txid, vout, protocol_tag);
+        
+        let result = self._call(
+            "metashrew_view",
+            json!([{
+                "method": "protorunesbyoutpoint",
+                "params": [txid, vout, protocol_tag]
+            }])
+        ).await?;
+        
+        debug!("Got protorunes for outpoint: {}:{}", txid, vout);
+        Ok(result)
+    }
+    
+    /// Get spendables by address with block tag
+    pub async fn get_spendables_by_address_with_tag(&self, address: &str, block_tag: &str) -> Result<Value> {
+        debug!("Getting spendables for address: {} with block tag: {}", address, block_tag);
+        
+        let result = self._call(
+            "metashrew_view",
+            json!([{
+                "method": "spendablesbyaddress",
+                "params": [address]
+            }])
+        ).await?;
+        
+        debug!("Got spendables for address: {}", address);
+        Ok(result)
+    }
+    
+    /// Get bytecode with block tag
+    pub async fn get_bytecode_with_tag(&self, block: &str, tx: &str, block_tag: &str) -> Result<String> {
+        debug!("Getting bytecode for contract: {}:{} with block tag: {}", block, tx, block_tag);
+        
+        // Create and encode the BytecodeRequest protobuf message
+        let mut bytecode_request = BytecodeRequest::new();
+        let mut alkane_id = alkanes_support::proto::alkanes::AlkaneId::new();
+        
+        // Parse block and tx as u128 values
+        let block_u128 = block.parse::<u128>()
+            .context("Invalid block number")?;
+        let tx_u128 = tx.parse::<u128>()
+            .context("Invalid tx number")?;
+        
+        // Convert to Uint128 protobuf format
+        let mut block_uint128 = alkanes_support::proto::alkanes::Uint128::new();
+        block_uint128.lo = (block_u128 & 0xFFFFFFFFFFFFFFFF) as u64;
+        block_uint128.hi = (block_u128 >> 64) as u64;
+        
+        let mut tx_uint128 = alkanes_support::proto::alkanes::Uint128::new();
+        tx_uint128.lo = (tx_u128 & 0xFFFFFFFFFFFFFFFF) as u64;
+        tx_uint128.hi = (tx_u128 >> 64) as u64;
+        
+        alkane_id.block = protobuf::MessageField::some(block_uint128);
+        alkane_id.tx = protobuf::MessageField::some(tx_uint128);
+        
+        bytecode_request.id = protobuf::MessageField::some(alkane_id);
+        
+        // Serialize to bytes and hex encode with 0x prefix
+        let encoded_bytes = bytecode_request.write_to_bytes()
+            .context("Failed to encode BytecodeRequest")?;
+        let hex_input = format!("0x{}", hex::encode(encoded_bytes));
+        
+        let result = self._call(
+            "metashrew_view",
+            json!(["getbytecode", hex_input, block_tag])
+        ).await?;
+        
+        let bytecode = result.as_str()
+            .context("Invalid bytecode response")?
+            .to_string();
+        
+        debug!("Got bytecode for contract: {}:{}", block, tx);
+        Ok(bytecode)
+    }
+    
+    /// Trace transaction with outpoint
+    pub async fn trace_outpoint(&self, txid: &str, vout: u32) -> Result<Value> {
+        debug!("Tracing outpoint: {}:{}", txid, vout);
+        
+        let result = self._call(
+            "metashrew_view",
+            json!([{
+                "method": "trace",
+                "params": [txid, vout]
+            }])
+        ).await?;
+        
+        debug!("Trace result for outpoint: {}:{}", txid, vout);
+        Ok(result)
+    }
+    
+    /// Simulate contract execution with detailed parameters
+    pub async fn simulate_detailed(&self,
+        alkanes: Option<&str>,
+        transaction: &str,
+        height: u64,
+        block: &str,
+        txindex: u32,
+        inputs: &str,
+        vout: u32,
+        pointer: u32,
+        refund_pointer: u32,
+        block_tag: &str
+    ) -> Result<Value> {
+        debug!("Simulating contract execution with detailed parameters");
+        
+        // Parse alkanes if provided
+        let alkanes_parsed = if let Some(alkanes_str) = alkanes {
+            // Parse alkanes format: block:tx:amount,block:tx:amount,...
+            let alkanes_vec: Result<Vec<Value>> = alkanes_str
+                .split(',')
+                .map(|alkane| {
+                    let parts: Vec<&str> = alkane.split(':').collect();
+                    if parts.len() != 3 {
+                        return Err(anyhow!("Invalid alkane format. Expected 'block:tx:amount'"));
+                    }
+                    Ok(json!({
+                        "block": parts[0].parse::<u64>()?,
+                        "tx": parts[1].parse::<u64>()?,
+                        "amount": parts[2].parse::<u64>()?
+                    }))
+                })
+                .collect();
+            alkanes_vec?
+        } else {
+            vec![]
+        };
+        
+        // Parse inputs
+        let inputs_vec: Result<Vec<u64>> = inputs
+            .split(',')
+            .map(|input| input.trim().parse::<u64>().context("Invalid input number"))
+            .collect();
+        let inputs_parsed = inputs_vec?;
+        
+        let result = self._call(
+            "metashrew_view",
+            json!([{
+                "method": "simulate",
+                "params": {
+                    "alkanes": alkanes_parsed,
+                    "transaction": transaction,
+                    "height": height,
+                    "block": block,
+                    "txindex": txindex,
+                    "inputs": inputs_parsed,
+                    "vout": vout,
+                    "pointer": pointer,
+                    "refund_pointer": refund_pointer
+                }
+            }])
+        ).await?;
+        
+        debug!("Simulation completed");
+        Ok(result)
+    }
     
     /// Get the next request ID
     fn next_request_id(&self) -> u64 {
