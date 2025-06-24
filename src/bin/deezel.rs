@@ -94,6 +94,20 @@ enum Commands {
         #[clap(subcommand)]
         command: ViewCommands,
     },
+    /// Inspect an alkane with advanced analysis capabilities
+    InspectAlkane {
+        /// Alkane ID in format block:tx (e.g., 2:0)
+        alkane_id: String,
+        /// Output WASM disassembly (WAT format)
+        #[clap(long)]
+        disasm: bool,
+        /// Perform fuzzing analysis with metashrew-runtime
+        #[clap(long)]
+        fuzz: bool,
+        /// Extract metadata directly from WASM binary
+        #[clap(long)]
+        meta: bool,
+    },
 }
 
 /// Metashrew subcommands
@@ -1567,6 +1581,28 @@ async fn main() -> Result<()> {
                     ).await?;
                     println!("{}", serde_json::to_string_pretty(&result)?);
                 },
+            }
+        },
+        Commands::InspectAlkane { alkane_id, disasm, fuzz, meta } => {
+            info!("Inspecting alkane: {}", alkane_id);
+            
+            // Parse alkane ID
+            let parsed_alkane_id = deezel_cli::alkanes::parse_alkane_id(&alkane_id)?;
+            
+            // Initialize RPC client for inspector
+            let inspector = deezel_cli::alkanes::inspector::AlkaneInspector::new(
+                Arc::new(rpc_client)
+            ).context("Failed to initialize alkane inspector")?;
+            
+            // Perform inspection with requested analysis modes
+            match inspector.inspect_alkane(&parsed_alkane_id, disasm, fuzz, meta).await {
+                Ok(_) => {
+                    println!("Alkane inspection completed successfully");
+                },
+                Err(e) => {
+                    println!("Alkane inspection failed: {}", e);
+                    std::process::exit(1);
+                }
             }
         },
     }

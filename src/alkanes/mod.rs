@@ -7,6 +7,7 @@ pub mod contract;
 pub mod token;
 pub mod amm;
 pub mod simulation;
+pub mod inspector;
 pub mod types;
 
 use anyhow::{Context, Result};
