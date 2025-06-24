@@ -13,8 +13,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::time::Duration;
 use alkanes_support::proto::alkanes::{
-    BlockRequest, BlockResponse, BytecodeRequest, TraceBlockRequest, TraceBlockResponse,
-    AlkaneInventoryRequest, AlkaneInventoryResponse, AlkaneIdToOutpointRequest, AlkaneIdToOutpointResponse
+    BlockRequest, BlockResponse, BytecodeRequest, TraceBlockRequest
+};
+use protorune_support::proto::protorune::{
+    WalletRequest, OutpointResponse
 };
 use protobuf::Message;
 
@@ -106,6 +108,45 @@ impl RpcClient {
         
         let response = self.client
             .post(url)
+            .header(header::CONTENT_TYPE, "application/json")
+            .json(&request)
+            .send()
+            .await
+            .context("Failed to send RPC request")?;
+        
+        let status = response.status();
+        if !status.is_success() {
+            return Err(anyhow!("RPC request failed with status: {}", status));
+        }
+        
+        let response_body = response
+            .json::<RpcResponse>()
+            .await
+            .context("Failed to parse RPC response")?;
+        
+        match response_body.result {
+            Some(result) => Ok(result),
+            None => {
+                let error = response_body.error.unwrap_or(RpcError {
+                    code: -1,
+                    message: "Unknown error".to_string(),
+                });
+                Err(anyhow!("RPC error: {} (code: {})", error.message, error.code))
+            }
+        }
+    }
+    
+    /// Helper method to call RPC with protobuf encoding
+    async fn call_rpc(&self, method: &str, params: Vec<Value>) -> Result<Value> {
+        let request = RpcRequest {
+            jsonrpc: "2.0".to_string(),
+            method: method.to_string(),
+            params: json!(params),
+            id: self.next_request_id(),
+        };
+        
+        let response = self.client
+            .post(&self.config.metashrew_rpc_url)
             .header(header::CONTENT_TYPE, "application/json")
             .json(&request)
             .send()
@@ -365,13 +406,14 @@ impl RpcClient {
     pub async fn get_transaction_by_id(&self, txid: &str, block_tag: &str) -> Result<Value> {
         debug!("Getting transaction by ID: {} with block tag: {}", txid, block_tag);
         
-        let result = self._call(
-            "metashrew_view",
-            json!([{
-                "method": "transactionbyid",
-                "params": [txid]
-            }])
-        ).await?;
+        // For now, use a simplified approach until we have the correct protobuf types
+        let hex_input = format!("0x{}", hex::encode(txid.as_bytes()));
+        
+        let result = self.call_rpc("metashrew_view", vec![
+            json!("transactionbyid"),
+            json!(hex_input),
+            json!(block_tag)
+        ]).await?;
         
         debug!("Got transaction by ID: {}", txid);
         Ok(result)
@@ -397,13 +439,19 @@ impl RpcClient {
     pub async fn get_protorunes_by_address_with_tags(&self, address: &str, protocol_tag: u64, block_tag: &str) -> Result<Value> {
         debug!("Getting protorunes for address: {} with protocol tag: {} and block tag: {}", address, protocol_tag, block_tag);
         
-        let result = self._call(
-            "metashrew_view",
-            json!([{
-                "method": "protorunesbyaddress",
-                "params": [address, protocol_tag]
-            }])
-        ).await?;
+        // For now, use a simplified approach with basic hex encoding
+        let address_bytes = address.as_bytes();
+        let protocol_bytes = protocol_tag.to_le_bytes();
+        let mut combined = Vec::new();
+        combined.extend_from_slice(address_bytes);
+        combined.extend_from_slice(&protocol_bytes);
+        let hex_input = format!("0x{}", hex::encode(combined));
+        
+        let result = self.call_rpc("metashrew_view", vec![
+            json!("protorunesbyaddress"),
+            json!(hex_input),
+            json!(block_tag)
+        ]).await?;
         
         debug!("Got protorunes for address: {}", address);
         Ok(result)
@@ -413,13 +461,21 @@ impl RpcClient {
     pub async fn get_protorunes_by_outpoint_with_protocol(&self, txid: &str, vout: u32, protocol_tag: u64) -> Result<Value> {
         debug!("Getting protorunes for outpoint: {}:{} with protocol tag: {}", txid, vout, protocol_tag);
         
-        let result = self._call(
-            "metashrew_view",
-            json!([{
-                "method": "protorunesbyoutpoint",
-                "params": [txid, vout, protocol_tag]
-            }])
-        ).await?;
+        // For now, use a simplified approach with basic hex encoding
+        let txid_bytes = hex::decode(txid).context("Invalid txid hex")?;
+        let vout_bytes = vout.to_le_bytes();
+        let protocol_bytes = protocol_tag.to_le_bytes();
+        let mut combined = Vec::new();
+        combined.extend_from_slice(&txid_bytes);
+        combined.extend_from_slice(&vout_bytes);
+        combined.extend_from_slice(&protocol_bytes);
+        let hex_input = format!("0x{}", hex::encode(combined));
+        
+        let result = self.call_rpc("metashrew_view", vec![
+            json!("protorunesbyoutpoint"),
+            json!(hex_input),
+            json!("latest")
+        ]).await?;
         
         debug!("Got protorunes for outpoint: {}:{}", txid, vout);
         Ok(result)
@@ -429,13 +485,15 @@ impl RpcClient {
     pub async fn get_spendables_by_address_with_tag(&self, address: &str, block_tag: &str) -> Result<Value> {
         debug!("Getting spendables for address: {} with block tag: {}", address, block_tag);
         
-        let result = self._call(
-            "metashrew_view",
-            json!([{
-                "method": "spendablesbyaddress",
-                "params": [address]
-            }])
-        ).await?;
+        // For now, use a simplified approach with basic hex encoding
+        let address_bytes = address.as_bytes();
+        let hex_input = format!("0x{}", hex::encode(address_bytes));
+        
+        let result = self.call_rpc("metashrew_view", vec![
+            json!("spendablesbyaddress"),
+            json!(hex_input),
+            json!(block_tag)
+        ]).await?;
         
         debug!("Got spendables for address: {}", address);
         Ok(result)
@@ -491,13 +549,19 @@ impl RpcClient {
     pub async fn trace_outpoint(&self, txid: &str, vout: u32) -> Result<Value> {
         debug!("Tracing outpoint: {}:{}", txid, vout);
         
-        let result = self._call(
-            "metashrew_view",
-            json!([{
-                "method": "trace",
-                "params": [txid, vout]
-            }])
-        ).await?;
+        // For now, use a simplified approach with basic hex encoding
+        let txid_bytes = hex::decode(txid).context("Invalid txid hex")?;
+        let vout_bytes = vout.to_le_bytes();
+        let mut combined = Vec::new();
+        combined.extend_from_slice(&txid_bytes);
+        combined.extend_from_slice(&vout_bytes);
+        let hex_input = format!("0x{}", hex::encode(combined));
+        
+        let result = self.call_rpc("metashrew_view", vec![
+            json!("trace"),
+            json!(hex_input),
+            json!("latest")
+        ]).await?;
         
         debug!("Trace result for outpoint: {}:{}", txid, vout);
         Ok(result)
@@ -547,6 +611,7 @@ impl RpcClient {
             .collect();
         let inputs_parsed = inputs_vec?;
         
+        // For now, use the old format until we have the correct protobuf types
         let result = self._call(
             "metashrew_view",
             json!([{
