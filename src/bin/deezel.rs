@@ -69,7 +69,13 @@ enum Commands {
         #[clap(subcommand)]
         command: BitcoindCommands,
     },
-    /// Wallet information
+    /// Wallet commands
+    Wallet {
+        /// Wallet subcommand
+        #[clap(subcommand)]
+        command: WalletCommands,
+    },
+    /// Wallet information (legacy command)
     Walletinfo,
     /// Decode Runestone from transaction
     Runestone {
@@ -102,6 +108,116 @@ enum MetashrewCommands {
 enum BitcoindCommands {
     /// Get the current block count from Bitcoin Core
     Getblockcount,
+}
+
+/// Wallet subcommands
+#[derive(Subcommand, Debug)]
+enum WalletCommands {
+    /// Create a new wallet
+    Create {
+        /// Mnemonic phrase (if not provided, a new one will be generated)
+        #[clap(long)]
+        mnemonic: Option<String>,
+        /// Passphrase for the wallet
+        #[clap(long)]
+        passphrase: Option<String>,
+    },
+    /// Restore wallet from mnemonic
+    Restore {
+        /// Mnemonic phrase
+        mnemonic: String,
+        /// Passphrase for the wallet
+        #[clap(long)]
+        passphrase: Option<String>,
+    },
+    /// Show wallet information
+    Info,
+    /// Get wallet addresses
+    Addresses {
+        /// Number of addresses to generate
+        #[clap(long, default_value = "1")]
+        count: u32,
+    },
+    /// Get wallet balance
+    Balance,
+    /// Send Bitcoin to an address
+    Send {
+        /// Recipient address
+        address: String,
+        /// Amount in satoshis
+        amount: u64,
+        /// Fee rate in sat/vB
+        #[clap(long)]
+        fee_rate: Option<f32>,
+    },
+    /// Send all available Bitcoin to an address
+    SendAll {
+        /// Recipient address
+        address: String,
+        /// Fee rate in sat/vB
+        #[clap(long)]
+        fee_rate: Option<f32>,
+    },
+    /// Create a transaction (without broadcasting)
+    CreateTx {
+        /// Recipient address
+        address: String,
+        /// Amount in satoshis
+        amount: u64,
+        /// Fee rate in sat/vB
+        #[clap(long)]
+        fee_rate: Option<f32>,
+    },
+    /// Sign a transaction
+    SignTx {
+        /// Transaction hex
+        tx_hex: String,
+    },
+    /// Broadcast a transaction
+    BroadcastTx {
+        /// Transaction hex
+        tx_hex: String,
+    },
+    /// List UTXOs
+    Utxos,
+    /// Freeze a UTXO
+    FreezeUtxo {
+        /// Transaction ID
+        txid: String,
+        /// Output index
+        vout: u32,
+    },
+    /// Unfreeze a UTXO
+    UnfreezeUtxo {
+        /// Transaction ID
+        txid: String,
+        /// Output index
+        vout: u32,
+    },
+    /// Show transaction history
+    History {
+        /// Maximum number of transactions to show
+        #[clap(long, default_value = "50")]
+        limit: usize,
+    },
+    /// Get transaction details
+    TxDetails {
+        /// Transaction ID
+        txid: String,
+    },
+    /// Estimate fee rates
+    EstimateFee {
+        /// Recipient address
+        address: String,
+        /// Amount in satoshis
+        amount: u64,
+    },
+    /// Get current fee rates
+    FeeRates,
+    /// Sync wallet with blockchain
+    Sync,
+    /// Backup wallet (show mnemonic)
+    Backup,
 }
 
 /// Alkanes subcommands
@@ -370,7 +486,7 @@ async fn main() -> Result<()> {
         .unwrap_or_else(|| "http://bitcoinrpc:bitcoinrpc@localhost:8332".to_string());
 
     // Initialize wallet if needed for the command
-    let wallet_manager = if matches!(args.command, Commands::Walletinfo) {
+    let wallet_manager = if matches!(args.command, Commands::Walletinfo | Commands::Wallet { .. }) {
         let wallet_config = deezel_cli::wallet::WalletConfig {
             wallet_path: args.wallet_path.clone(),
             network: network_params.network,
@@ -406,6 +522,301 @@ async fn main() -> Result<()> {
                 let count = rpc_client.get_block_count().await?;
                 println!("{}", count);
             },
+        },
+        Commands::Wallet { command } => {
+            if let Some(wallet_manager) = &wallet_manager {
+                match command {
+                    WalletCommands::Create { mnemonic, passphrase } => {
+                        let wallet_config = deezel_cli::wallet::WalletConfig {
+                            wallet_path: args.wallet_path.clone(),
+                            network: network_params.network,
+                            bitcoin_rpc_url: bitcoin_rpc_url.clone(),
+                            metashrew_rpc_url: sandshrew_rpc_url.clone(),
+                        };
+                        
+                        let new_wallet = deezel_cli::wallet::WalletManager::create_wallet(
+                            wallet_config,
+                            mnemonic.clone(),
+                            passphrase.clone()
+                        ).await?;
+                        
+                        println!("Wallet created successfully!");
+                        if let Some(mnemonic) = new_wallet.get_mnemonic().await? {
+                            println!("Mnemonic: {}", mnemonic);
+                            println!("⚠️  IMPORTANT: Save this mnemonic phrase in a secure location!");
+                        }
+                        
+                        let address = new_wallet.get_address().await?;
+                        println!("First address: {}", address);
+                    },
+                    WalletCommands::Restore { mnemonic, passphrase } => {
+                        let wallet_config = deezel_cli::wallet::WalletConfig {
+                            wallet_path: args.wallet_path.clone(),
+                            network: network_params.network,
+                            bitcoin_rpc_url: bitcoin_rpc_url.clone(),
+                            metashrew_rpc_url: sandshrew_rpc_url.clone(),
+                        };
+                        
+                        let restored_wallet = deezel_cli::wallet::WalletManager::restore_wallet(
+                            wallet_config,
+                            mnemonic.clone(),
+                            passphrase.clone()
+                        ).await?;
+                        
+                        println!("Wallet restored successfully!");
+                        let address = restored_wallet.get_address().await?;
+                        println!("First address: {}", address);
+                    },
+                    WalletCommands::Info => {
+                        println!("Wallet Information:");
+                        
+                        // Get wallet addresses
+                        let address = wallet_manager.get_address().await?;
+                        println!("  Address: {}", address);
+                        
+                        // Get wallet balance
+                        match wallet_manager.get_balance().await {
+                            Ok(balance) => {
+                                println!("  Balance:");
+                                println!("    Confirmed: {} sats", balance.confirmed);
+                                println!("    Pending: {} sats", balance.trusted_pending + balance.untrusted_pending);
+                                println!("    Total: {} sats", balance.confirmed + balance.trusted_pending + balance.untrusted_pending);
+                            },
+                            Err(e) => println!("  Failed to get balance: {}", e),
+                        };
+                        
+                        // Get alkanes balances
+                        println!("  Alkanes Balances:");
+                        match rpc_client.get_protorunes_by_address(&address).await {
+                            Ok(protorunes) => {
+                                if let Some(runes_array) = protorunes.as_array() {
+                                    if runes_array.is_empty() {
+                                        println!("    No alkanes tokens found");
+                                    } else {
+                                        for (i, rune) in runes_array.iter().enumerate() {
+                                            if let Some(rune_obj) = rune.as_object() {
+                                                let name = rune_obj.get("name").and_then(|v| v.as_str()).unwrap_or("Unknown");
+                                                let balance = rune_obj.get("balance").and_then(|v| v.as_str()).unwrap_or("0");
+                                                println!("    {}: {} - {} units", i+1, name, balance);
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    println!("    Failed to parse alkanes balances");
+                                }
+                            },
+                            Err(e) => println!("    Failed to get alkanes balances: {}", e),
+                        };
+                    },
+                    WalletCommands::Addresses { count } => {
+                        let addresses = wallet_manager.get_addresses(count).await?;
+                        println!("Generated {} addresses:", addresses.len());
+                        for (i, address) in addresses.iter().enumerate() {
+                            println!("  {}: {}", i + 1, address);
+                        }
+                    },
+                    WalletCommands::Balance => {
+                        match wallet_manager.get_balance().await {
+                            Ok(balance) => {
+                                println!("Bitcoin Balance:");
+                                println!("  Confirmed: {} sats", balance.confirmed);
+                                println!("  Pending: {} sats", balance.trusted_pending + balance.untrusted_pending);
+                                println!("  Total: {} sats", balance.confirmed + balance.trusted_pending + balance.untrusted_pending);
+                            },
+                            Err(e) => println!("Failed to get balance: {}", e),
+                        };
+                    },
+                    WalletCommands::Send { address, amount, fee_rate } => {
+                        let params = deezel_cli::wallet::SendParams {
+                            address: address.clone(),
+                            amount: amount,
+                            fee_rate: fee_rate.clone(),
+                            send_all: false,
+                        };
+                        
+                        match wallet_manager.send(params).await {
+                            Ok(txid) => {
+                                println!("Transaction sent successfully!");
+                                println!("Transaction ID: {}", txid);
+                            },
+                            Err(e) => println!("Failed to send transaction: {}", e),
+                        };
+                    },
+                    WalletCommands::SendAll { address, fee_rate } => {
+                        let params = deezel_cli::wallet::SendParams {
+                            address: address.clone(),
+                            amount: 0, // Not used when send_all is true
+                            fee_rate: fee_rate.clone(),
+                            send_all: true,
+                        };
+                        
+                        match wallet_manager.send(params).await {
+                            Ok(txid) => {
+                                println!("All funds sent successfully!");
+                                println!("Transaction ID: {}", txid);
+                            },
+                            Err(e) => println!("Failed to send all funds: {}", e),
+                        };
+                    },
+                    WalletCommands::CreateTx { address, amount, fee_rate } => {
+                        let params = deezel_cli::wallet::SendParams {
+                            address: address.clone(),
+                            amount: amount,
+                            fee_rate: fee_rate.clone(),
+                            send_all: false,
+                        };
+                        
+                        match wallet_manager.create_transaction(params).await {
+                            Ok((tx, details)) => {
+                                println!("Transaction created successfully!");
+                                println!("Transaction ID: {}", tx.txid());
+                                println!("Transaction hex: {}", hex::encode(bdk::bitcoin::consensus::serialize(&tx)));
+                                println!("Fee: {} sats", details.fee.unwrap_or(0));
+                            },
+                            Err(e) => println!("Failed to create transaction: {}", e),
+                        };
+                    },
+                    WalletCommands::SignTx { tx_hex } => {
+                        // For now, just validate the transaction hex
+                        match decode_transaction_hex(&tx_hex) {
+                            Ok(tx) => {
+                                println!("Transaction is valid:");
+                                println!("  Transaction ID: {}", tx.txid());
+                                println!("  Inputs: {}", tx.input.len());
+                                println!("  Outputs: {}", tx.output.len());
+                                println!("Note: Signing functionality requires wallet integration");
+                            },
+                            Err(e) => println!("Invalid transaction hex: {}", e),
+                        };
+                    },
+                    WalletCommands::BroadcastTx { tx_hex } => {
+                        match rpc_client.broadcast_transaction(&tx_hex).await {
+                            Ok(txid) => {
+                                println!("Transaction broadcast successfully!");
+                                println!("Transaction ID: {}", txid);
+                            },
+                            Err(e) => println!("Failed to broadcast transaction: {}", e),
+                        };
+                    },
+                    WalletCommands::Utxos => {
+                        match wallet_manager.get_utxos().await {
+                            Ok(utxos) => {
+                                if utxos.is_empty() {
+                                    println!("No UTXOs found");
+                                } else {
+                                    println!("UTXOs ({} total):", utxos.len());
+                                    for utxo in utxos {
+                                        println!("  {}:{} - {} sats ({}{})",
+                                            utxo.txid,
+                                            utxo.vout,
+                                            utxo.amount,
+                                            utxo.address,
+                                            if utxo.frozen { " [FROZEN]" } else { "" }
+                                        );
+                                    }
+                                }
+                            },
+                            Err(e) => println!("Failed to get UTXOs: {}", e),
+                        };
+                    },
+                    WalletCommands::FreezeUtxo { txid, vout } => {
+                        match wallet_manager.freeze_utxo(&txid, vout).await {
+                            Ok(_) => println!("UTXO {}:{} frozen successfully", txid, vout),
+                            Err(e) => println!("Failed to freeze UTXO: {}", e),
+                        };
+                    },
+                    WalletCommands::UnfreezeUtxo { txid, vout } => {
+                        match wallet_manager.unfreeze_utxo(&txid, vout).await {
+                            Ok(_) => println!("UTXO {}:{} unfrozen successfully", txid, vout),
+                            Err(e) => println!("Failed to unfreeze UTXO: {}", e),
+                        };
+                    },
+                    WalletCommands::History { limit } => {
+                        match wallet_manager.get_transaction_history(Some(limit)).await {
+                            Ok(history) => {
+                                if history.is_empty() {
+                                    println!("No transaction history found");
+                                } else {
+                                    println!("Transaction History ({} transactions):", history.len());
+                                    for tx in history {
+                                        println!("  {} - {} sats ({}) - {} confirmations",
+                                            tx.txid,
+                                            tx.amount,
+                                            tx.tx_type,
+                                            tx.confirmations
+                                        );
+                                    }
+                                }
+                            },
+                            Err(e) => println!("Failed to get transaction history: {}", e),
+                        };
+                    },
+                    WalletCommands::TxDetails { txid } => {
+                        match rpc_client.get_transaction_hex(&txid).await {
+                            Ok(tx_hex) => {
+                                match decode_transaction_hex(&tx_hex) {
+                                    Ok(tx) => {
+                                        println!("Transaction Details:");
+                                        println!("  Transaction ID: {}", tx.txid());
+                                        println!("  Version: {}", tx.version);
+                                        println!("  Lock time: {}", tx.lock_time);
+                                        println!("  Inputs: {}", tx.input.len());
+                                        println!("  Outputs: {}", tx.output.len());
+                                        
+                                        for (i, output) in tx.output.iter().enumerate() {
+                                            println!("    Output {}: {} sats", i, output.value);
+                                        }
+                                    },
+                                    Err(e) => println!("Failed to decode transaction: {}", e),
+                                }
+                            },
+                            Err(e) => println!("Failed to get transaction: {}", e),
+                        };
+                    },
+                    WalletCommands::EstimateFee { address, amount } => {
+                        let params = deezel_cli::wallet::SendParams {
+                            address: address.clone(),
+                            amount: amount,
+                            fee_rate: None,
+                            send_all: false,
+                        };
+                        
+                        match wallet_manager.create_transaction(params).await {
+                            Ok((_, details)) => {
+                                println!("Fee estimate: {} sats", details.fee.unwrap_or(0));
+                            },
+                            Err(e) => println!("Failed to estimate fee: {}", e),
+                        };
+                    },
+                    WalletCommands::FeeRates => {
+                        match wallet_manager.estimate_fee_rate().await {
+                            Ok(fee_rate) => {
+                                println!("Current fee rate: {} sat/vB", fee_rate);
+                            },
+                            Err(e) => println!("Failed to get fee rates: {}", e),
+                        };
+                    },
+                    WalletCommands::Sync => {
+                        match wallet_manager.sync().await {
+                            Ok(_) => println!("Wallet synced successfully"),
+                            Err(e) => println!("Failed to sync wallet: {}", e),
+                        };
+                    },
+                    WalletCommands::Backup => {
+                        match wallet_manager.get_mnemonic().await {
+                            Ok(Some(mnemonic)) => {
+                                println!("Wallet Backup:");
+                                println!("Mnemonic: {}", mnemonic);
+                                println!("⚠️  IMPORTANT: Store this mnemonic phrase in a secure location!");
+                            },
+                            Ok(None) => println!("No mnemonic available for this wallet"),
+                            Err(e) => println!("Failed to get mnemonic: {}", e),
+                        };
+                    },
+                }
+            } else {
+                return Err(anyhow!("Wallet manager not initialized"));
+            }
         },
         Commands::Walletinfo => {
             if let Some(wallet_manager) = wallet_manager {

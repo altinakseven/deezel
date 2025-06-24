@@ -363,6 +363,108 @@ impl RpcClient {
         Ok(tx_hex)
     }
     
+    /// Broadcast a transaction using esplora interface
+    pub async fn broadcast_transaction(&self, tx_hex: &str) -> Result<String> {
+        debug!("Broadcasting transaction via esplora");
+        
+        let result = self._call("esplora_broadcast", json!([tx_hex])).await?;
+        
+        let txid = result.as_str()
+            .context("Invalid broadcast response")?
+            .to_string();
+        
+        debug!("Transaction broadcast successful: {}", txid);
+        Ok(txid)
+    }
+    
+    /// Get address UTXOs using esplora interface
+    pub async fn get_address_utxos(&self, address: &str) -> Result<Value> {
+        debug!("Getting UTXOs for address: {}", address);
+        
+        let result = self._call("esplora_address::utxo", json!([address])).await?;
+        
+        debug!("Got UTXOs for address: {}", address);
+        Ok(result)
+    }
+    
+    /// Get address transaction history using esplora interface
+    pub async fn get_address_transactions(&self, address: &str) -> Result<Value> {
+        debug!("Getting transaction history for address: {}", address);
+        
+        let result = self._call("esplora_address::txs", json!([address])).await?;
+        
+        debug!("Got transaction history for address: {}", address);
+        Ok(result)
+    }
+    
+    /// Get address mempool transactions using esplora interface
+    pub async fn get_address_mempool_transactions(&self, address: &str) -> Result<Value> {
+        debug!("Getting mempool transactions for address: {}", address);
+        
+        let result = self._call("esplora_address::txs:mempool", json!([address])).await?;
+        
+        debug!("Got mempool transactions for address: {}", address);
+        Ok(result)
+    }
+    
+    /// Get fee estimates using esplora interface
+    pub async fn get_fee_estimates(&self) -> Result<Value> {
+        debug!("Getting fee estimates");
+        
+        let result = self._call("esplora_fee:estimates", json!([])).await?;
+        
+        debug!("Got fee estimates");
+        Ok(result)
+    }
+    
+    /// Get transaction status using esplora interface
+    pub async fn get_transaction_status(&self, txid: &str) -> Result<Value> {
+        debug!("Getting transaction status for: {}", txid);
+        
+        let result = self._call("esplora_tx::status", json!([txid])).await?;
+        
+        debug!("Got transaction status for: {}", txid);
+        Ok(result)
+    }
+    
+    /// Get block hash by height using esplora interface
+    pub async fn get_block_hash(&self, height: u64) -> Result<String> {
+        debug!("Getting block hash for height: {}", height);
+        
+        let result = self._call("esplora_block:height", json!([height])).await?;
+        
+        let block_hash = result.as_str()
+            .context("Invalid block hash response")?
+            .to_string();
+        
+        debug!("Got block hash for height {}: {}", height, block_hash);
+        Ok(block_hash)
+    }
+    
+    /// Get ord inscriptions for an address
+    pub async fn get_ord_inscriptions(&self, address: &str) -> Result<Value> {
+        debug!("Getting ord inscriptions for address: {}", address);
+        
+        let result = self._call("ord_address", json!([address])).await?;
+        
+        debug!("Got ord inscriptions for address: {}", address);
+        Ok(result)
+    }
+    
+    /// Get ord inscription content
+    pub async fn get_ord_content(&self, inscription_id: &str) -> Result<String> {
+        debug!("Getting ord content for inscription: {}", inscription_id);
+        
+        let result = self._call("ord_content", json!([inscription_id])).await?;
+        
+        // ord_content returns base64 encoded data
+        let content = result.as_str()
+            .context("Invalid ord content response")?
+            .to_string();
+        
+        debug!("Got ord content for inscription: {}", inscription_id);
+        Ok(content)
+    }
     
     /// Get block data by height
     pub async fn get_block(&self, height: u64, block_tag: &str) -> Result<String> {
