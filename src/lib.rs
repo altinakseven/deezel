@@ -10,6 +10,7 @@ pub mod transaction;
 pub mod rpc;
 pub mod runestone;
 pub mod runestone_enhanced;
+pub mod alkanes;
 
 // Test modules for e2e testing with mock metashrew
 #[cfg(test)]

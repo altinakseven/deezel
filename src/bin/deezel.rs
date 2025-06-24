@@ -223,45 +223,166 @@ enum WalletCommands {
 /// Alkanes subcommands
 #[derive(Subcommand, Debug)]
 enum AlkanesCommands {
-    /// Get bytecode for a smart contract
-    Getbytecode {
-        /// Contract ID (block:tx)
-        contract_id: String,
-    },
-    /// Get protorunes by address
-    Protorunesbyaddress {
-        /// Bitcoin address
-        address: String,
-    },
-    /// Get protorunes by outpoint
-    Protorunesbyoutpoint {
-        /// Outpoint (txid:vout)
-        outpoint: String,
-    },
-    /// Get spendables by address
-    Spendablesbyaddress {
-        /// Bitcoin address
-        address: String,
-    },
-    /// Trace a block
-    Traceblock {
-        /// Block height
-        block_height: u64,
-    },
-    /// Trace a transaction
-    Trace {
-        /// Outpoint (txid:vout)
-        outpoint: String,
-    },
-    /// Simulate a contract execution
-    Simulate {
-        /// Simulation parameters (block:tx:input1:input2...)
-        params: String,
-    },
     /// Get metadata for a contract
     Meta {
         /// Contract ID (block:tx)
         contract_id: String,
+    },
+    
+    // Enhanced alkanes commands
+    /// Deploy a new smart contract
+    DeployContract {
+        /// Path to WASM contract file
+        wasm_file: String,
+        /// Calldata for contract deployment (comma-separated)
+        #[clap(long)]
+        calldata: String,
+        /// Fee rate in sat/vB
+        #[clap(long)]
+        fee_rate: Option<f32>,
+    },
+    /// Execute a contract function
+    Execute {
+        /// Calldata for contract execution (comma-separated)
+        #[clap(long)]
+        calldata: String,
+        /// Edicts for protostone (format: block:tx:amount:output)
+        #[clap(long)]
+        edicts: Option<String>,
+        /// Fee rate in sat/vB
+        #[clap(long)]
+        fee_rate: Option<f32>,
+    },
+    /// Deploy a new alkanes token
+    DeployToken {
+        /// Token name
+        #[clap(long)]
+        name: String,
+        /// Token symbol
+        #[clap(long)]
+        symbol: String,
+        /// Token cap (maximum supply)
+        #[clap(long)]
+        cap: u64,
+        /// Amount minted per mint operation
+        #[clap(long)]
+        amount_per_mint: u64,
+        /// Reserve number for factory contract
+        #[clap(long)]
+        reserve_number: u64,
+        /// Amount to premine
+        #[clap(long)]
+        premine: Option<u64>,
+        /// Path to token image file
+        #[clap(long)]
+        image: Option<String>,
+        /// Fee rate in sat/vB
+        #[clap(long)]
+        fee_rate: Option<f32>,
+    },
+    /// Send alkanes tokens
+    SendToken {
+        /// Token ID in format block:tx
+        #[clap(long)]
+        token: String,
+        /// Amount to send
+        #[clap(long)]
+        amount: u64,
+        /// Recipient address
+        #[clap(long)]
+        to: String,
+        /// Fee rate in sat/vB
+        #[clap(long)]
+        fee_rate: Option<f32>,
+    },
+    /// Get alkanes balance
+    Balance {
+        /// Address to check (defaults to wallet address)
+        #[clap(long)]
+        address: Option<String>,
+    },
+    /// Get token information
+    TokenInfo {
+        /// Token ID in format block:tx
+        token: String,
+    },
+    /// Create a new liquidity pool
+    CreatePool {
+        /// Calldata for pool creation (comma-separated)
+        #[clap(long)]
+        calldata: String,
+        /// Tokens and amounts (format: block:tx:amount,block:tx:amount)
+        #[clap(long)]
+        tokens: String,
+        /// Fee rate in sat/vB
+        #[clap(long)]
+        fee_rate: Option<f32>,
+    },
+    /// Add liquidity to a pool
+    AddLiquidity {
+        /// Calldata for liquidity addition (comma-separated)
+        #[clap(long)]
+        calldata: String,
+        /// Tokens and amounts (format: block:tx:amount,block:tx:amount)
+        #[clap(long)]
+        tokens: String,
+        /// Fee rate in sat/vB
+        #[clap(long)]
+        fee_rate: Option<f32>,
+    },
+    /// Remove liquidity from a pool
+    RemoveLiquidity {
+        /// Calldata for liquidity removal (comma-separated)
+        #[clap(long)]
+        calldata: String,
+        /// LP token ID in format block:tx
+        #[clap(long)]
+        token: String,
+        /// Amount of LP tokens to burn
+        #[clap(long)]
+        amount: u64,
+        /// Fee rate in sat/vB
+        #[clap(long)]
+        fee_rate: Option<f32>,
+    },
+    /// Swap tokens in a pool
+    Swap {
+        /// Calldata for swap (comma-separated)
+        #[clap(long)]
+        calldata: String,
+        /// Input token ID in format block:tx
+        #[clap(long)]
+        token: String,
+        /// Amount to swap
+        #[clap(long)]
+        amount: u64,
+        /// Fee rate in sat/vB
+        #[clap(long)]
+        fee_rate: Option<f32>,
+    },
+    /// Simulate alkanes operation
+    SimulateAdvanced {
+        /// Target contract in format block:tx
+        #[clap(long)]
+        target: String,
+        /// Inputs for simulation (comma-separated)
+        #[clap(long)]
+        inputs: String,
+        /// Tokens for simulation (format: block:tx:amount,block:tx:amount)
+        #[clap(long)]
+        tokens: Option<String>,
+        /// Decoder type (pool, factory, etc.)
+        #[clap(long)]
+        decoder: Option<String>,
+    },
+    /// Preview liquidity removal
+    PreviewRemoveLiquidity {
+        /// LP token ID in format block:tx
+        #[clap(long)]
+        token: String,
+        /// Amount of LP tokens
+        #[clap(long)]
+        amount: u64,
     },
 }
 
@@ -890,42 +1011,482 @@ async fn main() -> Result<()> {
             }
         },
         Commands::Alkanes { command } => match command {
-            AlkanesCommands::Getbytecode { contract_id } => {
-                let (block, tx) = parse_contract_id(&contract_id)?;
-                let bytecode = rpc_client.get_bytecode(&block, &tx).await?;
-                println!("{}", bytecode);
-            },
-            AlkanesCommands::Protorunesbyaddress { address } => {
-                let result = rpc_client.get_protorunes_by_address(&address).await?;
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            },
-            AlkanesCommands::Protorunesbyoutpoint { outpoint } => {
-                let (txid, vout) = parse_outpoint(&outpoint)?;
-                let result = rpc_client.get_protorunes_by_outpoint(&txid, vout).await?;
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            },
-            AlkanesCommands::Spendablesbyaddress { address } => {
-                let result = rpc_client.get_spendables_by_address(&address).await?;
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            },
-            AlkanesCommands::Traceblock { block_height } => {
-                let result = rpc_client.trace_block(block_height).await?;
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            },
-            AlkanesCommands::Trace { outpoint } => {
-                let (txid, vout) = parse_outpoint(&outpoint)?;
-                let result = rpc_client.trace_transaction(&txid, vout as usize).await?;
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            },
-            AlkanesCommands::Simulate { params } => {
-                let (block, tx, inputs) = parse_simulation_params(&params)?;
-                let result = rpc_client.simulate(&block, &tx, &inputs).await?;
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            },
             AlkanesCommands::Meta { contract_id } => {
                 let (block, tx) = parse_contract_id(&contract_id)?;
                 let result = rpc_client.get_contract_meta(&block, &tx).await?;
                 println!("{}", serde_json::to_string_pretty(&result)?);
+            },
+            
+            // Enhanced alkanes commands
+            AlkanesCommands::DeployContract { wasm_file, calldata, fee_rate } => {
+                // Initialize alkanes manager
+                let wallet_config = deezel_cli::wallet::WalletConfig {
+                    wallet_path: args.wallet_path.clone(),
+                    network: network_params.network,
+                    bitcoin_rpc_url: bitcoin_rpc_url.clone(),
+                    metashrew_rpc_url: sandshrew_rpc_url.clone(),
+                };
+                
+                let wallet_manager = Arc::new(
+                    deezel_cli::wallet::WalletManager::new(wallet_config)
+                        .await
+                        .context("Failed to initialize wallet manager")?
+                );
+                
+                let alkanes_manager = deezel_cli::alkanes::AlkanesManager::new(
+                    Arc::new(rpc_client),
+                    wallet_manager
+                );
+                
+                let params = deezel_cli::alkanes::types::ContractDeployParams {
+                    wasm_file: wasm_file.clone(),
+                    calldata: deezel_cli::alkanes::contract::parse_calldata(&calldata),
+                    fee_rate: fee_rate.clone(),
+                };
+                
+                match alkanes_manager.contract.deploy_contract(params).await {
+                    Ok(result) => {
+                        println!("Contract deployed successfully!");
+                        println!("Contract ID: {}:{}", result.contract_id.block, result.contract_id.tx);
+                        println!("Transaction ID: {}", result.txid);
+                        println!("Fee: {} sats", result.fee);
+                    },
+                    Err(e) => println!("Failed to deploy contract: {}", e),
+                };
+            },
+            
+            AlkanesCommands::Execute { calldata, edicts, fee_rate } => {
+                // Initialize alkanes manager
+                let wallet_config = deezel_cli::wallet::WalletConfig {
+                    wallet_path: args.wallet_path.clone(),
+                    network: network_params.network,
+                    bitcoin_rpc_url: bitcoin_rpc_url.clone(),
+                    metashrew_rpc_url: sandshrew_rpc_url.clone(),
+                };
+                
+                let wallet_manager = Arc::new(
+                    deezel_cli::wallet::WalletManager::new(wallet_config)
+                        .await
+                        .context("Failed to initialize wallet manager")?
+                );
+                
+                let alkanes_manager = deezel_cli::alkanes::AlkanesManager::new(
+                    Arc::new(rpc_client),
+                    wallet_manager
+                );
+                
+                let parsed_edicts = if let Some(edicts_str) = edicts {
+                    Some(deezel_cli::alkanes::contract::parse_edicts(&edicts_str)?)
+                } else {
+                    None
+                };
+                
+                let params = deezel_cli::alkanes::types::ContractExecuteParams {
+                    calldata: deezel_cli::alkanes::contract::parse_calldata(&calldata),
+                    edicts: parsed_edicts,
+                    fee_rate: fee_rate.clone(),
+                };
+                
+                match alkanes_manager.contract.execute_contract(params).await {
+                    Ok(result) => {
+                        println!("Contract executed successfully!");
+                        println!("Transaction ID: {}", result.txid);
+                        println!("Fee: {} sats", result.fee);
+                    },
+                    Err(e) => println!("Failed to execute contract: {}", e),
+                };
+            },
+            
+            AlkanesCommands::DeployToken { name, symbol, cap, amount_per_mint, reserve_number, premine, image, fee_rate } => {
+                // Initialize alkanes manager
+                let wallet_config = deezel_cli::wallet::WalletConfig {
+                    wallet_path: args.wallet_path.clone(),
+                    network: network_params.network,
+                    bitcoin_rpc_url: bitcoin_rpc_url.clone(),
+                    metashrew_rpc_url: sandshrew_rpc_url.clone(),
+                };
+                
+                let wallet_manager = Arc::new(
+                    deezel_cli::wallet::WalletManager::new(wallet_config)
+                        .await
+                        .context("Failed to initialize wallet manager")?
+                );
+                
+                let alkanes_manager = deezel_cli::alkanes::AlkanesManager::new(
+                    Arc::new(rpc_client),
+                    wallet_manager
+                );
+                
+                let params = deezel_cli::alkanes::types::TokenDeployParams {
+                    name: name.clone(),
+                    symbol: symbol.clone(),
+                    cap: cap,
+                    amount_per_mint: amount_per_mint,
+                    reserve_number: reserve_number,
+                    premine: premine.clone(),
+                    image: image.clone(),
+                    fee_rate: fee_rate.clone(),
+                };
+                
+                match alkanes_manager.token.deploy_token(params).await {
+                    Ok(result) => {
+                        println!("Token deployed successfully!");
+                        println!("Token ID: {}:{}", result.token_id.block, result.token_id.tx);
+                        println!("Transaction ID: {}", result.txid);
+                        println!("Fee: {} sats", result.fee);
+                    },
+                    Err(e) => println!("Failed to deploy token: {}", e),
+                };
+            },
+            
+            AlkanesCommands::SendToken { token, amount, to, fee_rate } => {
+                // Initialize alkanes manager
+                let wallet_config = deezel_cli::wallet::WalletConfig {
+                    wallet_path: args.wallet_path.clone(),
+                    network: network_params.network,
+                    bitcoin_rpc_url: bitcoin_rpc_url.clone(),
+                    metashrew_rpc_url: sandshrew_rpc_url.clone(),
+                };
+                
+                let wallet_manager = Arc::new(
+                    deezel_cli::wallet::WalletManager::new(wallet_config)
+                        .await
+                        .context("Failed to initialize wallet manager")?
+                );
+                
+                let alkanes_manager = deezel_cli::alkanes::AlkanesManager::new(
+                    Arc::new(rpc_client),
+                    wallet_manager
+                );
+                
+                let token_id = deezel_cli::alkanes::parse_alkane_id(&token)?;
+                
+                let params = deezel_cli::alkanes::types::TokenSendParams {
+                    token: token_id,
+                    amount: amount,
+                    to: to.clone(),
+                    fee_rate: fee_rate.clone(),
+                };
+                
+                match alkanes_manager.token.send_token(params).await {
+                    Ok(result) => {
+                        println!("Token sent successfully!");
+                        println!("Transaction ID: {}", result.txid);
+                        println!("Fee: {} sats", result.fee);
+                    },
+                    Err(e) => println!("Failed to send token: {}", e),
+                };
+            },
+            
+            AlkanesCommands::Balance { address } => {
+                // Initialize alkanes manager
+                let wallet_config = deezel_cli::wallet::WalletConfig {
+                    wallet_path: args.wallet_path.clone(),
+                    network: network_params.network,
+                    bitcoin_rpc_url: bitcoin_rpc_url.clone(),
+                    metashrew_rpc_url: sandshrew_rpc_url.clone(),
+                };
+                
+                let wallet_manager = Arc::new(
+                    deezel_cli::wallet::WalletManager::new(wallet_config)
+                        .await
+                        .context("Failed to initialize wallet manager")?
+                );
+                
+                let alkanes_manager = deezel_cli::alkanes::AlkanesManager::new(
+                    Arc::new(rpc_client),
+                    wallet_manager
+                );
+                
+                match alkanes_manager.get_balance(address.as_deref()).await {
+                    Ok(balances) => {
+                        if balances.is_empty() {
+                            println!("No alkanes tokens found");
+                        } else {
+                            println!("Alkanes Balances:");
+                            for (i, balance) in balances.iter().enumerate() {
+                                println!("  {}: {} ({}) - {} units (ID: {}:{})",
+                                    i + 1,
+                                    balance.name,
+                                    balance.symbol,
+                                    balance.balance,
+                                    balance.alkane_id.block,
+                                    balance.alkane_id.tx
+                                );
+                            }
+                        }
+                    },
+                    Err(e) => println!("Failed to get alkanes balance: {}", e),
+                };
+            },
+            
+            AlkanesCommands::TokenInfo { token } => {
+                // Initialize alkanes manager
+                let wallet_config = deezel_cli::wallet::WalletConfig {
+                    wallet_path: args.wallet_path.clone(),
+                    network: network_params.network,
+                    bitcoin_rpc_url: bitcoin_rpc_url.clone(),
+                    metashrew_rpc_url: sandshrew_rpc_url.clone(),
+                };
+                
+                let wallet_manager = Arc::new(
+                    deezel_cli::wallet::WalletManager::new(wallet_config)
+                        .await
+                        .context("Failed to initialize wallet manager")?
+                );
+                
+                let alkanes_manager = deezel_cli::alkanes::AlkanesManager::new(
+                    Arc::new(rpc_client),
+                    wallet_manager
+                );
+                
+                let token_id = deezel_cli::alkanes::parse_alkane_id(&token)?;
+                
+                match alkanes_manager.get_token_info(&token_id).await {
+                    Ok(info) => {
+                        println!("Token Information:");
+                        println!("  Name: {}", info.name);
+                        println!("  Symbol: {}", info.symbol);
+                        println!("  Token ID: {}:{}", info.alkane_id.block, info.alkane_id.tx);
+                        println!("  Total Supply: {}", info.total_supply);
+                        println!("  Cap: {}", info.cap);
+                        println!("  Amount per Mint: {}", info.amount_per_mint);
+                        println!("  Minted: {}", info.minted);
+                    },
+                    Err(e) => println!("Failed to get token info: {}", e),
+                };
+            },
+            
+            AlkanesCommands::CreatePool { calldata, tokens, fee_rate } => {
+                // Initialize alkanes manager
+                let wallet_config = deezel_cli::wallet::WalletConfig {
+                    wallet_path: args.wallet_path.clone(),
+                    network: network_params.network,
+                    bitcoin_rpc_url: bitcoin_rpc_url.clone(),
+                    metashrew_rpc_url: sandshrew_rpc_url.clone(),
+                };
+                
+                let wallet_manager = Arc::new(
+                    deezel_cli::wallet::WalletManager::new(wallet_config)
+                        .await
+                        .context("Failed to initialize wallet manager")?
+                );
+                
+                let alkanes_manager = deezel_cli::alkanes::AlkanesManager::new(
+                    Arc::new(rpc_client),
+                    wallet_manager
+                );
+                
+                let token_amounts = deezel_cli::alkanes::token::parse_token_amounts(&tokens)?;
+                
+                let params = deezel_cli::alkanes::types::PoolCreateParams {
+                    calldata: deezel_cli::alkanes::contract::parse_calldata(&calldata),
+                    tokens: token_amounts,
+                    fee_rate: fee_rate.clone(),
+                };
+                
+                match alkanes_manager.amm.create_pool(params).await {
+                    Ok(result) => {
+                        println!("Pool created successfully!");
+                        println!("Transaction ID: {}", result.txid);
+                        println!("Fee: {} sats", result.fee);
+                    },
+                    Err(e) => println!("Failed to create pool: {}", e),
+                };
+            },
+            
+            AlkanesCommands::AddLiquidity { calldata, tokens, fee_rate } => {
+                // Initialize alkanes manager
+                let wallet_config = deezel_cli::wallet::WalletConfig {
+                    wallet_path: args.wallet_path.clone(),
+                    network: network_params.network,
+                    bitcoin_rpc_url: bitcoin_rpc_url.clone(),
+                    metashrew_rpc_url: sandshrew_rpc_url.clone(),
+                };
+                
+                let wallet_manager = Arc::new(
+                    deezel_cli::wallet::WalletManager::new(wallet_config)
+                        .await
+                        .context("Failed to initialize wallet manager")?
+                );
+                
+                let alkanes_manager = deezel_cli::alkanes::AlkanesManager::new(
+                    Arc::new(rpc_client),
+                    wallet_manager
+                );
+                
+                let token_amounts = deezel_cli::alkanes::token::parse_token_amounts(&tokens)?;
+                
+                let params = deezel_cli::alkanes::types::LiquidityAddParams {
+                    calldata: deezel_cli::alkanes::contract::parse_calldata(&calldata),
+                    tokens: token_amounts,
+                    fee_rate: fee_rate.clone(),
+                };
+                
+                match alkanes_manager.amm.add_liquidity(params).await {
+                    Ok(result) => {
+                        println!("Liquidity added successfully!");
+                        println!("Transaction ID: {}", result.txid);
+                        println!("Fee: {} sats", result.fee);
+                    },
+                    Err(e) => println!("Failed to add liquidity: {}", e),
+                };
+            },
+            
+            AlkanesCommands::RemoveLiquidity { calldata, token, amount, fee_rate } => {
+                // Initialize alkanes manager
+                let wallet_config = deezel_cli::wallet::WalletConfig {
+                    wallet_path: args.wallet_path.clone(),
+                    network: network_params.network,
+                    bitcoin_rpc_url: bitcoin_rpc_url.clone(),
+                    metashrew_rpc_url: sandshrew_rpc_url.clone(),
+                };
+                
+                let wallet_manager = Arc::new(
+                    deezel_cli::wallet::WalletManager::new(wallet_config)
+                        .await
+                        .context("Failed to initialize wallet manager")?
+                );
+                
+                let alkanes_manager = deezel_cli::alkanes::AlkanesManager::new(
+                    Arc::new(rpc_client),
+                    wallet_manager
+                );
+                
+                let token_id = deezel_cli::alkanes::parse_alkane_id(&token)?;
+                
+                let params = deezel_cli::alkanes::types::LiquidityRemoveParams {
+                    calldata: deezel_cli::alkanes::contract::parse_calldata(&calldata),
+                    token: token_id,
+                    amount: amount,
+                    fee_rate: fee_rate.clone(),
+                };
+                
+                match alkanes_manager.amm.remove_liquidity(params).await {
+                    Ok(result) => {
+                        println!("Liquidity removed successfully!");
+                        println!("Transaction ID: {}", result.txid);
+                        println!("Fee: {} sats", result.fee);
+                    },
+                    Err(e) => println!("Failed to remove liquidity: {}", e),
+                };
+            },
+            
+            AlkanesCommands::Swap { calldata, token, amount, fee_rate } => {
+                // Initialize alkanes manager
+                let wallet_config = deezel_cli::wallet::WalletConfig {
+                    wallet_path: args.wallet_path.clone(),
+                    network: network_params.network,
+                    bitcoin_rpc_url: bitcoin_rpc_url.clone(),
+                    metashrew_rpc_url: sandshrew_rpc_url.clone(),
+                };
+                
+                let wallet_manager = Arc::new(
+                    deezel_cli::wallet::WalletManager::new(wallet_config)
+                        .await
+                        .context("Failed to initialize wallet manager")?
+                );
+                
+                let alkanes_manager = deezel_cli::alkanes::AlkanesManager::new(
+                    Arc::new(rpc_client),
+                    wallet_manager
+                );
+                
+                let token_id = deezel_cli::alkanes::parse_alkane_id(&token)?;
+                
+                let params = deezel_cli::alkanes::types::SwapParams {
+                    calldata: deezel_cli::alkanes::contract::parse_calldata(&calldata),
+                    token: token_id,
+                    amount: amount,
+                    fee_rate: fee_rate.clone(),
+                };
+                
+                match alkanes_manager.amm.swap(params).await {
+                    Ok(result) => {
+                        println!("Swap executed successfully!");
+                        println!("Transaction ID: {}", result.txid);
+                        println!("Fee: {} sats", result.fee);
+                    },
+                    Err(e) => println!("Failed to execute swap: {}", e),
+                };
+            },
+            
+            AlkanesCommands::SimulateAdvanced { target, inputs, tokens, decoder } => {
+                // Initialize alkanes manager
+                let wallet_config = deezel_cli::wallet::WalletConfig {
+                    wallet_path: args.wallet_path.clone(),
+                    network: network_params.network,
+                    bitcoin_rpc_url: bitcoin_rpc_url.clone(),
+                    metashrew_rpc_url: sandshrew_rpc_url.clone(),
+                };
+                
+                let wallet_manager = Arc::new(
+                    deezel_cli::wallet::WalletManager::new(wallet_config)
+                        .await
+                        .context("Failed to initialize wallet manager")?
+                );
+                
+                let alkanes_manager = deezel_cli::alkanes::AlkanesManager::new(
+                    Arc::new(rpc_client),
+                    wallet_manager
+                );
+                
+                let target_id = deezel_cli::alkanes::parse_alkane_id(&target)?;
+                let parsed_inputs = deezel_cli::alkanes::simulation::parse_simulation_inputs(&inputs);
+                
+                let token_amounts = if let Some(tokens_str) = tokens {
+                    Some(deezel_cli::alkanes::token::parse_token_amounts(&tokens_str)?)
+                } else {
+                    None
+                };
+                
+                let params = deezel_cli::alkanes::types::SimulationParams {
+                    target: target_id,
+                    inputs: parsed_inputs,
+                    tokens: token_amounts,
+                    decoder: decoder.clone(),
+                };
+                
+                match alkanes_manager.simulation.simulate_advanced(params).await {
+                    Ok(result) => {
+                        println!("Simulation Result:");
+                        println!("{}", deezel_cli::alkanes::simulation::format_simulation_result(&result));
+                    },
+                    Err(e) => println!("Simulation failed: {}", e),
+                };
+            },
+            
+            AlkanesCommands::PreviewRemoveLiquidity { token, amount } => {
+                // Initialize alkanes manager
+                let wallet_config = deezel_cli::wallet::WalletConfig {
+                    wallet_path: args.wallet_path.clone(),
+                    network: network_params.network,
+                    bitcoin_rpc_url: bitcoin_rpc_url.clone(),
+                    metashrew_rpc_url: sandshrew_rpc_url.clone(),
+                };
+                
+                let wallet_manager = Arc::new(
+                    deezel_cli::wallet::WalletManager::new(wallet_config)
+                        .await
+                        .context("Failed to initialize wallet manager")?
+                );
+                
+                let alkanes_manager = deezel_cli::alkanes::AlkanesManager::new(
+                    Arc::new(rpc_client),
+                    wallet_manager
+                );
+                
+                let token_id = deezel_cli::alkanes::parse_alkane_id(&token)?;
+                
+                match alkanes_manager.amm.preview_remove_liquidity(&token_id, amount).await {
+                    Ok(preview) => {
+                        println!("Liquidity Removal Preview:");
+                        println!("  LP Tokens to Burn: {}", preview.lp_tokens_burned);
+                        println!("  Token A Amount: {}", preview.token_a_amount);
+                        println!("  Token B Amount: {}", preview.token_b_amount);
+                    },
+                    Err(e) => println!("Failed to preview liquidity removal: {}", e),
+                };
             },
         },
         Commands::View { command } => {
