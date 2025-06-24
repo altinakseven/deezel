@@ -48,6 +48,7 @@ protobuf = "=3.7.1"
 
 # WASM runtime for alkane inspection
 wasmtime = { version = "15.0", optional = true }
+wasmprinter = "0.2"
 
 # Test dependencies
 [dev-dependencies]

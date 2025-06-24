@@ -49,8 +49,23 @@ impl AlkaneInspector {
         
         // Get the WASM bytecode for the alkane
         let bytecode = self.get_alkane_bytecode(alkane_id).await?;
-        let wasm_bytes = hex::decode(&bytecode)
-            .context("Failed to decode WASM bytecode from hex")?;
+        
+        // Remove 0x prefix if present
+        let hex_string = if bytecode.starts_with("0x") {
+            &bytecode[2..]
+        } else {
+            &bytecode
+        };
+        
+        let wasm_bytes = hex::decode(hex_string)
+            .with_context(|| format!("Failed to decode WASM bytecode from hex. Hex string: '{}'",
+                                    if hex_string.len() > 200 {
+                                        format!("{}...", &hex_string[..200])
+                                    } else {
+                                        hex_string.to_string()
+                                    }))?;
+        
+        info!("Decoded bytecode length: {} bytes", wasm_bytes.len());
         
         // Save WASM to temporary file for analysis
         let wasm_path = self.deezel_dir.join(format!("alkane_{}_{}.wasm", alkane_id.block, alkane_id.tx));
@@ -80,10 +95,16 @@ impl AlkaneInspector {
     async fn get_alkane_bytecode(&self, alkane_id: &AlkaneId) -> Result<String> {
         info!("Fetching bytecode for alkane {}:{}", alkane_id.block, alkane_id.tx);
         
-        self.rpc_client.get_bytecode(
+        let bytecode = self.rpc_client.get_bytecode(
             &alkane_id.block.to_string(),
             &alkane_id.tx.to_string()
-        ).await
+        ).await?;
+        
+        info!("Received bytecode hex (first 100 chars): {}",
+              if bytecode.len() > 100 { &bytecode[..100] } else { &bytecode });
+        info!("Total bytecode length: {} characters", bytecode.len());
+        
+        Ok(bytecode)
     }
 
     /// Extract metadata directly from WASM binary using wasmtime
@@ -106,45 +127,27 @@ impl AlkaneInspector {
         Ok(())
     }
 
-    /// Disassemble WASM to WAT format
+    /// Disassemble WASM to WAT format using native wasmprinter
     async fn disassemble_wasm(&self, wasm_path: &Path) -> Result<()> {
-        info!("Disassembling WASM to WAT format");
+        info!("Disassembling WASM to WAT format using native wasmprinter");
         
-        // Check if wasm2wat is available
-        if !self.check_wabt_tools() {
-            warn!("wasm2wat not found. Please install WABT tools for disassembly.");
-            println!("=== WASM DISASSEMBLY ===");
-            println!("wasm2wat tool not found. Please install WABT tools:");
-            println!("  Ubuntu/Debian: sudo apt install wabt");
-            println!("  macOS: brew install wabt");
-            println!("  Or build from source: https://github.com/WebAssembly/wabt");
-            println!("========================");
-            return Ok(());
-        }
+        // Read the WASM file
+        let wasm_bytes = fs::read(wasm_path)
+            .context("Failed to read WASM file")?;
         
-        // Run wasm2wat to disassemble
-        let output = Command::new("wasm2wat")
-            .arg(wasm_path)
-            .output()
-            .context("Failed to run wasm2wat")?;
+        // Use wasmprinter to convert to WAT
+        let wat_content = wasmprinter::print_bytes(&wasm_bytes)
+            .context("Failed to disassemble WASM to WAT format")?;
         
-        if output.status.success() {
-            let wat_content = String::from_utf8(output.stdout)
-                .context("Failed to parse WAT output as UTF-8")?;
-            
-            println!("=== WASM DISASSEMBLY (WAT) ===");
-            println!("{}", wat_content);
-            println!("==============================");
-            
-            // Save WAT file
-            let wat_path = wasm_path.with_extension("wat");
-            fs::write(&wat_path, &wat_content)
-                .context("Failed to write WAT file")?;
-            info!("WAT disassembly saved to: {}", wat_path.display());
-        } else {
-            let error = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow::anyhow!("wasm2wat failed: {}", error));
-        }
+        println!("=== WASM DISASSEMBLY (WAT) ===");
+        println!("{}", wat_content);
+        println!("==============================");
+        
+        // Save WAT file
+        let wat_path = wasm_path.with_extension("wat");
+        fs::write(&wat_path, &wat_content)
+            .context("Failed to write WAT file")?;
+        info!("WAT disassembly saved to: {}", wat_path.display());
         
         Ok(())
     }
@@ -282,14 +285,6 @@ impl AlkaneInspector {
         Ok(())
     }
 
-    /// Check if WABT tools are available
-    fn check_wabt_tools(&self) -> bool {
-        Command::new("wasm2wat")
-            .arg("--version")
-            .output()
-            .map(|output| output.status.success())
-            .unwrap_or(false)
-    }
 }
 
 #[cfg(test)]

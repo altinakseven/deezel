@@ -748,6 +748,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "wasmprinter",
  "wasmtime",
 ]
 
@@ -3186,6 +3187,17 @@ dependencies = [
 
 [[package]]
 name = "wasmparser"
+version = "0.121.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9dbe55c8f9d0dbd25d9447a5a889ff90c0cc3feaa7395310d3d826b2c703eaab"
+dependencies = [
+ "bitflags 2.9.0",
+ "indexmap 2.8.0",
+ "semver",
+]
+
+[[package]]
+name = "wasmparser"
 version = "0.235.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "161296c618fa2d63f6ed5fffd1112937e803cb9ec71b32b01a76321555660917"
@@ -3193,6 +3205,16 @@ dependencies = [
  "bitflags 2.9.0",
  "indexmap 2.8.0",
  "semver",
+]
+
+[[package]]
+name = "wasmprinter"
+version = "0.2.80"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "60e73986a6b7fdfedb7c5bf9e7eb71135486507c8fbc4c0c42cffcb6532988b7"
+dependencies = [
+ "anyhow",
+ "wasmparser 0.121.2",
 ]
 
 [[package]]
