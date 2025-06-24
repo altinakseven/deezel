@@ -11,6 +11,10 @@ pub mod rpc;
 pub mod runestone;
 pub mod runestone_enhanced;
 
+// Test modules for e2e testing with mock metashrew
+#[cfg(test)]
+pub mod tests;
+
 // Re-export key types for convenience
 pub use wallet::WalletManager;
 pub use monitor::BlockMonitor;

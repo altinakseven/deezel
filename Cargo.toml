@@ -44,3 +44,8 @@ bitcoin = "0.32.6"
 alkanes-support = { git = "https://github.com/kungfuflex/alkanes-rs" }
 metashrew-support = { git = "https://github.com/sandshrewmetaprotocols/metashrew" }
 protobuf = "3.7"
+
+# Test dependencies
+[dev-dependencies]
+tempfile = "3.8"
+chrono = { version = "0.4", features = ["serde"] }

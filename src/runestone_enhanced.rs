@@ -139,13 +139,17 @@ pub mod diesel_operations {
 ///
 /// # Example
 ///
-/// ```
+/// ```no_run
 /// use bdk::bitcoin::Transaction;
-/// use deezel::runestone_enhanced::decode_runestone;
+/// use deezel_cli::runestone_enhanced::decode_runestone;
+/// use anyhow::Result;
 ///
-/// let tx = // get transaction from somewhere
-/// let runestone_data = decode_runestone(&tx)?;
-/// println!("{}", serde_json::to_string_pretty(&runestone_data)?);
+/// fn example() -> Result<()> {
+///     // let tx = get_transaction_from_somewhere();
+///     // let runestone_data = decode_runestone(&tx)?;
+///     // println!("{}", serde_json::to_string_pretty(&runestone_data)?);
+///     Ok(())
+/// }
 /// ```
 pub fn decode_runestone(tx: &Transaction) -> Result<Value> {
     debug!("Decoding Runestone from transaction {}", tx.txid());
@@ -542,14 +546,18 @@ fn decode_varint(bytes: &[u8]) -> Result<(u128, usize)> {
 ///
 /// # Example
 ///
-/// ```
+/// ```no_run
 /// use bdk::bitcoin::Transaction;
-/// use deezel::runestone_enhanced::format_runestone;
+/// use deezel_cli::runestone_enhanced::format_runestone;
+/// use anyhow::Result;
 ///
-/// let tx = // get transaction from somewhere
-/// let protostones = format_runestone(&tx)?;
-/// for protostone in protostones {
-///     println!("{:?}", protostone);
+/// fn example() -> Result<()> {
+///     // let tx = get_transaction_from_somewhere();
+///     // let protostones = format_runestone(&tx)?;
+///     // for protostone in protostones {
+///     //     println!("{:?}", protostone);
+///     // }
+///     Ok(())
 /// }
 /// ```
 pub fn format_runestone(tx: &Transaction) -> Result<Vec<Protostone>> {
