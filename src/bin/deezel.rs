@@ -104,6 +104,9 @@ enum Commands {
         /// Perform fuzzing analysis with metashrew-runtime
         #[clap(long)]
         fuzz: bool,
+        /// Opcode ranges to fuzz (e.g., "0-999" or "0-999,2000-2500")
+        #[clap(long)]
+        fuzz_ranges: Option<String>,
         /// Extract metadata directly from WASM binary
         #[clap(long)]
         meta: bool,
@@ -408,6 +411,9 @@ enum AlkanesCommands {
         /// Perform fuzzing analysis with wasmi runtime
         #[clap(long)]
         fuzz: bool,
+        /// Opcode ranges to fuzz (e.g., "0-999" or "0-999,2000-2500")
+        #[clap(long)]
+        fuzz_ranges: Option<String>,
         /// Extract metadata directly from WASM binary
         #[clap(long)]
         meta: bool,
@@ -1517,7 +1523,7 @@ async fn main() -> Result<()> {
                 };
             },
             
-            AlkanesCommands::Inspect { alkane_id, disasm, fuzz, meta } => {
+            AlkanesCommands::Inspect { alkane_id, disasm, fuzz, fuzz_ranges, meta } => {
                 info!("Inspecting alkane: {}", alkane_id);
                 
                 // Parse alkane ID
@@ -1529,7 +1535,7 @@ async fn main() -> Result<()> {
                 ).context("Failed to initialize alkane inspector")?;
                 
                 // Perform inspection with requested analysis modes
-                match inspector.inspect_alkane(&parsed_alkane_id, disasm, fuzz, meta).await {
+                match inspector.inspect_alkane(&parsed_alkane_id, disasm, fuzz, fuzz_ranges.as_deref(), meta).await {
                     Ok(_) => {
                         println!("Alkane inspection completed successfully");
                     },
@@ -1620,7 +1626,7 @@ async fn main() -> Result<()> {
                 },
             }
         },
-        Commands::InspectAlkane { alkane_id, disasm, fuzz, meta } => {
+        Commands::InspectAlkane { alkane_id, disasm, fuzz, fuzz_ranges, meta } => {
             info!("Inspecting alkane: {}", alkane_id);
             
             // Parse alkane ID
@@ -1632,7 +1638,7 @@ async fn main() -> Result<()> {
             ).context("Failed to initialize alkane inspector")?;
             
             // Perform inspection with requested analysis modes
-            match inspector.inspect_alkane(&parsed_alkane_id, disasm, fuzz, meta).await {
+            match inspector.inspect_alkane(&parsed_alkane_id, disasm, fuzz, fuzz_ranges.as_deref(), meta).await {
                 Ok(_) => {
                     println!("Alkane inspection completed successfully");
                 },

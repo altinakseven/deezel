@@ -52,15 +52,11 @@ impl AlkanesRuntimeContext {
     }
     
     pub fn serialize(&self) -> Vec<u8> {
-        let result = self
-            .flatten()
-            .into_iter()
-            .map(|v| {
-                let ar = (&v.to_le_bytes()).to_vec();
-                ar
-            })
-            .flatten()
-            .collect::<Vec<u8>>();
+        let flattened = self.flatten();
+        let mut result = Vec::new();
+        for value in flattened {
+            result.extend_from_slice(&value.to_le_bytes());
+        }
         result
     }
     
@@ -217,16 +213,10 @@ impl AlkaneInspector {
                     let memory_data = memory.data_mut(&mut caller);
                     let output_addr = output as usize;
                     
-                    // Write length first
-                    if output_addr + 4 <= memory_data.len() {
-                        let len_bytes = (serialized.len() as u32).to_le_bytes();
-                        memory_data[output_addr..output_addr + 4].copy_from_slice(&len_bytes);
-                        
-                        // Write data
-                        if output_addr + 4 + serialized.len() <= memory_data.len() {
-                            memory_data[output_addr + 4..output_addr + 4 + serialized.len()].copy_from_slice(&serialized);
-                            return serialized.len() as i32;
-                        }
+                    // Write the serialized context directly (no length prefix)
+                    if output_addr + serialized.len() <= memory_data.len() {
+                        memory_data[output_addr..output_addr + serialized.len()].copy_from_slice(&serialized);
+                        return serialized.len() as i32;
                     }
                 }
             }
@@ -506,6 +496,220 @@ impl AlkaneInspector {
         }
     }
 
+    /// Execute the __execute export with proper alkane context for fuzzing
+    async fn execute_opcode_with_context(&self, bytecode: &[u8], opcode: u128, alkane_id: &AlkaneId) -> Result<ExecutionResult> {
+        let engine = self.create_engine();
+        
+        // Create context with the alkane ID and opcode
+        let mut context = AlkanesRuntimeContext {
+            inputs: vec![opcode], // First input is the opcode we're testing
+            ..Default::default()
+        };
+        
+        // Set context.myself to the actual alkane ID (block, tx as u128[2])
+        context.myself = AlkanesAlkaneId {
+            block: alkane_id.block as u128,
+            tx: alkane_id.tx as u128,
+        };
+        
+        // Set a placeholder caller (could be the same alkane or a different one)
+        context.caller = AlkanesAlkaneId {
+            block: alkane_id.block as u128,
+            tx: alkane_id.tx as u128,
+        };
+        
+        // Set up message context with proper vout
+        context.message.vout = 0; // Default vout
+        context.message.height = 800000; // Default height
+        context.message.calldata = vec![]; // Empty calldata for fuzzing
+        
+        let mut store = self.create_store(&engine, context);
+        let linker = Self::create_host_functions(store.engine());
+        
+        // Compile and instantiate the module
+        let module = Module::new(store.engine(), bytecode)
+            .context("Failed to compile WASM module")?;
+        
+        let instance = linker.instantiate(&mut store, &module)
+            .context("Failed to instantiate WASM module")?;
+        
+        // Get memory export
+        let memory = instance.get_export(&mut store, "memory")
+            .and_then(|export| export.into_memory())
+            .ok_or_else(|| anyhow::anyhow!("No memory export found"))?;
+        
+        // Get __execute export
+        let execute_func = instance.get_export(&mut store, "__execute")
+            .and_then(|export| export.into_func())
+            .ok_or_else(|| anyhow::anyhow!("No __execute export found"))?
+            .typed::<(), i32>(&mut store)
+            .context("Failed to get typed __execute function")?;
+        
+        // Execute with opcode
+        let start_time = Instant::now();
+        let result = execute_func.call(&mut store, ());
+        let execution_time = start_time.elapsed();
+        
+        match result {
+            Ok(response_ptr) => {
+                // Decode the ExtendedCallResponse from the returned pointer
+                let (return_data, error_message) = self.decode_extended_call_response(&store, memory, response_ptr as usize)?;
+                
+                Ok(ExecutionResult {
+                    success: true,
+                    return_value: Some(response_ptr),
+                    return_data,
+                    error: error_message,
+                    execution_time,
+                    opcode,
+                })
+            },
+            Err(e) => Ok(ExecutionResult {
+                success: false,
+                return_value: None,
+                return_data: vec![],
+                error: Some(format!("WASM execution failed: {}", e)),
+                execution_time,
+                opcode,
+            }),
+        }
+    }
+
+    /// Decode ExtendedCallResponse structure from WASM memory
+    fn decode_extended_call_response(&self, store: &Store<AlkanesState>, memory: Memory, ptr: usize) -> Result<(Vec<u8>, Option<String>)> {
+        let memory_size = memory.data_size(store);
+        
+        
+        if ptr < 4 || ptr >= memory_size {
+            return Err(anyhow::anyhow!("Response pointer 0x{:x} is invalid (memory size: {})", ptr, memory_size));
+        }
+        
+        // Read length from ptr-4 (4 bytes before the pointer)
+        let mut len_bytes = [0u8; 4];
+        memory.read(store, ptr - 4, &mut len_bytes)
+            .map_err(|e| anyhow::anyhow!("Failed to read response length at 0x{:x}: {:?}", ptr - 4, e))?;
+        let response_len = u32::from_le_bytes(len_bytes) as usize;
+        
+        
+        if response_len == 0 {
+            return Ok((vec![], None));
+        }
+        
+        if ptr + response_len > memory_size {
+            return Err(anyhow::anyhow!("Response data extends beyond memory bounds: ptr=0x{:x}, len={}, memory_size={}", ptr, response_len, memory_size));
+        }
+        
+        // Read the ExtendedCallResponse structure starting at ptr
+        let mut response_bytes = vec![0u8; response_len];
+        memory.read(store, ptr, &mut response_bytes)
+            .map_err(|e| anyhow::anyhow!("Failed to read ExtendedCallResponse at 0x{:x}: {:?}", ptr, e))?;
+        
+        
+        // Parse the ExtendedCallResponse structure
+        // Based on the user's feedback, we need to extract the data Vec<u8> from this structure
+        // For now, let's examine the structure to understand its layout
+        
+        // The structure likely contains:
+        // - success: bool (1 byte)
+        // - return_value: Vec<u8> (length-prefixed)
+        // - response_data: Vec<u8> (length-prefixed)
+        // - error: Option<String> (length-prefixed)
+        
+        // Let's try to parse it step by step
+        let mut offset = 0;
+        
+        // Skip the first part and look for the data Vec<u8>
+        // Based on the debugging output, the interesting data seems to start around offset 16-20
+        
+        // Look for the Solidity error signature pattern
+        let mut data_start = 0;
+        let mut found_error_sig = false;
+        
+        for i in 0..response_bytes.len().saturating_sub(4) {
+            if response_bytes[i..i+4] == [0x08, 0xc3, 0x79, 0xa0] {
+                data_start = i;
+                found_error_sig = true;
+                break;
+            }
+        }
+        
+        if found_error_sig {
+            // Extract the error message after the signature
+            let message_start = data_start + 4; // Skip the 4-byte signature
+            
+            if message_start < response_bytes.len() {
+                let message_bytes = &response_bytes[message_start..];
+                
+                // Skip the first 4 bytes as per user's instruction
+                let useful_bytes = if message_bytes.len() > 4 {
+                    &message_bytes[4..]
+                } else {
+                    message_bytes
+                };
+                
+                // Try to extract readable text
+                let mut error_msg = String::new();
+                for &byte in useful_bytes {
+                    if byte >= 32 && byte <= 126 { // Printable ASCII
+                        error_msg.push(byte as char);
+                    } else if byte == 0 {
+                        break; // End of string
+                    }
+                }
+                
+                let clean_msg = error_msg.trim().to_string();
+                if !clean_msg.is_empty() {
+                    return Ok((useful_bytes.to_vec(), Some(clean_msg)));
+                } else {
+                    return Ok((useful_bytes.to_vec(), Some("Unknown error".to_string())));
+                }
+            }
+        }
+        
+        // If no error signature found, look for other patterns
+        // Check if this might be a successful response
+        let first_16_zero = response_bytes.len() >= 16 && response_bytes[0..16].iter().all(|&b| b == 0);
+        if first_16_zero {
+            
+            // Look for data after the header
+            if response_bytes.len() > 16 {
+                let data_part = &response_bytes[16..];
+                
+                // Skip first 4 bytes as per user's instruction
+                let useful_data = if data_part.len() > 4 {
+                    &data_part[4..]
+                } else {
+                    data_part
+                };
+                
+                if useful_data.iter().any(|&b| b != 0) {
+                    // Try to interpret as string
+                    if let Ok(text) = String::from_utf8(useful_data.to_vec()) {
+                        let clean_text = text.trim_matches('\0').trim();
+                        if !clean_text.is_empty() && clean_text.is_ascii() {
+                            return Ok((useful_data.to_vec(), None));
+                        }
+                    }
+                    
+                    return Ok((useful_data.to_vec(), None));
+                } else {
+                    return Ok((vec![], None));
+                }
+            }
+        }
+        
+        // Fallback: return the raw response data
+        
+        // Skip first 4 bytes as per user's instruction
+        let useful_bytes = if response_bytes.len() > 4 {
+            &response_bytes[4..]
+        } else {
+            &response_bytes
+        };
+        
+        Ok((useful_bytes.to_vec(), Some("Unknown response format".to_string())))
+    }
+
     /// Read metadata from WASM memory
     fn read_metadata_from_memory(&self, store: &Store<AlkanesState>, memory: Memory, ptr: usize) -> Result<AlkaneMetadata> {
         info!("Reading metadata from memory at pointer: 0x{:x} ({})", ptr, ptr);
@@ -637,6 +841,7 @@ impl AlkaneInspector {
         alkane_id: &AlkaneId,
         disasm: bool,
         fuzz: bool,
+        fuzz_ranges: Option<&str>,
         meta: bool,
     ) -> Result<()> {
         info!("Inspecting alkane {}:{}", alkane_id.block, alkane_id.tx);
@@ -678,8 +883,7 @@ impl AlkaneInspector {
         }
         
         if fuzz {
-            self.setup_fuzzing_environment().await?;
-            self.perform_fuzzing_analysis(alkane_id, &wasm_bytes).await?;
+            self.perform_fuzzing_analysis(alkane_id, &wasm_bytes, fuzz_ranges).await?;
         }
         
         Ok(())
@@ -888,8 +1092,43 @@ impl AlkaneInspector {
         Ok(())
     }
 
+    /// Parse opcode ranges from string (e.g., "0-999,2000-2500")
+    fn parse_opcode_ranges(ranges_str: &str) -> Result<Vec<u128>> {
+        let mut opcodes = Vec::new();
+        
+        for range_part in ranges_str.split(',') {
+            let range_part = range_part.trim();
+            if range_part.contains('-') {
+                let parts: Vec<&str> = range_part.split('-').collect();
+                if parts.len() != 2 {
+                    return Err(anyhow::anyhow!("Invalid range format: {}", range_part));
+                }
+                let start: u128 = parts[0].parse()
+                    .with_context(|| format!("Invalid start opcode: {}", parts[0]))?;
+                let end: u128 = parts[1].parse()
+                    .with_context(|| format!("Invalid end opcode: {}", parts[1]))?;
+                
+                if start > end {
+                    return Err(anyhow::anyhow!("Invalid range: start {} > end {}", start, end));
+                }
+                
+                for opcode in start..=end {
+                    opcodes.push(opcode);
+                }
+            } else {
+                let opcode: u128 = range_part.parse()
+                    .with_context(|| format!("Invalid opcode: {}", range_part))?;
+                opcodes.push(opcode);
+            }
+        }
+        
+        opcodes.sort();
+        opcodes.dedup();
+        Ok(opcodes)
+    }
+
     /// Perform fuzzing analysis using wasmi runtime
-    async fn perform_fuzzing_analysis(&self, alkane_id: &AlkaneId, wasm_bytes: &[u8]) -> Result<()> {
+    async fn perform_fuzzing_analysis(&self, alkane_id: &AlkaneId, wasm_bytes: &[u8], fuzz_ranges: Option<&str>) -> Result<()> {
         info!("Performing fuzzing analysis for alkane {}:{}", alkane_id.block, alkane_id.tx);
         
         println!("=== FUZZING ANALYSIS ===");
@@ -897,16 +1136,19 @@ impl AlkaneInspector {
         println!("WASM size: {} bytes", wasm_bytes.len());
         println!();
         
-        // Test opcodes 0-100 for demonstration
+        // Determine which opcodes to test
+        let opcodes_to_test = if let Some(ranges_str) = fuzz_ranges {
+            Self::parse_opcode_ranges(ranges_str)?
+        } else {
+            // Default: test opcodes 0-999
+            (0..1000).collect()
+        };
+        
         let mut results = Vec::new();
         
-        println!("Testing opcodes 0-100...");
-        for opcode in 0..=100 {
-            if opcode % 10 == 0 {
-                println!("  Testing opcode {}...", opcode);
-            }
-            
-            match self.execute_opcode(wasm_bytes, opcode).await {
+        println!("Testing {} opcodes...", opcodes_to_test.len());
+        for opcode in opcodes_to_test {
+            match self.execute_opcode_with_context(wasm_bytes, opcode, alkane_id).await {
                 Ok(result) => {
                     results.push(result);
                 }
@@ -919,117 +1161,272 @@ impl AlkaneInspector {
         // Analyze return data patterns to distinguish implemented vs unimplemented opcodes
         let mut return_data_patterns: std::collections::HashMap<Vec<u8>, Vec<u128>> = std::collections::HashMap::new();
         let mut error_patterns: std::collections::HashMap<String, Vec<u128>> = std::collections::HashMap::new();
+        let mut success_count = 0;
+        let mut error_count = 0;
         
         for result in &results {
             if result.success {
+                success_count += 1;
                 return_data_patterns.entry(result.return_data.clone())
                     .or_insert_with(Vec::new)
                     .push(result.opcode);
             } else if let Some(error) = &result.error {
+                error_count += 1;
                 error_patterns.entry(error.clone())
                     .or_insert_with(Vec::new)
                     .push(result.opcode);
             }
         }
         
+        // Find the most common patterns (likely unimplemented opcodes)
+        let most_common_data_pattern = return_data_patterns.iter()
+            .max_by_key(|(_, opcodes)| opcodes.len())
+            .map(|(data, opcodes)| (data.clone(), opcodes.clone()));
+            
+        let most_common_error_pattern = error_patterns.iter()
+            .max_by_key(|(_, opcodes)| opcodes.len())
+            .map(|(error, opcodes)| (error.clone(), opcodes.clone()));
+        
         println!();
         println!("=== FUZZING RESULTS ===");
-        println!("Total opcodes tested: {}", results.len());
+        println!("📊 Total opcodes tested: {}", results.len());
+        println!("✅ Successful executions: {}", success_count);
+        println!("❌ Failed executions: {}", error_count);
         
-        // Report return data patterns
-        println!();
-        println!("Return Data Patterns:");
-        for (data, opcodes) in &return_data_patterns {
-            println!("  Pattern ({}): {} opcodes",
-                    if data.is_empty() { "empty".to_string() } else { hex::encode(data) },
-                    opcodes.len());
-            
-            // Try to interpret the data as a string
-            if let Ok(text) = String::from_utf8(data.clone()) {
-                if !text.trim().is_empty() && text.is_ascii() {
-                    println!("    Text: \"{}\"", text.trim());
-                }
-            }
-            
-            println!("    Opcodes: {:?}", opcodes);
-            
-            // Show first few bytes if data is long
-            if data.len() > 32 {
-                println!("    Data (first 32 bytes): {}", hex::encode(&data[..32]));
-            } else if !data.is_empty() {
-                println!("    Data: {}", hex::encode(data));
-            }
-        }
+        // Identify unique vs common patterns with smarter detection
+        let mut unique_opcodes = Vec::new();
+        let mut common_pattern_opcodes = Vec::new();
         
-        // Report error patterns
-        if !error_patterns.is_empty() {
-            println!();
-            println!("Error Patterns:");
-            for (error, opcodes) in &error_patterns {
-                println!("  Error: \"{}\"", error);
-                println!("    Opcodes: {:?}", opcodes);
-            }
-        }
+        // Calculate threshold based on total results (at least 10% of results to be considered common)
+        let common_threshold = std::cmp::max(10, results.len() / 10);
         
-        // Identify likely implemented opcodes (those with unique return data)
-        let mut implemented_opcodes = Vec::new();
-        let mut unimplemented_opcodes = Vec::new();
+        // Also check for "Unknown opcode" pattern specifically
+        let unknown_opcode_patterns: Vec<_> = return_data_patterns.iter()
+            .filter(|(data, opcodes)| {
+                opcodes.len() > common_threshold &&
+                String::from_utf8_lossy(data).contains("Unknown opcode")
+            })
+            .collect();
         
-        // Find the most common return pattern (likely the "unimplemented" response)
-        let most_common_pattern = return_data_patterns.iter()
-            .max_by_key(|(_, opcodes)| opcodes.len())
-            .map(|(data, _)| data.clone());
+        let unknown_error_patterns: Vec<_> = error_patterns.iter()
+            .filter(|(error, opcodes)| {
+                opcodes.len() > common_threshold &&
+                error.contains("Unknown opcode")
+            })
+            .collect();
         
         for result in &results {
+            let mut is_common_pattern = false;
+            
             if result.success {
-                if Some(&result.return_data) == most_common_pattern.as_ref() && return_data_patterns[&result.return_data].len() > 10 {
-                    unimplemented_opcodes.push(result.opcode);
-                } else {
-                    implemented_opcodes.push(result.opcode);
+                // Check if this matches a common data pattern
+                if let Some(pattern_opcodes) = return_data_patterns.get(&result.return_data) {
+                    if pattern_opcodes.len() > common_threshold {
+                        is_common_pattern = true;
+                    }
                 }
+                
+                // Also check if it specifically matches "Unknown opcode" patterns
+                for (pattern_data, _) in &unknown_opcode_patterns {
+                    if &result.return_data == *pattern_data {
+                        is_common_pattern = true;
+                        break;
+                    }
+                }
+            } else if let Some(error) = &result.error {
+                // Check if this matches a common error pattern
+                if let Some(pattern_opcodes) = error_patterns.get(error) {
+                    if pattern_opcodes.len() > common_threshold {
+                        is_common_pattern = true;
+                    }
+                }
+                
+                // Also check if it specifically matches "Unknown opcode" error patterns
+                for (pattern_error, _) in &unknown_error_patterns {
+                    if error == *pattern_error {
+                        is_common_pattern = true;
+                        break;
+                    }
+                }
+            }
+            
+            if is_common_pattern {
+                common_pattern_opcodes.push(result.opcode);
             } else {
-                unimplemented_opcodes.push(result.opcode);
+                unique_opcodes.push(result.opcode);
             }
         }
         
         println!();
         println!("=== OPCODE ANALYSIS ===");
-        println!("Likely implemented opcodes: {} ({:?})", implemented_opcodes.len(), implemented_opcodes);
-        println!("Likely unimplemented opcodes: {} (showing common error pattern)", unimplemented_opcodes.len());
+        println!("🎯 Unique/Interesting opcodes: {} total", unique_opcodes.len());
+        println!("🔄 Common pattern opcodes: {} total", common_pattern_opcodes.len());
         
-        if let Some(common_pattern) = most_common_pattern {
-            if let Ok(error_text) = String::from_utf8(common_pattern.clone()) {
-                if !error_text.trim().is_empty() {
-                    println!("Common error message: \"{}\"", error_text.trim());
-                }
+        // Show common patterns summary
+        println!();
+        println!("📊 Common Response Patterns:");
+        
+        // Show most common data patterns
+        if let Some((common_data, common_opcodes)) = most_common_data_pattern {
+            println!("   🔄 Most common data pattern ({} opcodes):", common_opcodes.len());
+            let decoded_data = Self::decode_data_bytevector(&common_data);
+            println!("      📦 Data: {}", decoded_data);
+            
+            // Show range summary instead of all opcodes
+            if common_opcodes.len() > 10 {
+                let mut sorted_opcodes = common_opcodes.clone();
+                sorted_opcodes.sort();
+                let ranges = Self::compress_opcode_ranges(&sorted_opcodes);
+                println!("      🎯 Opcode ranges: {}", ranges);
+            } else {
+                println!("      🎯 Opcodes: {:?}", common_opcodes);
             }
         }
         
-        // Show detailed results for implemented opcodes
-        if !implemented_opcodes.is_empty() {
+        // Show most common error patterns
+        if let Some((common_error, common_opcodes)) = most_common_error_pattern {
+            println!("   ❌ Most common error pattern ({} opcodes):", common_opcodes.len());
+            println!("      📝 Error: \"{}\"", common_error);
+            
+            if common_opcodes.len() > 10 {
+                let mut sorted_opcodes = common_opcodes.clone();
+                sorted_opcodes.sort();
+                let ranges = Self::compress_opcode_ranges(&sorted_opcodes);
+                println!("      🎯 Opcode ranges: {}", ranges);
+            } else {
+                println!("      🎯 Opcodes: {:?}", common_opcodes);
+            }
+        }
+        
+        // Show detailed results only for unique/interesting opcodes
+        if !unique_opcodes.is_empty() {
+            unique_opcodes.sort();
             println!();
-            println!("Detailed results for implemented opcodes:");
+            println!("🔍 Detailed results for unique/interesting opcodes:");
+            println!("   Opcodes: {:?}", unique_opcodes);
+            
             for result in &results {
-                if implemented_opcodes.contains(&result.opcode) {
-                    println!("  Opcode {}: return={:?}, time={:?}",
-                            result.opcode, result.return_value, result.execution_time);
+                if unique_opcodes.contains(&result.opcode) {
+                    let status = if result.success { "✅" } else { "❌" };
+                    println!("   {} Opcode {}: return={:?}, time={:?}",
+                            status, result.opcode, result.return_value, result.execution_time);
+                    
                     if !result.return_data.is_empty() {
-                        if let Ok(text) = String::from_utf8(result.return_data.clone()) {
-                            if text.trim().is_ascii() && !text.trim().is_empty() {
-                                println!("    Response: \"{}\"", text.trim());
-                            }
-                        }
-                        if result.return_data.len() <= 32 {
-                            println!("    Data: {}", hex::encode(&result.return_data));
-                        }
+                        let decoded_data = Self::decode_data_bytevector(&result.return_data);
+                        println!("      📦 Data: {}", decoded_data);
+                    }
+                    
+                    if let Some(error) = &result.error {
+                        println!("      ⚠️  Error: {}", error);
                     }
                 }
             }
         }
         
+        
+        // Check if any of the known opcodes from metadata are behaving differently
+        let known_opcodes = vec![0, 42, 69, 77, 99, 100, 101, 102, 103, 104, 1000, 2000, 2001, 2002];
+        let mut known_results = Vec::new();
+        
+        for result in &results {
+            if known_opcodes.contains(&(result.opcode as u32)) {
+                known_results.push(result);
+            }
+        }
+        
+        if !known_results.is_empty() {
+            println!();
+            println!("🎯 Results for known opcodes from metadata:");
+            for result in known_results {
+                let status = if result.success { "✅" } else { "❌" };
+                println!("   {} Opcode {}: return={:?}, time={:?}",
+                        status, result.opcode, result.return_value, result.execution_time);
+                
+                if !result.return_data.is_empty() {
+                    let decoded_data = Self::decode_data_bytevector(&result.return_data);
+                    println!("      📦 Data: {}", decoded_data);
+                }
+                
+                if let Some(error) = &result.error {
+                    println!("      ⚠️  Error: {}", error);
+                }
+            }
+        }
+        
+        
         println!("========================");
         
         Ok(())
+    }
+
+    /// Decode data bytevector for display
+    fn decode_data_bytevector(data: &[u8]) -> String {
+        if data.is_empty() {
+            return "Empty".to_string();
+        }
+        
+        // Check for Solidity error signature (0x08c379a0)
+        if data.len() >= 4 && data[0..4] == [0x08, 0xc3, 0x79, 0xa0] {
+            // Skip the 4-byte error signature and try to decode as UTF-8
+            let message_bytes = &data[4..];
+            if let Ok(utf8_string) = String::from_utf8(message_bytes.to_vec()) {
+                let clean_string = utf8_string.trim_matches('\0').trim();
+                if !clean_string.is_empty() && clean_string.is_ascii() {
+                    return format!("Solidity Error: \"{}\"", clean_string);
+                }
+            }
+            // If UTF-8 decoding fails, show as hex
+            return format!("Solidity Error (hex): {}", hex::encode(message_bytes));
+        }
+        
+        // Try to decode as UTF-8 string first
+        if let Ok(utf8_string) = String::from_utf8(data.to_vec()) {
+            let clean_string = utf8_string.trim_matches('\0').trim();
+            if !clean_string.is_empty() && clean_string.is_ascii() {
+                return format!("String: \"{}\"", clean_string);
+            }
+        }
+        
+        // Otherwise, show as hex
+        if data.len() <= 64 {
+            format!("Hex: {}", hex::encode(data))
+        } else {
+            format!("Hex (first 64 bytes): {}", hex::encode(&data[..64]))
+        }
+    }
+
+    /// Compress a list of opcodes into readable ranges (e.g., "1-10, 15, 20-25")
+    fn compress_opcode_ranges(opcodes: &[u128]) -> String {
+        if opcodes.is_empty() {
+            return String::new();
+        }
+        
+        let mut ranges = Vec::new();
+        let mut start = opcodes[0];
+        let mut end = opcodes[0];
+        
+        for &opcode in opcodes.iter().skip(1) {
+            if opcode == end + 1 {
+                end = opcode;
+            } else {
+                if start == end {
+                    ranges.push(start.to_string());
+                } else {
+                    ranges.push(format!("{}-{}", start, end));
+                }
+                start = opcode;
+                end = opcode;
+            }
+        }
+        
+        // Add the last range
+        if start == end {
+            ranges.push(start.to_string());
+        } else {
+            ranges.push(format!("{}-{}", start, end));
+        }
+        
+        ranges.join(", ")
     }
 }
 
