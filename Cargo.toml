@@ -47,8 +47,9 @@ metashrew-support = { git = "https://github.com/sandshrewmetaprotocols/metashrew
 protobuf = "=3.7.1"
 
 # WASM runtime for alkane inspection
-wasmtime = { version = "15.0", optional = true }
+wasmtime = "25.0"
 wasmprinter = "0.2"
+wat = "1.0"
 
 # Test dependencies
 [dev-dependencies]

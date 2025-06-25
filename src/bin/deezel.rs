@@ -398,6 +398,20 @@ enum AlkanesCommands {
         #[clap(long)]
         amount: u64,
     },
+    /// Inspect an alkane with advanced analysis capabilities
+    Inspect {
+        /// Alkane ID in format block:tx (e.g., 2:0)
+        alkane_id: String,
+        /// Output WASM disassembly (WAT format)
+        #[clap(long)]
+        disasm: bool,
+        /// Perform fuzzing analysis with wasmi runtime
+        #[clap(long)]
+        fuzz: bool,
+        /// Extract metadata directly from WASM binary
+        #[clap(long)]
+        meta: bool,
+    },
 }
 
 /// Block tag for specifying which block to query
@@ -1501,6 +1515,29 @@ async fn main() -> Result<()> {
                     },
                     Err(e) => println!("Failed to preview liquidity removal: {}", e),
                 };
+            },
+            
+            AlkanesCommands::Inspect { alkane_id, disasm, fuzz, meta } => {
+                info!("Inspecting alkane: {}", alkane_id);
+                
+                // Parse alkane ID
+                let parsed_alkane_id = deezel_cli::alkanes::parse_alkane_id(&alkane_id)?;
+                
+                // Initialize RPC client for inspector
+                let inspector = deezel_cli::alkanes::inspector::AlkaneInspector::new(
+                    Arc::new(rpc_client)
+                ).context("Failed to initialize alkane inspector")?;
+                
+                // Perform inspection with requested analysis modes
+                match inspector.inspect_alkane(&parsed_alkane_id, disasm, fuzz, meta).await {
+                    Ok(_) => {
+                        println!("Alkane inspection completed successfully");
+                    },
+                    Err(e) => {
+                        println!("Alkane inspection failed: {}", e);
+                        std::process::exit(1);
+                    }
+                }
             },
         },
         Commands::View { command } => {
