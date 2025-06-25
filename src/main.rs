@@ -6,7 +6,6 @@ mod wallet;
 mod monitor;
 mod transaction;
 mod rpc;
-mod runestone;
 
 /// A Bitcoin wallet CLI tool for automated DIESEL token minting and management
 #[derive(Parser, Debug)]

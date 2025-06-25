@@ -7,6 +7,7 @@ use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::fs;
 use std::time::{Duration, Instant};
+use sha3::{Digest, Keccak256};
 
 use crate::rpc::RpcClient;
 use super::types::AlkaneId;
@@ -640,12 +641,8 @@ impl AlkaneInspector {
             if message_start < response_bytes.len() {
                 let message_bytes = &response_bytes[message_start..];
                 
-                // Skip the first 4 bytes as per user's instruction
-                let useful_bytes = if message_bytes.len() > 4 {
-                    &message_bytes[4..]
-                } else {
-                    message_bytes
-                };
+                // Read everything immediately after the magic bytes (don't skip additional 4 bytes)
+                let useful_bytes = message_bytes;
                 
                 // Try to extract readable text
                 let mut error_msg = String::new();
@@ -675,12 +672,8 @@ impl AlkaneInspector {
             if response_bytes.len() > 16 {
                 let data_part = &response_bytes[16..];
                 
-                // Skip first 4 bytes as per user's instruction
-                let useful_data = if data_part.len() > 4 {
-                    &data_part[4..]
-                } else {
-                    data_part
-                };
+                // Use the data directly (don't skip additional 4 bytes)
+                let useful_data = data_part;
                 
                 if useful_data.iter().any(|&b| b != 0) {
                     // Try to interpret as string
@@ -699,15 +692,7 @@ impl AlkaneInspector {
         }
         
         // Fallback: return the raw response data
-        
-        // Skip first 4 bytes as per user's instruction
-        let useful_bytes = if response_bytes.len() > 4 {
-            &response_bytes[4..]
-        } else {
-            &response_bytes
-        };
-        
-        Ok((useful_bytes.to_vec(), Some("Unknown response format".to_string())))
+        Ok((response_bytes, Some("Unknown response format".to_string())))
     }
 
     /// Read metadata from WASM memory
@@ -843,6 +828,7 @@ impl AlkaneInspector {
         fuzz: bool,
         fuzz_ranges: Option<&str>,
         meta: bool,
+        codehash: bool,
     ) -> Result<()> {
         info!("Inspecting alkane {}:{}", alkane_id.block, alkane_id.tx);
         
@@ -874,6 +860,10 @@ impl AlkaneInspector {
         info!("WASM bytecode saved to: {}", wasm_path.display());
         
         // Perform requested analysis
+        if codehash {
+            self.compute_codehash(&wasm_bytes).await?;
+        }
+        
         if meta {
             self.extract_metadata(&wasm_bytes).await?;
         }
@@ -903,6 +893,24 @@ impl AlkaneInspector {
         info!("Total bytecode length: {} characters", bytecode.len());
         
         Ok(bytecode)
+    }
+
+    /// Compute SHA3 (Keccak256) hash of the WASM bytecode
+    async fn compute_codehash(&self, wasm_bytes: &[u8]) -> Result<()> {
+        info!("Computing SHA3 hash of WASM bytecode");
+        
+        // Compute Keccak256 hash (which is what Ethereum calls SHA3)
+        let mut hasher = Keccak256::new();
+        hasher.update(wasm_bytes);
+        let hash = hasher.finalize();
+        
+        println!("=== WASM CODEHASH ===");
+        println!("📦 WASM size: {} bytes", wasm_bytes.len());
+        println!("🔐 SHA3 (Keccak256): 0x{}", hex::encode(&hash));
+        println!("🔐 SHA3 (no prefix): {}", hex::encode(&hash));
+        println!("=====================");
+        
+        Ok(())
     }
 
     /// Extract metadata using wasmi runtime
@@ -1379,20 +1387,23 @@ impl AlkaneInspector {
             return format!("Solidity Error (hex): {}", hex::encode(message_bytes));
         }
         
-        // Try to decode as UTF-8 string first
-        if let Ok(utf8_string) = String::from_utf8(data.to_vec()) {
-            let clean_string = utf8_string.trim_matches('\0').trim();
-            if !clean_string.is_empty() && clean_string.is_ascii() {
-                return format!("String: \"{}\"", clean_string);
-            }
-        }
-        
-        // Otherwise, show as hex
-        if data.len() <= 64 {
+        // For non-error responses, show both hex and UTF-8 if decodable
+        let hex_part = if data.len() <= 64 {
             format!("Hex: {}", hex::encode(data))
         } else {
             format!("Hex (first 64 bytes): {}", hex::encode(&data[..64]))
+        };
+        
+        // Try to decode as UTF-8 string
+        if let Ok(utf8_string) = String::from_utf8(data.to_vec()) {
+            let clean_string = utf8_string.trim_matches('\0').trim();
+            if !clean_string.is_empty() && clean_string.is_ascii() {
+                return format!("{} | UTF-8: \"{}\"", hex_part, clean_string);
+            }
         }
+        
+        // If UTF-8 decoding fails, just show hex
+        hex_part
     }
 
     /// Compress a list of opcodes into readable ranges (e.g., "1-10, 15, 20-25")

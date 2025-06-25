@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 // Import from our crate
 use deezel_cli::rpc::{RpcClient, RpcConfig};
-use deezel_cli::format_runestone;
+use deezel_cli::runestone_enhanced::format_runestone_with_decoded_messages;
 use bdk::bitcoin::Transaction;
 use bdk::bitcoin::consensus::encode::deserialize;
 use hex;
@@ -81,6 +81,9 @@ enum Commands {
     Runestone {
         /// Transaction ID or hex
         txid_or_hex: String,
+        /// Output raw JSON format (for scripting)
+        #[clap(short, long)]
+        raw: bool,
     },
     /// Alkanes commands
     Alkanes {
@@ -110,6 +113,9 @@ enum Commands {
         /// Extract metadata directly from WASM binary
         #[clap(long)]
         meta: bool,
+        /// Compute SHA3 hash of the WASM bytecode
+        #[clap(long)]
+        codehash: bool,
     },
 }
 
@@ -417,6 +423,9 @@ enum AlkanesCommands {
         /// Extract metadata directly from WASM binary
         #[clap(long)]
         meta: bool,
+        /// Compute SHA3 hash of the WASM bytecode
+        #[clap(long)]
+        codehash: bool,
     },
 }
 
@@ -587,20 +596,248 @@ fn parse_simulation_params(params: &str) -> Result<(String, String, Vec<String>)
     Ok((block, tx, inputs))
 }
 
+/// Address information extracted from script
+struct AddressInfo {
+    address: String,
+    script_type: String,
+}
+
+/// Extract address from script pubkey
+fn extract_address_from_script(script: &bdk::bitcoin::ScriptBuf) -> Option<AddressInfo> {
+    use bdk::bitcoin::Address;
+    use bdk::bitcoin::Network;
+    
+    // Try to convert script to address
+    if let Ok(address) = Address::from_script(script, Network::Bitcoin) {
+        let script_type = if script.is_p2pkh() {
+            "P2PKH (Legacy)".to_string()
+        } else if script.is_p2sh() {
+            "P2SH (Script Hash)".to_string()
+        } else if script.is_v1_p2tr() {
+            "P2TR (Taproot)".to_string()
+        } else if script.is_witness_program() {
+            "Witness Program (SegWit)".to_string()
+        } else {
+            "Unknown".to_string()
+        };
+        
+        Some(AddressInfo {
+            address: address.to_string(),
+            script_type,
+        })
+    } else {
+        None
+    }
+}
+
 /// Analyze a transaction for Runestone data
-fn analyze_runestone_tx(tx: &Transaction) {
-    // Use the enhanced format_runestone function
-    match format_runestone(tx) {
-        Ok(protostones) => {
-            println!("Found {} protostones:", protostones.len());
-            for (i, protostone) in protostones.iter().enumerate() {
-                println!("Protostone {}: {:?}", i+1, protostone);
+fn analyze_runestone_tx(tx: &Transaction, raw_output: bool) {
+    // Use the enhanced format_runestone_with_decoded_messages function
+    match format_runestone_with_decoded_messages(tx) {
+        Ok(result) => {
+            if raw_output {
+                // Raw JSON output for scripting
+                println!("{}", serde_json::to_string_pretty(&result).unwrap_or_else(|_| "Error formatting result".to_string()));
+            } else {
+                // Human-readable styled output
+                print_human_readable_runestone(tx, &result);
             }
         },
         Err(e) => {
-            println!("Error decoding runestone: {}", e);
+            if raw_output {
+                eprintln!("Error decoding runestone: {}", e);
+            } else {
+                println!("❌ Error decoding runestone: {}", e);
+            }
         }
     }
+}
+
+/// Print human-readable, styled runestone information
+fn print_human_readable_runestone(tx: &Transaction, result: &serde_json::Value) {
+    println!("🔍 Transaction Analysis");
+    println!("═══════════════════════");
+    
+    // Transaction basic info
+    if let Some(txid) = result.get("transaction_id").and_then(|v| v.as_str()) {
+        println!("📋 Transaction ID: {}", txid);
+    }
+    println!("🔢 Version: {}", tx.version);
+    println!("🔒 Lock Time: {}", tx.lock_time);
+    
+    // Transaction inputs
+    println!("\n📥 Inputs ({}):", tx.input.len());
+    for (i, input) in tx.input.iter().enumerate() {
+        println!("  {}. 🔗 {}:{}", i + 1, input.previous_output.txid, input.previous_output.vout);
+        if !input.witness.is_empty() {
+            println!("     📝 Witness: {} items", input.witness.len());
+        }
+    }
+    
+    // Transaction outputs
+    println!("\n📤 Outputs ({}):", tx.output.len());
+    for (i, output) in tx.output.iter().enumerate() {
+        println!("  {}. 💰 {} sats", i, output.value);
+        
+        // Check if this is an OP_RETURN output
+        if output.script_pubkey.is_op_return() {
+            println!("     📜 OP_RETURN script ({} bytes)", output.script_pubkey.len());
+            // Show OP_RETURN data in hex
+            let op_return_bytes = output.script_pubkey.as_bytes();
+            if op_return_bytes.len() > 2 {
+                let data_bytes = &op_return_bytes[2..]; // Skip OP_RETURN and length byte
+                let hex_data = hex::encode(data_bytes);
+                println!("     📄 Data: {}", hex_data);
+            }
+        } else {
+            // Try to extract address
+            match extract_address_from_script(&output.script_pubkey) {
+                Some(address_info) => {
+                    println!("     🏠 {}: {}", address_info.script_type, address_info.address);
+                }
+                None => {
+                    if output.script_pubkey.is_p2pkh() {
+                        println!("     🏠 P2PKH (Legacy)");
+                    } else if output.script_pubkey.is_p2sh() {
+                        println!("     🏛️  P2SH (Script Hash)");
+                    } else if output.script_pubkey.is_v1_p2tr() {
+                        println!("     🌳 P2TR (Taproot)");
+                    } else if output.script_pubkey.is_witness_program() {
+                        println!("     ⚡ Witness Program (SegWit)");
+                    } else {
+                        println!("     📋 Script ({} bytes)", output.script_pubkey.len());
+                    }
+                }
+            }
+        }
+    }
+    
+    // Protostones information
+    if let Some(protostones) = result.get("protostones").and_then(|v| v.as_array()) {
+        if protostones.is_empty() {
+            println!("\n🚫 No protostones found in this transaction");
+        } else {
+            println!("\n🪨 Protostones Found: {}", protostones.len());
+            println!("═══════════════════════");
+            
+            for (i, protostone) in protostones.iter().enumerate() {
+                println!("\n🪨 Protostone #{}", i + 1);
+                println!("───────────────────");
+                
+                // Protocol tag
+                if let Some(protocol_tag) = protostone.get("protocol_tag").and_then(|v| v.as_u64()) {
+                    let protocol_name = match protocol_tag {
+                        1 => "ALKANES Metaprotocol",
+                        _ => "Unknown Protocol",
+                    };
+                    println!("🏷️  Protocol: {} (tag: {})", protocol_name, protocol_tag);
+                }
+                
+                // Message information
+                if let Some(message_bytes) = protostone.get("message_bytes").and_then(|v| v.as_array()) {
+                    println!("📨 Message ({} bytes):", message_bytes.len());
+                    
+                    // Show raw bytes
+                    let bytes_str = message_bytes.iter()
+                        .filter_map(|v| v.as_u64())
+                        .map(|n| format!("{:02x}", n))
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    println!("   📄 Raw bytes: {}", bytes_str);
+                    
+                    // Show decoded values
+                    if let Some(message_decoded) = protostone.get("message_decoded").and_then(|v| v.as_array()) {
+                        let decoded_str = message_decoded.iter()
+                            .filter_map(|v| v.as_u64())
+                            .map(|n| n.to_string())
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        println!("   🔓 Decoded: [{}]", decoded_str);
+                        
+                        // Special handling for DIESEL tokens
+                        if let Some(protocol_tag) = protostone.get("protocol_tag").and_then(|v| v.as_u64()) {
+                            if protocol_tag == 1 && message_decoded.len() >= 3 {
+                                if let (Some(first), Some(second), Some(third)) = (
+                                    message_decoded[0].as_u64(),
+                                    message_decoded[1].as_u64(),
+                                    message_decoded[2].as_u64()
+                                ) {
+                                    if first == 2 && second == 0 && third == 77 {
+                                        println!("   🔥 DIESEL Token Mint Detected!");
+                                        println!("   ⚡ Cellpack: [2, 0, 77] (Standard DIESEL mint)");
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Edicts with tree view
+                if let Some(edicts) = protostone.get("edicts").and_then(|v| v.as_array()) {
+                    if !edicts.is_empty() {
+                        println!("📋 Token Transfers ({}):", edicts.len());
+                        for (j, edict) in edicts.iter().enumerate() {
+                            if let Some(edict_obj) = edict.as_object() {
+                                let id_block = edict_obj.get("id").and_then(|v| v.get("block")).and_then(|v| v.as_u64()).unwrap_or(0);
+                                let id_tx = edict_obj.get("id").and_then(|v| v.get("tx")).and_then(|v| v.as_u64()).unwrap_or(0);
+                                let amount = edict_obj.get("amount").and_then(|v| v.as_u64()).unwrap_or(0);
+                                let output_idx = edict_obj.get("output").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+                                
+                                let tree_symbol = if j == edicts.len() - 1 { "└─" } else { "├─" };
+                                println!("   {} 🪙 Token {}:{}", tree_symbol, id_block, id_tx);
+                                println!("   {}    💰 Amount: {} units", if j == edicts.len() - 1 { "  " } else { "│ " }, amount);
+                                
+                                // Show destination output details
+                                if output_idx < tx.output.len() {
+                                    let dest_output = &tx.output[output_idx];
+                                    println!("   {}    🎯 → Output {}: {} sats",
+                                        if j == edicts.len() - 1 { "  " } else { "│ " },
+                                        output_idx, dest_output.value);
+                                    
+                                    if let Some(addr_info) = extract_address_from_script(&dest_output.script_pubkey) {
+                                        println!("   {}       📍 {}",
+                                            if j == edicts.len() - 1 { "  " } else { "│ " },
+                                            addr_info.address);
+                                    }
+                                } else {
+                                    println!("   {}    ❌ → Invalid output {}",
+                                        if j == edicts.len() - 1 { "  " } else { "│ " },
+                                        output_idx);
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Pointer and refund with output details
+                if let Some(pointer) = protostone.get("pointer").and_then(|v| v.as_u64()) {
+                    let pointer_idx = pointer as usize;
+                    println!("👉 Pointer: output {}", pointer);
+                    if pointer_idx < tx.output.len() {
+                        let pointer_output = &tx.output[pointer_idx];
+                        println!("   └─ 💰 {} sats", pointer_output.value);
+                        if let Some(addr_info) = extract_address_from_script(&pointer_output.script_pubkey) {
+                            println!("      📍 {}", addr_info.address);
+                        }
+                    }
+                }
+                
+                if let Some(refund) = protostone.get("refund").and_then(|v| v.as_u64()) {
+                    let refund_idx = refund as usize;
+                    println!("💸 Refund: output {}", refund);
+                    if refund_idx < tx.output.len() {
+                        let refund_output = &tx.output[refund_idx];
+                        println!("   └─ 💰 {} sats", refund_output.value);
+                        if let Some(addr_info) = extract_address_from_script(&refund_output.script_pubkey) {
+                            println!("      📍 {}", addr_info.address);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    println!("\n✅ Analysis complete!");
 }
 
 /// Decode a transaction from hex
@@ -640,8 +877,26 @@ async fn main() -> Result<()> {
     let bitcoin_rpc_url = args.bitcoin_rpc_url.clone()
         .unwrap_or_else(|| "http://bitcoinrpc:bitcoinrpc@localhost:8332".to_string());
 
-    // Initialize wallet if needed for the command
-    let wallet_manager = if matches!(args.command, Commands::Walletinfo | Commands::Wallet { .. }) {
+    // Initialize wallet if needed for the command (but not for wallet creation)
+    let wallet_manager = if matches!(args.command, Commands::Walletinfo) ||
+        matches!(args.command, Commands::Wallet { command: WalletCommands::Restore { .. } |
+                                                            WalletCommands::Info |
+                                                            WalletCommands::Addresses { .. } |
+                                                            WalletCommands::Balance |
+                                                            WalletCommands::Send { .. } |
+                                                            WalletCommands::SendAll { .. } |
+                                                            WalletCommands::CreateTx { .. } |
+                                                            WalletCommands::SignTx { .. } |
+                                                            WalletCommands::BroadcastTx { .. } |
+                                                            WalletCommands::Utxos |
+                                                            WalletCommands::FreezeUtxo { .. } |
+                                                            WalletCommands::UnfreezeUtxo { .. } |
+                                                            WalletCommands::History { .. } |
+                                                            WalletCommands::TxDetails { .. } |
+                                                            WalletCommands::EstimateFee { .. } |
+                                                            WalletCommands::FeeRates |
+                                                            WalletCommands::Sync |
+                                                            WalletCommands::Backup }) {
         let wallet_config = deezel_cli::wallet::WalletConfig {
             wallet_path: args.wallet_path.clone(),
             network: network_params.network,
@@ -679,9 +934,9 @@ async fn main() -> Result<()> {
             },
         },
         Commands::Wallet { command } => {
-            if let Some(wallet_manager) = &wallet_manager {
-                match command {
-                    WalletCommands::Create { mnemonic, passphrase } => {
+            match command {
+                WalletCommands::Create { mnemonic, passphrase } => {
+                    // Handle wallet creation separately since we don't need an existing wallet manager
                         let wallet_config = deezel_cli::wallet::WalletConfig {
                             wallet_path: args.wallet_path.clone(),
                             network: network_params.network,
@@ -703,8 +958,13 @@ async fn main() -> Result<()> {
                         
                         let address = new_wallet.get_address().await?;
                         println!("First address: {}", address);
-                    },
-                    WalletCommands::Restore { mnemonic, passphrase } => {
+                },
+                _ => {
+                    // Handle all other wallet commands that require an existing wallet manager
+                    if let Some(wallet_manager) = &wallet_manager {
+                        match command {
+                            WalletCommands::Create { .. } => unreachable!(), // Already handled above
+                            WalletCommands::Restore { mnemonic, passphrase } => {
                         let wallet_config = deezel_cli::wallet::WalletConfig {
                             wallet_path: args.wallet_path.clone(),
                             network: network_params.network,
@@ -968,9 +1228,11 @@ async fn main() -> Result<()> {
                             Err(e) => println!("Failed to get mnemonic: {}", e),
                         };
                     },
+                        }
+                    } else {
+                        return Err(anyhow!("Wallet manager not initialized"));
+                    }
                 }
-            } else {
-                return Err(anyhow!("Wallet manager not initialized"));
             }
         },
         Commands::Walletinfo => {
@@ -1027,21 +1289,29 @@ async fn main() -> Result<()> {
                 return Err(anyhow!("Wallet manager not initialized"));
             }
         },
-        Commands::Runestone { txid_or_hex } => {
+        Commands::Runestone { txid_or_hex, raw } => {
             // Check if input is a transaction ID or hex
             if txid_or_hex.len() == 64 && txid_or_hex.chars().all(|c| c.is_ascii_hexdigit()) {
                 // Looks like a transaction ID, fetch from RPC
-                println!("Fetching transaction {} from RPC...", txid_or_hex);
+                if !raw {
+                    println!("🔍 Fetching transaction {} from RPC...", txid_or_hex);
+                } else {
+                    eprintln!("Fetching transaction {} from RPC...", txid_or_hex);
+                }
                 let tx_hex = rpc_client.get_transaction_hex(&txid_or_hex).await
                     .context("Failed to fetch transaction from RPC")?;
                 
                 let tx = decode_transaction_hex(&tx_hex)?;
-                analyze_runestone_tx(&tx);
+                analyze_runestone_tx(&tx, raw);
             } else {
                 // Assume it's transaction hex
-                println!("Decoding transaction from hex...");
+                if !raw {
+                    println!("🔍 Decoding transaction from hex...");
+                } else {
+                    eprintln!("Decoding transaction from hex...");
+                }
                 let tx = decode_transaction_hex(&txid_or_hex)?;
-                analyze_runestone_tx(&tx);
+                analyze_runestone_tx(&tx, raw);
             }
         },
         Commands::Alkanes { command } => match command {
@@ -1523,7 +1793,7 @@ async fn main() -> Result<()> {
                 };
             },
             
-            AlkanesCommands::Inspect { alkane_id, disasm, fuzz, fuzz_ranges, meta } => {
+            AlkanesCommands::Inspect { alkane_id, disasm, fuzz, fuzz_ranges, meta, codehash } => {
                 info!("Inspecting alkane: {}", alkane_id);
                 
                 // Parse alkane ID
@@ -1535,7 +1805,7 @@ async fn main() -> Result<()> {
                 ).context("Failed to initialize alkane inspector")?;
                 
                 // Perform inspection with requested analysis modes
-                match inspector.inspect_alkane(&parsed_alkane_id, disasm, fuzz, fuzz_ranges.as_deref(), meta).await {
+                match inspector.inspect_alkane(&parsed_alkane_id, disasm, fuzz, fuzz_ranges.as_deref(), meta, codehash).await {
                     Ok(_) => {
                         println!("Alkane inspection completed successfully");
                     },
@@ -1626,7 +1896,7 @@ async fn main() -> Result<()> {
                 },
             }
         },
-        Commands::InspectAlkane { alkane_id, disasm, fuzz, fuzz_ranges, meta } => {
+        Commands::InspectAlkane { alkane_id, disasm, fuzz, fuzz_ranges, meta, codehash } => {
             info!("Inspecting alkane: {}", alkane_id);
             
             // Parse alkane ID
@@ -1638,7 +1908,7 @@ async fn main() -> Result<()> {
             ).context("Failed to initialize alkane inspector")?;
             
             // Perform inspection with requested analysis modes
-            match inspector.inspect_alkane(&parsed_alkane_id, disasm, fuzz, fuzz_ranges.as_deref(), meta).await {
+            match inspector.inspect_alkane(&parsed_alkane_id, disasm, fuzz, fuzz_ranges.as_deref(), meta, codehash).await {
                 Ok(_) => {
                     println!("Alkane inspection completed successfully");
                 },

@@ -15,7 +15,7 @@ use std::str::FromStr;
 
 use crate::rpc::RpcClient;
 use crate::wallet::WalletManager;
-use crate::runestone::Runestone;
+use ordinals::Runestone;
 
 /// Dust output value in satoshis
 const DUST_OUTPUT_VALUE: u64 = 546;
@@ -84,8 +84,18 @@ impl TransactionConstructor {
         let dust_script = address.assume_checked().script_pubkey();
         
         // Create Runestone with Protostone for DIESEL token minting
-        let runestone = Runestone::new_diesel();
-        let runestone_script = runestone.encipher();
+        let runestone = Runestone {
+            edicts: vec![],
+            etching: None,
+            mint: None,
+            pointer: None,
+            // Protocol tag: 1, Message cellpack: [2, 0, 77]
+            protocol: Some(vec![PROTOCOL_TAG as u128, MESSAGE_CELLPACK[0] as u128, MESSAGE_CELLPACK[1] as u128, MESSAGE_CELLPACK[2] as u128]),
+        };
+        let ordinals_script = runestone.encipher();
+        
+        // Convert from bitcoin::ScriptBuf to bdk::bitcoin::ScriptBuf
+        let runestone_script = bdk::bitcoin::ScriptBuf::from_bytes(ordinals_script.as_bytes().to_vec());
         
         // TODO: Implement actual UTXO selection and transaction construction
         // This is a placeholder implementation

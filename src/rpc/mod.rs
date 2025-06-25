@@ -43,7 +43,7 @@ struct RpcRequest {
 }
 
 /// RPC response
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 struct RpcResponse {
     /// Result value
     result: Option<Value>,
@@ -54,7 +54,7 @@ struct RpcResponse {
 }
 
 /// RPC error
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 struct RpcError {
     /// Error code
     code: i32,
@@ -106,6 +106,9 @@ impl RpcClient {
             id: self.next_request_id(),
         };
         
+        // Log the full request for debugging
+        debug!("JSON-RPC Request to {}: {}", url, serde_json::to_string_pretty(&request).unwrap_or_else(|_| "Failed to serialize request".to_string()));
+        
         let response = self.client
             .post(url)
             .header(header::CONTENT_TYPE, "application/json")
@@ -123,6 +126,9 @@ impl RpcClient {
             .json::<RpcResponse>()
             .await
             .context("Failed to parse RPC response")?;
+        
+        // Log the response for debugging
+        debug!("JSON-RPC Response: {}", serde_json::to_string_pretty(&response_body).unwrap_or_else(|_| "Failed to serialize response".to_string()));
         
         match response_body.result {
             Some(result) => Ok(result),
@@ -181,7 +187,15 @@ impl RpcClient {
         
         let result = self._call("btc_getblockcount", json!([])).await?;
         
-        let height = result.as_u64().context("Invalid block height")?;
+        // Handle both string and number responses
+        let height = if let Some(height_str) = result.as_str() {
+            height_str.parse::<u64>().context("Invalid block height string")?
+        } else if let Some(height_num) = result.as_u64() {
+            height_num
+        } else {
+            return Err(anyhow!("Invalid block height format"));
+        };
+        
         debug!("Current block height: {}", height);
         Ok(height)
     }
@@ -192,7 +206,15 @@ impl RpcClient {
         
         let result = self._call("metashrew_height", json!([])).await?;
         
-        let height = result.as_u64().context("Invalid block height")?;
+        // Handle both string and number responses
+        let height = if let Some(height_str) = result.as_str() {
+            height_str.parse::<u64>().context("Invalid block height string")?
+        } else if let Some(height_num) = result.as_u64() {
+            height_num
+        } else {
+            return Err(anyhow!("Invalid block height format"));
+        };
+        
         debug!("Current Metashrew height: {}", height);
         Ok(height)
     }
@@ -221,20 +243,95 @@ impl RpcClient {
     pub async fn get_protorunes_by_address(&self, address: &str) -> Result<Value> {
         debug!("Getting protorunes for address: {}", address);
         
-        let result = self._call("alkanes_protorunesbyaddress", json!([address])).await?;
+        // Create and encode the ProtorunesWalletRequest protobuf message
+        let mut wallet_request = protorune_support::proto::protorune::ProtorunesWalletRequest::new();
+        wallet_request.wallet = address.as_bytes().to_vec();
+        
+        // Set protocol tag to 1 (for alkanes/DIESEL tokens)
+        let mut protocol_tag = protorune_support::proto::protorune::Uint128::new();
+        protocol_tag.hi = 0;
+        protocol_tag.lo = 1;
+        wallet_request.protocol_tag = protobuf::MessageField::some(protocol_tag);
+        
+        // Serialize to bytes and hex encode with 0x prefix
+        let encoded_bytes = wallet_request.write_to_bytes()
+            .context("Failed to encode ProtorunesWalletRequest")?;
+        let hex_input = format!("0x{}", hex::encode(encoded_bytes));
+        
+        let result = self._call(
+            "metashrew_view",
+            json!(["protorunesbyaddress", hex_input, "latest"])
+        ).await?;
         
         debug!("Got protorunes for address: {}", address);
-        Ok(result)
+        
+        // Parse the hex response
+        let hex_response = result.as_str()
+            .context("Expected hex string response")?;
+        
+        // Handle empty response (0x means no tokens)
+        if hex_response == "0x" || hex_response.is_empty() {
+            debug!("No protorunes found for address: {}", address);
+            return Ok(json!([])); // Return empty array for consistency
+        }
+        
+        // Decode hex response (remove 0x prefix if present)
+        let hex_data = if hex_response.starts_with("0x") {
+            &hex_response[2..]
+        } else {
+            hex_response
+        };
+        
+        // If hex_data is empty after removing prefix, return empty array
+        if hex_data.is_empty() {
+            debug!("Empty hex data for address: {}", address);
+            return Ok(json!([]));
+        }
+        
+        // Try to decode the hex data
+        match hex::decode(hex_data) {
+            Ok(response_bytes) => {
+                // For now, return the raw bytes as a hex string until we have proper protobuf parsing
+                // In a full implementation, we would parse this as a protobuf response
+                debug!("Successfully decoded {} bytes of protorunes data", response_bytes.len());
+                
+                // Return as an array with the hex data for now
+                // This maintains compatibility with existing code expecting an array
+                Ok(json!([{
+                    "raw_data": hex_response,
+                    "decoded_bytes": response_bytes.len(),
+                    "note": "Raw protobuf data - needs proper parsing"
+                }]))
+            },
+            Err(e) => {
+                debug!("Failed to decode hex response: {}", e);
+                // Return empty array if we can't decode
+                Ok(json!([]))
+            }
+        }
     }
     /// Trace a transaction for DIESEL token minting
     pub async fn trace_transaction(&self, txid: &str, vout: usize) -> Result<Value> {
         debug!("Tracing transaction: {} vout: {}", txid, vout);
         
-        // In a real implementation, we would reverse the txid bytes
-        // For now, just use the txid as-is
-        let reversed_txid = txid.to_string();
+        // Create and encode the Outpoint protobuf message
+        let mut outpoint = alkanes_support::proto::alkanes::Outpoint::new();
         
-        let result = self._call("alkanes_trace", json!([reversed_txid, vout])).await?;
+        // Decode the txid hex string to bytes
+        let txid_bytes = hex::decode(txid)
+            .context("Invalid txid hex")?;
+        outpoint.txid = txid_bytes;
+        outpoint.vout = vout as u32;
+        
+        // Serialize to bytes and hex encode with 0x prefix
+        let encoded_bytes = outpoint.write_to_bytes()
+            .context("Failed to encode Outpoint")?;
+        let hex_input = format!("0x{}", hex::encode(encoded_bytes));
+        
+        let result = self._call(
+            "metashrew_view",
+            json!(["trace", hex_input, "latest"])
+        ).await?;
         
         debug!("Trace result for transaction: {}", txid);
         Ok(result)
@@ -244,7 +341,30 @@ impl RpcClient {
     pub async fn get_protorunes_by_outpoint(&self, txid: &str, vout: u32) -> Result<Value> {
         debug!("Getting protorunes for outpoint: {}:{}", txid, vout);
         
-        let result = self._call("alkanes_protorunesbyoutpoint", json!([txid, vout])).await?;
+        // Create and encode the OutpointWithProtocol protobuf message
+        let mut outpoint_request = protorune_support::proto::protorune::OutpointWithProtocol::new();
+        
+        // Decode the txid hex string to bytes
+        let txid_bytes = hex::decode(txid)
+            .context("Invalid txid hex")?;
+        outpoint_request.txid = txid_bytes;
+        outpoint_request.vout = vout;
+        
+        // Set protocol tag to 1 (for alkanes/DIESEL tokens)
+        let mut protocol_tag = protorune_support::proto::protorune::Uint128::new();
+        protocol_tag.hi = 0;
+        protocol_tag.lo = 1;
+        outpoint_request.protocol = protobuf::MessageField::some(protocol_tag);
+        
+        // Serialize to bytes and hex encode with 0x prefix
+        let encoded_bytes = outpoint_request.write_to_bytes()
+            .context("Failed to encode OutpointWithProtocol")?;
+        let hex_input = format!("0x{}", hex::encode(encoded_bytes));
+        
+        let result = self._call(
+            "metashrew_view",
+            json!(["protorunesbyoutpoint", hex_input, "latest"])
+        ).await?;
         
         debug!("Got protorunes for outpoint: {}:{}", txid, vout);
         Ok(result)
@@ -276,15 +396,51 @@ impl RpcClient {
     pub async fn simulate(&self, block: &str, tx: &str, inputs: &[String]) -> Result<Value> {
         debug!("Simulating contract execution: {}:{} with {} inputs", block, tx, inputs.len());
         
-        // Create params array with block, tx, and inputs
-        let mut params = Vec::new();
-        params.push(json!(block));
-        params.push(json!(tx));
-        for input in inputs {
-            params.push(json!(input));
+        // Create and encode the MessageContextParcel protobuf message
+        let mut parcel = alkanes_support::proto::alkanes::MessageContextParcel::new();
+        
+        // Parse inputs as u128 values and convert to cellpack format
+        let parsed_inputs: Result<Vec<u128>> = inputs
+            .iter()
+            .map(|input| input.parse::<u128>().context("Invalid input number"))
+            .collect();
+        let parsed_inputs = parsed_inputs?;
+        
+        // Create a simple cellpack with the target and inputs
+        // Parse block and tx as u128 values for the target AlkaneId
+        let block_u128 = block.parse::<u128>()
+            .context("Invalid block number")?;
+        let tx_u128 = tx.parse::<u128>()
+            .context("Invalid tx number")?;
+        
+        // Encode the cellpack as calldata (simplified version)
+        // In a full implementation, this would use the proper Cellpack encoding
+        let mut calldata = Vec::new();
+        
+        // Add target (block:tx)
+        calldata.extend_from_slice(&block_u128.to_le_bytes());
+        calldata.extend_from_slice(&tx_u128.to_le_bytes());
+        
+        // Add inputs
+        for input in parsed_inputs {
+            calldata.extend_from_slice(&input.to_le_bytes());
         }
         
-        let result = self._call("alkanes_simulate", json!(params)).await?;
+        parcel.calldata = calldata;
+        parcel.height = 0; // Default height
+        parcel.vout = 0; // Default vout
+        parcel.pointer = 0; // Default pointer
+        parcel.refund_pointer = 0; // Default refund pointer
+        
+        // Serialize to bytes and hex encode with 0x prefix
+        let encoded_bytes = parcel.write_to_bytes()
+            .context("Failed to encode MessageContextParcel")?;
+        let hex_input = format!("0x{}", hex::encode(encoded_bytes));
+        
+        let result = self._call(
+            "metashrew_view",
+            json!(["simulate", hex_input, "latest"])
+        ).await?;
         
         debug!("Simulation result for contract: {}:{}", block, tx);
         Ok(result)
@@ -346,12 +502,12 @@ impl RpcClient {
         Ok(bytecode)
     }
     
-    /// Get transaction hex by transaction ID
+    /// Get transaction hex by transaction ID using esplora
     pub async fn get_transaction_hex(&self, txid: &str) -> Result<String> {
         debug!("Getting transaction hex for txid: {}", txid);
         
         let result = self._call(
-            "esplora_gettransaction",
+            "esplora_tx::hex",
             json!([txid])
         ).await?;
         
@@ -360,6 +516,40 @@ impl RpcClient {
             .to_string();
         
         debug!("Got transaction hex for txid: {}", txid);
+        Ok(tx_hex)
+    }
+    
+    /// Get raw transaction bytes by transaction ID using esplora
+    pub async fn get_transaction_raw(&self, txid: &str) -> Result<String> {
+        debug!("Getting raw transaction bytes for txid: {}", txid);
+        
+        let result = self._call(
+            "esplora_tx::raw",
+            json!([txid])
+        ).await?;
+        
+        let tx_raw = result.as_str()
+            .context("Invalid transaction raw response")?
+            .to_string();
+        
+        debug!("Got raw transaction bytes for txid: {}", txid);
+        Ok(tx_raw)
+    }
+    
+    /// Get transaction using Bitcoin RPC method
+    pub async fn get_transaction_btc_rpc(&self, txid: &str, verbose: bool) -> Result<String> {
+        debug!("Getting transaction using Bitcoin RPC for txid: {}", txid);
+        
+        let result = self._call(
+            "btc_getrawtransaction",
+            json!([txid, verbose])
+        ).await?;
+        
+        let tx_hex = result.as_str()
+            .context("Invalid transaction response")?
+            .to_string();
+        
+        debug!("Got transaction via Bitcoin RPC for txid: {}", txid);
         Ok(tx_hex)
     }
     
@@ -541,19 +731,25 @@ impl RpcClient {
     pub async fn get_protorunes_by_address_with_tags(&self, address: &str, protocol_tag: u64, block_tag: &str) -> Result<Value> {
         debug!("Getting protorunes for address: {} with protocol tag: {} and block tag: {}", address, protocol_tag, block_tag);
         
-        // For now, use a simplified approach with basic hex encoding
-        let address_bytes = address.as_bytes();
-        let protocol_bytes = protocol_tag.to_le_bytes();
-        let mut combined = Vec::new();
-        combined.extend_from_slice(address_bytes);
-        combined.extend_from_slice(&protocol_bytes);
-        let hex_input = format!("0x{}", hex::encode(combined));
+        // Create and encode the ProtorunesWalletRequest protobuf message
+        let mut wallet_request = protorune_support::proto::protorune::ProtorunesWalletRequest::new();
+        wallet_request.wallet = address.as_bytes().to_vec();
         
-        let result = self.call_rpc("metashrew_view", vec![
-            json!("protorunesbyaddress"),
-            json!(hex_input),
-            json!(block_tag)
-        ]).await?;
+        // Set protocol tag
+        let mut protocol = protorune_support::proto::protorune::Uint128::new();
+        protocol.hi = (protocol_tag >> 64) as u64;
+        protocol.lo = (protocol_tag & 0xFFFFFFFFFFFFFFFF) as u64;
+        wallet_request.protocol_tag = protobuf::MessageField::some(protocol);
+        
+        // Serialize to bytes and hex encode with 0x prefix
+        let encoded_bytes = wallet_request.write_to_bytes()
+            .context("Failed to encode ProtorunesWalletRequest")?;
+        let hex_input = format!("0x{}", hex::encode(encoded_bytes));
+        
+        let result = self._call(
+            "metashrew_view",
+            json!(["protorunesbyaddress", hex_input, block_tag])
+        ).await?;
         
         debug!("Got protorunes for address: {}", address);
         Ok(result)
@@ -563,21 +759,30 @@ impl RpcClient {
     pub async fn get_protorunes_by_outpoint_with_protocol(&self, txid: &str, vout: u32, protocol_tag: u64) -> Result<Value> {
         debug!("Getting protorunes for outpoint: {}:{} with protocol tag: {}", txid, vout, protocol_tag);
         
-        // For now, use a simplified approach with basic hex encoding
-        let txid_bytes = hex::decode(txid).context("Invalid txid hex")?;
-        let vout_bytes = vout.to_le_bytes();
-        let protocol_bytes = protocol_tag.to_le_bytes();
-        let mut combined = Vec::new();
-        combined.extend_from_slice(&txid_bytes);
-        combined.extend_from_slice(&vout_bytes);
-        combined.extend_from_slice(&protocol_bytes);
-        let hex_input = format!("0x{}", hex::encode(combined));
+        // Create and encode the OutpointWithProtocol protobuf message
+        let mut outpoint_request = protorune_support::proto::protorune::OutpointWithProtocol::new();
         
-        let result = self.call_rpc("metashrew_view", vec![
-            json!("protorunesbyoutpoint"),
-            json!(hex_input),
-            json!("latest")
-        ]).await?;
+        // Decode the txid hex string to bytes
+        let txid_bytes = hex::decode(txid)
+            .context("Invalid txid hex")?;
+        outpoint_request.txid = txid_bytes;
+        outpoint_request.vout = vout;
+        
+        // Set protocol tag
+        let mut protocol = protorune_support::proto::protorune::Uint128::new();
+        protocol.hi = (protocol_tag >> 64) as u64;
+        protocol.lo = (protocol_tag & 0xFFFFFFFFFFFFFFFF) as u64;
+        outpoint_request.protocol = protobuf::MessageField::some(protocol);
+        
+        // Serialize to bytes and hex encode with 0x prefix
+        let encoded_bytes = outpoint_request.write_to_bytes()
+            .context("Failed to encode OutpointWithProtocol")?;
+        let hex_input = format!("0x{}", hex::encode(encoded_bytes));
+        
+        let result = self._call(
+            "metashrew_view",
+            json!(["protorunesbyoutpoint", hex_input, "latest"])
+        ).await?;
         
         debug!("Got protorunes for outpoint: {}:{}", txid, vout);
         Ok(result)
@@ -651,19 +856,24 @@ impl RpcClient {
     pub async fn trace_outpoint(&self, txid: &str, vout: u32) -> Result<Value> {
         debug!("Tracing outpoint: {}:{}", txid, vout);
         
-        // For now, use a simplified approach with basic hex encoding
-        let txid_bytes = hex::decode(txid).context("Invalid txid hex")?;
-        let vout_bytes = vout.to_le_bytes();
-        let mut combined = Vec::new();
-        combined.extend_from_slice(&txid_bytes);
-        combined.extend_from_slice(&vout_bytes);
-        let hex_input = format!("0x{}", hex::encode(combined));
+        // Create and encode the Outpoint protobuf message
+        let mut outpoint = alkanes_support::proto::alkanes::Outpoint::new();
         
-        let result = self.call_rpc("metashrew_view", vec![
-            json!("trace"),
-            json!(hex_input),
-            json!("latest")
-        ]).await?;
+        // Decode the txid hex string to bytes
+        let txid_bytes = hex::decode(txid)
+            .context("Invalid txid hex")?;
+        outpoint.txid = txid_bytes;
+        outpoint.vout = vout;
+        
+        // Serialize to bytes and hex encode with 0x prefix
+        let encoded_bytes = outpoint.write_to_bytes()
+            .context("Failed to encode Outpoint")?;
+        let hex_input = format!("0x{}", hex::encode(encoded_bytes));
+        
+        let result = self._call(
+            "metashrew_view",
+            json!(["trace", hex_input, "latest"])
+        ).await?;
         
         debug!("Trace result for outpoint: {}:{}", txid, vout);
         Ok(result)

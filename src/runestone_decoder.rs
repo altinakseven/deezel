@@ -4,7 +4,7 @@
 //! based on the ordinals crate from alkanes-rs.
 
 use anyhow::{anyhow, Result};
-use ordinals::runestone::{Runestone, Artifact};
+use ordinals::{Runestone, Artifact};
 use metashrew_support::utils::{consensus_decode};
 use std::io::Cursor;
 use protorune_support::protostone::{Protostone};
@@ -12,13 +12,77 @@ use bdk::bitcoin::Transaction;
 use bdk::bitcoin::blockdata::script::Instruction;
 use bdk::bitcoin::blockdata::opcodes;
 use bdk::bitcoin::Script;
+use bitcoin;
 use log::debug;
 use serde_json::{json, Value};
 use hex;
 
 /// Decode a Runestone from a transaction
-pub fn decode_runestone(tx: &Transaction) -> Result<Runestone> {
-    match ordinals::runestone::Runestone::decipher(tx).unwrap())).unwrap()).unwrap() { println!("{:?}", protorune_support::protostone::Protostone::from_runestone(runestone).unwrap()) } else { println!("nothing") }
+pub fn decode_runestone(tx: &Transaction) -> Result<Option<Artifact>> {
+    // Convert BDK transaction to bitcoin transaction for ordinals crate
+    let bitcoin_tx = convert_bdk_to_bitcoin_tx(tx.clone());
+    
+    // Use the ordinals crate to decipher the Runestone
+    let artifact = Runestone::decipher(&bitcoin_tx);
+    
+    if let Some(artifact) = &artifact {
+        match artifact {
+            Artifact::Runestone(runestone) => {
+                // Convert to Protostones if needed
+                if let Ok(protostones) = Protostone::from_runestone(runestone) {
+                    debug!("Decoded protostones: {:?}", protostones);
+                }
+            }
+            Artifact::Cenotaph(cenotaph) => {
+                debug!("Decoded cenotaph: {:?}", cenotaph);
+            }
+        }
+    }
+    
+    Ok(artifact)
+}
+
+/// Convert BDK Transaction to Bitcoin Transaction
+fn convert_bdk_to_bitcoin_tx(tx: bdk::bitcoin::Transaction) -> bitcoin::Transaction {
+    use std::str::FromStr;
+    
+    let mut inputs = Vec::new();
+    for input in &tx.input {
+        let txid_str = input.previous_output.txid.to_string();
+        let txid = bitcoin::Txid::from_str(&txid_str).unwrap();
+        
+        inputs.push(bitcoin::TxIn {
+            previous_output: bitcoin::OutPoint {
+                txid,
+                vout: input.previous_output.vout,
+            },
+            script_sig: bitcoin::ScriptBuf::from_bytes(input.script_sig.as_bytes().to_vec()),
+            sequence: bitcoin::Sequence(input.sequence.0),
+            witness: {
+                let mut witness = bitcoin::Witness::new();
+                for item in &input.witness {
+                    witness.push(item.clone());
+                }
+                witness
+            },
+        });
+    }
+    
+    let mut outputs = Vec::new();
+    for output in &tx.output {
+        outputs.push(bitcoin::TxOut {
+            value: bitcoin::Amount::from_sat(output.value),
+            script_pubkey: bitcoin::ScriptBuf::from_bytes(output.script_pubkey.as_bytes().to_vec()),
+        });
+    }
+    
+    bitcoin::Transaction {
+        version: bitcoin::transaction::Version(tx.version),
+        lock_time: bitcoin::absolute::LockTime::from_consensus(tx.lock_time.to_consensus_u32()),
+        input: inputs,
+        output: outputs,
+    }
+}
     // Search transaction outputs for Runestone
     for (vout, output) in tx.output.iter().enumerate() {
         let mut instructions = output.script_pubkey.instructions();

@@ -15,10 +15,12 @@ use bdk::bitcoin::blockdata::script::Instruction;
 use bdk::bitcoin::blockdata::opcodes;
 use log::{debug, trace};
 use serde_json::{json, Value};
-use ordinals::{Artifact, runestone::{Runestone}};
+use ordinals::{Artifact, Runestone};
 use protorune_support::protostone::Protostone;
+use protorune_support::utils::decode_varint_list;
 use hex;
 use std::str::FromStr;
+use std::io::Cursor;
 
 /// Convert a BDK Transaction to a Bitcoin Transaction
 ///
@@ -531,6 +533,28 @@ fn decode_varint(bytes: &[u8]) -> Result<(u128, usize)> {
     Ok((result, i))
 }
 
+/// Decode the message field of a Protostone from Vec<u8> to Vec<u128>
+///
+/// This function uses decode_varint_list to convert the message bytes
+/// into a vector of u128 values, similar to how it's done in alkanes-rs.
+///
+/// # Arguments
+///
+/// * `message_bytes` - The message field from a Protostone as Vec<u8>
+///
+/// # Returns
+///
+/// A vector of u128 values decoded from the message bytes, or an error if decoding fails.
+pub fn decode_protostone_message(message_bytes: &[u8]) -> Result<Vec<u128>> {
+    if message_bytes.is_empty() {
+        return Ok(Vec::new());
+    }
+    
+    let mut cursor = Cursor::new(message_bytes.to_vec());
+    decode_varint_list(&mut cursor)
+        .context("Failed to decode protostone message as varint list")
+}
+
 /// Format a Runestone from a transaction using the ordinals crate
 ///
 /// This function uses the ordinals crate to extract a Runestone from a transaction
@@ -580,5 +604,247 @@ pub fn format_runestone(tx: &Transaction) -> Result<Vec<Protostone>> {
         },
         _ => Err(anyhow!("Artifact is not a Runestone"))
     }
+}
+
+/// Extract address information from script pubkey
+fn extract_address_from_script(script: &bdk::bitcoin::ScriptBuf) -> Option<Value> {
+    use bdk::bitcoin::Address;
+    use bdk::bitcoin::Network;
+    
+    // Try to convert script to address
+    if let Ok(address) = Address::from_script(script, Network::Bitcoin) {
+        let script_type = if script.is_p2pkh() {
+            "P2PKH"
+        } else if script.is_p2sh() {
+            "P2SH"
+        } else if script.is_v1_p2tr() {
+            "P2TR"
+        } else if script.is_witness_program() {
+            "Witness"
+        } else {
+            "Unknown"
+        };
+        
+        Some(json!({
+            "address": address.to_string(),
+            "script_type": script_type
+        }))
+    } else {
+        None
+    }
+}
+
+/// Format a Runestone from a transaction with decoded messages
+///
+/// This function extracts Protostones from a transaction and decodes their message fields
+/// from Vec<u8> to Vec<u128> using decode_varint_list, providing a more detailed view
+/// of the protostone data. It also includes comprehensive transaction information.
+///
+/// # Arguments
+///
+/// * `tx` - The transaction to extract the Runestone from
+///
+/// # Returns
+///
+/// A JSON value containing the protostones with decoded messages, or an error if no valid
+/// Runestone was found in the transaction.
+pub fn format_runestone_with_decoded_messages(tx: &Transaction) -> Result<Value> {
+    let protostones = format_runestone(tx)?;
+    
+    // Build comprehensive transaction information
+    let mut inputs = Vec::new();
+    for (i, input) in tx.input.iter().enumerate() {
+        inputs.push(json!({
+            "index": i,
+            "previous_output": {
+                "txid": input.previous_output.txid.to_string(),
+                "vout": input.previous_output.vout
+            },
+            "script_sig_size": input.script_sig.len(),
+            "sequence": input.sequence.0,
+            "witness_items": input.witness.len()
+        }));
+    }
+    
+    let mut outputs = Vec::new();
+    for (i, output) in tx.output.iter().enumerate() {
+        let mut output_info = json!({
+            "index": i,
+            "value": output.value,
+            "script_pubkey_size": output.script_pubkey.len(),
+            "script_type": "Unknown"
+        });
+        
+        // Check if this is an OP_RETURN output
+        if output.script_pubkey.is_op_return() {
+            output_info["script_type"] = json!("OP_RETURN");
+            
+            // Extract OP_RETURN data
+            let op_return_bytes = output.script_pubkey.as_bytes();
+            if op_return_bytes.len() > 2 {
+                let data_bytes = &op_return_bytes[2..]; // Skip OP_RETURN and length byte
+                output_info["op_return_data"] = json!(hex::encode(data_bytes));
+                output_info["op_return_size"] = json!(data_bytes.len());
+            }
+        } else {
+            // Try to extract address information
+            if let Some(address_info) = extract_address_from_script(&output.script_pubkey) {
+                output_info["address"] = address_info["address"].clone();
+                output_info["script_type"] = address_info["script_type"].clone();
+            } else {
+                // Determine script type without address
+                if output.script_pubkey.is_p2pkh() {
+                    output_info["script_type"] = json!("P2PKH");
+                } else if output.script_pubkey.is_p2sh() {
+                    output_info["script_type"] = json!("P2SH");
+                } else if output.script_pubkey.is_v1_p2tr() {
+                    output_info["script_type"] = json!("P2TR");
+                } else if output.script_pubkey.is_witness_program() {
+                    output_info["script_type"] = json!("Witness");
+                }
+            }
+        }
+        
+        outputs.push(output_info);
+    }
+    
+    let mut result = json!({
+        "transaction_id": tx.txid().to_string(),
+        "version": tx.version,
+        "lock_time": tx.lock_time.to_consensus_u32(),
+        "inputs": inputs,
+        "outputs": outputs,
+        "input_count": tx.input.len(),
+        "output_count": tx.output.len(),
+        "protostones": []
+    });
+    
+    for protostone in protostones {
+        let decoded_message = if !protostone.message.is_empty() {
+            match decode_protostone_message(&protostone.message) {
+                Ok(decoded) => Some(decoded),
+                Err(e) => {
+                    debug!("Failed to decode protostone message: {}", e);
+                    None
+                }
+            }
+        } else {
+            Some(Vec::new())
+        };
+        
+        // Determine protocol name
+        let protocol_name = match protostone.protocol_tag {
+            1 => "ALKANES Metaprotocol",
+            _ => "Unknown Protocol",
+        };
+        
+        let mut protostone_json = json!({
+            "protocol_tag": protostone.protocol_tag,
+            "protocol_name": protocol_name,
+            "message_bytes": protostone.message,
+            "message_decoded": decoded_message,
+            "burn": protostone.burn,
+            "refund": protostone.refund,
+            "pointer": protostone.pointer,
+            "from": protostone.from,
+            "edicts": protostone.edicts.iter().map(|edict| {
+                let mut edict_json = json!({
+                    "id": {
+                        "block": edict.id.block,
+                        "tx": edict.id.tx
+                    },
+                    "amount": edict.amount,
+                    "output": edict.output
+                });
+                
+                // Add destination output information if valid
+                if (edict.output as usize) < tx.output.len() {
+                    let dest_output = &tx.output[edict.output as usize];
+                    edict_json["destination"] = json!({
+                        "value": dest_output.value,
+                        "script_type": if dest_output.script_pubkey.is_op_return() {
+                            "OP_RETURN"
+                        } else if dest_output.script_pubkey.is_p2pkh() {
+                            "P2PKH"
+                        } else if dest_output.script_pubkey.is_p2sh() {
+                            "P2SH"
+                        } else if dest_output.script_pubkey.is_v1_p2tr() {
+                            "P2TR"
+                        } else if dest_output.script_pubkey.is_witness_program() {
+                            "Witness"
+                        } else {
+                            "Unknown"
+                        }
+                    });
+                    
+                    if let Some(address_info) = extract_address_from_script(&dest_output.script_pubkey) {
+                        edict_json["destination"]["address"] = address_info["address"].clone();
+                    }
+                }
+                
+                edict_json
+            }).collect::<Vec<_>>()
+        });
+        
+        // Add pointer destination information
+        if let Some(pointer) = protostone.pointer {
+            if (pointer as usize) < tx.output.len() {
+                let pointer_output = &tx.output[pointer as usize];
+                protostone_json["pointer_destination"] = json!({
+                    "output_index": pointer,
+                    "value": pointer_output.value,
+                    "script_type": if pointer_output.script_pubkey.is_op_return() {
+                        "OP_RETURN"
+                    } else if pointer_output.script_pubkey.is_p2pkh() {
+                        "P2PKH"
+                    } else if pointer_output.script_pubkey.is_p2sh() {
+                        "P2SH"
+                    } else if pointer_output.script_pubkey.is_v1_p2tr() {
+                        "P2TR"
+                    } else if pointer_output.script_pubkey.is_witness_program() {
+                        "Witness"
+                    } else {
+                        "Unknown"
+                    }
+                });
+                
+                if let Some(address_info) = extract_address_from_script(&pointer_output.script_pubkey) {
+                    protostone_json["pointer_destination"]["address"] = address_info["address"].clone();
+                }
+            }
+        }
+        
+        // Add refund destination information
+        if let Some(refund) = protostone.refund {
+            if (refund as usize) < tx.output.len() {
+                let refund_output = &tx.output[refund as usize];
+                protostone_json["refund_destination"] = json!({
+                    "output_index": refund,
+                    "value": refund_output.value,
+                    "script_type": if refund_output.script_pubkey.is_op_return() {
+                        "OP_RETURN"
+                    } else if refund_output.script_pubkey.is_p2pkh() {
+                        "P2PKH"
+                    } else if refund_output.script_pubkey.is_p2sh() {
+                        "P2SH"
+                    } else if refund_output.script_pubkey.is_v1_p2tr() {
+                        "P2TR"
+                    } else if refund_output.script_pubkey.is_witness_program() {
+                        "Witness"
+                    } else {
+                        "Unknown"
+                    }
+                });
+                
+                if let Some(address_info) = extract_address_from_script(&refund_output.script_pubkey) {
+                    protostone_json["refund_destination"]["address"] = address_info["address"].clone();
+                }
+            }
+        }
+        
+        result["protostones"].as_array_mut().unwrap().push(protostone_json);
+    }
+    
+    Ok(result)
 }
 
