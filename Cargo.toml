@@ -1,58 +1,111 @@
+[workspace]
+resolver = "2"
+members = [
+    ".",
+    "crates/deezel-core",
+    "crates/deezel-adapters",
+    "crates/deezel",
+]
+
 [package]
-name = "deezel-cli"
+name = "deezel-e2e-tests"
 version = "0.1.0"
 edition = "2021"
-description = "A Bitcoin wallet CLI tool for automated DIESEL token minting and management"
+description = "End-to-end tests for the deezel Bitcoin wallet CLI tool"
 authors = ["Deezel Team"]
 
-[dependencies]
-# Bitcoin Development Kit
-bdk = { version = "0.30.2", features = ["all-keys"] }
-ordinals = { git = "https://github.com/kungfuflex/alkanes-rs" }
-protorune-support = { git = "https://github.com/kungfuflex/alkanes-rs" }
-
-# Esplora client
-esplora-client = "0.6.0"
-
-# Async runtime
+[workspace.dependencies]
+# Core dependencies
+anyhow = "1.0"
+thiserror = "1.0"
 tokio = { version = "1.28", features = ["full"] }
+clap = { version = "4.3", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+log = "0.4"
+env_logger = "0.10"
+
+# Bitcoin dependencies
+bdk = { version = "0.30.2", features = ["all-keys"] }
+bitcoin = "0.32.6"
+esplora-client = "0.6.0"
 
 # HTTP client
 reqwest = { version = "0.11", features = ["json"] }
 
-# Serialization/Deserialization
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-
-# Command-line argument parsing
-clap = { version = "4.3", features = ["derive"] }
-
-# Error handling
-anyhow = "1.0"
-thiserror = "1.0"
-
-# Logging
-log = "0.4"
-env_logger = "0.10"
+# Async utilities
+futures-util = "0.3"
+async-trait = "0.1"
 
 # Utilities
 hex = "0.4"
-async-trait = "0.1"
-bitcoin = "0.32.6"
+uuid = { version = "1.0", features = ["v4"] }
 dirs = "5.0"
+chrono = { version = "0.4", features = ["serde"] }
 
-# Alkanes-rs crates
-alkanes-support = { git = "https://github.com/kungfuflex/alkanes-rs" }
-metashrew-support = { git = "https://github.com/sandshrewmetaprotocols/metashrew" }
-protobuf = "=3.7.1"
+# Docker integration
+bollard = "0.17"
+tar = "0.4"
 
-# WASM runtime for alkane inspection
+# WASM runtime
 wasmtime = "25.0"
 wasmprinter = "0.2"
 wat = "1.0"
 sha3 = "0.10"
 
+# Protobuf
+protobuf = "=3.7.1"
+
+# Alkanes-rs crates
+ordinals = { git = "https://github.com/kungfuflex/alkanes-rs" }
+protorune-support = { git = "https://github.com/kungfuflex/alkanes-rs" }
+alkanes-support = { git = "https://github.com/kungfuflex/alkanes-rs" }
+metashrew-support = { git = "https://github.com/sandshrewmetaprotocols/metashrew" }
+
+# Workspace crates
+deezel-core = { path = "crates/deezel-core" }
+deezel-adapters = { path = "crates/deezel-adapters" }
+
 # Test dependencies
-[dev-dependencies]
 tempfile = "3.8"
-chrono = { version = "0.4", features = ["serde"] }
+
+[dependencies]
+# Workspace dependencies
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+bdk = { workspace = true }
+bitcoin = { workspace = true }
+esplora-client = { workspace = true }
+reqwest = { workspace = true }
+futures-util = { workspace = true }
+async-trait = { workspace = true }
+hex = { workspace = true }
+uuid = { workspace = true }
+dirs = { workspace = true }
+chrono = { workspace = true }
+bollard = { workspace = true }
+tar = { workspace = true }
+wasmtime = { workspace = true }
+wasmprinter = { workspace = true }
+wat = { workspace = true }
+sha3 = { workspace = true }
+protobuf = { workspace = true }
+ordinals = { workspace = true }
+protorune-support = { workspace = true }
+alkanes-support = { workspace = true }
+metashrew-support = { workspace = true }
+
+# Workspace crates
+deezel-core = { workspace = true }
+deezel-adapters = { workspace = true }
+tempfile = { workspace = true }
+
+[dev-dependencies]
+chrono = { workspace = true }
+tempfile = { workspace = true }

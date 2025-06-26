@@ -1,0 +1,47 @@
+[package]
+name = "deezel-adapters"
+version = "0.1.0"
+edition = "2021"
+description = "Concrete adapter implementations for deezel-core traits"
+license = "MIT"
+
+[dependencies]
+# Core dependencies
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+tokio = { workspace = true }
+
+# Bitcoin dependencies
+bitcoin = { workspace = true }
+bdk = { workspace = true }
+
+# HTTP client
+reqwest = { workspace = true }
+
+# Filesystem
+dirs = { workspace = true }
+
+# WASM runtime
+wasmtime = { workspace = true }
+
+# Alkanes/Metashrew support
+metashrew-support = { workspace = true }
+alkanes-support = { workspace = true }
+
+# Utilities
+hex = { workspace = true }
+futures-util = { workspace = true }
+
+# Workspace crates
+deezel-core = { workspace = true }
+
+[features]
+default = ["filesystem", "http-rpc", "wasmtime-runtime"]
+filesystem = []
+http-rpc = []
+wasmtime-runtime = []
+in-memory = []
+test-utils = ["deezel-core/test-utils"]

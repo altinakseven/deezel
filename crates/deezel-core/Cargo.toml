@@ -1,0 +1,40 @@
+[package]
+name = "deezel-core"
+version = "0.1.0"
+edition = "2021"
+description = "Core generic traits and runtime for deezel Bitcoin wallet operations"
+license = "MIT"
+
+[dependencies]
+# Core dependencies
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+tokio = { workspace = true }
+
+# Bitcoin dependencies
+bitcoin = { workspace = true, features = ["serde"] }
+bdk = { workspace = true }
+
+# WASM runtime
+wasmtime = { workspace = true }
+
+# Alkanes/Metashrew support
+metashrew-support = { workspace = true }
+alkanes-support = { workspace = true }
+
+# Utilities
+hex = { workspace = true }
+futures-util = { workspace = true }
+chrono = { workspace = true }
+
+[dev-dependencies]
+deezel-adapters = { workspace = true }
+tokio-test = "0.4"
+
+[features]
+default = []
+test-utils = []

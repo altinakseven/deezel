@@ -8,6 +8,7 @@
 pub mod mock_metashrew;
 pub mod test_blocks;
 pub mod e2e_helpers;
+pub mod e2e_cli_tests;
 
 use anyhow::Result;
 use std::collections::HashMap;

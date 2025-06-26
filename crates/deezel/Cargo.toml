@@ -1,0 +1,49 @@
+[package]
+name = "deezel"
+version = "0.1.0"
+edition = "2021"
+description = "Deezel CLI - Bitcoin wallet tool for automated DIESEL token minting and management"
+license = "MIT"
+
+[[bin]]
+name = "deezel"
+path = "src/main.rs"
+
+[dependencies]
+# Workspace dependencies
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+bdk = { workspace = true }
+bitcoin = { workspace = true }
+esplora-client = { workspace = true }
+reqwest = { workspace = true }
+futures-util = { workspace = true }
+async-trait = { workspace = true }
+hex = { workspace = true }
+uuid = { workspace = true }
+dirs = { workspace = true }
+chrono = { workspace = true }
+bollard = { workspace = true }
+tar = { workspace = true }
+wasmtime = { workspace = true }
+wasmprinter = { workspace = true }
+wat = { workspace = true }
+sha3 = { workspace = true }
+protobuf = { workspace = true }
+ordinals = { workspace = true }
+protorune-support = { workspace = true }
+alkanes-support = { workspace = true }
+metashrew-support = { workspace = true }
+
+# Workspace crates
+deezel-core = { workspace = true }
+deezel-adapters = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
