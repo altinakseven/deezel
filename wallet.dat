@@ -1,7 +1,0 @@
-{
-  "mnemonic": "cousin release scare silly ridge wage lawn gloom slab order sorry winter",
-  "network": "Bitcoin",
-  "external_descriptor": "wpkh(xprv9s21ZrQH143K3CHLs7oQG8JicTUrHsV96TpAFc3BuKTqFQsnqrbxjXydujb2pGfQgbgRba5zxFiBXEBfFFi6oBKmHzECiguRLHJc8ML3jvv/84'/0'/0/0/*)",
-  "internal_descriptor": "wpkh(xprv9s21ZrQH143K3CHLs7oQG8JicTUrHsV96TpAFc3BuKTqFQsnqrbxjXydujb2pGfQgbgRba5zxFiBXEBfFFi6oBKmHzECiguRLHJc8ML3jvv/84'/0'/0/1/*)",
-  "created_at": 1750880679
-}

@@ -737,8 +737,8 @@ impl RpcClient {
         
         // Set protocol tag
         let mut protocol = protorune_support::proto::protorune::Uint128::new();
-        protocol.hi = (protocol_tag >> 64) as u64;
-        protocol.lo = (protocol_tag & 0xFFFFFFFFFFFFFFFF) as u64;
+        protocol.hi = 0; // For u64 values, hi is always 0
+        protocol.lo = protocol_tag;
         wallet_request.protocol_tag = protobuf::MessageField::some(protocol);
         
         // Serialize to bytes and hex encode with 0x prefix
@@ -770,8 +770,8 @@ impl RpcClient {
         
         // Set protocol tag
         let mut protocol = protorune_support::proto::protorune::Uint128::new();
-        protocol.hi = (protocol_tag >> 64) as u64;
-        protocol.lo = (protocol_tag & 0xFFFFFFFFFFFFFFFF) as u64;
+        protocol.hi = 0; // For u64 values, hi is always 0
+        protocol.lo = protocol_tag;
         outpoint_request.protocol = protobuf::MessageField::some(protocol);
         
         // Serialize to bytes and hex encode with 0x prefix

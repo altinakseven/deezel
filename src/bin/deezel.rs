@@ -116,6 +116,9 @@ enum Commands {
         /// Compute SHA3 hash of the WASM bytecode
         #[clap(long)]
         codehash: bool,
+        /// Output raw JSON format (for scripting)
+        #[clap(short, long)]
+        raw: bool,
     },
 }
 
@@ -426,6 +429,9 @@ enum AlkanesCommands {
         /// Compute SHA3 hash of the WASM bytecode
         #[clap(long)]
         codehash: bool,
+        /// Output raw JSON format (for scripting)
+        #[clap(short, long)]
+        raw: bool,
     },
 }
 
@@ -1793,7 +1799,7 @@ async fn main() -> Result<()> {
                 };
             },
             
-            AlkanesCommands::Inspect { alkane_id, disasm, fuzz, fuzz_ranges, meta, codehash } => {
+            AlkanesCommands::Inspect { alkane_id, disasm, fuzz, fuzz_ranges, meta, codehash, raw } => {
                 info!("Inspecting alkane: {}", alkane_id);
                 
                 // Parse alkane ID
@@ -1805,12 +1811,18 @@ async fn main() -> Result<()> {
                 ).context("Failed to initialize alkane inspector")?;
                 
                 // Perform inspection with requested analysis modes
-                match inspector.inspect_alkane(&parsed_alkane_id, disasm, fuzz, fuzz_ranges.as_deref(), meta, codehash).await {
+                match inspector.inspect_alkane(&parsed_alkane_id, disasm, fuzz, fuzz_ranges.as_deref(), meta, codehash, raw).await {
                     Ok(_) => {
-                        println!("Alkane inspection completed successfully");
+                        if !raw {
+                            println!("Alkane inspection completed successfully");
+                        }
                     },
                     Err(e) => {
-                        println!("Alkane inspection failed: {}", e);
+                        if raw {
+                            eprintln!("Alkane inspection failed: {}", e);
+                        } else {
+                            println!("Alkane inspection failed: {}", e);
+                        }
                         std::process::exit(1);
                     }
                 }
@@ -1896,7 +1908,7 @@ async fn main() -> Result<()> {
                 },
             }
         },
-        Commands::InspectAlkane { alkane_id, disasm, fuzz, fuzz_ranges, meta, codehash } => {
+        Commands::InspectAlkane { alkane_id, disasm, fuzz, fuzz_ranges, meta, codehash, raw } => {
             info!("Inspecting alkane: {}", alkane_id);
             
             // Parse alkane ID
@@ -1908,12 +1920,18 @@ async fn main() -> Result<()> {
             ).context("Failed to initialize alkane inspector")?;
             
             // Perform inspection with requested analysis modes
-            match inspector.inspect_alkane(&parsed_alkane_id, disasm, fuzz, fuzz_ranges.as_deref(), meta, codehash).await {
+            match inspector.inspect_alkane(&parsed_alkane_id, disasm, fuzz, fuzz_ranges.as_deref(), meta, codehash, raw).await {
                 Ok(_) => {
-                    println!("Alkane inspection completed successfully");
+                    if !raw {
+                        println!("Alkane inspection completed successfully");
+                    }
                 },
                 Err(e) => {
-                    println!("Alkane inspection failed: {}", e);
+                    if raw {
+                        eprintln!("Alkane inspection failed: {}", e);
+                    } else {
+                        println!("Alkane inspection failed: {}", e);
+                    }
                     std::process::exit(1);
                 }
             }
