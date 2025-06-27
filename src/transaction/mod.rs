@@ -170,15 +170,14 @@ impl TransactionConstructor {
         info!("Tracing transaction: {} vout: {}", txid, vout);
         
         // Reverse txid bytes for trace calls
-        // In a real implementation, we would reverse the bytes
-        // For now, just use the txid as-is
-        let reversed_txid = txid.to_string();
+        // Bitcoin txids are displayed in reverse byte order compared to their internal representation
+        let reversed_txid = reverse_txid_bytes(txid)?;
         
         // Call alkanes_trace with reversed txid and appropriate vout
-        let trace_result = self.rpc_client.trace_transaction(&reversed_txid, vout).await?;
+        let trace_pretty = self.rpc_client.trace_transaction_pretty(&reversed_txid, vout).await?;
         
         info!("Transaction traced successfully");
-        debug!("Trace result: {:?}", trace_result);
+        println!("{}", trace_pretty);
         
         Ok(())
     }
@@ -196,6 +195,20 @@ impl TransactionConstructor {
         // For now, return a placeholder script
         Ok(bdk::bitcoin::ScriptBuf::new())
     }
+}
+
+/// Reverse the bytes of a txid for trace calls
+/// Bitcoin txids are displayed in reverse byte order compared to their internal representation
+fn reverse_txid_bytes(txid: &str) -> Result<String> {
+    // Decode the hex string to bytes
+    let mut txid_bytes = hex::decode(txid)
+        .context("Invalid txid hex")?;
+    
+    // Reverse the bytes
+    txid_bytes.reverse();
+    
+    // Encode back to hex string
+    Ok(hex::encode(txid_bytes))
 }
 
 #[cfg(test)]
@@ -233,5 +246,26 @@ mod tests {
         
         // Verify constructor was created successfully
         assert_eq!(constructor.config.network, Network::Testnet);
+    }
+    
+    #[test]
+    fn test_reverse_txid_bytes() {
+        // Test with a sample txid
+        let original_txid = "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890";
+        let expected_reversed = "9067452312efcdab9067452312efcdab9067452312efcdab9067452312efcdab";
+        
+        let reversed = reverse_txid_bytes(original_txid).unwrap();
+        assert_eq!(reversed, expected_reversed);
+        
+        // Test that reversing twice gives us back the original
+        let double_reversed = reverse_txid_bytes(&reversed).unwrap();
+        assert_eq!(double_reversed, original_txid);
+    }
+    
+    #[test]
+    fn test_reverse_txid_bytes_invalid_hex() {
+        // Test with invalid hex
+        let result = reverse_txid_bytes("invalid_hex");
+        assert!(result.is_err());
     }
 }

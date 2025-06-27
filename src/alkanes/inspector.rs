@@ -880,7 +880,7 @@ impl AlkaneInspector {
         // - error: Option<String> (length-prefixed)
         
         // Let's try to parse it step by step
-        let mut offset = 0;
+        let _offset = 0;
         
         // Skip the first part and look for the data Vec<u8>
         // Based on the debugging output, the interesting data seems to start around offset 16-20

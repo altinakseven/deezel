@@ -317,7 +317,7 @@ impl RpcClient {
         // Create and encode the Outpoint protobuf message
         let mut outpoint = alkanes_support::proto::alkanes::Outpoint::new();
         
-        // Decode the txid hex string to bytes
+        // Decode the txid hex string to bytes (txid should already be reversed by caller)
         let txid_bytes = hex::decode(txid)
             .context("Invalid txid hex")?;
         outpoint.txid = txid_bytes;
@@ -337,6 +337,113 @@ impl RpcClient {
         Ok(result)
     }
     
+    /// Trace a transaction and return a pretty-printed trace
+    pub async fn trace_transaction_pretty(&self, txid: &str, vout: usize) -> Result<String> {
+        debug!("Tracing transaction with pretty printing: {} vout: {}", txid, vout);
+        
+        let result = self.trace_transaction(txid, vout).await?;
+        
+        // Parse the hex response
+        let hex_response = result.as_str()
+            .context("Expected hex string response")?;
+        
+        // Handle empty response
+        if hex_response == "0x" || hex_response.is_empty() {
+            return Ok("No trace data found".to_string());
+        }
+        
+        // Decode hex response (remove 0x prefix if present)
+        let hex_data = if hex_response.starts_with("0x") {
+            &hex_response[2..]
+        } else {
+            hex_response
+        };
+        
+        // If hex_data is empty after removing prefix, return empty
+        if hex_data.is_empty() {
+            return Ok("No trace data found".to_string());
+        }
+        
+        // Decode the hex data
+        let response_bytes = hex::decode(hex_data)
+            .context("Failed to decode hex response")?;
+        
+        // Parse as TraceResponse protobuf
+        let trace_response = alkanes_support::proto::alkanes::Trace::parse_from_bytes(&response_bytes)
+            .context("Failed to parse TraceResponse")?;
+        
+        // Convert to alkanes_support::trace::Trace
+        let trace: alkanes_support::trace::Trace = trace_response.trace.into_option()
+            .unwrap_or_default()
+            .into();
+        
+        // Pretty print the trace
+        Ok(self.format_trace(&trace))
+    }
+    
+    /// Format a trace for pretty printing
+    fn format_trace(&self, trace: &alkanes_support::trace::Trace) -> String {
+        let events = trace.0.lock().unwrap();
+        let mut output = String::new();
+        
+        output.push_str("=== ALKANES TRACE ===\n");
+        
+        if events.is_empty() {
+            output.push_str("No trace events found\n");
+        } else {
+            for (i, event) in events.iter().enumerate() {
+                output.push_str(&format!("Event {}: ", i + 1));
+                match event {
+                    alkanes_support::trace::TraceEvent::EnterCall(ctx) => {
+                        output.push_str(&format!("CALL to {}:{}\n", ctx.target.block, ctx.target.tx));
+                        output.push_str(&format!("  Caller: {}:{}\n", ctx.inner.caller.block, ctx.inner.caller.tx));
+                        output.push_str(&format!("  Fuel: {}\n", ctx.fuel));
+                        if !ctx.inner.inputs.is_empty() {
+                            output.push_str(&format!("  Inputs: {:?}\n", ctx.inner.inputs));
+                        }
+                    },
+                    alkanes_support::trace::TraceEvent::EnterDelegatecall(ctx) => {
+                        output.push_str(&format!("DELEGATECALL to {}:{}\n", ctx.target.block, ctx.target.tx));
+                        output.push_str(&format!("  Caller: {}:{}\n", ctx.inner.caller.block, ctx.inner.caller.tx));
+                        output.push_str(&format!("  Fuel: {}\n", ctx.fuel));
+                    },
+                    alkanes_support::trace::TraceEvent::EnterStaticcall(ctx) => {
+                        output.push_str(&format!("STATICCALL to {}:{}\n", ctx.target.block, ctx.target.tx));
+                        output.push_str(&format!("  Caller: {}:{}\n", ctx.inner.caller.block, ctx.inner.caller.tx));
+                        output.push_str(&format!("  Fuel: {}\n", ctx.fuel));
+                    },
+                    alkanes_support::trace::TraceEvent::ReturnContext(resp) => {
+                        output.push_str("RETURN\n");
+                        output.push_str(&format!("  Fuel used: {}\n", resp.fuel_used));
+                        if !resp.inner.data.is_empty() {
+                            output.push_str(&format!("  Data: {}\n", hex::encode(&resp.inner.data)));
+                        }
+                        if !resp.inner.alkanes.0.is_empty() {
+                            output.push_str("  Alkane transfers:\n");
+                            for transfer in &resp.inner.alkanes.0 {
+                                output.push_str(&format!("    {}:{} -> {}\n",
+                                    transfer.id.block, transfer.id.tx, transfer.value));
+                            }
+                        }
+                    },
+                    alkanes_support::trace::TraceEvent::RevertContext(resp) => {
+                        output.push_str("REVERT\n");
+                        output.push_str(&format!("  Fuel used: {}\n", resp.fuel_used));
+                        if !resp.inner.data.is_empty() {
+                            output.push_str(&format!("  Error data: {}\n", hex::encode(&resp.inner.data)));
+                        }
+                    },
+                    alkanes_support::trace::TraceEvent::CreateAlkane(id) => {
+                        output.push_str(&format!("CREATE alkane {}:{}\n", id.block, id.tx));
+                    },
+                }
+            }
+        }
+        
+        output.push_str("=====================\n");
+        output
+    }
+    
     /// Get protorunes by outpoint
     pub async fn get_protorunes_by_outpoint(&self, txid: &str, vout: u32) -> Result<Value> {
         debug!("Getting protorunes for outpoint: {}:{}", txid, vout);
@@ -344,8 +451,11 @@ impl RpcClient {
         // Create and encode the OutpointWithProtocol protobuf message
         let mut outpoint_request = protorune_support::proto::protorune::OutpointWithProtocol::new();
         
-        // Decode the txid hex string to bytes
-        let txid_bytes = hex::decode(txid)
+        // Reverse txid bytes for protorunes calls
+        let reversed_txid = reverse_txid_bytes(txid)?;
+        
+        // Decode the reversed txid hex string to bytes
+        let txid_bytes = hex::decode(&reversed_txid)
             .context("Invalid txid hex")?;
         outpoint_request.txid = txid_bytes;
         outpoint_request.vout = vout;
@@ -762,8 +872,11 @@ impl RpcClient {
         // Create and encode the OutpointWithProtocol protobuf message
         let mut outpoint_request = protorune_support::proto::protorune::OutpointWithProtocol::new();
         
-        // Decode the txid hex string to bytes
-        let txid_bytes = hex::decode(txid)
+        // Reverse txid bytes for protorunes calls
+        let reversed_txid = reverse_txid_bytes(txid)?;
+        
+        // Decode the reversed txid hex string to bytes
+        let txid_bytes = hex::decode(&reversed_txid)
             .context("Invalid txid hex")?;
         outpoint_request.txid = txid_bytes;
         outpoint_request.vout = vout;
@@ -859,8 +972,11 @@ impl RpcClient {
         // Create and encode the Outpoint protobuf message
         let mut outpoint = alkanes_support::proto::alkanes::Outpoint::new();
         
-        // Decode the txid hex string to bytes
-        let txid_bytes = hex::decode(txid)
+        // Reverse txid bytes for trace calls
+        let reversed_txid = reverse_txid_bytes(txid)?;
+        
+        // Decode the reversed txid hex string to bytes
+        let txid_bytes = hex::decode(&reversed_txid)
             .context("Invalid txid hex")?;
         outpoint.txid = txid_bytes;
         outpoint.vout = vout;
@@ -877,6 +993,50 @@ impl RpcClient {
         
         debug!("Trace result for outpoint: {}:{}", txid, vout);
         Ok(result)
+    }
+    
+    /// Trace an outpoint and return a pretty-printed trace
+    pub async fn trace_outpoint_pretty(&self, txid: &str, vout: u32) -> Result<String> {
+        debug!("Tracing outpoint with pretty printing: {}:{}", txid, vout);
+        
+        let result = self.trace_outpoint(txid, vout).await?;
+        
+        // Parse the hex response
+        let hex_response = result.as_str()
+            .context("Expected hex string response")?;
+        
+        // Handle empty response
+        if hex_response == "0x" || hex_response.is_empty() {
+            return Ok("No trace data found".to_string());
+        }
+        
+        // Decode hex response (remove 0x prefix if present)
+        let hex_data = if hex_response.starts_with("0x") {
+            &hex_response[2..]
+        } else {
+            hex_response
+        };
+        
+        // If hex_data is empty after removing prefix, return empty
+        if hex_data.is_empty() {
+            return Ok("No trace data found".to_string());
+        }
+        
+        // Decode the hex data
+        let response_bytes = hex::decode(hex_data)
+            .context("Failed to decode hex response")?;
+        
+        // Parse as TraceResponse protobuf
+        let trace_response = alkanes_support::proto::alkanes::Trace::parse_from_bytes(&response_bytes)
+            .context("Failed to parse TraceResponse")?;
+        
+        // Convert to alkanes_support::trace::Trace
+        let trace: alkanes_support::trace::Trace = trace_response.trace.into_option()
+            .unwrap_or_default()
+            .into();
+        
+        // Pretty print the trace
+        Ok(self.format_trace(&trace))
     }
     
     /// Simulate contract execution with detailed parameters
@@ -951,6 +1111,20 @@ impl RpcClient {
         // Use atomic fetch_add for thread safety
         self.request_id.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
     }
+}
+
+/// Reverse the bytes of a txid for trace calls
+/// Bitcoin txids are displayed in reverse byte order compared to their internal representation
+fn reverse_txid_bytes(txid: &str) -> Result<String> {
+    // Decode the hex string to bytes
+    let mut txid_bytes = hex::decode(txid)
+        .context("Invalid txid hex")?;
+    
+    // Reverse the bytes
+    txid_bytes.reverse();
+    
+    // Encode back to hex string
+    Ok(hex::encode(txid_bytes))
 }
 
 #[cfg(test)]

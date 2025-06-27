@@ -1876,8 +1876,8 @@ async fn main() -> Result<()> {
                 },
                 ViewCommands::Trace { outpoint } => {
                     let (txid, vout) = parse_outpoint(&outpoint)?;
-                    let result = rpc_client.trace_outpoint(&txid, vout).await?;
-                    println!("{}", serde_json::to_string_pretty(&result)?);
+                    let trace_pretty = rpc_client.trace_outpoint_pretty(&txid, vout).await?;
+                    println!("{}", trace_pretty);
                 },
                 ViewCommands::Simulate {
                     alkanes,
