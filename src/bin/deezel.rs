@@ -525,6 +525,9 @@ enum ViewCommands {
     Trace {
         /// Outpoint (txid:vout)
         outpoint: String,
+        /// Output raw JSON format (for scripting)
+        #[clap(short, long)]
+        raw: bool,
     },
     /// Simulate a contract execution
     Simulate {
@@ -1874,10 +1877,15 @@ async fn main() -> Result<()> {
                     let result = rpc_client.get_protorunes_by_outpoint_with_protocol(&txid, vout, protocol_tag).await?;
                     println!("{}", serde_json::to_string_pretty(&result)?);
                 },
-                ViewCommands::Trace { outpoint } => {
+                ViewCommands::Trace { outpoint, raw } => {
                     let (txid, vout) = parse_outpoint(&outpoint)?;
-                    let trace_pretty = rpc_client.trace_outpoint_pretty(&txid, vout).await?;
-                    println!("{}", trace_pretty);
+                    if raw {
+                        let trace_json = rpc_client.trace_outpoint_json(&txid, vout).await?;
+                        println!("{}", trace_json);
+                    } else {
+                        let trace_pretty = rpc_client.trace_outpoint_pretty(&txid, vout).await?;
+                        println!("{}", trace_pretty);
+                    }
                 },
                 ViewCommands::Simulate {
                     alkanes,

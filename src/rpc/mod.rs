@@ -381,67 +381,240 @@ impl RpcClient {
         Ok(self.format_trace(&trace))
     }
     
-    /// Format a trace for pretty printing
+    /// Format a trace for pretty printing with colorful emojis and YAML-like tree structure
     fn format_trace(&self, trace: &alkanes_support::trace::Trace) -> String {
         let events = trace.0.lock().unwrap();
         let mut output = String::new();
         
-        output.push_str("=== ALKANES TRACE ===\n");
+        // Header with colorful styling
+        output.push_str("🔍 ═══════════════════════════════════════════════════════════════\n");
+        output.push_str("🧪                    ALKANES EXECUTION TRACE                    🧪\n");
+        output.push_str("🔍 ═══════════════════════════════════════════════════════════════\n\n");
         
         if events.is_empty() {
-            output.push_str("No trace events found\n");
+            output.push_str("📭 trace:\n");
+            output.push_str("    events: []\n");
+            output.push_str("    status: ✅ parsed_successfully\n");
+            output.push_str("    note: \"No execution events found\"\n");
         } else {
+            output.push_str("📊 trace:\n");
+            output.push_str(&format!("    total_events: {}\n", events.len()));
+            output.push_str("    events:\n");
+            
             for (i, event) in events.iter().enumerate() {
-                output.push_str(&format!("Event {}: ", i + 1));
+                let is_last = i == events.len() - 1;
+                let tree_prefix = if is_last { "    └─" } else { "    ├─" };
+                let indent_prefix = if is_last { "      " } else { "    │ " };
+                
                 match event {
+                    alkanes_support::trace::TraceEvent::CreateAlkane(id) => {
+                        output.push_str(&format!("{} 🏗️  create_alkane:\n", tree_prefix));
+                        output.push_str(&format!("{}    alkane_id:\n", indent_prefix));
+                        output.push_str(&format!("{}      block: {}\n", indent_prefix, id.block));
+                        output.push_str(&format!("{}      tx: {}\n", indent_prefix, id.tx));
+                        output.push_str(&format!("{}    status: ✅ created\n", indent_prefix));
+                    },
                     alkanes_support::trace::TraceEvent::EnterCall(ctx) => {
-                        output.push_str(&format!("CALL to {}:{}\n", ctx.target.block, ctx.target.tx));
-                        output.push_str(&format!("  Caller: {}:{}\n", ctx.inner.caller.block, ctx.inner.caller.tx));
-                        output.push_str(&format!("  Fuel: {}\n", ctx.fuel));
+                        output.push_str(&format!("{} 📞 call:\n", tree_prefix));
+                        output.push_str(&format!("{}    target:\n", indent_prefix));
+                        output.push_str(&format!("{}      block: {}\n", indent_prefix, ctx.target.block));
+                        output.push_str(&format!("{}      tx: {}\n", indent_prefix, ctx.target.tx));
+                        output.push_str(&format!("{}    caller:\n", indent_prefix));
+                        output.push_str(&format!("{}      block: {}\n", indent_prefix, ctx.inner.caller.block));
+                        output.push_str(&format!("{}      tx: {}\n", indent_prefix, ctx.inner.caller.tx));
+                        output.push_str(&format!("{}    ⛽ fuel_allocated: {}\n", indent_prefix, ctx.fuel));
+                        
                         if !ctx.inner.inputs.is_empty() {
-                            output.push_str(&format!("  Inputs: {:?}\n", ctx.inner.inputs));
+                            output.push_str(&format!("{}    📥 inputs:\n", indent_prefix));
+                            for (j, input) in ctx.inner.inputs.iter().enumerate() {
+                                let input_tree = if j == ctx.inner.inputs.len() - 1 { "└─" } else { "├─" };
+                                output.push_str(&format!("{}      {} [{}]: {}\n", indent_prefix, input_tree, j, input));
+                            }
+                        } else {
+                            output.push_str(&format!("{}    📥 inputs: []\n", indent_prefix));
                         }
                     },
                     alkanes_support::trace::TraceEvent::EnterDelegatecall(ctx) => {
-                        output.push_str(&format!("DELEGATECALL to {}:{}\n", ctx.target.block, ctx.target.tx));
-                        output.push_str(&format!("  Caller: {}:{}\n", ctx.inner.caller.block, ctx.inner.caller.tx));
-                        output.push_str(&format!("  Fuel: {}\n", ctx.fuel));
+                        output.push_str(&format!("{} 🔄 delegatecall:\n", tree_prefix));
+                        output.push_str(&format!("{}    target:\n", indent_prefix));
+                        output.push_str(&format!("{}      block: {}\n", indent_prefix, ctx.target.block));
+                        output.push_str(&format!("{}      tx: {}\n", indent_prefix, ctx.target.tx));
+                        output.push_str(&format!("{}    caller:\n", indent_prefix));
+                        output.push_str(&format!("{}      block: {}\n", indent_prefix, ctx.inner.caller.block));
+                        output.push_str(&format!("{}      tx: {}\n", indent_prefix, ctx.inner.caller.tx));
+                        output.push_str(&format!("{}    ⛽ fuel_allocated: {}\n", indent_prefix, ctx.fuel));
                     },
                     alkanes_support::trace::TraceEvent::EnterStaticcall(ctx) => {
-                        output.push_str(&format!("STATICCALL to {}:{}\n", ctx.target.block, ctx.target.tx));
-                        output.push_str(&format!("  Caller: {}:{}\n", ctx.inner.caller.block, ctx.inner.caller.tx));
-                        output.push_str(&format!("  Fuel: {}\n", ctx.fuel));
+                        output.push_str(&format!("{} 🔒 staticcall:\n", tree_prefix));
+                        output.push_str(&format!("{}    target:\n", indent_prefix));
+                        output.push_str(&format!("{}      block: {}\n", indent_prefix, ctx.target.block));
+                        output.push_str(&format!("{}      tx: {}\n", indent_prefix, ctx.target.tx));
+                        output.push_str(&format!("{}    caller:\n", indent_prefix));
+                        output.push_str(&format!("{}      block: {}\n", indent_prefix, ctx.inner.caller.block));
+                        output.push_str(&format!("{}      tx: {}\n", indent_prefix, ctx.inner.caller.tx));
+                        output.push_str(&format!("{}    ⛽ fuel_allocated: {}\n", indent_prefix, ctx.fuel));
                     },
                     alkanes_support::trace::TraceEvent::ReturnContext(resp) => {
-                        output.push_str("RETURN\n");
-                        output.push_str(&format!("  Fuel used: {}\n", resp.fuel_used));
+                        output.push_str(&format!("{} ✅ return:\n", tree_prefix));
+                        output.push_str(&format!("{}    ⛽ fuel_used: {}\n", indent_prefix, resp.fuel_used));
+                        
                         if !resp.inner.data.is_empty() {
-                            output.push_str(&format!("  Data: {}\n", hex::encode(&resp.inner.data)));
+                            output.push_str(&format!("{}    📤 return_data:\n", indent_prefix));
+                            output.push_str(&format!("{}      hex: \"{}\"\n", indent_prefix, hex::encode(&resp.inner.data)));
+                            output.push_str(&format!("{}      length: {} bytes\n", indent_prefix, resp.inner.data.len()));
+                        } else {
+                            output.push_str(&format!("{}    📤 return_data: null\n", indent_prefix));
                         }
+                        
                         if !resp.inner.alkanes.0.is_empty() {
-                            output.push_str("  Alkane transfers:\n");
-                            for transfer in &resp.inner.alkanes.0 {
-                                output.push_str(&format!("    {}:{} -> {}\n",
-                                    transfer.id.block, transfer.id.tx, transfer.value));
+                            output.push_str(&format!("{}    🪙 alkane_transfers:\n", indent_prefix));
+                            for (j, transfer) in resp.inner.alkanes.0.iter().enumerate() {
+                                let transfer_tree = if j == resp.inner.alkanes.0.len() - 1 { "└─" } else { "├─" };
+                                output.push_str(&format!("{}      {} transfer_{}:\n", indent_prefix, transfer_tree, j));
+                                output.push_str(&format!("{}      {}   alkane_id:\n", indent_prefix, if j == resp.inner.alkanes.0.len() - 1 { " " } else { "│" }));
+                                output.push_str(&format!("{}      {}     block: {}\n", indent_prefix, if j == resp.inner.alkanes.0.len() - 1 { " " } else { "│" }, transfer.id.block));
+                                output.push_str(&format!("{}      {}     tx: {}\n", indent_prefix, if j == resp.inner.alkanes.0.len() - 1 { " " } else { "│" }, transfer.id.tx));
+                                output.push_str(&format!("{}      {}   amount: {}\n", indent_prefix, if j == resp.inner.alkanes.0.len() - 1 { " " } else { "│" }, transfer.value));
                             }
+                        } else {
+                            output.push_str(&format!("{}    🪙 alkane_transfers: []\n", indent_prefix));
                         }
                     },
                     alkanes_support::trace::TraceEvent::RevertContext(resp) => {
-                        output.push_str("REVERT\n");
-                        output.push_str(&format!("  Fuel used: {}\n", resp.fuel_used));
+                        output.push_str(&format!("{} ❌ revert:\n", tree_prefix));
+                        output.push_str(&format!("{}    ⛽ fuel_used: {}\n", indent_prefix, resp.fuel_used));
+                        
                         if !resp.inner.data.is_empty() {
-                            output.push_str(&format!("  Error data: {}\n", hex::encode(&resp.inner.data)));
+                            output.push_str(&format!("{}    🚨 error_data:\n", indent_prefix));
+                            output.push_str(&format!("{}      hex: \"{}\"\n", indent_prefix, hex::encode(&resp.inner.data)));
+                            output.push_str(&format!("{}      length: {} bytes\n", indent_prefix, resp.inner.data.len()));
+                        } else {
+                            output.push_str(&format!("{}    🚨 error_data: null\n", indent_prefix));
                         }
                     },
-                    alkanes_support::trace::TraceEvent::CreateAlkane(id) => {
-                        output.push_str(&format!("CREATE alkane {}:{}\n", id.block, id.tx));
-                    },
+                }
+                
+                // Add spacing between events except for the last one
+                if !is_last {
+                    output.push_str("    │\n");
                 }
             }
         }
         
-        output.push_str("=====================\n");
+        output.push_str("\n🎯 ═══════════════════════════════════════════════════════════════\n");
+        output.push_str("✨                      TRACE COMPLETE                         ✨\n");
+        output.push_str("🎯 ═══════════════════════════════════════════════════════════════\n");
         output
+    }
+    
+    /// Convert a trace to JSON format for raw output
+    fn trace_to_json(&self, trace: &alkanes_support::trace::Trace) -> serde_json::Value {
+        let events = trace.0.lock().unwrap();
+        let mut json_events = Vec::new();
+        
+        for event in events.iter() {
+            let json_event = match event {
+                alkanes_support::trace::TraceEvent::CreateAlkane(id) => {
+                    json!({
+                        "type": "create_alkane",
+                        "alkane_id": {
+                            "block": id.block,
+                            "tx": id.tx
+                        }
+                    })
+                },
+                alkanes_support::trace::TraceEvent::EnterCall(ctx) => {
+                    json!({
+                        "type": "call",
+                        "target": {
+                            "block": ctx.target.block,
+                            "tx": ctx.target.tx
+                        },
+                        "caller": {
+                            "block": ctx.inner.caller.block,
+                            "tx": ctx.inner.caller.tx
+                        },
+                        "fuel_allocated": ctx.fuel,
+                        "inputs": ctx.inner.inputs
+                    })
+                },
+                alkanes_support::trace::TraceEvent::EnterDelegatecall(ctx) => {
+                    json!({
+                        "type": "delegatecall",
+                        "target": {
+                            "block": ctx.target.block,
+                            "tx": ctx.target.tx
+                        },
+                        "caller": {
+                            "block": ctx.inner.caller.block,
+                            "tx": ctx.inner.caller.tx
+                        },
+                        "fuel_allocated": ctx.fuel
+                    })
+                },
+                alkanes_support::trace::TraceEvent::EnterStaticcall(ctx) => {
+                    json!({
+                        "type": "staticcall",
+                        "target": {
+                            "block": ctx.target.block,
+                            "tx": ctx.target.tx
+                        },
+                        "caller": {
+                            "block": ctx.inner.caller.block,
+                            "tx": ctx.inner.caller.tx
+                        },
+                        "fuel_allocated": ctx.fuel
+                    })
+                },
+                alkanes_support::trace::TraceEvent::ReturnContext(resp) => {
+                    let alkane_transfers: Vec<serde_json::Value> = resp.inner.alkanes.0.iter().map(|transfer| {
+                        json!({
+                            "alkane_id": {
+                                "block": transfer.id.block,
+                                "tx": transfer.id.tx
+                            },
+                            "amount": transfer.value
+                        })
+                    }).collect();
+                    
+                    json!({
+                        "type": "return",
+                        "fuel_used": resp.fuel_used,
+                        "return_data": if resp.inner.data.is_empty() {
+                            serde_json::Value::Null
+                        } else {
+                            json!({
+                                "hex": hex::encode(&resp.inner.data),
+                                "length": resp.inner.data.len()
+                            })
+                        },
+                        "alkane_transfers": alkane_transfers
+                    })
+                },
+                alkanes_support::trace::TraceEvent::RevertContext(resp) => {
+                    json!({
+                        "type": "revert",
+                        "fuel_used": resp.fuel_used,
+                        "error_data": if resp.inner.data.is_empty() {
+                            serde_json::Value::Null
+                        } else {
+                            json!({
+                                "hex": hex::encode(&resp.inner.data),
+                                "length": resp.inner.data.len()
+                            })
+                        }
+                    })
+                },
+            };
+            json_events.push(json_event);
+        }
+        
+        json!({
+            "trace": {
+                "total_events": events.len(),
+                "events": json_events
+            }
+        })
     }
     
     /// Get protorunes by outpoint
@@ -974,11 +1147,13 @@ impl RpcClient {
         
         // Reverse txid bytes for trace calls
         let reversed_txid = reverse_txid_bytes(txid)?;
+        debug!("Original txid: {}", txid);
+        debug!("Reversed txid: {}", reversed_txid);
         
         // Decode the reversed txid hex string to bytes
         let txid_bytes = hex::decode(&reversed_txid)
             .context("Invalid txid hex")?;
-        outpoint.txid = txid_bytes;
+        outpoint.txid = txid_bytes.clone();
         outpoint.vout = vout;
         
         // Serialize to bytes and hex encode with 0x prefix
@@ -986,12 +1161,16 @@ impl RpcClient {
             .context("Failed to encode Outpoint")?;
         let hex_input = format!("0x{}", hex::encode(encoded_bytes));
         
+        debug!("Protobuf encoded outpoint: {}", hex_input);
+        debug!("Outpoint txid bytes: {}", hex::encode(&txid_bytes));
+        debug!("Outpoint vout: {}", vout);
+        
         let result = self._call(
             "metashrew_view",
             json!(["trace", hex_input, "latest"])
         ).await?;
         
-        debug!("Trace result for outpoint: {}:{}", txid, vout);
+        debug!("Raw trace result: {:?}", result);
         Ok(result)
     }
     
@@ -1007,7 +1186,7 @@ impl RpcClient {
         
         // Handle empty response
         if hex_response == "0x" || hex_response.is_empty() {
-            return Ok("No trace data found".to_string());
+            return Ok("=== ALKANES TRACE ===\nNo trace events found\n=====================".to_string());
         }
         
         // Decode hex response (remove 0x prefix if present)
@@ -1019,24 +1198,152 @@ impl RpcClient {
         
         // If hex_data is empty after removing prefix, return empty
         if hex_data.is_empty() {
-            return Ok("No trace data found".to_string());
+            return Ok("=== ALKANES TRACE ===\nNo trace events found\n=====================".to_string());
         }
         
         // Decode the hex data
         let response_bytes = hex::decode(hex_data)
             .context("Failed to decode hex response")?;
         
-        // Parse as TraceResponse protobuf
-        let trace_response = alkanes_support::proto::alkanes::Trace::parse_from_bytes(&response_bytes)
-            .context("Failed to parse TraceResponse")?;
+        debug!("Decoded {} bytes of trace data", response_bytes.len());
         
-        // Convert to alkanes_support::trace::Trace
-        let trace: alkanes_support::trace::Trace = trace_response.trace.into_option()
-            .unwrap_or_default()
-            .into();
+        // Try to parse as AlkanesTrace protobuf directly
+        match alkanes_support::proto::alkanes::AlkanesTrace::parse_from_bytes(&response_bytes) {
+            Ok(alkanes_trace) => {
+                debug!("Successfully parsed protobuf AlkanesTrace response");
+                
+                // Convert to alkanes_support::trace::Trace
+                let trace: alkanes_support::trace::Trace = alkanes_trace.into();
+                
+                // Pretty print the trace
+                Ok(self.format_trace(&trace))
+            },
+            Err(e) => {
+                debug!("Failed to parse as protobuf Trace: {}", e);
+                
+                // If protobuf parsing fails, show the raw data
+                let mut output = String::new();
+                output.push_str("=== ALKANES TRACE ===\n");
+                output.push_str(&format!("Raw trace data ({} bytes):\n", response_bytes.len()));
+                output.push_str(&format!("Hex: {}\n", hex::encode(&response_bytes)));
+                
+                // Try to interpret as raw bytes
+                if response_bytes.len() >= 4 {
+                    output.push_str("Possible interpretations:\n");
+                    
+                    // Show first few bytes as different integer types
+                    let first_u32 = u32::from_le_bytes([
+                        response_bytes.get(0).copied().unwrap_or(0),
+                        response_bytes.get(1).copied().unwrap_or(0),
+                        response_bytes.get(2).copied().unwrap_or(0),
+                        response_bytes.get(3).copied().unwrap_or(0),
+                    ]);
+                    output.push_str(&format!("  First 4 bytes as u32 (LE): {}\n", first_u32));
+                    
+                    if response_bytes.len() >= 8 {
+                        let first_u64 = u64::from_le_bytes([
+                            response_bytes.get(0).copied().unwrap_or(0),
+                            response_bytes.get(1).copied().unwrap_or(0),
+                            response_bytes.get(2).copied().unwrap_or(0),
+                            response_bytes.get(3).copied().unwrap_or(0),
+                            response_bytes.get(4).copied().unwrap_or(0),
+                            response_bytes.get(5).copied().unwrap_or(0),
+                            response_bytes.get(6).copied().unwrap_or(0),
+                            response_bytes.get(7).copied().unwrap_or(0),
+                        ]);
+                        output.push_str(&format!("  First 8 bytes as u64 (LE): {}\n", first_u64));
+                    }
+                    
+                    // Show as ASCII if printable
+                    let ascii_str: String = response_bytes.iter()
+                        .take(64) // Limit to first 64 bytes
+                        .map(|&b| if b.is_ascii_graphic() || b == b' ' { b as char } else { '.' })
+                        .collect();
+                    output.push_str(&format!("  As ASCII (first 64 bytes): {}\n", ascii_str));
+                }
+                
+                output.push_str("Note: Failed to parse as protobuf - this may be raw trace data\n");
+                output.push_str("=====================\n");
+                Ok(output)
+            }
+        }
+    }
+    
+    /// Trace an outpoint and return JSON-formatted trace data
+    pub async fn trace_outpoint_json(&self, txid: &str, vout: u32) -> Result<String> {
+        debug!("Tracing outpoint with JSON output: {}:{}", txid, vout);
         
-        // Pretty print the trace
-        Ok(self.format_trace(&trace))
+        let result = self.trace_outpoint(txid, vout).await?;
+        
+        // Parse the hex response
+        let hex_response = result.as_str()
+            .context("Expected hex string response")?;
+        
+        // Handle empty response
+        if hex_response == "0x" || hex_response.is_empty() {
+            return Ok(json!({
+                "trace": {
+                    "total_events": 0,
+                    "events": []
+                },
+                "status": "no_trace_data"
+            }).to_string());
+        }
+        
+        // Decode hex response (remove 0x prefix if present)
+        let hex_data = if hex_response.starts_with("0x") {
+            &hex_response[2..]
+        } else {
+            hex_response
+        };
+        
+        // If hex_data is empty after removing prefix, return empty
+        if hex_data.is_empty() {
+            return Ok(json!({
+                "trace": {
+                    "total_events": 0,
+                    "events": []
+                },
+                "status": "no_trace_data"
+            }).to_string());
+        }
+        
+        // Decode the hex data
+        let response_bytes = hex::decode(hex_data)
+            .context("Failed to decode hex response")?;
+        
+        debug!("Decoded {} bytes of trace data for JSON output", response_bytes.len());
+        
+        // Try to parse as AlkanesTrace protobuf directly
+        match alkanes_support::proto::alkanes::AlkanesTrace::parse_from_bytes(&response_bytes) {
+            Ok(alkanes_trace) => {
+                debug!("Successfully parsed protobuf AlkanesTrace response for JSON");
+                
+                // Convert to alkanes_support::trace::Trace
+                let trace: alkanes_support::trace::Trace = alkanes_trace.into();
+                
+                // Convert to JSON
+                let json_output = self.trace_to_json(&trace);
+                Ok(serde_json::to_string_pretty(&json_output)?)
+            },
+            Err(e) => {
+                debug!("Failed to parse as protobuf Trace for JSON: {}", e);
+                
+                // If protobuf parsing fails, return raw data in JSON format
+                Ok(json!({
+                    "trace": {
+                        "total_events": 0,
+                        "events": []
+                    },
+                    "status": "parse_error",
+                    "error": format!("Failed to parse protobuf: {}", e),
+                    "raw_data": {
+                        "hex": hex::encode(&response_bytes),
+                        "length": response_bytes.len()
+                    }
+                }).to_string())
+            }
+        }
     }
     
     /// Simulate contract execution with detailed parameters
