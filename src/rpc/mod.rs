@@ -199,6 +199,17 @@ impl RpcClient {
         debug!("Current block height: {}", height);
         Ok(height)
     }
+
+    /// Generate blocks to an address (regtest only)
+    pub async fn generate_to_address(&self, nblocks: u32, address: &str) -> Result<Value> {
+        debug!("Generating {} blocks to address: {}", nblocks, address);
+        
+        // Use generatetoaddress method directly on Sandshrew RPC (which is a superset of Bitcoin Core)
+        let result = self._call("generatetoaddress", json!([nblocks, address])).await?;
+        
+        debug!("Generated {} blocks to address: {}", nblocks, address);
+        Ok(result)
+    }
     
     /// Get the current block height from Metashrew RPC
     pub async fn get_metashrew_height(&self) -> Result<u64> {

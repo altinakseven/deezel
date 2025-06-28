@@ -76,6 +76,7 @@ async fn main() -> Result<()> {
         network: bdk::bitcoin::Network::Testnet, // TODO: Make configurable
         bitcoin_rpc_url: args.bitcoin_rpc_url.clone(),
         metashrew_rpc_url: args.metashrew_rpc_url.clone(),
+        network_params: None,
     };
     
     let wallet_manager = std::sync::Arc::new(

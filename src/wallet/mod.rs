@@ -30,6 +30,7 @@ use tokio::fs;
 
 use crate::rpc::RpcClient;
 use self::esplora_backend::SandshrewEsploraBackend;
+use protorune_support::network::NetworkParams as CustomNetworkParams;
 
 /// Wallet configuration
 #[derive(Clone, Debug)]
@@ -42,6 +43,8 @@ pub struct WalletConfig {
     pub bitcoin_rpc_url: String,
     /// Metashrew RPC URL
     pub metashrew_rpc_url: String,
+    /// Custom network parameters for address generation
+    pub network_params: Option<CustomNetworkParams>,
 }
 
 /// Wallet data for persistence
@@ -146,29 +149,10 @@ impl WalletManager {
         let (wallet, wallet_data) = if wallet_path.exists() {
             info!("Loading wallet from {}", config.wallet_path);
             let data = Self::load_wallet_data(&config.wallet_path).await?;
-            let wallet = Self::create_wallet_from_data(&data, config.network)?;
+            let wallet = Self::create_wallet_from_data(&data, config.network, &config)?;
             (wallet, Some(data))
         } else {
-            info!("Creating new wallet");
-            // Use network-appropriate descriptors
-            let (external_desc, internal_desc) = match config.network {
-                Network::Bitcoin => (
-                    "wpkh([c258d2e4/84h/0h/0h]xpub6BosfCnifzxcFwrSzQiqu2DBVTshkCXacvNsWGYJVVhhawA7d4R5WSWGFNbi8Aw6ZRc1brxMyWMzG3DSSSSoekkudhUd9yLb6qx39T9nMdT/0/*)",
-                    "wpkh([c258d2e4/84h/0h/0h]xpub6BosfCnifzxcFwrSzQiqu2DBVTshkCXacvNsWGYJVVhhawA7d4R5WSWGFNbi8Aw6ZRc1brxMyWMzG3DSSSSoekkudhUd9yLb6qx39T9nMdT/1/*)"
-                ),
-                _ => (
-                    "wpkh([c258d2e4/84h/1h/0h]tpubDDYkZojQFQjht8Tm4jsS3iuEmKjTiEGjG6KnuFNKKJb5A6ZUCUZKdvLdSDWofKi4ToRCwb9poe1XdqfUnP4jaJjCB2Zwv11ZLgSbnZSNecE/0/*)",
-                    "wpkh([c258d2e4/84h/1h/0h]tpubDDYkZojQFQjht8Tm4jsS3iuEmKjTiEGjG6KnuFNKKJb5A6ZUCUZKdvLdSDWofKi4ToRCwb9poe1XdqfUnP4jaJjCB2Zwv11ZLgSbnZSNecE/1/*)"
-                ),
-            };
-            
-            let wallet = Wallet::new(
-                external_desc,
-                Some(internal_desc),
-                config.network,
-                MemoryDatabase::default(),
-            )?;
-            (wallet, None)
+            return Err(anyhow!("Wallet file not found at {}. Please create a wallet first using 'deezel wallet create'", config.wallet_path));
         };
         
         info!("Wallet initialized successfully");
@@ -210,23 +194,17 @@ impl WalletManager {
             .context("Failed to create xprv")?;
         
         // Create descriptors for Native SegWit (bech32)
-        let external_descriptor = format!("wpkh({}/84'/{}'/{}/0/*)", xprv,
-            match config.network {
-                Network::Bitcoin => 0,
-                Network::Testnet => 1,
-                Network::Signet => 1,
-                Network::Regtest => 1,
-                _ => 1, // Default to testnet for unknown networks
-            }, 0);
+        // For custom networks that use Network::Bitcoin as fallback, use mainnet derivation
+        let coin_type = match config.network {
+            Network::Bitcoin => 0,
+            Network::Testnet => 1,
+            Network::Signet => 1,
+            Network::Regtest => 1,
+            _ => 0, // Use mainnet derivation for custom networks
+        };
         
-        let internal_descriptor = format!("wpkh({}/84'/{}'/{}/1/*)", xprv,
-            match config.network {
-                Network::Bitcoin => 0,
-                Network::Testnet => 1,
-                Network::Signet => 1,
-                Network::Regtest => 1,
-                _ => 1, // Default to testnet for unknown networks
-            }, 0);
+        let external_descriptor = format!("wpkh({}/84'/{}'/{}/0/*)", xprv, coin_type, 0);
+        let internal_descriptor = format!("wpkh({}/84'/{}'/{}/1/*)", xprv, coin_type, 0);
         
         // Create wallet
         let wallet = Wallet::new(
@@ -290,10 +268,50 @@ impl WalletManager {
     }
     
     /// Create wallet from saved data
-    fn create_wallet_from_data(data: &WalletData, network: Network) -> Result<Wallet<MemoryDatabase>> {
+    fn create_wallet_from_data(data: &WalletData, network: Network, config: &WalletConfig) -> Result<Wallet<MemoryDatabase>> {
+        // Validate that the saved network matches the requested network
+        let saved_network = match data.network.as_str() {
+            "Bitcoin" => Network::Bitcoin,
+            "Testnet" => Network::Testnet,
+            "Signet" => Network::Signet,
+            "Regtest" => Network::Regtest,
+            _ => return Err(anyhow!("Unknown network in wallet data: {}", data.network)),
+        };
+        
+        if saved_network != network {
+            return Err(anyhow!(
+                "Network mismatch: wallet was created for {:?} but trying to load as {:?}. Use --wallet-path to specify a different wallet file.",
+                saved_network, network
+            ));
+        }
+        
+        // Recreate wallet from mnemonic to avoid descriptor parsing issues
+        let mnemonic = Mnemonic::from_str(&data.mnemonic)
+            .context("Invalid mnemonic in wallet data")?;
+        
+        // Create extended key from mnemonic
+        let xkey: ExtendedKey = mnemonic.clone()
+            .into_extended_key()
+            .context("Failed to create extended key")?;
+        
+        let xprv = xkey.into_xprv(network)
+            .context("Failed to create xprv")?;
+        
+        // Create descriptors for Native SegWit (bech32)
+        let coin_type = match network {
+            Network::Bitcoin => 0,
+            Network::Testnet => 1,
+            Network::Signet => 1,
+            Network::Regtest => 1,
+            _ => 0, // Use mainnet derivation for custom networks
+        };
+        
+        let external_descriptor = format!("wpkh({}/84'/{}'/{}/0/*)", xprv, coin_type, 0);
+        let internal_descriptor = format!("wpkh({}/84'/{}'/{}/1/*)", xprv, coin_type, 0);
+        
         let wallet = Wallet::new(
-            &data.external_descriptor,
-            Some(&data.internal_descriptor),
+            &external_descriptor,
+            Some(&internal_descriptor),
             network,
             MemoryDatabase::default(),
         )?;
@@ -304,8 +322,33 @@ impl WalletManager {
     /// Get a new address from the wallet
     pub async fn get_address(&self) -> Result<String> {
         let wallet = self.wallet.lock().await;
-        let address = wallet.get_address(AddressIndex::New)?;
-        Ok(address.to_string())
+        let address_info = wallet.get_address(AddressIndex::New)?;
+        
+        // If we have custom network parameters, use protorune_support for address generation
+        if let Some(network_params) = &self.config.network_params {
+            // Set the network parameters for protorune_support
+            let protorune_params = protorune_support::network::NetworkParams {
+                bech32_prefix: network_params.bech32_prefix.clone(),
+                p2pkh_prefix: network_params.p2pkh_prefix,
+                p2sh_prefix: network_params.p2sh_prefix,
+            };
+            protorune_support::network::set_network(protorune_params);
+            
+            // Use protorune_support to generate the address with custom network parameters
+            // Convert between different bitcoin crate versions by using raw bytes
+            let script_pubkey = address_info.address.script_pubkey();
+            let script_bytes = script_pubkey.as_bytes();
+            let bitcoin_script = bitcoin::Script::from_bytes(script_bytes);
+            match protorune_support::network::to_address_str(bitcoin_script) {
+                Ok(custom_address) => return Ok(custom_address),
+                Err(e) => {
+                    warn!("Failed to generate custom address: {}, falling back to BDK", e);
+                }
+            }
+        }
+        
+        // Fall back to BDK's address generation
+        Ok(address_info.to_string())
     }
     
     /// Get multiple addresses from the wallet
@@ -313,9 +356,37 @@ impl WalletManager {
         let wallet = self.wallet.lock().await;
         let mut addresses = Vec::new();
         
+        // Set up custom network parameters if available
+        if let Some(network_params) = &self.config.network_params {
+            let protorune_params = protorune_support::network::NetworkParams {
+                bech32_prefix: network_params.bech32_prefix.clone(),
+                p2pkh_prefix: network_params.p2pkh_prefix,
+                p2sh_prefix: network_params.p2sh_prefix,
+            };
+            protorune_support::network::set_network(protorune_params);
+        }
+        
         for _ in 0..count {
-            let address = wallet.get_address(AddressIndex::New)?;
-            addresses.push(address.to_string());
+            let address_info = wallet.get_address(AddressIndex::New)?;
+            
+            // Use custom address generation if network parameters are available
+            let address_str = if let Some(_) = &self.config.network_params {
+                // Convert between different bitcoin crate versions by using raw bytes
+                let script_pubkey = address_info.address.script_pubkey();
+                let script_bytes = script_pubkey.as_bytes();
+                let bitcoin_script = bitcoin::Script::from_bytes(script_bytes);
+                match protorune_support::network::to_address_str(bitcoin_script) {
+                    Ok(custom_address) => custom_address,
+                    Err(e) => {
+                        warn!("Failed to generate custom address: {}, falling back to BDK", e);
+                        address_info.to_string()
+                    }
+                }
+            } else {
+                address_info.to_string()
+            };
+            
+            addresses.push(address_str);
         }
         
         Ok(addresses)
@@ -398,10 +469,62 @@ impl WalletManager {
         Ok(())
     }
     
-    /// Get the wallet balance
+    /// Get the wallet balance by querying Sandshrew directly
     pub async fn get_balance(&self) -> Result<bdk::Balance> {
-        let wallet = self.wallet.lock().await;
-        Ok(wallet.get_balance()?)
+        // Get the wallet address
+        let address = self.get_address().await?;
+        debug!("Getting balance for address: {}", address);
+        
+        // Query Sandshrew for UTXOs at this address using esplora interface
+        match self.rpc_client.get_address_utxos(&address).await {
+            Ok(utxos_response) => {
+                debug!("UTXOs response from Sandshrew: {:?}", utxos_response);
+                
+                let mut confirmed_balance = 0u64;
+                let mut unconfirmed_balance = 0u64;
+                
+                // Parse the UTXOs response
+                if let Some(utxos_array) = utxos_response.as_array() {
+                    for utxo in utxos_array {
+                        if let Some(utxo_obj) = utxo.as_object() {
+                            // Get the value (amount in satoshis)
+                            if let Some(value) = utxo_obj.get("value").and_then(|v| v.as_u64()) {
+                                // Check if the UTXO is confirmed
+                                let is_confirmed = utxo_obj.get("status")
+                                    .and_then(|s| s.get("confirmed"))
+                                    .and_then(|c| c.as_bool())
+                                    .unwrap_or(false);
+                                
+                                if is_confirmed {
+                                    confirmed_balance += value;
+                                } else {
+                                    unconfirmed_balance += value;
+                                }
+                                
+                                debug!("Found UTXO: {} sats (confirmed: {})", value, is_confirmed);
+                            }
+                        }
+                    }
+                }
+                
+                info!("Balance from Sandshrew - Confirmed: {} sats, Unconfirmed: {} sats",
+                      confirmed_balance, unconfirmed_balance);
+                
+                // Return balance in BDK format
+                Ok(bdk::Balance {
+                    immature: 0,
+                    trusted_pending: 0,
+                    untrusted_pending: unconfirmed_balance,
+                    confirmed: confirmed_balance,
+                })
+            },
+            Err(e) => {
+                warn!("Failed to get UTXOs from Sandshrew: {}, falling back to local wallet", e);
+                // Fall back to local wallet balance
+                let wallet = self.wallet.lock().await;
+                Ok(wallet.get_balance()?)
+            }
+        }
     }
     
     /// Create a transaction
@@ -491,33 +614,114 @@ impl WalletManager {
         Ok(txid)
     }
     
-    /// Get UTXOs
+    /// Get UTXOs by querying Sandshrew directly
     pub async fn get_utxos(&self) -> Result<Vec<UtxoInfo>> {
-        let wallet = self.wallet.lock().await;
-        let utxos = wallet.list_unspent()?;
-        let frozen_utxos = self.frozen_utxos.lock().await;
+        // Get the wallet address
+        let address = self.get_address().await?;
+        debug!("Getting UTXOs for address: {}", address);
         
+        let frozen_utxos = self.frozen_utxos.lock().await;
         let mut utxo_infos = Vec::new();
         
-        for utxo in utxos {
-            // Get address for this UTXO
-            let address = Address::from_script(&utxo.txout.script_pubkey, self.config.network)
-                .map(|addr| addr.to_string())
-                .unwrap_or_else(|_| "Unknown".to_string());
-            
-            // Get confirmation count (simplified - in real implementation, query blockchain)
-            let confirmations = 1; // Placeholder
-            
-            let utxo_info = UtxoInfo {
-                txid: utxo.outpoint.txid.to_string(),
-                vout: utxo.outpoint.vout,
-                amount: utxo.txout.value,
-                address,
-                confirmations,
-                frozen: frozen_utxos.contains_key(&utxo.outpoint),
-            };
-            
-            utxo_infos.push(utxo_info);
+        // Query Sandshrew for UTXOs at this address using esplora interface
+        match self.rpc_client.get_address_utxos(&address).await {
+            Ok(utxos_response) => {
+                debug!("UTXOs response from Sandshrew: {:?}", utxos_response);
+                
+                // Parse the UTXOs response
+                if let Some(utxos_array) = utxos_response.as_array() {
+                    for utxo in utxos_array {
+                        if let Some(utxo_obj) = utxo.as_object() {
+                            // Get the transaction ID
+                            let txid = utxo_obj.get("txid")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown")
+                                .to_string();
+                            
+                            // Get the output index
+                            let vout = utxo_obj.get("vout")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0) as u32;
+                            
+                            // Get the value (amount in satoshis)
+                            let amount = utxo_obj.get("value")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0);
+                            
+                            // Get confirmation status and block height
+                            let (confirmations, is_confirmed) = if let Some(status) = utxo_obj.get("status") {
+                                let confirmed = status.get("confirmed")
+                                    .and_then(|c| c.as_bool())
+                                    .unwrap_or(false);
+                                
+                                let block_height = status.get("block_height")
+                                    .and_then(|h| h.as_u64())
+                                    .unwrap_or(0) as u32;
+                                
+                                // Calculate confirmations (simplified - would need current height)
+                                let confirmations = if confirmed {
+                                    std::cmp::max(1, block_height.saturating_sub(0))
+                                } else {
+                                    0
+                                };
+                                
+                                (confirmations, confirmed)
+                            } else {
+                                (0, false)
+                            };
+                            
+                            // Check if this UTXO is frozen
+                            let outpoint = if let Ok(parsed_txid) = Txid::from_str(&txid) {
+                                OutPoint {
+                                    txid: parsed_txid,
+                                    vout,
+                                }
+                            } else {
+                                // Skip invalid txids
+                                continue;
+                            };
+                            let frozen = frozen_utxos.contains_key(&outpoint);
+                            
+                            let utxo_info = UtxoInfo {
+                                txid,
+                                vout,
+                                amount,
+                                address: address.clone(),
+                                confirmations,
+                                frozen,
+                            };
+                            
+                            utxo_infos.push(utxo_info);
+                        }
+                    }
+                }
+                
+                debug!("Found {} UTXOs for address {}", utxo_infos.len(), address);
+            },
+            Err(e) => {
+                warn!("Failed to get UTXOs from Sandshrew: {}, falling back to local wallet", e);
+                // Fall back to local wallet UTXOs
+                let wallet = self.wallet.lock().await;
+                let utxos = wallet.list_unspent()?;
+                
+                for utxo in utxos {
+                    // Get address for this UTXO
+                    let utxo_address = Address::from_script(&utxo.txout.script_pubkey, self.config.network)
+                        .map(|addr| addr.to_string())
+                        .unwrap_or_else(|_| "Unknown".to_string());
+                    
+                    let utxo_info = UtxoInfo {
+                        txid: utxo.outpoint.txid.to_string(),
+                        vout: utxo.outpoint.vout,
+                        amount: utxo.txout.value,
+                        address: utxo_address,
+                        confirmations: 1, // Placeholder
+                        frozen: frozen_utxos.contains_key(&utxo.outpoint),
+                    };
+                    
+                    utxo_infos.push(utxo_info);
+                }
+            }
         }
         
         Ok(utxo_infos)

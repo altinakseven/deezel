@@ -49,39 +49,105 @@ impl NetworkParams {
         }
     }
 
-    /// Create network parameters from a magic string
-    /// Format: "p2sh_prefix:p2pkh_prefix:bech32_prefix"
-    /// Example: "05:00:bc" for mainnet
+    /// Create network parameters for signet (same as testnet)
+    pub fn signet() -> Self {
+        Self::testnet()
+    }
+
+    /// Create network parameters for dogecoin
+    pub fn dogecoin() -> Self {
+        Self {
+            bech32_prefix: String::from("dc"),
+            p2pkh_prefix: 0x1e,
+            p2sh_prefix: 0x16,
+            network: Network::Bitcoin, // Use Bitcoin network type for BDK compatibility
+        }
+    }
+
+    /// Create network parameters for luckycoin
+    pub fn luckycoin() -> Self {
+        Self {
+            bech32_prefix: String::from("lky"),
+            p2pkh_prefix: 0x2f,
+            p2sh_prefix: 0x05,
+            network: Network::Bitcoin, // Use Bitcoin network type for BDK compatibility
+        }
+    }
+
+    /// Create network parameters for bellscoin
+    pub fn bellscoin() -> Self {
+        Self {
+            bech32_prefix: String::from("bel"),
+            p2pkh_prefix: 0x19,
+            p2sh_prefix: 0x1e,
+            network: Network::Bitcoin, // Use Bitcoin network type for BDK compatibility
+        }
+    }
+
+    /// Create network parameters from a magic string or network name
+    /// Supports both network names (mainnet, testnet, signet, regtest, dogecoin, luckycoin, bellscoin)
+    /// and magic format: "p2sh_prefix:p2pkh_prefix:bech32_prefix"
+    /// Example: "05:00:bc" for mainnet or just "mainnet"
     pub fn from_magic(magic: &str) -> Result<Self, String> {
-        let parts: Vec<&str> = magic.split(':').collect();
-        if parts.len() != 3 {
-            return Err(format!("Invalid magic format. Expected 'p2sh_prefix:p2pkh_prefix:bech32_prefix', got '{}'", magic));
+        // First try to parse as a network name
+        match magic.to_lowercase().as_str() {
+            "mainnet" => return Ok(Self::mainnet()),
+            "testnet" => return Ok(Self::testnet()),
+            "signet" => return Ok(Self::signet()),
+            "regtest" => return Ok(Self::regtest()),
+            "dogecoin" | "doge" => return Ok(Self::dogecoin()),
+            "luckycoin" | "lucky" => return Ok(Self::luckycoin()),
+            "bellscoin" | "bells" => return Ok(Self::bellscoin()),
+            _ => {
+                // If not a network name, try to parse as magic format
+                let parts: Vec<&str> = magic.split(':').collect();
+                if parts.len() != 3 {
+                    return Err(format!(
+                        "Invalid magic format. Expected network name (mainnet, testnet, signet, regtest, dogecoin, luckycoin, bellscoin) or 'p2sh_prefix:p2pkh_prefix:bech32_prefix', got '{}'",
+                        magic
+                    ));
+                }
+
+                let p2sh_prefix = u8::from_str_radix(parts[0], 16)
+                    .map_err(|_| format!("Invalid p2sh_prefix: {}", parts[0]))?;
+                
+                let p2pkh_prefix = u8::from_str_radix(parts[1], 16)
+                    .map_err(|_| format!("Invalid p2pkh_prefix: {}", parts[1]))?;
+                
+                let bech32_prefix = parts[2].to_string();
+                
+                // Default to Bitcoin network for custom magic values
+                return Ok(Self {
+                    bech32_prefix,
+                    p2pkh_prefix,
+                    p2sh_prefix,
+                    network: Network::Bitcoin,
+                });
+            }
         }
 
-        let p2sh_prefix = u8::from_str_radix(parts[0], 16)
-            .map_err(|_| format!("Invalid p2sh_prefix: {}", parts[0]))?;
-        
-        let p2pkh_prefix = u8::from_str_radix(parts[1], 16)
-            .map_err(|_| format!("Invalid p2pkh_prefix: {}", parts[1]))?;
-        
-        let bech32_prefix = parts[2].to_string();
-        
-        // Default to Bitcoin network for custom magic values
-        Ok(Self {
-            bech32_prefix,
-            p2pkh_prefix,
-            p2sh_prefix,
-            network: Network::Bitcoin,
-        })
+        Err(format!("Invalid magic format: {}", magic))
+    }
+
+    /// Convert to protorune_support::network::NetworkParams
+    pub fn to_protorune_params(&self) -> protorune_support::network::NetworkParams {
+        protorune_support::network::NetworkParams {
+            p2pkh_prefix: self.p2pkh_prefix,
+            p2sh_prefix: self.p2sh_prefix,
+            bech32_prefix: self.bech32_prefix.clone(),
+        }
     }
 
     /// Get the network parameters for a given provider preset
     pub fn from_provider(provider: &str) -> Result<Self, String> {
-        match provider {
+        match provider.to_lowercase().as_str() {
             "mainnet" => Ok(Self::mainnet()),
             "testnet" | "signet" => Ok(Self::testnet()),
             "regtest" | "localhost" => Ok(Self::regtest()),
-            _ => Err(format!("Unknown provider: {}", provider)),
+            "dogecoin" | "doge" => Ok(Self::dogecoin()),
+            "luckycoin" | "lucky" => Ok(Self::luckycoin()),
+            "bellscoin" | "bells" => Ok(Self::bellscoin()),
+            _ => Err(format!("Unknown provider: {}. Supported networks: mainnet, testnet, signet, regtest, dogecoin, luckycoin, bellscoin", provider)),
         }
     }
 }
