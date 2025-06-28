@@ -861,6 +861,20 @@ impl RpcClient {
         Ok(txid)
     }
     
+    /// Send raw transaction using Bitcoin JSON-RPC sendrawtransaction method
+    pub async fn send_raw_transaction(&self, tx_hex: &str) -> Result<String> {
+        debug!("Sending raw transaction via Bitcoin RPC: {}", &tx_hex[..std::cmp::min(tx_hex.len(), 64)]);
+        
+        let result = self._call("btc_sendrawtransaction", json!([tx_hex])).await?;
+        
+        let txid = result.as_str()
+            .context("Invalid sendrawtransaction response")?
+            .to_string();
+        
+        debug!("Transaction sent successfully via Bitcoin RPC: {}", txid);
+        Ok(txid)
+    }
+    
     /// Get address UTXOs using esplora interface
     pub async fn get_address_utxos(&self, address: &str) -> Result<Value> {
         debug!("Getting UTXOs for address: {}", address);
