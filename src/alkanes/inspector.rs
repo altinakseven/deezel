@@ -1399,6 +1399,93 @@ impl AlkaneInspector {
         Ok(opcodes)
     }
 
+    /// Filter out opcodes with undefined behavior based on response patterns
+    fn filter_undefined_behavior_patterns(&self, results: &[ExecutionResult]) -> Result<Vec<ExecutionResult>> {
+        let mut response_patterns: std::collections::HashMap<String, Vec<&ExecutionResult>> = std::collections::HashMap::new();
+        
+        // Group results by normalized response pattern
+        for result in results {
+            let pattern_key = self.normalize_response_pattern(result);
+            response_patterns.entry(pattern_key)
+                .or_insert_with(Vec::new)
+                .push(result);
+        }
+        
+        // Find the largest group of identical responses (likely undefined behavior)
+        let largest_group = response_patterns
+            .iter()
+            .max_by_key(|(_, opcodes)| opcodes.len())
+            .map(|(pattern, opcodes)| (pattern.clone(), opcodes.len()));
+        
+        if let Some((largest_pattern, largest_count)) = largest_group {
+            // If the largest group represents more than 50% of results and contains error messages,
+            // it's likely undefined behavior that should be filtered out
+            let threshold = results.len() / 2;
+            
+            if largest_count > threshold && self.is_undefined_behavior_pattern(&largest_pattern) {
+                info!("Filtering out {} opcodes with undefined behavior pattern: {}", largest_count, largest_pattern);
+                
+                // Return only results that don't match the undefined behavior pattern
+                let filtered: Vec<ExecutionResult> = results
+                    .iter()
+                    .filter(|result| {
+                        let pattern = self.normalize_response_pattern(result);
+                        pattern != largest_pattern
+                    })
+                    .cloned()
+                    .collect();
+                
+                return Ok(filtered);
+            }
+        }
+        
+        // If no clear undefined behavior pattern found, return all results
+        Ok(results.to_vec())
+    }
+
+    /// Normalize response pattern by removing opcode-specific information
+    fn normalize_response_pattern(&self, result: &ExecutionResult) -> String {
+        if let Some(error) = &result.error {
+            // Normalize error messages by removing opcode numbers
+            let normalized = error
+                .replace(&result.opcode.to_string(), "OPCODE")
+                .replace(&format!("0x{:x}", result.opcode), "OPCODE")
+                .replace(&format!("{:#x}", result.opcode), "OPCODE");
+            format!("ERROR:{}", normalized)
+        } else {
+            // For successful results, use return data pattern
+            let data_pattern = if result.return_data.is_empty() {
+                "EMPTY".to_string()
+            } else if result.return_data.len() <= 32 {
+                hex::encode(&result.return_data)
+            } else {
+                format!("{}...({}bytes)", hex::encode(&result.return_data[..16]), result.return_data.len())
+            };
+            
+            // Include host call pattern for more precise matching
+            let host_call_pattern = if result.host_calls.is_empty() {
+                "NO_CALLS".to_string()
+            } else {
+                result.host_calls.iter()
+                    .map(|call| call.function_name.clone())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            };
+            
+            format!("SUCCESS:{}:CALLS:{}", data_pattern, host_call_pattern)
+        }
+    }
+
+    /// Check if a pattern represents undefined behavior
+    fn is_undefined_behavior_pattern(&self, pattern: &str) -> bool {
+        pattern.contains("Unrecognized opcode") ||
+        pattern.contains("Unknown opcode") ||
+        pattern.contains("unsupported opcode") ||
+        pattern.contains("not implemented") ||
+        pattern.contains("invalid opcode") ||
+        pattern.contains("undefined opcode")
+    }
+
     /// Perform fuzzing analysis using wasmi runtime
     async fn perform_fuzzing_analysis(&self, alkane_id: &AlkaneId, wasm_bytes: &[u8], fuzz_ranges: Option<&str>, raw: bool) -> Result<()> {
         info!("Performing fuzzing analysis for alkane {}:{}", alkane_id.block, alkane_id.tx);
@@ -1434,63 +1521,34 @@ impl AlkaneInspector {
             }
         }
         
-        // Improved pattern analysis to detect implemented vs unimplemented opcodes
-        let mut return_data_patterns: std::collections::HashMap<Vec<u8>, Vec<u128>> = std::collections::HashMap::new();
-        let mut error_patterns: std::collections::HashMap<String, Vec<u128>> = std::collections::HashMap::new();
+        // Apply pattern filtering to identify and remove undefined behavior
+        let filtered_results = self.filter_undefined_behavior_patterns(&results)?;
+        
         let mut success_count = 0;
         let mut error_count = 0;
         
-        for result in &results {
+        for result in &filtered_results {
             if result.success {
                 success_count += 1;
-                return_data_patterns.entry(result.return_data.clone())
-                    .or_insert_with(Vec::new)
-                    .push(result.opcode);
-            } else if let Some(error) = &result.error {
+            } else {
                 error_count += 1;
-                error_patterns.entry(error.clone())
-                    .or_insert_with(Vec::new)
-                    .push(result.opcode);
             }
         }
         
-        // Improved pattern detection: find patterns that indicate "unsupported opcode"
-        let mut unsupported_opcodes = Vec::new();
-        let mut implemented_opcodes = Vec::new();
-        
-        // Look for patterns that contain "Unknown opcode" or similar messages
-        for result in &results {
-            let is_unsupported = if result.success {
-                let data_str = String::from_utf8_lossy(&result.return_data);
-                data_str.contains("Unknown opcode") || data_str.contains("unsupported opcode") ||
-                data_str.contains("not implemented") || data_str.contains("invalid opcode")
-            } else if let Some(error) = &result.error {
-                error.contains("Unknown opcode") || error.contains("unsupported opcode") ||
-                error.contains("not implemented") || error.contains("invalid opcode")
-            } else {
-                false
-            };
-            
-            if is_unsupported {
-                unsupported_opcodes.push(result.opcode);
-            } else {
-                implemented_opcodes.push(result.opcode);
-            }
-        }
-        
-        implemented_opcodes.sort();
-        unsupported_opcodes.sort();
+        let implemented_opcodes: Vec<u128> = filtered_results.iter().map(|r| r.opcode).collect();
+        let total_tested = results.len();
+        let filtered_out = total_tested - filtered_results.len();
         
         if raw {
             // JSON output for scripting
             let json_result = serde_json::json!({
                 "alkane_id": format!("{}:{}", alkane_id.block, alkane_id.tx),
-                "total_opcodes_tested": results.len(),
+                "total_opcodes_tested": total_tested,
+                "opcodes_filtered_out": filtered_out,
                 "successful_executions": success_count,
                 "failed_executions": error_count,
                 "implemented_opcodes": implemented_opcodes,
-                "unsupported_opcodes": unsupported_opcodes,
-                "opcode_results": results.iter().filter(|r| implemented_opcodes.contains(&r.opcode)).map(|result| {
+                "opcode_results": filtered_results.iter().map(|result| {
                     serde_json::json!({
                         "opcode": result.opcode,
                         "success": result.success,
@@ -1514,11 +1572,13 @@ impl AlkaneInspector {
             // Human-readable output
             println!();
             println!("=== FUZZING RESULTS ===");
-            println!("📊 Total opcodes tested: {}", results.len());
+            println!("📊 Total opcodes tested: {}", total_tested);
+            if filtered_out > 0 {
+                println!("🔍 Opcodes filtered out (undefined behavior): {}", filtered_out);
+            }
             println!("✅ Successful executions: {}", success_count);
             println!("❌ Failed executions: {}", error_count);
             println!("🎯 Implemented opcodes: {} total", implemented_opcodes.len());
-            println!("🚫 Unsupported opcodes: {} total", unsupported_opcodes.len());
             
             if !implemented_opcodes.is_empty() {
                 println!();
@@ -1528,46 +1588,34 @@ impl AlkaneInspector {
                 
                 println!();
                 println!("📊 Detailed Results for Implemented Opcodes:");
-                for result in &results {
-                    if implemented_opcodes.contains(&result.opcode) {
-                        let status = if result.success { "✅" } else { "❌" };
-                        println!("   {} Opcode {}: return={:?}, time={:?}",
-                                status, result.opcode, result.return_value, result.execution_time);
-                        
-                        // Always show data, even if empty, to understand what the opcode returns
-                        let decoded_data = Self::decode_data_bytevector(&result.return_data);
-                        println!("      📦 Data: {}", decoded_data);
-                        
-                        // Show host calls made during execution
-                        if !result.host_calls.is_empty() {
-                            println!("      🔧 Host Calls ({}):", result.host_calls.len());
-                            for (i, call) in result.host_calls.iter().enumerate() {
-                                let call_prefix = if i == result.host_calls.len() - 1 { "└─" } else { "├─" };
-                                println!("         {} {}: {} -> {}", call_prefix, call.function_name,
-                                        call.parameters.join(", "), call.result);
-                            }
-                        }
-                        
-                        if let Some(error) = &result.error {
-                            // Only show full stack trace for unusual panics, not for normal errors
-                            if error.contains("WASM execution failed:") && error.contains("panic") {
-                                println!("      ⚠️  Error: {}", error);
-                            } else {
-                                // For normal errors, just show the error message
-                                println!("      ⚠️  Error: {}", error);
-                            }
+                for result in &filtered_results {
+                    let status = if result.success { "✅" } else { "❌" };
+                    println!("   {} Opcode {}: return={:?}, time={:?}",
+                            status, result.opcode, result.return_value, result.execution_time);
+                    
+                    // Always show data, even if empty, to understand what the opcode returns
+                    let decoded_data = Self::decode_data_bytevector(&result.return_data);
+                    println!("      📦 Data: {}", decoded_data);
+                    
+                    // Show host calls made during execution
+                    if !result.host_calls.is_empty() {
+                        println!("      🔧 Host Calls ({}):", result.host_calls.len());
+                        for (i, call) in result.host_calls.iter().enumerate() {
+                            let call_prefix = if i == result.host_calls.len() - 1 { "└─" } else { "├─" };
+                            println!("         {} {}: {} -> {}", call_prefix, call.function_name,
+                                    call.parameters.join(", "), call.result);
                         }
                     }
-                }
-            }
-            
-            if !unsupported_opcodes.is_empty() && unsupported_opcodes.len() < 50 {
-                println!();
-                println!("🚫 Unsupported Opcodes (sample):");
-                let ranges = Self::compress_opcode_ranges(&unsupported_opcodes[..std::cmp::min(20, unsupported_opcodes.len())]);
-                println!("   📋 Sample opcodes: {}", ranges);
-                if unsupported_opcodes.len() > 20 {
-                    println!("   ... and {} more", unsupported_opcodes.len() - 20);
+                    
+                    if let Some(error) = &result.error {
+                        // Only show full stack trace for unusual panics, not for normal errors
+                        if error.contains("WASM execution failed:") && error.contains("panic") {
+                            println!("      ⚠️  Error: {}", error);
+                        } else {
+                            // For normal errors, just show the error message
+                            println!("      ⚠️  Error: {}", error);
+                        }
+                    }
                 }
             }
             
