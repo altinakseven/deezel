@@ -19,6 +19,7 @@ use bdk::bitcoin::Transaction;
 use bdk::bitcoin::consensus::encode::deserialize;
 use hex;
 use protorune_support::proto::protorune::OutpointResponse;
+use protobuf::Message;
 
 /// Deezel CLI tool for interacting with Sandshrew RPC
 #[derive(Parser, Debug)]
@@ -480,6 +481,9 @@ enum ViewCommands {
         /// Block tag (latest, pending, or block height)
         #[clap(long, default_value = "latest")]
         block_tag: BlockTag,
+        /// Output raw hex value returned by metashrew_view
+        #[clap(long)]
+        hex: bool,
     },
     /// Get block data
     Getblock {
@@ -488,6 +492,9 @@ enum ViewCommands {
         /// Block tag (latest, pending, or block height)
         #[clap(long, default_value = "latest")]
         block_tag: BlockTag,
+        /// Output raw hex value returned by metashrew_view
+        #[clap(long)]
+        hex: bool,
     },
     /// Get protorunes by address
     Protorunesbyaddress {
@@ -499,6 +506,9 @@ enum ViewCommands {
         /// Block tag (latest, pending, or block height)
         #[clap(long, default_value = "latest")]
         block_tag: BlockTag,
+        /// Output raw hex value returned by metashrew_view
+        #[clap(long)]
+        hex: bool,
     },
     /// Get transaction by ID
     Transactionbyid {
@@ -507,6 +517,9 @@ enum ViewCommands {
         /// Block tag (latest, pending, or block height)
         #[clap(long, default_value = "latest")]
         block_tag: BlockTag,
+        /// Output raw hex value returned by metashrew_view
+        #[clap(long)]
+        hex: bool,
     },
     /// Get spendables by address
     Spendablesbyaddress {
@@ -515,6 +528,9 @@ enum ViewCommands {
         /// Block tag (latest, pending, or block height)
         #[clap(long, default_value = "latest")]
         block_tag: BlockTag,
+        /// Output raw hex value returned by metashrew_view
+        #[clap(long)]
+        hex: bool,
     },
     /// Get protorunes by height
     Protorunesbyheight {
@@ -523,6 +539,9 @@ enum ViewCommands {
         /// Protocol tag
         #[clap(long, default_value = "1")]
         protocol_tag: u64,
+        /// Output raw hex value returned by metashrew_view
+        #[clap(long)]
+        hex: bool,
     },
     /// Get protorunes by outpoint
     Protorunesbyoutpoint {
@@ -531,6 +550,9 @@ enum ViewCommands {
         /// Protocol tag
         #[clap(long, default_value = "1")]
         protocol_tag: u64,
+        /// Output raw hex value returned by metashrew_view
+        #[clap(long)]
+        hex: bool,
     },
     /// Trace a transaction
     Trace {
@@ -539,6 +561,9 @@ enum ViewCommands {
         /// Output raw JSON format (for scripting)
         #[clap(short, long)]
         raw: bool,
+        /// Output raw hex value returned by metashrew_view
+        #[clap(long)]
+        hex: bool,
     },
     /// Simulate a contract execution
     Simulate {
@@ -572,6 +597,9 @@ enum ViewCommands {
         /// Block tag (latest, pending, or block height)
         #[clap(long, default_value = "latest")]
         block_tag: BlockTag,
+        /// Output raw hex value returned by metashrew_view
+        #[clap(long)]
+        hex: bool,
     },
 }
 
@@ -2045,44 +2073,210 @@ async fn main() -> Result<()> {
             };
 
             match command {
-                ViewCommands::Getbytecode { contract_id, block_tag } => {
+                ViewCommands::Getbytecode { contract_id, block_tag, hex } => {
                     let (block, tx) = parse_contract_id(&contract_id)?;
                     let tag_str = block_tag_to_string(&block_tag);
-                    let bytecode = rpc_client.get_bytecode_with_tag(&block, &tx, &tag_str).await?;
-                    println!("{}", bytecode);
+                    
+                    if hex {
+                        // Output raw hex from metashrew_view
+                        // Create and encode the BytecodeRequest protobuf message
+                        let mut bytecode_request = alkanes_support::proto::alkanes::BytecodeRequest::new();
+                        let mut alkane_id = alkanes_support::proto::alkanes::AlkaneId::new();
+                        
+                        // Parse block and tx as u128 values
+                        let block_u128 = block.parse::<u128>()
+                            .context("Invalid block number")?;
+                        let tx_u128 = tx.parse::<u128>()
+                            .context("Invalid tx number")?;
+                        
+                        // Convert to Uint128 protobuf format
+                        let mut block_uint128 = alkanes_support::proto::alkanes::Uint128::new();
+                        block_uint128.lo = (block_u128 & 0xFFFFFFFFFFFFFFFF) as u64;
+                        block_uint128.hi = (block_u128 >> 64) as u64;
+                        
+                        let mut tx_uint128 = alkanes_support::proto::alkanes::Uint128::new();
+                        tx_uint128.lo = (tx_u128 & 0xFFFFFFFFFFFFFFFF) as u64;
+                        tx_uint128.hi = (tx_u128 >> 64) as u64;
+                        
+                        alkane_id.block = protobuf::MessageField::some(block_uint128);
+                        alkane_id.tx = protobuf::MessageField::some(tx_uint128);
+                        
+                        bytecode_request.id = protobuf::MessageField::some(alkane_id);
+                        
+                        // Serialize to bytes and hex encode with 0x prefix
+                        let encoded_bytes = bytecode_request.write_to_bytes()
+                            .context("Failed to encode BytecodeRequest")?;
+                        let hex_input = format!("0x{}", hex::encode(encoded_bytes));
+                        
+                        let raw_hex = rpc_client.get_metashrew_view_hex("getbytecode", &hex_input, &tag_str).await?;
+                        println!("{}", raw_hex);
+                    } else {
+                        let bytecode = rpc_client.get_bytecode_with_tag(&block, &tx, &tag_str).await?;
+                        println!("{}", bytecode);
+                    }
                 },
-                ViewCommands::Getblock { height, block_tag } => {
+                ViewCommands::Getblock { height, block_tag, hex } => {
                     let tag_str = block_tag_to_string(&block_tag);
-                    let result = rpc_client.get_block(height, &tag_str).await?;
-                    println!("{}", result);
+                    
+                    if hex {
+                        // Output raw hex from metashrew_view
+                        // Create and encode the BlockRequest protobuf message
+                        let mut block_request = alkanes_support::proto::alkanes::BlockRequest::new();
+                        block_request.height = height as u32;
+                        
+                        // Serialize to bytes and hex encode with 0x prefix
+                        let encoded_bytes = block_request.write_to_bytes()
+                            .context("Failed to encode BlockRequest")?;
+                        let hex_input = format!("0x{}", hex::encode(encoded_bytes));
+                        
+                        let raw_hex = rpc_client.get_metashrew_view_hex("getblock", &hex_input, &tag_str).await?;
+                        println!("{}", raw_hex);
+                    } else {
+                        let result = rpc_client.get_block(height, &tag_str).await?;
+                        println!("{}", result);
+                    }
                 },
-                ViewCommands::Protorunesbyaddress { address, protocol_tag, block_tag } => {
+                ViewCommands::Protorunesbyaddress { address, protocol_tag, block_tag, hex } => {
                     let tag_str = block_tag_to_string(&block_tag);
-                    let result = rpc_client.get_protorunes_by_address_with_tags(&address, protocol_tag, &tag_str).await?;
-                    println!("{}", serde_json::to_string_pretty(&result)?);
+                    
+                    if hex {
+                        // Output raw hex from metashrew_view
+                        // Create and encode the ProtorunesWalletRequest protobuf message
+                        let mut wallet_request = protorune_support::proto::protorune::ProtorunesWalletRequest::new();
+                        wallet_request.wallet = address.as_bytes().to_vec();
+                        
+                        // Set protocol tag
+                        let mut protocol = protorune_support::proto::protorune::Uint128::new();
+                        protocol.hi = 0; // For u64 values, hi is always 0
+                        protocol.lo = protocol_tag;
+                        wallet_request.protocol_tag = protobuf::MessageField::some(protocol);
+                        
+                        // Serialize to bytes and hex encode with 0x prefix
+                        let encoded_bytes = wallet_request.write_to_bytes()
+                            .context("Failed to encode ProtorunesWalletRequest")?;
+                        let hex_input = format!("0x{}", hex::encode(encoded_bytes));
+                        
+                        let raw_hex = rpc_client.get_metashrew_view_hex("protorunesbyaddress", &hex_input, &tag_str).await?;
+                        println!("{}", raw_hex);
+                    } else {
+                        let result = rpc_client.get_protorunes_by_address_with_tags(&address, protocol_tag, &tag_str).await?;
+                        println!("{}", serde_json::to_string_pretty(&result)?);
+                    }
                 },
-                ViewCommands::Transactionbyid { txid, block_tag } => {
+                ViewCommands::Transactionbyid { txid, block_tag, hex } => {
                     let tag_str = block_tag_to_string(&block_tag);
-                    let result = rpc_client.get_transaction_by_id(&txid, &tag_str).await?;
-                    println!("{}", serde_json::to_string_pretty(&result)?);
+                    
+                    if hex {
+                        // Output raw hex from metashrew_view
+                        // For now, use a simplified approach until we have the correct protobuf types
+                        let hex_input = format!("0x{}", hex::encode(txid.as_bytes()));
+                        
+                        let raw_hex = rpc_client.get_metashrew_view_hex("transactionbyid", &hex_input, &tag_str).await?;
+                        println!("{}", raw_hex);
+                    } else {
+                        let result = rpc_client.get_transaction_by_id(&txid, &tag_str).await?;
+                        println!("{}", serde_json::to_string_pretty(&result)?);
+                    }
                 },
-                ViewCommands::Spendablesbyaddress { address, block_tag } => {
+                ViewCommands::Spendablesbyaddress { address, block_tag, hex } => {
                     let tag_str = block_tag_to_string(&block_tag);
-                    let result = rpc_client.get_spendables_by_address_with_tag(&address, &tag_str).await?;
-                    println!("{}", serde_json::to_string_pretty(&result)?);
+                    
+                    if hex {
+                        // Output raw hex from metashrew_view
+                        // For now, use a simplified approach with basic hex encoding
+                        let address_bytes = address.as_bytes();
+                        let hex_input = format!("0x{}", hex::encode(address_bytes));
+                        
+                        let raw_hex = rpc_client.get_metashrew_view_hex("spendablesbyaddress", &hex_input, &tag_str).await?;
+                        println!("{}", raw_hex);
+                    } else {
+                        let result = rpc_client.get_spendables_by_address_with_tag(&address, &tag_str).await?;
+                        println!("{}", serde_json::to_string_pretty(&result)?);
+                    }
                 },
-                ViewCommands::Protorunesbyheight { height, protocol_tag } => {
-                    let result = rpc_client.get_protorunes_by_height(height, protocol_tag).await?;
-                    println!("{}", serde_json::to_string_pretty(&result)?);
+                ViewCommands::Protorunesbyheight { height, protocol_tag, hex } => {
+                    if hex {
+                        // Output raw hex from metashrew_view
+                        // For now, use a simplified approach until we have the correct protobuf types
+                        let hex_input = format!("0x{}", hex::encode(format!("{}:{}", height, protocol_tag).as_bytes()));
+                        
+                        let raw_hex = rpc_client.get_metashrew_view_hex("protorunesbyheight", &hex_input, "latest").await?;
+                        println!("{}", raw_hex);
+                    } else {
+                        let result = rpc_client.get_protorunes_by_height(height, protocol_tag).await?;
+                        println!("{}", serde_json::to_string_pretty(&result)?);
+                    }
                 },
-                ViewCommands::Protorunesbyoutpoint { outpoint, protocol_tag } => {
+                ViewCommands::Protorunesbyoutpoint { outpoint, protocol_tag, hex } => {
                     let (txid, vout) = parse_outpoint(&outpoint)?;
-                    let result = rpc_client.get_protorunes_by_outpoint_with_protocol(&txid, vout, protocol_tag).await?;
-                    println!("{}", format_outpoint_response(&result));
+                    
+                    if hex {
+                        // Output raw hex from metashrew_view
+                        // Create and encode the OutpointWithProtocol protobuf message
+                        let mut outpoint_request = protorune_support::proto::protorune::OutpointWithProtocol::new();
+                        
+                        // Reverse txid bytes for protorunes calls
+                        let reversed_txid = {
+                            let mut txid_bytes = hex::decode(&txid)
+                                .context("Invalid txid hex")?;
+                            txid_bytes.reverse();
+                            hex::encode(txid_bytes)
+                        };
+                        
+                        // Decode the reversed txid hex string to bytes
+                        let txid_bytes = hex::decode(&reversed_txid)
+                            .context("Invalid txid hex")?;
+                        outpoint_request.txid = txid_bytes;
+                        outpoint_request.vout = vout;
+                        
+                        // Set protocol tag
+                        let mut protocol = protorune_support::proto::protorune::Uint128::new();
+                        protocol.hi = 0; // For u64 values, hi is always 0
+                        protocol.lo = protocol_tag;
+                        outpoint_request.protocol = protobuf::MessageField::some(protocol);
+                        
+                        // Serialize to bytes and hex encode with 0x prefix
+                        let encoded_bytes = outpoint_request.write_to_bytes()
+                            .context("Failed to encode OutpointWithProtocol")?;
+                        let hex_input = format!("0x{}", hex::encode(encoded_bytes));
+                        
+                        let raw_hex = rpc_client.get_metashrew_view_hex("protorunesbyoutpoint", &hex_input, "latest").await?;
+                        println!("{}", raw_hex);
+                    } else {
+                        let result = rpc_client.get_protorunes_by_outpoint_with_protocol(&txid, vout, protocol_tag).await?;
+                        println!("{}", format_outpoint_response(&result));
+                    }
                 },
-                ViewCommands::Trace { outpoint, raw } => {
+                ViewCommands::Trace { outpoint, raw, hex } => {
                     let (txid, vout) = parse_outpoint(&outpoint)?;
-                    if raw {
+                    
+                    if hex {
+                        // Output raw hex from metashrew_view
+                        // Create and encode the Outpoint protobuf message
+                        let mut outpoint_proto = alkanes_support::proto::alkanes::Outpoint::new();
+                        
+                        // Reverse txid bytes for trace calls
+                        let reversed_txid = {
+                            let mut txid_bytes = hex::decode(&txid)
+                                .context("Invalid txid hex")?;
+                            txid_bytes.reverse();
+                            hex::encode(txid_bytes)
+                        };
+                        
+                        // Decode the reversed txid hex string to bytes
+                        let txid_bytes = hex::decode(&reversed_txid)
+                            .context("Invalid txid hex")?;
+                        outpoint_proto.txid = txid_bytes;
+                        outpoint_proto.vout = vout;
+                        
+                        // Serialize to bytes and hex encode with 0x prefix
+                        let encoded_bytes = outpoint_proto.write_to_bytes()
+                            .context("Failed to encode Outpoint")?;
+                        let hex_input = format!("0x{}", hex::encode(encoded_bytes));
+                        
+                        let raw_hex = rpc_client.get_metashrew_view_hex("trace", &hex_input, "latest").await?;
+                        println!("{}", raw_hex);
+                    } else if raw {
                         let trace_json = rpc_client.trace_outpoint_json(&txid, vout).await?;
                         println!("{}", trace_json);
                     } else {
@@ -2100,22 +2294,44 @@ async fn main() -> Result<()> {
                     vout,
                     pointer,
                     refund_pointer,
-                    block_tag
+                    block_tag,
+                    hex
                 } => {
                     let tag_str = block_tag_to_string(&block_tag);
-                    let result = rpc_client.simulate_detailed(
-                        alkanes.as_deref(),
-                        &transaction,
-                        height,
-                        &block,
-                        txindex,
-                        &inputs,
-                        vout,
-                        pointer,
-                        refund_pointer,
-                        &tag_str
-                    ).await?;
-                    println!("{}", serde_json::to_string_pretty(&result)?);
+                    
+                    if hex {
+                        // Output raw hex from metashrew_view
+                        // For now, use a simplified approach until we have the correct protobuf types
+                        let simulate_data = json!({
+                            "alkanes": alkanes,
+                            "transaction": transaction,
+                            "height": height,
+                            "block": block,
+                            "txindex": txindex,
+                            "inputs": inputs,
+                            "vout": vout,
+                            "pointer": pointer,
+                            "refund_pointer": refund_pointer
+                        });
+                        let hex_input = format!("0x{}", hex::encode(simulate_data.to_string().as_bytes()));
+                        
+                        let raw_hex = rpc_client.get_metashrew_view_hex("simulate", &hex_input, &tag_str).await?;
+                        println!("{}", raw_hex);
+                    } else {
+                        let result = rpc_client.simulate_detailed(
+                            alkanes.as_deref(),
+                            &transaction,
+                            height,
+                            &block,
+                            txindex,
+                            &inputs,
+                            vout,
+                            pointer,
+                            refund_pointer,
+                            &tag_str
+                        ).await?;
+                        println!("{}", serde_json::to_string_pretty(&result)?);
+                    }
                 },
             }
         },
