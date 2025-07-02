@@ -2,6 +2,17 @@
 //!
 //! This binary provides command-line tools for interacting with the Sandshrew RPC API,
 //! focusing on alkanes functionality as a replacement for oyl-sdk.
+//!
+//! ## GPG-Encrypted Wallet Support
+//! The CLI now supports GPG-encrypted wallets with both interactive and non-interactive modes:
+//! - Interactive: `./deezel --wallet-file ~/.deezel/regtest.json.asc wallet create`
+//! - Non-interactive: `./deezel --wallet-file ~/.deezel/regtest.json.asc --passphrase <pass> wallet create`
+//!
+//! The wallet creation process will:
+//! 1. Generate a new BIP39 mnemonic and derive Bitcoin keys using rust-bitcoin
+//! 2. Encrypt the wallet data using GPG (interactive mode) or PBKDF2+AES-GCM (non-interactive)
+//! 3. Save the encrypted wallet to the specified file path
+//! 4. Support .asc extension for GPG-encrypted files and .json for PBKDF2-encrypted files
 
 use anyhow::{anyhow, Context, Result};
 use clap::{Parser, Subcommand};
@@ -15,8 +26,8 @@ use std::sync::Arc;
 // Import from our crate
 use deezel_cli::rpc::{RpcClient, RpcConfig};
 use deezel_cli::runestone_enhanced::format_runestone_with_decoded_messages;
-use bdk::bitcoin::Transaction;
-use bdk::bitcoin::consensus::encode::deserialize;
+use bitcoin::Transaction;
+use bitcoin::consensus::encode::deserialize;
 use hex;
 use protorune_support::proto::protorune::OutpointResponse;
 
@@ -47,9 +58,13 @@ struct Args {
     #[clap(long, default_value = "info")]
     log_level: String,
 
-    /// Wallet path (will be network-specific if not explicitly provided)
+    /// Wallet file path (supports .asc for GPG-encrypted or .json for PBKDF2-encrypted)
     #[clap(long)]
-    wallet_path: Option<String>,
+    wallet_file: Option<String>,
+
+    /// Passphrase for non-interactive GPG encryption or PBKDF2 encryption
+    #[clap(long)]
+    passphrase: Option<String>,
 
     /// Subcommand
     #[clap(subcommand)]
@@ -150,22 +165,16 @@ enum BitcoindCommands {
 /// Wallet subcommands
 #[derive(Subcommand, Debug)]
 enum WalletCommands {
-    /// Create a new wallet
+    /// Create a new wallet with GPG encryption support
     Create {
         /// Mnemonic phrase (if not provided, a new one will be generated)
         #[clap(long)]
         mnemonic: Option<String>,
-        /// Passphrase for the wallet
-        #[clap(long)]
-        passphrase: Option<String>,
     },
-    /// Restore wallet from mnemonic
+    /// Restore wallet from mnemonic with GPG encryption support
     Restore {
         /// Mnemonic phrase
         mnemonic: String,
-        /// Passphrase for the wallet
-        #[clap(long)]
-        passphrase: Option<String>,
     },
     /// Show wallet information
     Info,
@@ -623,9 +632,9 @@ struct AddressInfo {
 }
 
 /// Extract address from script pubkey
-fn extract_address_from_script(script: &bdk::bitcoin::ScriptBuf) -> Option<AddressInfo> {
-    use bdk::bitcoin::Address;
-    use bdk::bitcoin::Network;
+fn extract_address_from_script(script: &bitcoin::ScriptBuf) -> Option<AddressInfo> {
+    use bitcoin::Address;
+    use bitcoin::Network;
     
     // Try to convert script to address
     if let Ok(address) = Address::from_script(script, Network::Bitcoin) {
@@ -633,7 +642,7 @@ fn extract_address_from_script(script: &bdk::bitcoin::ScriptBuf) -> Option<Addre
             "P2PKH (Legacy)".to_string()
         } else if script.is_p2sh() {
             "P2SH (Script Hash)".to_string()
-        } else if script.is_v1_p2tr() {
+        } else if script.is_p2tr() {
             "P2TR (Taproot)".to_string()
         } else if script.is_witness_program() {
             "Witness Program (SegWit)".to_string()
@@ -720,7 +729,7 @@ fn print_human_readable_runestone(tx: &Transaction, result: &serde_json::Value) 
                         println!("     🏠 P2PKH (Legacy)");
                     } else if output.script_pubkey.is_p2sh() {
                         println!("     🏛️  P2SH (Script Hash)");
-                    } else if output.script_pubkey.is_v1_p2tr() {
+                    } else if output.script_pubkey.is_p2tr() {
                         println!("     🌳 P2TR (Taproot)");
                     } else if output.script_pubkey.is_witness_program() {
                         println!("     ⚡ Witness Program (SegWit)");
@@ -997,22 +1006,23 @@ async fn main() -> Result<()> {
             .map_err(|e| anyhow!("Invalid provider: {}", e))?
     };
 
-    // Generate network-specific wallet path
-    let wallet_path = if let Some(path) = args.wallet_path {
+    // Generate network-specific wallet file path
+    let wallet_file = if let Some(path) = args.wallet_file {
         expand_tilde(&path)?
     } else {
         let network_name = match network_params.network {
-            bdk::bitcoin::Network::Bitcoin => "mainnet",
-            bdk::bitcoin::Network::Testnet => "testnet",
-            bdk::bitcoin::Network::Signet => "signet",
-            bdk::bitcoin::Network::Regtest => "regtest",
+            bitcoin::Network::Bitcoin => "mainnet",
+            bitcoin::Network::Testnet => "testnet",
+            bitcoin::Network::Signet => "signet",
+            bitcoin::Network::Regtest => "regtest",
             _ => "custom",
         };
-        expand_tilde(&format!("~/.deezel/{}.dat", network_name))?
+        // Default to GPG-encrypted .asc extension
+        expand_tilde(&format!("~/.deezel/{}.json.asc", network_name))?
     };
     
     // Create wallet directory if it doesn't exist
-    if let Some(parent) = std::path::Path::new(&wallet_path).parent() {
+    if let Some(parent) = std::path::Path::new(&wallet_file).parent() {
         std::fs::create_dir_all(parent)
             .context("Failed to create wallet directory")?;
     }
@@ -1045,7 +1055,7 @@ async fn main() -> Result<()> {
                                                             WalletCommands::Sync |
                                                             WalletCommands::Backup }) {
        let wallet_config = deezel_cli::wallet::WalletConfig {
-           wallet_path: wallet_path.clone(),
+           wallet_path: wallet_file.clone(),
            network: network_params.network,
            bitcoin_rpc_url: bitcoin_rpc_url.clone(),
            metashrew_rpc_url: sandshrew_rpc_url.clone(),
@@ -1095,54 +1105,81 @@ async fn main() -> Result<()> {
         },
         Commands::Wallet { command } => {
             match command {
-                WalletCommands::Create { mnemonic, passphrase } => {
-                    // Handle wallet creation separately since we don't need an existing wallet manager
-                        let wallet_config = deezel_cli::wallet::WalletConfig {
-                            wallet_path: wallet_path.clone(),
-                            network: network_params.network,
-                            bitcoin_rpc_url: bitcoin_rpc_url.clone(),
-                            metashrew_rpc_url: sandshrew_rpc_url.clone(),
-                            network_params: Some(network_params.to_protorune_params()),
-                        };
-                        
-                        let new_wallet = deezel_cli::wallet::WalletManager::create_wallet(
-                            wallet_config,
-                            mnemonic.clone(),
-                            passphrase.clone()
-                        ).await?;
-                        
-                        println!("Wallet created successfully!");
-                        if let Some(mnemonic) = new_wallet.get_mnemonic().await? {
-                            println!("Mnemonic: {}", mnemonic);
-                            println!("⚠️  IMPORTANT: Save this mnemonic phrase in a secure location!");
-                        }
-                        
-                        let address = new_wallet.get_address().await?;
-                        println!("First address: {}", address);
+                WalletCommands::Create { mnemonic } => {
+                    // Handle wallet creation with GPG encryption support
+                    let wallet_config = deezel_cli::wallet::WalletConfig {
+                        wallet_path: wallet_file.clone(),
+                        network: network_params.network,
+                        bitcoin_rpc_url: bitcoin_rpc_url.clone(),
+                        metashrew_rpc_url: sandshrew_rpc_url.clone(),
+                        network_params: Some(network_params.to_protorune_params()),
+                    };
+                    
+                    // Determine encryption mode based on file extension and passphrase
+                    let use_gpg = wallet_file.ends_with(".asc");
+                    let interactive_mode = args.passphrase.is_none();
+                    
+                    if use_gpg && interactive_mode {
+                        println!("🔐 Creating GPG-encrypted wallet (interactive mode)...");
+                        println!("📝 You will be prompted to enter GPG encryption details.");
+                    } else if use_gpg && !interactive_mode {
+                        println!("🔐 Creating GPG-encrypted wallet (non-interactive mode)...");
+                    } else {
+                        println!("🔒 Creating PBKDF2-encrypted wallet...");
+                    }
+                    
+                    let new_wallet = deezel_cli::wallet::WalletManager::create_wallet(
+                        wallet_config,
+                        mnemonic.clone(),
+                        args.passphrase.clone()
+                    ).await?;
+                    
+                    println!("✅ Wallet created successfully!");
+                    if let Some(mnemonic) = new_wallet.get_mnemonic().await? {
+                        println!("🔑 Mnemonic: {}", mnemonic);
+                        println!("⚠️  IMPORTANT: Save this mnemonic phrase in a secure location!");
+                    }
+                    
+                    let address = new_wallet.get_address().await?;
+                    println!("🏠 First address: {}", address);
+                    println!("💾 Wallet saved to: {}", wallet_file);
                 },
                 _ => {
                     // Handle all other wallet commands that require an existing wallet manager
                     if let Some(wallet_manager) = &wallet_manager {
                         match command {
                             WalletCommands::Create { .. } => unreachable!(), // Already handled above
-                            WalletCommands::Restore { mnemonic, passphrase } => {
+                            WalletCommands::Restore { mnemonic } => {
                                 let wallet_config = deezel_cli::wallet::WalletConfig {
-                                    wallet_path: wallet_path.clone(),
+                                    wallet_path: wallet_file.clone(),
                                     network: network_params.network,
                                     bitcoin_rpc_url: bitcoin_rpc_url.clone(),
                                     metashrew_rpc_url: sandshrew_rpc_url.clone(),
                                     network_params: Some(network_params.to_protorune_params()),
                                 };
                         
+                        // Determine encryption mode based on file extension and passphrase
+                        let use_gpg = wallet_file.ends_with(".asc");
+                        let interactive_mode = args.passphrase.is_none();
+                        
+                        if use_gpg && interactive_mode {
+                            println!("🔐 Restoring GPG-encrypted wallet (interactive mode)...");
+                        } else if use_gpg && !interactive_mode {
+                            println!("🔐 Restoring GPG-encrypted wallet (non-interactive mode)...");
+                        } else {
+                            println!("🔒 Restoring PBKDF2-encrypted wallet...");
+                        }
+                        
                         let restored_wallet = deezel_cli::wallet::WalletManager::restore_wallet(
                             wallet_config,
                             mnemonic.clone(),
-                            passphrase.clone()
+                            args.passphrase.clone()
                         ).await?;
                         
-                        println!("Wallet restored successfully!");
+                        println!("✅ Wallet restored successfully!");
                         let address = restored_wallet.get_address().await?;
-                        println!("First address: {}", address);
+                        println!("🏠 First address: {}", address);
+                        println!("💾 Wallet saved to: {}", wallet_file);
                     },
                     WalletCommands::Info => {
                         println!("Wallet Information:");
@@ -1284,8 +1321,8 @@ async fn main() -> Result<()> {
                         match wallet_manager.create_transaction(params).await {
                             Ok((tx, details)) => {
                                 println!("Transaction created successfully!");
-                                println!("Transaction ID: {}", tx.txid());
-                                println!("Transaction hex: {}", hex::encode(bdk::bitcoin::consensus::serialize(&tx)));
+                                println!("Transaction ID: {}", tx.compute_txid());
+                                println!("Transaction hex: {}", hex::encode(bitcoin::consensus::serialize(&tx)));
                                 println!("Fee: {} sats", details.fee.unwrap_or(0));
                             },
                             Err(e) => println!("Failed to create transaction: {}", e),
@@ -1296,7 +1333,7 @@ async fn main() -> Result<()> {
                         match decode_transaction_hex(&tx_hex) {
                             Ok(tx) => {
                                 println!("Transaction is valid:");
-                                println!("  Transaction ID: {}", tx.txid());
+                                println!("  Transaction ID: {}", tx.compute_txid());
                                 println!("  Inputs: {}", tx.input.len());
                                 println!("  Outputs: {}", tx.output.len());
                                 println!("Note: Signing functionality requires wallet integration");
@@ -1372,7 +1409,7 @@ async fn main() -> Result<()> {
                                 match decode_transaction_hex(&tx_hex) {
                                     Ok(tx) => {
                                         println!("Transaction Details:");
-                                        println!("  Transaction ID: {}", tx.txid());
+                                        println!("  Transaction ID: {}", tx.compute_txid());
                                         println!("  Version: {}", tx.version);
                                         println!("  Lock time: {}", tx.lock_time);
                                         println!("  Inputs: {}", tx.input.len());
@@ -1525,7 +1562,7 @@ async fn main() -> Result<()> {
             AlkanesCommands::DeployContract { wasm_file, calldata, fee_rate } => {
                 // Initialize alkanes manager
                 let wallet_config = deezel_cli::wallet::WalletConfig {
-                    wallet_path: wallet_path.clone(),
+                    wallet_path: wallet_file.clone(),
                     network: network_params.network,
                     bitcoin_rpc_url: bitcoin_rpc_url.clone(),
                     metashrew_rpc_url: sandshrew_rpc_url.clone(),
@@ -1563,7 +1600,7 @@ async fn main() -> Result<()> {
             AlkanesCommands::Execute { calldata, edicts, fee_rate } => {
                 // Initialize alkanes manager
                 let wallet_config = deezel_cli::wallet::WalletConfig {
-                    wallet_path: wallet_path.clone(),
+                    wallet_path: wallet_file.clone(),
                     network: network_params.network,
                     bitcoin_rpc_url: bitcoin_rpc_url.clone(),
                     metashrew_rpc_url: sandshrew_rpc_url.clone(),
@@ -1606,7 +1643,7 @@ async fn main() -> Result<()> {
             AlkanesCommands::DeployToken { name, symbol, cap, amount_per_mint, reserve_number, premine, image, fee_rate } => {
                 // Initialize alkanes manager
                 let wallet_config = deezel_cli::wallet::WalletConfig {
-                    wallet_path: wallet_path.clone(),
+                    wallet_path: wallet_file.clone(),
                     network: network_params.network,
                     bitcoin_rpc_url: bitcoin_rpc_url.clone(),
                     metashrew_rpc_url: sandshrew_rpc_url.clone(),
@@ -1649,7 +1686,7 @@ async fn main() -> Result<()> {
             AlkanesCommands::SendToken { token, amount, to, fee_rate } => {
                 // Initialize alkanes manager
                 let wallet_config = deezel_cli::wallet::WalletConfig {
-                    wallet_path: wallet_path.clone(),
+                    wallet_path: wallet_file.clone(),
                     network: network_params.network,
                     bitcoin_rpc_url: bitcoin_rpc_url.clone(),
                     metashrew_rpc_url: sandshrew_rpc_url.clone(),
@@ -1689,7 +1726,7 @@ async fn main() -> Result<()> {
             AlkanesCommands::Balance { address } => {
                 // Initialize alkanes manager
                 let wallet_config = deezel_cli::wallet::WalletConfig {
-                    wallet_path: wallet_path.clone(),
+                    wallet_path: wallet_file.clone(),
                     network: network_params.network,
                     bitcoin_rpc_url: bitcoin_rpc_url.clone(),
                     metashrew_rpc_url: sandshrew_rpc_url.clone(),
@@ -1732,7 +1769,7 @@ async fn main() -> Result<()> {
             AlkanesCommands::TokenInfo { token } => {
                 // Initialize alkanes manager
                 let wallet_config = deezel_cli::wallet::WalletConfig {
-                    wallet_path: wallet_path.clone(),
+                    wallet_path: wallet_file.clone(),
                     network: network_params.network,
                     bitcoin_rpc_url: bitcoin_rpc_url.clone(),
                     metashrew_rpc_url: sandshrew_rpc_url.clone(),
@@ -1770,7 +1807,7 @@ async fn main() -> Result<()> {
             AlkanesCommands::CreatePool { calldata, tokens, fee_rate } => {
                 // Initialize alkanes manager
                 let wallet_config = deezel_cli::wallet::WalletConfig {
-                    wallet_path: wallet_path.clone(),
+                    wallet_path: wallet_file.clone(),
                     network: network_params.network,
                     bitcoin_rpc_url: bitcoin_rpc_url.clone(),
                     metashrew_rpc_url: sandshrew_rpc_url.clone(),
@@ -1809,7 +1846,7 @@ async fn main() -> Result<()> {
             AlkanesCommands::AddLiquidity { calldata, tokens, fee_rate } => {
                 // Initialize alkanes manager
                 let wallet_config = deezel_cli::wallet::WalletConfig {
-                    wallet_path: wallet_path.clone(),
+                    wallet_path: wallet_file.clone(),
                     network: network_params.network,
                     bitcoin_rpc_url: bitcoin_rpc_url.clone(),
                     metashrew_rpc_url: sandshrew_rpc_url.clone(),
@@ -1848,7 +1885,7 @@ async fn main() -> Result<()> {
             AlkanesCommands::RemoveLiquidity { calldata, token, amount, fee_rate } => {
                 // Initialize alkanes manager
                 let wallet_config = deezel_cli::wallet::WalletConfig {
-                    wallet_path: wallet_path.clone(),
+                    wallet_path: wallet_file.clone(),
                     network: network_params.network,
                     bitcoin_rpc_url: bitcoin_rpc_url.clone(),
                     metashrew_rpc_url: sandshrew_rpc_url.clone(),
@@ -1888,7 +1925,7 @@ async fn main() -> Result<()> {
             AlkanesCommands::Swap { calldata, token, amount, fee_rate } => {
                 // Initialize alkanes manager
                 let wallet_config = deezel_cli::wallet::WalletConfig {
-                    wallet_path: wallet_path.clone(),
+                    wallet_path: wallet_file.clone(),
                     network: network_params.network,
                     bitcoin_rpc_url: bitcoin_rpc_url.clone(),
                     metashrew_rpc_url: sandshrew_rpc_url.clone(),
@@ -1928,7 +1965,7 @@ async fn main() -> Result<()> {
             AlkanesCommands::SimulateAdvanced { target, inputs, tokens, decoder } => {
                 // Initialize alkanes manager
                 let wallet_config = deezel_cli::wallet::WalletConfig {
-                    wallet_path: wallet_path.clone(),
+                    wallet_path: wallet_file.clone(),
                     network: network_params.network,
                     bitcoin_rpc_url: bitcoin_rpc_url.clone(),
                     metashrew_rpc_url: sandshrew_rpc_url.clone(),
@@ -1974,7 +2011,7 @@ async fn main() -> Result<()> {
             AlkanesCommands::PreviewRemoveLiquidity { token, amount } => {
                 // Initialize alkanes manager
                 let wallet_config = deezel_cli::wallet::WalletConfig {
-                    wallet_path: wallet_path.clone(),
+                    wallet_path: wallet_file.clone(),
                     network: network_params.network,
                     bitcoin_rpc_url: bitcoin_rpc_url.clone(),
                     metashrew_rpc_url: sandshrew_rpc_url.clone(),

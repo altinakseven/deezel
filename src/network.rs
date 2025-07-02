@@ -3,7 +3,7 @@
 //! This module provides functionality for configuring network parameters
 //! for different Bitcoin networks, including custom networks.
 
-use bdk::bitcoin::Network;
+use bitcoin::Network;
 
 /// Network parameters for address encoding
 #[derive(Clone, Debug)]

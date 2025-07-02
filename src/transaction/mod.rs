@@ -7,8 +7,8 @@
 //! - Transaction signing and verification
 
 use anyhow::{Context, Result};
-use bdk::bitcoin::{Address, Network, ScriptBuf, Transaction, TxOut};
-use bdk::bitcoin::consensus::encode::serialize;
+use bitcoin::{Address, Network, ScriptBuf, Transaction, TxOut};
+use bitcoin::consensus::encode::serialize;
 use log::{debug, info};
 use std::sync::Arc;
 use std::str::FromStr;
@@ -94,8 +94,8 @@ impl TransactionConstructor {
         };
         let ordinals_script = runestone.encipher();
         
-        // Convert from bitcoin::ScriptBuf to bdk::bitcoin::ScriptBuf
-        let runestone_script = bdk::bitcoin::ScriptBuf::from_bytes(ordinals_script.as_bytes().to_vec());
+        // Use the ordinals script directly
+        let runestone_script = ScriptBuf::from_bytes(ordinals_script.as_bytes().to_vec());
         
         // TODO: Implement actual UTXO selection and transaction construction
         // This is a placeholder implementation
@@ -115,18 +115,18 @@ impl TransactionConstructor {
         // - Dust output (546 sats)
         // - OP_RETURN output with Runestone
         let tx = Transaction {
-            version: 2,
-            lock_time: bdk::bitcoin::absolute::LockTime::ZERO,
+            version: bitcoin::transaction::Version(2),
+            lock_time: bitcoin::absolute::LockTime::ZERO,
             input: vec![],
             output: vec![
                 // Dust output
                 TxOut {
-                    value: DUST_OUTPUT_VALUE,
+                    value: bitcoin::Amount::from_sat(DUST_OUTPUT_VALUE),
                     script_pubkey: dust_script,
                 },
                 // OP_RETURN output with Runestone
                 TxOut {
-                    value: 0,
+                    value: bitcoin::Amount::ZERO,
                     script_pubkey: runestone_script,
                 },
             ],
@@ -145,7 +145,7 @@ impl TransactionConstructor {
         let _tx_hex = hex::encode(serialize(tx));
         
         // Get the transaction ID before broadcasting
-        let txid = tx.txid().to_string();
+        let txid = tx.compute_txid().to_string();
         
         // In a real implementation, we would:
         // - Send the transaction to the Bitcoin network via RPC
@@ -183,7 +183,7 @@ impl TransactionConstructor {
     }
     
     /// Create a Runestone with Protostone
-    fn create_runestone(&self) -> Result<bdk::bitcoin::ScriptBuf> {
+    fn create_runestone(&self) -> Result<bitcoin::ScriptBuf> {
         // TODO: Implement actual Runestone creation
         // This is a placeholder implementation
         
@@ -193,7 +193,7 @@ impl TransactionConstructor {
         // - Include message cellpack [2, 0, 77]
         
         // For now, return a placeholder script
-        Ok(bdk::bitcoin::ScriptBuf::new())
+        Ok(bitcoin::ScriptBuf::new())
     }
 }
 
@@ -216,7 +216,7 @@ mod tests {
     use super::*;
     use crate::rpc::{RpcClient, RpcConfig};
     use crate::wallet::{WalletManager, WalletConfig};
-    use bdk::bitcoin::Network;
+    use bitcoin::Network;
     
     #[tokio::test]
     async fn test_transaction_constructor_creation() {

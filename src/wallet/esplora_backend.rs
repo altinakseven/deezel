@@ -4,7 +4,7 @@
 //! for blockchain data.
 
 use anyhow::{Context, Result, anyhow};
-use bdk::bitcoin::{Transaction, Txid};
+use bitcoin::{Transaction, Txid};
 use log::{debug, info};
 use std::sync::Arc;
 
@@ -38,7 +38,7 @@ impl SandshrewEsploraBackend {
         let tx = hex::decode(tx_hex)
             .context("Failed to decode transaction hex")?;
         
-        let transaction = bdk::bitcoin::consensus::deserialize(&tx)
+        let transaction = bitcoin::consensus::deserialize(&tx)
             .context("Failed to deserialize transaction")?;
         
         Ok(transaction)

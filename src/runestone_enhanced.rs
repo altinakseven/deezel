@@ -9,10 +9,9 @@
 //! - `format_runestone`: Uses the ordinals crate to extract Runestones and convert them to Protostones
 
 use anyhow::{anyhow, Context, Result};
-use bdk::bitcoin::Transaction;
-use bitcoin;
-use bdk::bitcoin::blockdata::script::Instruction;
-use bdk::bitcoin::blockdata::opcodes;
+use bitcoin::Transaction;
+use bitcoin::blockdata::script::Instruction;
+use bitcoin::blockdata::opcodes;
 use log::{debug, trace};
 use serde_json::{json, Value};
 use ordinals::{Artifact, Runestone};
@@ -22,61 +21,6 @@ use hex;
 use std::str::FromStr;
 use std::io::Cursor;
 
-/// Convert a BDK Transaction to a Bitcoin Transaction
-///
-/// This function converts a Transaction from the BDK library format to the
-/// Bitcoin library format. This is necessary when using functions from the
-/// ordinals crate, which expects Bitcoin library types.
-///
-/// # Arguments
-///
-/// * `v` - The BDK Transaction to convert
-///
-/// # Returns
-///
-/// The equivalent Bitcoin Transaction
-fn from_bdk(v: bdk::bitcoin::Transaction) -> bitcoin::Transaction {
-    // Create a new Bitcoin transaction with the same properties
-    // We need to manually convert each field since they're from different crates
-    let mut inputs = Vec::new();
-    for input in &v.input {
-        // Convert txid to bytes and then to the other Bitcoin library's Txid
-        let txid_bytes = input.previous_output.txid.to_string();
-        let txid = bitcoin::Txid::from_str(&txid_bytes).unwrap();
-        
-        // Create the input with converted fields
-        inputs.push(bitcoin::TxIn {
-            previous_output: bitcoin::OutPoint {
-                txid,
-                vout: input.previous_output.vout,
-            },
-            script_sig: bitcoin::ScriptBuf::from_bytes(input.script_sig.as_bytes().to_vec()),
-            sequence: bitcoin::Sequence(input.sequence.0),
-            witness: {
-                let mut witness = bitcoin::Witness::new();
-                for item in &input.witness {
-                    witness.push(item.clone());
-                }
-                witness
-            },
-        });
-    }
-    
-    let mut outputs = Vec::new();
-    for output in &v.output {
-        outputs.push(bitcoin::TxOut {
-            value: bitcoin::Amount::from_sat(output.value),
-            script_pubkey: bitcoin::ScriptBuf::from_bytes(output.script_pubkey.as_bytes().to_vec()),
-        });
-    }
-    
-    bitcoin::Transaction {
-        version: bitcoin::transaction::Version(v.version),
-        lock_time: bitcoin::absolute::LockTime::from_consensus(v.lock_time.to_consensus_u32()),
-        input: inputs,
-        output: outputs,
-    }
-}
 
 
 /// Magic number for Runestone protocol
@@ -154,7 +98,7 @@ pub mod diesel_operations {
 /// }
 /// ```
 pub fn decode_runestone(tx: &Transaction) -> Result<Value> {
-    debug!("Decoding Runestone from transaction {}", tx.txid());
+    debug!("Decoding Runestone from transaction {}", tx.compute_txid());
     
     // Search transaction outputs for Runestone
     for (vout, output) in tx.output.iter().enumerate() {
@@ -185,7 +129,7 @@ pub fn decode_runestone(tx: &Transaction) -> Result<Value> {
         
         // Create the base result
         let mut result = json!({
-            "transaction_id": tx.txid().to_string(),
+            "transaction_id": tx.compute_txid().to_string(),
             "output_index": vout,
             "protocol_data": protocol_data,
         });
@@ -219,7 +163,7 @@ pub fn decode_runestone(tx: &Transaction) -> Result<Value> {
 /// Extract payload from script instructions
 fn extract_payload_from_instructions<'a, I>(instructions: I) -> Result<Vec<u8>>
 where
-    I: Iterator<Item = std::result::Result<Instruction<'a>, bdk::bitcoin::blockdata::script::Error>>
+    I: Iterator<Item = std::result::Result<Instruction<'a>, bitcoin::blockdata::script::Error>>
 {
     let mut payload = Vec::new();
     
@@ -585,13 +529,10 @@ pub fn decode_protostone_message(message_bytes: &[u8]) -> Result<Vec<u128>> {
 /// }
 /// ```
 pub fn format_runestone(tx: &Transaction) -> Result<Vec<Protostone>> {
-    trace!("Formatting Runestone from transaction {}", tx.txid());
-    
-    // Convert BDK transaction to Bitcoin transaction
-    let bitcoin_tx = from_bdk(tx.clone());
+    trace!("Formatting Runestone from transaction {}", tx.compute_txid());
     
     // Use the ordinals crate to decipher the Runestone
-    let artifact = Runestone::decipher(&bitcoin_tx)
+    let artifact = Runestone::decipher(tx)
         .ok_or_else(|| anyhow!("Failed to decipher Runestone"))
         .context("No Runestone found in transaction")?;
     
@@ -607,9 +548,9 @@ pub fn format_runestone(tx: &Transaction) -> Result<Vec<Protostone>> {
 }
 
 /// Extract address information from script pubkey
-fn extract_address_from_script(script: &bdk::bitcoin::ScriptBuf) -> Option<Value> {
-    use bdk::bitcoin::Address;
-    use bdk::bitcoin::Network;
+fn extract_address_from_script(script: &bitcoin::ScriptBuf) -> Option<Value> {
+    use bitcoin::Address;
+    use bitcoin::Network;
     
     // Try to convert script to address
     if let Ok(address) = Address::from_script(script, Network::Bitcoin) {
@@ -617,7 +558,7 @@ fn extract_address_from_script(script: &bdk::bitcoin::ScriptBuf) -> Option<Value
             "P2PKH"
         } else if script.is_p2sh() {
             "P2SH"
-        } else if script.is_v1_p2tr() {
+        } else if script.is_p2tr() {
             "P2TR"
         } else if script.is_witness_program() {
             "Witness"
@@ -670,7 +611,7 @@ pub fn format_runestone_with_decoded_messages(tx: &Transaction) -> Result<Value>
     for (i, output) in tx.output.iter().enumerate() {
         let mut output_info = json!({
             "index": i,
-            "value": output.value,
+            "value": output.value.to_sat(),
             "script_pubkey_size": output.script_pubkey.len(),
             "script_type": "Unknown"
         });
@@ -697,7 +638,7 @@ pub fn format_runestone_with_decoded_messages(tx: &Transaction) -> Result<Value>
                     output_info["script_type"] = json!("P2PKH");
                 } else if output.script_pubkey.is_p2sh() {
                     output_info["script_type"] = json!("P2SH");
-                } else if output.script_pubkey.is_v1_p2tr() {
+                } else if output.script_pubkey.is_p2tr() {
                     output_info["script_type"] = json!("P2TR");
                 } else if output.script_pubkey.is_witness_program() {
                     output_info["script_type"] = json!("Witness");
@@ -709,8 +650,8 @@ pub fn format_runestone_with_decoded_messages(tx: &Transaction) -> Result<Value>
     }
     
     let mut result = json!({
-        "transaction_id": tx.txid().to_string(),
-        "version": tx.version,
+        "transaction_id": tx.compute_txid().to_string(),
+        "version": tx.version.0,
         "lock_time": tx.lock_time.to_consensus_u32(),
         "inputs": inputs,
         "outputs": outputs,
@@ -761,14 +702,14 @@ pub fn format_runestone_with_decoded_messages(tx: &Transaction) -> Result<Value>
                 if (edict.output as usize) < tx.output.len() {
                     let dest_output = &tx.output[edict.output as usize];
                     edict_json["destination"] = json!({
-                        "value": dest_output.value,
+                        "value": dest_output.value.to_sat(),
                         "script_type": if dest_output.script_pubkey.is_op_return() {
                             "OP_RETURN"
                         } else if dest_output.script_pubkey.is_p2pkh() {
                             "P2PKH"
                         } else if dest_output.script_pubkey.is_p2sh() {
                             "P2SH"
-                        } else if dest_output.script_pubkey.is_v1_p2tr() {
+                        } else if dest_output.script_pubkey.is_p2tr() {
                             "P2TR"
                         } else if dest_output.script_pubkey.is_witness_program() {
                             "Witness"
@@ -792,14 +733,14 @@ pub fn format_runestone_with_decoded_messages(tx: &Transaction) -> Result<Value>
                 let pointer_output = &tx.output[pointer as usize];
                 protostone_json["pointer_destination"] = json!({
                     "output_index": pointer,
-                    "value": pointer_output.value,
+                    "value": pointer_output.value.to_sat(),
                     "script_type": if pointer_output.script_pubkey.is_op_return() {
                         "OP_RETURN"
                     } else if pointer_output.script_pubkey.is_p2pkh() {
                         "P2PKH"
                     } else if pointer_output.script_pubkey.is_p2sh() {
                         "P2SH"
-                    } else if pointer_output.script_pubkey.is_v1_p2tr() {
+                    } else if pointer_output.script_pubkey.is_p2tr() {
                         "P2TR"
                     } else if pointer_output.script_pubkey.is_witness_program() {
                         "Witness"
@@ -820,14 +761,14 @@ pub fn format_runestone_with_decoded_messages(tx: &Transaction) -> Result<Value>
                 let refund_output = &tx.output[refund as usize];
                 protostone_json["refund_destination"] = json!({
                     "output_index": refund,
-                    "value": refund_output.value,
+                    "value": refund_output.value.to_sat(),
                     "script_type": if refund_output.script_pubkey.is_op_return() {
                         "OP_RETURN"
                     } else if refund_output.script_pubkey.is_p2pkh() {
                         "P2PKH"
                     } else if refund_output.script_pubkey.is_p2sh() {
                         "P2SH"
-                    } else if refund_output.script_pubkey.is_v1_p2tr() {
+                    } else if refund_output.script_pubkey.is_p2tr() {
                         "P2TR"
                     } else if refund_output.script_pubkey.is_witness_program() {
                         "Witness"

@@ -73,7 +73,7 @@ async fn main() -> Result<()> {
     // Initialize wallet
     let wallet_config = wallet::WalletConfig {
         wallet_path: args.wallet_path.clone(),
-        network: bdk::bitcoin::Network::Testnet, // TODO: Make configurable
+        network: bitcoin::Network::Testnet, // TODO: Make configurable
         bitcoin_rpc_url: args.bitcoin_rpc_url.clone(),
         metashrew_rpc_url: args.metashrew_rpc_url.clone(),
         network_params: None,
@@ -94,9 +94,7 @@ async fn main() -> Result<()> {
     
     info!("Wallet address: {}", address);
     
-    // Save wallet state
-    wallet_manager.save().await
-        .context("Failed to save wallet state")?;
+    // Wallet state is automatically saved during creation/loading
     
     // Initialize RPC client
     let rpc_config = rpc::RpcConfig {
@@ -114,7 +112,7 @@ async fn main() -> Result<()> {
     
     // Initialize transaction constructor
     let tx_config = transaction::TransactionConfig {
-        network: bdk::bitcoin::Network::Testnet, // TODO: Make configurable
+        network: bitcoin::Network::Testnet, // TODO: Make configurable
         fee_rate: 1.0, // 1 sat/vbyte
         max_inputs: 100,
         max_outputs: 20,
@@ -160,7 +158,7 @@ async fn test_diesel_minting(tx_constructor: &transaction::TransactionConstructo
     
     // In a real implementation, we would broadcast the transaction
     // For now, just log the transaction details
-    info!("Created DIESEL token minting transaction: {}", tx.txid());
+    info!("Created DIESEL token minting transaction: {}", tx.compute_txid());
     debug!("Transaction details: {:?}", tx);
     
     // Simulate broadcasting the transaction
