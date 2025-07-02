@@ -1064,7 +1064,7 @@ impl RpcClient {
     }
     
     /// Get protorunes by outpoint with protocol tag
-    pub async fn get_protorunes_by_outpoint_with_protocol(&self, txid: &str, vout: u32, protocol_tag: u64) -> Result<Value> {
+    pub async fn get_protorunes_by_outpoint_with_protocol(&self, txid: &str, vout: u32, protocol_tag: u64) -> Result<OutpointResponse> {
         debug!("Getting protorunes for outpoint: {}:{} with protocol tag: {}", txid, vout, protocol_tag);
         
         // Create and encode the OutpointWithProtocol protobuf message
@@ -1096,7 +1096,18 @@ impl RpcClient {
         ).await?;
         
         debug!("Got protorunes for outpoint: {}:{}", txid, vout);
-        Ok(result)
+        if let Some(hex_str) = result.as_str() {
+            let bytes = hex::decode(hex_str.strip_prefix("0x").unwrap_or(hex_str))
+                .context("Failed to decode hex string from RPC response")?;
+            if bytes.is_empty() {
+                return Ok(OutpointResponse::new());
+            }
+            let response = OutpointResponse::parse_from_bytes(&bytes)
+                .context("Failed to parse OutpointResponse from bytes")?;
+            Ok(response)
+        } else {
+            Err(anyhow!("Expected a hex string from RPC but got something else"))
+        }
     }
     
     /// Get spendables by address with block tag

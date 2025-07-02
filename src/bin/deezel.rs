@@ -18,6 +18,7 @@ use deezel_cli::runestone_enhanced::format_runestone_with_decoded_messages;
 use bdk::bitcoin::Transaction;
 use bdk::bitcoin::consensus::encode::deserialize;
 use hex;
+use protorune_support::proto::protorune::OutpointResponse;
 
 /// Deezel CLI tool for interacting with Sandshrew RPC
 #[derive(Parser, Debug)]
@@ -879,6 +880,103 @@ fn expand_tilde(path: &str) -> Result<String> {
     } else {
         Ok(path.to_string())
     }
+}
+
+/// Format Uint128 as a floating point number divided by 1e8
+fn format_uint128_as_float(uint128: &protorune_support::proto::protorune::Uint128) -> String {
+    // Convert Uint128 to u128
+    let value = (uint128.hi as u128) << 64 | (uint128.lo as u128);
+    
+    // Special case: if the raw value is exactly 1, display as "1" (since 1 raw unit = 1 token)
+    if value == 1 {
+        return "1".to_string();
+    }
+    
+    let float_value = value as f64 / 1e8;
+    
+    // Format with 4 decimal places or 4 significant figures if smaller
+    if float_value >= 0.0001 {
+        format!("{:.4}", float_value)
+    } else if float_value > 0.0 {
+        // For very small numbers, use scientific notation with 4 significant figures
+        format!("{:.3e}", float_value)
+    } else {
+        "0.0000".to_string()
+    }
+}
+
+/// Format OutpointResponse with pretty-printed BalanceSheet
+fn format_outpoint_response(response: &OutpointResponse) -> String {
+    let mut output = String::new();
+    
+    // Header
+    output.push_str("🔍 Protorunes Outpoint Response\n");
+    output.push_str("═══════════════════════════════\n\n");
+    
+    // Outpoint information
+    if let Some(outpoint) = response.outpoint.as_ref() {
+        output.push_str("📍 Outpoint Information:\n");
+        let txid_hex = hex::encode(&outpoint.txid);
+        output.push_str(&format!("   🆔 TXID: {}\n", txid_hex));
+        output.push_str(&format!("   🔢 VOUT: {}\n", outpoint.vout));
+    }
+    
+    // Output information
+    if let Some(output_info) = response.output.as_ref() {
+        output.push_str("\n📤 Output Information:\n");
+        output.push_str(&format!("   💰 Value: {} sats\n", output_info.value));
+        let scriptpubkey_hex = hex::encode(&output_info.script);
+        output.push_str(&format!("   📜 ScriptPubKey: {}\n", scriptpubkey_hex));
+    }
+    
+    // Block information
+    output.push_str("\n🏗️ Block Information:\n");
+    output.push_str(&format!("   📏 Height: {}\n", response.height));
+    output.push_str(&format!("   🔢 TX Index: {}\n", response.txindex));
+    
+    // Balance sheet
+    if let Some(balance_sheet) = response.balances.as_ref() {
+        output.push_str("\n💰 Balance Sheet:\n");
+        
+        if balance_sheet.entries.is_empty() {
+            output.push_str("   🚫 No rune balances found\n");
+        } else {
+            for (i, entry) in balance_sheet.entries.iter().enumerate() {
+                let tree_symbol = if i == balance_sheet.entries.len() - 1 { "└─" } else { "├─" };
+                
+                output.push_str(&format!("   {} 🪙 Rune Entry #{}\n", tree_symbol, i + 1));
+                
+                // Rune information
+                if let Some(rune) = entry.rune.as_ref() {
+                    let continuation = if i == balance_sheet.entries.len() - 1 { "  " } else { "│ " };
+                    output.push_str(&format!("   {}    🏷️ Name: {}\n", continuation, rune.name));
+                    output.push_str(&format!("   {}    ✨ Symbol: {}\n", continuation, rune.symbol));
+                    if let Some(rune_id) = rune.runeId.as_ref() {
+                        let height = if let Some(h) = rune_id.height.as_ref() {
+                            (h.hi as u128) << 64 | (h.lo as u128)
+                        } else {
+                            0
+                        };
+                        let txindex = if let Some(t) = rune_id.txindex.as_ref() {
+                            (t.hi as u128) << 64 | (t.lo as u128)
+                        } else {
+                            0
+                        };
+                        output.push_str(&format!("   {}    🆔 ID: {}:{}\n", continuation, height, txindex));
+                    }
+                }
+                
+                // Balance information
+                if let Some(balance) = entry.balance.as_ref() {
+                    let continuation = if i == balance_sheet.entries.len() - 1 { "  " } else { "│ " };
+                    let formatted_balance = format_uint128_as_float(balance);
+                    output.push_str(&format!("   {}    💎 Balance: {} units\n", continuation, formatted_balance));
+                }
+            }
+        }
+    }
+    
+    output
 }
 
 #[tokio::main]
@@ -1980,7 +2078,7 @@ async fn main() -> Result<()> {
                 ViewCommands::Protorunesbyoutpoint { outpoint, protocol_tag } => {
                     let (txid, vout) = parse_outpoint(&outpoint)?;
                     let result = rpc_client.get_protorunes_by_outpoint_with_protocol(&txid, vout, protocol_tag).await?;
-                    println!("{}", serde_json::to_string_pretty(&result)?);
+                    println!("{}", format_outpoint_response(&result));
                 },
                 ViewCommands::Trace { outpoint, raw } => {
                     let (txid, vout) = parse_outpoint(&outpoint)?;
