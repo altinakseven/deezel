@@ -1449,6 +1449,23 @@ impl RpcClient {
         Ok(result)
     }
     
+    /// Get raw hex response from metashrew_view for any method
+    pub async fn get_metashrew_view_hex(&self, method: &str, hex_input: &str, block_tag: &str) -> Result<String> {
+        debug!("Getting raw hex from metashrew_view: {} with input: {} and block_tag: {}", method, hex_input, block_tag);
+        
+        let result = self._call(
+            "metashrew_view",
+            json!([method, hex_input, block_tag])
+        ).await?;
+        
+        let hex_response = result.as_str()
+            .context("Expected hex string response from metashrew_view")?
+            .to_string();
+        
+        debug!("Got raw hex response from metashrew_view: {}", hex_response);
+        Ok(hex_response)
+    }
+    
     /// Get the next request ID
     fn next_request_id(&self) -> u64 {
         // Use atomic fetch_add for thread safety
