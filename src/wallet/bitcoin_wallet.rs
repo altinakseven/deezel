@@ -62,6 +62,61 @@ pub struct UtxoInfo {
     pub script_pubkey: ScriptBuf,
 }
 
+/// Enriched UTXO information with ordinals and runes data
+#[derive(Debug, Clone)]
+pub struct EnrichedUtxoInfo {
+    /// Basic UTXO information
+    pub utxo: UtxoInfo,
+    /// Block height when UTXO was created
+    pub block_height: Option<u64>,
+    /// Whether this UTXO has inscriptions
+    pub has_inscriptions: bool,
+    /// Whether this UTXO has runes
+    pub has_runes: bool,
+    /// Whether this UTXO has alkanes
+    pub has_alkanes: bool,
+    /// Whether this is a coinbase output
+    pub is_coinbase: bool,
+    /// Freeze reason if frozen
+    pub freeze_reason: Option<String>,
+    /// Ordinal/inscription data if present
+    pub ord_data: Option<serde_json::Value>,
+    /// Runes data if present
+    pub runes_data: Option<serde_json::Value>,
+    /// Alkanes data if present
+    pub alkanes_data: Option<serde_json::Value>,
+}
+
+/// UTXO freeze reasons
+#[derive(Debug, Clone)]
+pub enum FreezeReason {
+    /// UTXO value is 546 sats or lower (dust)
+    Dust,
+    /// UTXO has inscriptions
+    HasInscriptions,
+    /// UTXO has runes
+    HasRunes,
+    /// UTXO has alkanes
+    HasAlkanes,
+    /// Coinbase output with less than 200 confirmations
+    ImmatureCoinbase,
+    /// Manually frozen by user
+    Manual,
+}
+
+impl FreezeReason {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            FreezeReason::Dust => "dust",
+            FreezeReason::HasInscriptions => "has_inscriptions",
+            FreezeReason::HasRunes => "has_runes",
+            FreezeReason::HasAlkanes => "has_alkanes",
+            FreezeReason::ImmatureCoinbase => "immature_coinbase",
+            FreezeReason::Manual => "manual",
+        }
+    }
+}
+
 /// Transaction creation parameters
 #[derive(Debug, Clone)]
 pub struct SendParams {
@@ -73,6 +128,8 @@ pub struct SendParams {
     pub fee_rate: Option<f32>,
     /// Whether to send all available funds
     pub send_all: bool,
+    /// Source address to send from (optional - if None, uses all wallet addresses)
+    pub from_address: Option<String>,
 }
 
 /// Transaction details
@@ -581,15 +638,37 @@ impl BitcoinWallet {
         }
     }
     
-    /// Get UTXOs for the wallet
+    /// Get UTXOs for the wallet (checks multiple addresses and types)
     pub async fn get_utxos(&self) -> Result<Vec<UtxoInfo>> {
-        let address = self.get_address_at_index(0, false).await?;
-        debug!("Getting UTXOs for address: {}", address);
+        let mut all_utxos = Vec::new();
+        let current_height = self.rpc_client.get_block_count().await.unwrap_or(0);
         
+        // Check different address types
+        let address_types = ["p2wpkh", "p2tr", "p2pkh", "p2sh"];
+        
+        for address_type in &address_types {
+            // Check first 100 addresses of each type to find UTXOs
+            for i in 0..100 {
+                let address = self.get_address_of_type_at_index(address_type, i, false).await?;
+                debug!("Getting UTXOs for {} address {}: {}", address_type, i, address);
+                
+                let utxos = self.get_utxos_for_address(&address, current_height).await?;
+                if !utxos.is_empty() {
+                    debug!("Found {} UTXOs at {} address {}: {}", utxos.len(), address_type, i, address);
+                }
+                all_utxos.extend(utxos);
+            }
+        }
+        
+        Ok(all_utxos)
+    }
+    
+    /// Get UTXOs for a specific address with proper confirmation calculation
+    async fn get_utxos_for_address(&self, address: &str, current_height: u64) -> Result<Vec<UtxoInfo>> {
         let frozen_utxos = self.frozen_utxos.lock().await;
         let mut utxo_infos = Vec::new();
         
-        match self.rpc_client.get_address_utxos(&address).await {
+        match self.rpc_client.get_address_utxos(address).await {
             Ok(utxos_response) => {
                 if let Some(utxos_array) = utxos_response.as_array() {
                     for utxo in utxos_array {
@@ -607,14 +686,20 @@ impl BitcoinWallet {
                                 .and_then(|v| v.as_u64())
                                 .unwrap_or(0);
                             
+                            // Calculate proper confirmations
                             let confirmations = if let Some(status) = utxo_obj.get("status") {
                                 if status.get("confirmed").and_then(|c| c.as_bool()).unwrap_or(false) {
-                                    1 // Simplified confirmation count
+                                    // Get block height and calculate confirmations
+                                    if let Some(block_height) = status.get("block_height").and_then(|h| h.as_u64()) {
+                                        (current_height.saturating_sub(block_height) + 1) as u32
+                                    } else {
+                                        1 // Confirmed but no block height available
+                                    }
                                 } else {
-                                    0
+                                    0 // Unconfirmed
                                 }
                             } else {
-                                0
+                                0 // No status available
                             };
                             
                             let outpoint = if let Ok(parsed_txid) = Txid::from_str(&txid) {
@@ -629,7 +714,7 @@ impl BitcoinWallet {
                             let frozen = frozen_utxos.contains_key(&outpoint);
                             
                             // Create script pubkey for the address
-                            let addr = Address::from_str(&address)
+                            let addr = Address::from_str(address)
                                 .context("Invalid address")?
                                 .require_network(self.config.network)
                                 .context("Address network mismatch")?;
@@ -638,7 +723,7 @@ impl BitcoinWallet {
                                 txid,
                                 vout,
                                 amount,
-                                address: address.clone(),
+                                address: address.to_string(),
                                 confirmations,
                                 frozen,
                                 script_pubkey: addr.script_pubkey(),
@@ -650,21 +735,307 @@ impl BitcoinWallet {
                 }
             },
             Err(e) => {
-                warn!("Failed to get UTXOs from Sandshrew: {}", e);
+                warn!("Failed to get UTXOs from Sandshrew for address {}: {}", address, e);
             }
         }
         
         Ok(utxo_infos)
     }
     
+    /// Get enriched UTXOs with ordinals, runes, and alkanes data
+    pub async fn get_enriched_utxos(&self) -> Result<Vec<EnrichedUtxoInfo>> {
+        let utxos = self.get_utxos().await?;
+        let current_height = self.rpc_client.get_block_count().await.unwrap_or(0);
+        
+        let mut enriched_utxos = Vec::new();
+        
+        // Process UTXOs in parallel for better performance
+        let futures: Vec<_> = utxos.into_iter().map(|utxo| {
+            let rpc_client = Arc::clone(&self.rpc_client);
+            async move {
+                self.enrich_utxo(utxo, current_height, rpc_client).await
+            }
+        }).collect();
+        
+        // Wait for all enrichment operations to complete
+        let results = futures::future::join_all(futures).await;
+        
+        for result in results {
+            match result {
+                Ok(enriched_utxo) => enriched_utxos.push(enriched_utxo),
+                Err(e) => {
+                    warn!("Failed to enrich UTXO: {}", e);
+                    // Continue with other UTXOs even if one fails
+                }
+            }
+        }
+        
+        Ok(enriched_utxos)
+    }
+    
+    /// Get enriched UTXOs for a specific address
+    pub async fn get_enriched_utxos_for_address(&self, address: &str) -> Result<Vec<EnrichedUtxoInfo>> {
+        let current_height = self.rpc_client.get_block_count().await.unwrap_or(0);
+        let frozen_utxos = self.frozen_utxos.lock().await;
+        let mut utxo_infos = Vec::new();
+        
+        // Get UTXOs for the specific address
+        match self.rpc_client.get_address_utxos(address).await {
+            Ok(utxos_response) => {
+                if let Some(utxos_array) = utxos_response.as_array() {
+                    for utxo in utxos_array {
+                        if let Some(utxo_obj) = utxo.as_object() {
+                            let txid = utxo_obj.get("txid")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown")
+                                .to_string();
+                            
+                            let vout = utxo_obj.get("vout")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0) as u32;
+                            
+                            let amount = utxo_obj.get("value")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0);
+                            
+                            // Calculate proper confirmations
+                            let confirmations = if let Some(status) = utxo_obj.get("status") {
+                                if status.get("confirmed").and_then(|c| c.as_bool()).unwrap_or(false) {
+                                    // Get block height and calculate confirmations
+                                    if let Some(block_height) = status.get("block_height").and_then(|h| h.as_u64()) {
+                                        (current_height.saturating_sub(block_height) + 1) as u32
+                                    } else {
+                                        1 // Confirmed but no block height available
+                                    }
+                                } else {
+                                    0 // Unconfirmed
+                                }
+                            } else {
+                                0 // No status available
+                            };
+                            
+                            let outpoint = if let Ok(parsed_txid) = Txid::from_str(&txid) {
+                                OutPoint {
+                                    txid: parsed_txid,
+                                    vout,
+                                }
+                            } else {
+                                continue;
+                            };
+                            
+                            let frozen = frozen_utxos.contains_key(&outpoint);
+                            
+                            // Create script pubkey for the address
+                            let addr = Address::from_str(address)
+                                .context("Invalid address")?
+                                .require_network(self.config.network)
+                                .context("Address network mismatch")?;
+                            
+                            let utxo_info = UtxoInfo {
+                                txid,
+                                vout,
+                                amount,
+                                address: address.to_string(),
+                                confirmations,
+                                frozen,
+                                script_pubkey: addr.script_pubkey(),
+                            };
+                            
+                            utxo_infos.push(utxo_info);
+                        }
+                    }
+                }
+            },
+            Err(e) => {
+                warn!("Failed to get UTXOs from Sandshrew for address {}: {}", address, e);
+            }
+        }
+        
+        // Enrich the UTXOs
+        let mut enriched_utxos = Vec::new();
+        
+        // Process UTXOs in parallel for better performance
+        let futures: Vec<_> = utxo_infos.into_iter().map(|utxo| {
+            let rpc_client = Arc::clone(&self.rpc_client);
+            async move {
+                self.enrich_utxo(utxo, current_height, rpc_client).await
+            }
+        }).collect();
+        
+        // Wait for all enrichment operations to complete
+        let results = futures::future::join_all(futures).await;
+        
+        for result in results {
+            match result {
+                Ok(enriched_utxo) => enriched_utxos.push(enriched_utxo),
+                Err(e) => {
+                    warn!("Failed to enrich UTXO: {}", e);
+                    // Continue with other UTXOs even if one fails
+                }
+            }
+        }
+        
+        Ok(enriched_utxos)
+    }
+    
+    /// Enrich a single UTXO with ordinals, runes, and alkanes data
+    async fn enrich_utxo(&self, utxo: UtxoInfo, current_height: u64, rpc_client: Arc<RpcClient>) -> Result<EnrichedUtxoInfo> {
+        let mut has_inscriptions = false;
+        let mut has_runes = false;
+        let mut has_alkanes = false;
+        let mut ord_data = None;
+        let mut runes_data = None;
+        let mut alkanes_data = None;
+        let mut block_height = None;
+        let mut is_coinbase = false;
+        
+        // Parallel requests for ord_output and protorunes data
+        let ord_future = rpc_client.get_ord_output(&utxo.txid, utxo.vout);
+        let protorunes_future = rpc_client.get_protorunes_by_outpoint_with_protocol(&utxo.txid, utxo.vout, 1);
+        
+        // Execute both requests in parallel
+        let (ord_result, protorunes_result) = tokio::join!(ord_future, protorunes_future);
+        
+        // Process ord_output result
+        match ord_result {
+            Ok(ord_response) => {
+                if !ord_response.is_null() && ord_response != serde_json::Value::String("null".to_string()) {
+                    has_inscriptions = true;
+                    ord_data = Some(ord_response);
+                }
+            },
+            Err(e) => {
+                debug!("Failed to get ord output for {}:{}: {}", utxo.txid, utxo.vout, e);
+            }
+        }
+        
+        // Process protorunes result
+        match protorunes_result {
+            Ok(protorunes_response) => {
+                // Check if the response contains any runes/alkanes data
+                if !protorunes_response.balances.entries.is_empty() {
+                    has_alkanes = true;
+                    // For now, just store a simple indication that alkanes were found
+                    // The complex protobuf parsing can be improved later
+                    alkanes_data = Some(serde_json::json!({
+                        "found_alkanes": true,
+                        "count": protorunes_response.balances.entries.len()
+                    }));
+                }
+            },
+            Err(e) => {
+                debug!("Failed to get protorunes for {}:{}: {}", utxo.txid, utxo.vout, e);
+            }
+        }
+        
+        // Get transaction details to check if it's coinbase and get block height
+        match rpc_client.get_transaction_status(&utxo.txid).await {
+            Ok(status) => {
+                if let Some(status_obj) = status.as_object() {
+                    if let Some(confirmed) = status_obj.get("confirmed").and_then(|c| c.as_bool()) {
+                        if confirmed {
+                            block_height = status_obj.get("block_height").and_then(|h| h.as_u64());
+                        }
+                    }
+                }
+            },
+            Err(e) => {
+                debug!("Failed to get transaction status for {}: {}", utxo.txid, e);
+            }
+        }
+        
+        // Check if it's a coinbase transaction (vout 0 and specific patterns)
+        // This is a simplified check - in practice, you'd need to examine the transaction structure
+        if utxo.vout == 0 {
+            // Additional checks could be added here to verify coinbase status
+            // For now, we'll use a heuristic based on transaction patterns
+        }
+        
+        // Determine freeze status and reason
+        let mut freeze_reasons = Vec::new();
+        let mut frozen = utxo.frozen; // Start with existing freeze status
+        
+        // Check dust threshold
+        if utxo.amount <= 546 {
+            frozen = true;
+            freeze_reasons.push(FreezeReason::Dust);
+        }
+        
+        // Check inscriptions
+        if has_inscriptions {
+            frozen = true;
+            freeze_reasons.push(FreezeReason::HasInscriptions);
+        }
+        
+        // Check runes
+        if has_runes {
+            frozen = true;
+            freeze_reasons.push(FreezeReason::HasRunes);
+        }
+        
+        // Check alkanes
+        if has_alkanes {
+            frozen = true;
+            freeze_reasons.push(FreezeReason::HasAlkanes);
+        }
+        
+        // Check immature coinbase
+        if is_coinbase {
+            if let Some(height) = block_height {
+                let confirmations = current_height.saturating_sub(height);
+                if confirmations < 200 {
+                    frozen = true;
+                    freeze_reasons.push(FreezeReason::ImmatureCoinbase);
+                }
+            }
+        }
+        
+        // Create freeze reason string
+        let freeze_reason = if freeze_reasons.is_empty() {
+            None
+        } else {
+            Some(freeze_reasons.iter().map(|r| r.as_str()).collect::<Vec<_>>().join(", "))
+        };
+        
+        // Update the UTXO's frozen status
+        let mut enriched_utxo = utxo.clone();
+        enriched_utxo.frozen = frozen;
+        
+        Ok(EnrichedUtxoInfo {
+            utxo: enriched_utxo,
+            block_height,
+            has_inscriptions,
+            has_runes,
+            has_alkanes,
+            is_coinbase,
+            freeze_reason,
+            ord_data,
+            runes_data,
+            alkanes_data,
+        })
+    }
+    
     /// Create a transaction
     pub async fn create_transaction(&self, params: SendParams) -> Result<(Transaction, TransactionDetails)> {
-        info!("Creating transaction to {} for {} sats", params.address, params.amount);
+        let from_info = if let Some(ref from_addr) = params.from_address {
+            format!(" from {}", from_addr)
+        } else {
+            String::new()
+        };
+        info!("Creating transaction to {} for {} sats{}", params.address, params.amount, from_info);
         
-        // Get available UTXOs
-        let utxos = self.get_utxos().await?;
-        let confirmed_utxos: Vec<_> = utxos.into_iter()
-            .filter(|u| u.confirmations > 0 && !u.frozen)
+        // Get enriched UTXOs with automatic freezing rules applied
+        let enriched_utxos = if let Some(ref from_address) = params.from_address {
+            // Get UTXOs from specific address
+            self.get_enriched_utxos_for_address(from_address).await?
+        } else {
+            // Get UTXOs from all wallet addresses
+            self.get_enriched_utxos().await?
+        };
+        
+        let confirmed_utxos: Vec<_> = enriched_utxos.into_iter()
+            .filter(|u| u.utxo.confirmations > 0 && !u.utxo.frozen)
+            .map(|u| u.utxo) // Extract the basic UtxoInfo for compatibility
             .collect();
         
         if confirmed_utxos.is_empty() {
@@ -772,7 +1143,7 @@ impl BitcoinWallet {
         Ok((unsigned_tx, tx_details))
     }
     
-    /// Sign a transaction
+    /// Sign a transaction with proper address type detection
     async fn sign_transaction(&self, tx: &mut Transaction, utxos: &[&UtxoInfo]) -> Result<()> {
         info!("Signing transaction with {} inputs", tx.input.len());
         
@@ -788,47 +1159,77 @@ impl BitcoinWallet {
         
         // Sign each input
         for (i, utxo) in utxos.iter().enumerate() {
-            // Derive the private key for this UTXO
-            let derivation_path = DerivationPath::from(vec![
-                ChildNumber::from_hardened_idx(84).unwrap(),
-                ChildNumber::from_hardened_idx(match self.config.network {
-                    Network::Bitcoin => 0,
-                    _ => 1,
-                }).unwrap(),
-                ChildNumber::from_hardened_idx(0).unwrap(),
-                ChildNumber::from_normal_idx(0).unwrap(),
-                ChildNumber::from_normal_idx(0).unwrap(),
-            ]);
+            // Determine address type from script pubkey
+            let address_type = self.determine_address_type(&utxo.script_pubkey)?;
+            debug!("Input {}: address type = {}, address = {}", i, address_type, utxo.address);
+            
+            // Find the correct derivation path for this UTXO
+            let (derivation_path, _index) = self.find_derivation_path_for_utxo(utxo, &address_type).await?;
             
             let private_key = self.derive_private_key(&derivation_path)?;
             let public_key = private_key.public_key(&self.secp);
             
-            // Create sighash
+            // Create sighash and sign based on address type
             let mut sighash_cache = SighashCache::new(&*tx);
-            let sighash = sighash_cache
-                .p2wpkh_signature_hash(
-                    i,
-                    &utxo.script_pubkey,
-                    Amount::from_sat(utxo.amount),
-                    EcdsaSighashType::All,
-                )
-                .context("Failed to compute sighash")?;
             
-            // Sign the sighash
-            let message = Message::from_digest_slice(&sighash[..])
-                .context("Failed to create message from sighash")?;
-            
-            let signature = self.secp.sign_ecdsa(&message, &private_key.inner);
-            
-            // Create witness for P2WPKH
-            let mut sig_bytes = signature.serialize_der().to_vec();
-            sig_bytes.push(EcdsaSighashType::All as u8);
-            
-            let mut witness = Witness::new();
-            witness.push(sig_bytes);
-            witness.push(public_key.to_bytes());
-            
-            tx.input[i].witness = witness;
+            match address_type.as_str() {
+                "p2tr" => {
+                    // P2TR (Taproot) signing
+                    use bitcoin::sighash::TapSighashType;
+                    use rand::rngs::OsRng;
+                    
+                    let sighash = sighash_cache
+                        .taproot_key_spend_signature_hash(
+                            i,
+                            &prevouts,
+                            TapSighashType::Default,
+                        )
+                        .context("Failed to compute taproot sighash")?;
+                    
+                    // Sign the sighash
+                    let message = Message::from_digest_slice(&sighash[..])
+                        .context("Failed to create message from sighash")?;
+                    
+                    let keypair = private_key.inner.keypair(&self.secp);
+                    let signature = self.secp.sign_schnorr_with_rng(&message, &keypair, &mut OsRng);
+                    
+                    // Create witness for P2TR (just the signature)
+                    let mut witness = Witness::new();
+                    witness.push(signature.as_ref());
+                    
+                    tx.input[i].witness = witness;
+                },
+                "p2wpkh" => {
+                    // P2WPKH (Native SegWit) signing
+                    let sighash = sighash_cache
+                        .p2wpkh_signature_hash(
+                            i,
+                            &utxo.script_pubkey,
+                            Amount::from_sat(utxo.amount),
+                            EcdsaSighashType::All,
+                        )
+                        .context("Failed to compute p2wpkh sighash")?;
+                    
+                    // Sign the sighash
+                    let message = Message::from_digest_slice(&sighash[..])
+                        .context("Failed to create message from sighash")?;
+                    
+                    let signature = self.secp.sign_ecdsa(&message, &private_key.inner);
+                    
+                    // Create witness for P2WPKH
+                    let mut sig_bytes = signature.serialize_der().to_vec();
+                    sig_bytes.push(EcdsaSighashType::All as u8);
+                    
+                    let mut witness = Witness::new();
+                    witness.push(&sig_bytes);
+                    witness.push(&public_key.to_bytes());
+                    
+                    tx.input[i].witness = witness;
+                },
+                _ => {
+                    return Err(anyhow!("Unsupported address type for signing: {} (only P2TR and P2WPKH supported for now)", address_type));
+                }
+            }
         }
         
         info!("Transaction signed successfully");
@@ -879,6 +1280,92 @@ impl BitcoinWallet {
         
         info!("Unfrozen UTXO: {}:{}", txid, vout);
         Ok(())
+    }
+    
+    /// Determine address type from script pubkey
+    fn determine_address_type(&self, script_pubkey: &ScriptBuf) -> Result<String> {
+        if script_pubkey.is_p2tr() {
+            Ok("p2tr".to_string())
+        } else if script_pubkey.is_p2wpkh() {
+            Ok("p2wpkh".to_string())
+        } else if script_pubkey.is_p2pkh() {
+            Ok("p2pkh".to_string())
+        } else if script_pubkey.is_p2sh() {
+            Ok("p2sh".to_string())
+        } else {
+            Err(anyhow!("Unknown script pubkey type"))
+        }
+    }
+    
+    /// Find the correct derivation path for a UTXO by checking all address types and indices
+    async fn find_derivation_path_for_utxo(&self, utxo: &UtxoInfo, address_type: &str) -> Result<(DerivationPath, u32)> {
+        let coin_type = match self.config.network {
+            Network::Bitcoin => 0,
+            Network::Testnet => 1,
+            Network::Signet => 1,
+            Network::Regtest => 1,
+            _ => 0,
+        };
+        
+        // Check both external (0) and change (1) chains
+        for is_change in [false, true] {
+            let change_index = if is_change { 1 } else { 0 };
+            
+            // Check up to 1000 addresses to find the matching one
+            for index in 0..1000 {
+                let derivation_path = match address_type {
+                    "p2pkh" => {
+                        DerivationPath::from(vec![
+                            ChildNumber::from_hardened_idx(44).unwrap(), // BIP44
+                            ChildNumber::from_hardened_idx(coin_type).unwrap(),
+                            ChildNumber::from_hardened_idx(0).unwrap(),
+                            ChildNumber::from_normal_idx(change_index).unwrap(),
+                            ChildNumber::from_normal_idx(index).unwrap(),
+                        ])
+                    },
+                    "p2sh" => {
+                        DerivationPath::from(vec![
+                            ChildNumber::from_hardened_idx(49).unwrap(), // BIP49
+                            ChildNumber::from_hardened_idx(coin_type).unwrap(),
+                            ChildNumber::from_hardened_idx(0).unwrap(),
+                            ChildNumber::from_normal_idx(change_index).unwrap(),
+                            ChildNumber::from_normal_idx(index).unwrap(),
+                        ])
+                    },
+                    "p2wpkh" => {
+                        DerivationPath::from(vec![
+                            ChildNumber::from_hardened_idx(84).unwrap(), // BIP84
+                            ChildNumber::from_hardened_idx(coin_type).unwrap(),
+                            ChildNumber::from_hardened_idx(0).unwrap(),
+                            ChildNumber::from_normal_idx(change_index).unwrap(),
+                            ChildNumber::from_normal_idx(index).unwrap(),
+                        ])
+                    },
+                    "p2tr" => {
+                        DerivationPath::from(vec![
+                            ChildNumber::from_hardened_idx(86).unwrap(), // BIP86
+                            ChildNumber::from_hardened_idx(coin_type).unwrap(),
+                            ChildNumber::from_hardened_idx(0).unwrap(),
+                            ChildNumber::from_normal_idx(change_index).unwrap(),
+                            ChildNumber::from_normal_idx(index).unwrap(),
+                        ])
+                    },
+                    _ => return Err(anyhow!("Unsupported address type: {}", address_type)),
+                };
+                
+                // Generate the address for this derivation path and check if it matches
+                match self.get_address_of_type_at_index(address_type, index, is_change).await {
+                    Ok(generated_address) => {
+                        if generated_address == utxo.address {
+                            return Ok((derivation_path, index));
+                        }
+                    },
+                    Err(_) => continue,
+                }
+            }
+        }
+        
+        Err(anyhow!("Could not find derivation path for UTXO address: {}", utxo.address))
     }
 }
 

@@ -346,6 +346,11 @@ impl WalletManager {
         self.wallet.get_utxos().await
     }
     
+    /// Get enriched UTXOs with ordinals, runes, and alkanes data
+    pub async fn get_enriched_utxos(&self) -> Result<Vec<bitcoin_wallet::EnrichedUtxoInfo>> {
+        self.wallet.get_enriched_utxos().await
+    }
+    
     /// Freeze a UTXO
     pub async fn freeze_utxo(&self, txid: &str, vout: u32) -> Result<()> {
         self.wallet.freeze_utxo(txid, vout).await
@@ -447,7 +452,7 @@ impl WalletManager {
 }
 
 // Re-export types for compatibility
-pub use bitcoin_wallet::{SendParams, UtxoInfo, TransactionDetails, Balance, TransactionHistoryEntry};
+pub use bitcoin_wallet::{SendParams, UtxoInfo, EnrichedUtxoInfo, TransactionDetails, Balance, TransactionHistoryEntry};
 
 #[cfg(test)]
 mod tests {

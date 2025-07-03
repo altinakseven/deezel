@@ -205,6 +205,9 @@ enum WalletCommands {
         /// Fee rate in sat/vB
         #[clap(long)]
         fee_rate: Option<f32>,
+        /// Source address to send from (supports address identifiers like [self:p2tr:0])
+        #[clap(long)]
+        from: Option<String>,
     },
     /// Send all available Bitcoin to an address
     SendAll {
@@ -213,6 +216,9 @@ enum WalletCommands {
         /// Fee rate in sat/vB
         #[clap(long)]
         fee_rate: Option<f32>,
+        /// Source address to send from (supports address identifiers like [self:p2tr:0])
+        #[clap(long)]
+        from: Option<String>,
     },
     /// Create a transaction (without broadcasting)
     CreateTx {
@@ -223,6 +229,9 @@ enum WalletCommands {
         /// Fee rate in sat/vB
         #[clap(long)]
         fee_rate: Option<f32>,
+        /// Source address to send from (supports address identifiers like [self:p2tr:0])
+        #[clap(long)]
+        from: Option<String>,
     },
     /// Sign a transaction
     SignTx {
@@ -235,7 +244,11 @@ enum WalletCommands {
         tx_hex: String,
     },
     /// List UTXOs
-    Utxos,
+    Utxos {
+        /// Check UTXOs for specific addresses with range notation (e.g., p2tr:0-500,p2sh:100) or raw addresses
+        #[clap(long)]
+        addresses: Option<String>,
+    },
     /// Freeze a UTXO
     FreezeUtxo {
         /// Transaction ID
@@ -267,6 +280,9 @@ enum WalletCommands {
         address: String,
         /// Amount in satoshis
         amount: u64,
+        /// Source address to send from (supports address identifiers like [self:p2tr:0])
+        #[clap(long)]
+        from: Option<String>,
     },
     /// Get current fee rates
     FeeRates,
@@ -1042,18 +1058,61 @@ fn expand_tilde(path: &str) -> Result<String> {
 }
 
 /// Resolve address identifiers in a string using the provided wallet manager
+/// Supports both full format [self:p2tr:0] and shorthand format p2tr:0
 async fn resolve_address_identifiers(input: &str, wallet_manager: Option<&Arc<deezel_cli::wallet::WalletManager>>) -> Result<String> {
-    if !AddressResolver::contains_identifiers(input) {
-        return Ok(input.to_string());
+    // Check if input contains full identifiers like [self:p2tr:0]
+    if AddressResolver::contains_identifiers(input) {
+        let resolver = if let Some(wm) = wallet_manager {
+            AddressResolver::with_wallet(Arc::clone(wm))
+        } else {
+            return Err(anyhow!("Address identifiers found but no wallet manager available. Please ensure wallet is loaded."));
+        };
+        return resolver.resolve_all_identifiers(input).await;
     }
+    
+    // Check if input is a shorthand address identifier like "p2tr:0"
+    if is_shorthand_address_identifier(input) {
+        let resolver = if let Some(wm) = wallet_manager {
+            AddressResolver::with_wallet(Arc::clone(wm))
+        } else {
+            return Err(anyhow!("Address identifier found but no wallet manager available. Please ensure wallet is loaded."));
+        };
+        
+        // Convert shorthand to full format and resolve
+        let full_identifier = format!("[self:{}]", input);
+        return resolver.resolve_all_identifiers(&full_identifier).await;
+    }
+    
+    // No identifiers found, return as-is
+    Ok(input.to_string())
+}
 
-    let resolver = if let Some(wm) = wallet_manager {
-        AddressResolver::with_wallet(Arc::clone(wm))
-    } else {
-        return Err(anyhow!("Address identifiers found but no wallet manager available. Please ensure wallet is loaded."));
-    };
-
-    resolver.resolve_all_identifiers(input).await
+/// Check if a string looks like a shorthand address identifier (e.g., "p2tr:0", "p2wpkh", etc.)
+fn is_shorthand_address_identifier(input: &str) -> bool {
+    // Pattern: address_type or address_type:index
+    // Valid address types: p2tr, p2pkh, p2sh, p2wpkh, p2wsh
+    let parts: Vec<&str> = input.split(':').collect();
+    
+    if parts.is_empty() || parts.len() > 2 {
+        return false;
+    }
+    
+    // Check if first part is a valid address type
+    let address_type = parts[0].to_lowercase();
+    let valid_types = ["p2tr", "p2pkh", "p2sh", "p2wpkh", "p2wsh"];
+    
+    if !valid_types.contains(&address_type.as_str()) {
+        return false;
+    }
+    
+    // If there's a second part, it should be a valid index
+    if parts.len() == 2 {
+        if parts[1].parse::<u32>().is_err() {
+            return false;
+        }
+    }
+    
+    true
 }
 
 /// Format Uint128 as a floating point number divided by 1e8
@@ -1210,7 +1269,7 @@ async fn main() -> Result<()> {
                                                             WalletCommands::CreateTx { .. } |
                                                             WalletCommands::SignTx { .. } |
                                                             WalletCommands::BroadcastTx { .. } |
-                                                            WalletCommands::Utxos |
+                                                            WalletCommands::Utxos { .. } |
                                                             WalletCommands::FreezeUtxo { .. } |
                                                             WalletCommands::UnfreezeUtxo { .. } |
                                                             WalletCommands::History { .. } |
@@ -1628,15 +1687,23 @@ async fn main() -> Result<()> {
                             };
                         }
                     },
-                    WalletCommands::Send { address, amount, fee_rate } => {
-                        // Resolve address identifiers
+                    WalletCommands::Send { address, amount, fee_rate, from } => {
+                        // Resolve recipient address identifiers
                         let resolved_address = resolve_address_identifiers(&address, Some(wallet_manager)).await?;
+                        
+                        // Resolve source address identifiers if provided
+                        let resolved_from = if let Some(from_addr) = from {
+                            Some(resolve_address_identifiers(&from_addr, Some(wallet_manager)).await?)
+                        } else {
+                            None
+                        };
                         
                         let params = deezel_cli::wallet::SendParams {
                             address: resolved_address,
                             amount: amount,
                             fee_rate: fee_rate.clone(),
                             send_all: false,
+                            from_address: resolved_from,
                         };
                         
                         match wallet_manager.send(params).await {
@@ -1647,15 +1714,23 @@ async fn main() -> Result<()> {
                             Err(e) => println!("Failed to send transaction: {}", e),
                         };
                     },
-                    WalletCommands::SendAll { address, fee_rate } => {
-                        // Resolve address identifiers
+                    WalletCommands::SendAll { address, fee_rate, from } => {
+                        // Resolve recipient address identifiers
                         let resolved_address = resolve_address_identifiers(&address, Some(wallet_manager)).await?;
+                        
+                        // Resolve source address identifiers if provided
+                        let resolved_from = if let Some(from_addr) = from {
+                            Some(resolve_address_identifiers(&from_addr, Some(wallet_manager)).await?)
+                        } else {
+                            None
+                        };
                         
                         let params = deezel_cli::wallet::SendParams {
                             address: resolved_address,
                             amount: 0, // Not used when send_all is true
                             fee_rate: fee_rate.clone(),
                             send_all: true,
+                            from_address: resolved_from,
                         };
                         
                         match wallet_manager.send(params).await {
@@ -1666,15 +1741,23 @@ async fn main() -> Result<()> {
                             Err(e) => println!("Failed to send all funds: {}", e),
                         };
                     },
-                    WalletCommands::CreateTx { address, amount, fee_rate } => {
-                        // Resolve address identifiers
+                    WalletCommands::CreateTx { address, amount, fee_rate, from } => {
+                        // Resolve recipient address identifiers
                         let resolved_address = resolve_address_identifiers(&address, Some(wallet_manager)).await?;
+                        
+                        // Resolve source address identifiers if provided
+                        let resolved_from = if let Some(from_addr) = from {
+                            Some(resolve_address_identifiers(&from_addr, Some(wallet_manager)).await?)
+                        } else {
+                            None
+                        };
                         
                         let params = deezel_cli::wallet::SendParams {
                             address: resolved_address,
                             amount: amount,
                             fee_rate: fee_rate.clone(),
                             send_all: false,
+                            from_address: resolved_from,
                         };
                         
                         match wallet_manager.create_transaction(params).await {
@@ -1709,26 +1792,229 @@ async fn main() -> Result<()> {
                             Err(e) => println!("Failed to broadcast transaction: {}", e),
                         };
                     },
-                    WalletCommands::Utxos => {
-                        match wallet_manager.get_utxos().await {
-                            Ok(utxos) => {
-                                if utxos.is_empty() {
-                                    println!("No UTXOs found");
+                    WalletCommands::Utxos { addresses } => {
+                        if let Some(addresses_str) = addresses {
+                            // Handle --addresses option with specific addresses
+                            let parsed_ranges = parse_address_ranges(&addresses_str)?;
+                            
+                            println!("🔍 Address UTXO Report");
+                            println!("═══════════════════════");
+                            println!();
+                            
+                            for (address_or_type, indices) in parsed_ranges {
+                                if indices.is_empty() {
+                                    // Raw Bitcoin address
+                                    println!("🏠 Raw Address: {}", address_or_type);
+                                    println!("───────────────────────");
+                                    
+                                    // Get UTXOs for this address using RPC
+                                    match rpc_client.get_address_utxos(&address_or_type).await {
+                                        Ok(utxos_result) => {
+                                            // Parse the JSON response
+                                            if let Some(utxos_array) = utxos_result.as_array() {
+                                                if utxos_array.is_empty() {
+                                                    println!("  🚫 No UTXOs found");
+                                                } else {
+                                                    println!("  📋 UTXOs ({} total):", utxos_array.len());
+                                                    for (i, utxo) in utxos_array.iter().enumerate() {
+                                                        let tree_symbol = if i == utxos_array.len() - 1 { "└─" } else { "├─" };
+                                                        
+                                                        if let Some(utxo_obj) = utxo.as_object() {
+                                                            let value = utxo_obj.get("value").and_then(|v| v.as_u64()).unwrap_or(0);
+                                                            let txid = utxo_obj.get("txid").and_then(|v| v.as_str()).unwrap_or("unknown");
+                                                            let vout = utxo_obj.get("vout").and_then(|v| v.as_u64()).unwrap_or(0);
+                                                            let status = utxo_obj.get("status").and_then(|v| v.as_object());
+                                                            let confirmed = status.and_then(|s| s.get("confirmed")).and_then(|v| v.as_bool()).unwrap_or(false);
+                                                            let block_height = status.and_then(|s| s.get("block_height")).and_then(|v| v.as_u64()).unwrap_or(0);
+                                                            
+                                                            println!("  {} {} UTXO #{}", tree_symbol, if confirmed { "✅" } else { "⏳" }, i + 1);
+                                                            println!("  {}    🆔 {}:{}", if i == utxos_array.len() - 1 { "  " } else { "│ " }, txid, vout);
+                                                            println!("  {}    💰 {} sats", if i == utxos_array.len() - 1 { "  " } else { "│ " }, value);
+                                                            println!("  {}    📍 {}", if i == utxos_array.len() - 1 { "  " } else { "│ " }, address_or_type);
+                                                            if confirmed {
+                                                                println!("  {}    📏 Block: {}", if i == utxos_array.len() - 1 { "  " } else { "│ " }, block_height);
+                                                            } else {
+                                                                println!("  {}    ⏳ Unconfirmed", if i == utxos_array.len() - 1 { "  " } else { "│ " });
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            } else {
+                                                println!("  ❌ Failed to parse UTXOs response");
+                                            }
+                                        },
+                                        Err(e) => println!("  ❌ Failed to get UTXOs: {}", e),
+                                    }
                                 } else {
-                                    println!("UTXOs ({} total):", utxos.len());
-                                    for utxo in utxos {
-                                        println!("  {}:{} - {} sats ({}{})",
-                                            utxo.txid,
-                                            utxo.vout,
-                                            utxo.amount,
-                                            utxo.address,
-                                            if utxo.frozen { " [FROZEN]" } else { "" }
-                                        );
+                                    // Wallet address type with indices
+                                    println!("🏠 {} Addresses:", address_or_type.to_uppercase());
+                                    println!("───────────────────────");
+                                    
+                                    for index in indices {
+                                        match wallet_manager.get_address_of_type_at_index(&address_or_type, index, false).await {
+                                            Ok(address) => {
+                                                let derivation_path = get_derivation_path(&address_or_type, network_params.network, index);
+                                                let identifier = format!("[self:{}:{}]", address_or_type, index);
+                                                
+                                                println!("  📍 Index {}: {}", index, address);
+                                                println!("     🔗 Identifier: {}", identifier);
+                                                println!("     🛤️  HD Path: {}", derivation_path);
+                                                
+                                                // Get UTXOs for this address
+                                                match rpc_client.get_address_utxos(&address).await {
+                                                    Ok(utxos_result) => {
+                                                        if let Some(utxos_array) = utxos_result.as_array() {
+                                                            if utxos_array.is_empty() {
+                                                                println!("     📋 UTXOs: None");
+                                                            } else {
+                                                                println!("     📋 UTXOs ({} total):", utxos_array.len());
+                                                                for (i, utxo) in utxos_array.iter().enumerate() {
+                                                                    let tree_symbol = if i == utxos_array.len() - 1 { "└─" } else { "├─" };
+                                                                    
+                                                                    if let Some(utxo_obj) = utxo.as_object() {
+                                                                        let value = utxo_obj.get("value").and_then(|v| v.as_u64()).unwrap_or(0);
+                                                                        let txid = utxo_obj.get("txid").and_then(|v| v.as_str()).unwrap_or("unknown");
+                                                                        let vout = utxo_obj.get("vout").and_then(|v| v.as_u64()).unwrap_or(0);
+                                                                        let status = utxo_obj.get("status").and_then(|v| v.as_object());
+                                                                        let confirmed = status.and_then(|s| s.get("confirmed")).and_then(|v| v.as_bool()).unwrap_or(false);
+                                                                        let block_height = status.and_then(|s| s.get("block_height")).and_then(|v| v.as_u64()).unwrap_or(0);
+                                                                        
+                                                                        println!("       {} {} {}:{}", tree_symbol, if confirmed { "✅" } else { "⏳" }, txid, vout);
+                                                                        println!("       {}    💰 {} sats", if i == utxos_array.len() - 1 { "  " } else { "│ " }, value);
+                                                                        if confirmed {
+                                                                            println!("       {}    📏 Block: {}", if i == utxos_array.len() - 1 { "  " } else { "│ " }, block_height);
+                                                                        } else {
+                                                                            println!("       {}    ⏳ Unconfirmed", if i == utxos_array.len() - 1 { "  " } else { "│ " });
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    },
+                                                    Err(e) => println!("     ❌ Failed to get UTXOs: {}", e),
+                                                }
+                                                println!();
+                                            },
+                                            Err(e) => {
+                                                println!("  ❌ Index {}: Failed to generate address - {}", index, e);
+                                                println!();
+                                            }
+                                        }
                                     }
                                 }
-                            },
-                            Err(e) => println!("Failed to get UTXOs: {}", e),
-                        };
+                                println!();
+                            }
+                        } else {
+                            // Default behavior: show enriched wallet UTXOs
+                            println!("📦 Enriched Wallet UTXOs:");
+                            println!("🔍 Checking for inscriptions, runes, and alkanes...");
+                            println!();
+                            
+                            match wallet_manager.get_enriched_utxos().await {
+                                Ok(enriched_utxos) => {
+                                    if enriched_utxos.is_empty() {
+                                        println!("📭 No UTXOs found in wallet");
+                                    } else {
+                                        for enriched_utxo in &enriched_utxos {
+                                            let utxo = &enriched_utxo.utxo;
+                                            
+                                            let status = if utxo.confirmations > 0 {
+                                                format!("✅ {} confirmations", utxo.confirmations)
+                                            } else {
+                                                "⏳ Unconfirmed".to_string()
+                                            };
+                                            
+                                            let mut status_indicators = Vec::new();
+                                            
+                                            if enriched_utxo.utxo.frozen {
+                                                status_indicators.push("🧊 FROZEN");
+                                            }
+                                            
+                                            if enriched_utxo.has_inscriptions {
+                                                status_indicators.push("🖼️ INSCRIPTIONS");
+                                            }
+                                            
+                                            if enriched_utxo.has_runes {
+                                                status_indicators.push("🪙 RUNES");
+                                            }
+                                            
+                                            if enriched_utxo.has_alkanes {
+                                                status_indicators.push("⚗️ ALKANES");
+                                            }
+                                            
+                                            if utxo.amount <= 546 {
+                                                status_indicators.push("🧹 DUST");
+                                            }
+                                            
+                                            if enriched_utxo.is_coinbase {
+                                                status_indicators.push("⛏️ COINBASE");
+                                            }
+                                            
+                                            let indicators_str = if status_indicators.is_empty() {
+                                                String::new()
+                                            } else {
+                                                format!(" [{}]", status_indicators.join(", "))
+                                            };
+                                            
+                                            println!("├─ 🔗 {}:{}", utxo.txid, utxo.vout);
+                                            println!("├─ 💰 {} sats{}", utxo.amount, indicators_str);
+                                            println!("├─ 🏠 {}", utxo.address);
+                                            println!("├─ 📊 {}", status);
+                                            
+                                            if let Some(freeze_reason) = &enriched_utxo.freeze_reason {
+                                                println!("├─ 🧊 Freeze reason: {}", freeze_reason);
+                                            }
+                                            
+                                            if let Some(height) = enriched_utxo.block_height {
+                                                println!("├─ 🏗️ Block height: {}", height);
+                                            }
+                                            
+                                            println!("└─ ────────────────────────────────");
+                                            println!();
+                                        }
+                                        
+                                        // Summary
+                                        let total_utxos = enriched_utxos.len();
+                                        let frozen_count = enriched_utxos.iter().filter(|u| u.utxo.frozen).count();
+                                        let inscription_count = enriched_utxos.iter().filter(|u| u.has_inscriptions).count();
+                                        let alkanes_count = enriched_utxos.iter().filter(|u| u.has_alkanes).count();
+                                        let dust_count = enriched_utxos.iter().filter(|u| u.utxo.amount <= 546).count();
+                                        
+                                        println!("📊 Summary:");
+                                        println!("   Total UTXOs: {}", total_utxos);
+                                        println!("   Frozen: {}", frozen_count);
+                                        println!("   With Inscriptions: {}", inscription_count);
+                                        println!("   With Alkanes: {}", alkanes_count);
+                                        println!("   Dust (≤546 sats): {}", dust_count);
+                                    }
+                                },
+                                Err(e) => {
+                                    println!("❌ Error getting enriched UTXOs: {}", e);
+                                    println!("Falling back to basic UTXO listing...");
+                                    
+                                    // Fallback to basic UTXOs
+                                    match wallet_manager.get_utxos().await {
+                                        Ok(utxos) => {
+                                            if utxos.is_empty() {
+                                                println!("No UTXOs found");
+                                            } else {
+                                                println!("UTXOs ({} total):", utxos.len());
+                                                for utxo in utxos {
+                                                    println!("  {}:{} - {} sats ({}{})",
+                                                        utxo.txid,
+                                                        utxo.vout,
+                                                        utxo.amount,
+                                                        utxo.address,
+                                                        if utxo.frozen { " [FROZEN]" } else { "" }
+                                                    );
+                                                }
+                                            }
+                                        },
+                                        Err(e) => println!("Failed to get UTXOs: {}", e),
+                                    };
+                                }
+                            };
+                        }
                     },
                     WalletCommands::FreezeUtxo { txid, vout } => {
                         match wallet_manager.freeze_utxo(&txid, vout).await {
@@ -1784,15 +2070,23 @@ async fn main() -> Result<()> {
                             Err(e) => println!("Failed to get transaction: {}", e),
                         };
                     },
-                    WalletCommands::EstimateFee { address, amount } => {
-                        // Resolve address identifiers
+                    WalletCommands::EstimateFee { address, amount, from } => {
+                        // Resolve recipient address identifiers
                         let resolved_address = resolve_address_identifiers(&address, Some(wallet_manager)).await?;
+                        
+                        // Resolve source address identifiers if provided
+                        let resolved_from = if let Some(from_addr) = from {
+                            Some(resolve_address_identifiers(&from_addr, Some(wallet_manager)).await?)
+                        } else {
+                            None
+                        };
                         
                         let params = deezel_cli::wallet::SendParams {
                             address: resolved_address,
                             amount: amount,
                             fee_rate: None,
                             send_all: false,
+                            from_address: resolved_from,
                         };
                         
                         match wallet_manager.create_transaction(params).await {

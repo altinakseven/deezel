@@ -964,6 +964,17 @@ impl RpcClient {
         Ok(content)
     }
     
+    /// Get ord output information for a specific outpoint
+    pub async fn get_ord_output(&self, txid: &str, vout: u32) -> Result<Value> {
+        debug!("Getting ord output for outpoint: {}:{}", txid, vout);
+        
+        let outpoint = format!("{}:{}", txid, vout);
+        let result = self._call("ord_output", json!([outpoint])).await?;
+        
+        debug!("Got ord output for outpoint: {}:{}", txid, vout);
+        Ok(result)
+    }
+    
     /// Get block data by height
     pub async fn get_block(&self, height: u64, block_tag: &str) -> Result<String> {
         debug!("Getting block data for height: {} with block tag: {}", height, block_tag);
