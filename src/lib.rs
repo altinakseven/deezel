@@ -10,6 +10,7 @@ pub mod transaction;
 pub mod rpc;
 pub mod runestone_enhanced;
 pub mod alkanes;
+pub mod address_resolver;
 
 // Test modules for e2e testing with mock metashrew
 #[cfg(test)]
@@ -27,6 +28,7 @@ pub use transaction::TransactionConstructor;
 pub use rpc::RpcClient;
 pub use network::NetworkParams;
 pub use runestone_enhanced::{decode_runestone, format_runestone, format_runestone_with_decoded_messages, decode_protostone_message};
+pub use address_resolver::{AddressResolver, AddressIdentifier, AddressType};
 
 // Re-export the Runestone from ordinals crate
 pub use ordinals::Runestone;

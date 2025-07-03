@@ -770,6 +770,7 @@ dependencies = [
  "protobuf 3.7.1",
  "protorune-support",
  "rand",
+ "regex",
  "reqwest",
  "secp256k1",
  "serde",

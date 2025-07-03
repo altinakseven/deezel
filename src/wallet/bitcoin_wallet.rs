@@ -330,6 +330,121 @@ impl BitcoinWallet {
         Ok(address.to_string())
     }
     
+    /// Get address of specific type at specific index
+    pub async fn get_address_of_type_at_index(&self, address_type: &str, index: u32, is_change: bool) -> Result<String> {
+        // BIP44 derivation path varies by address type
+        let coin_type = match self.config.network {
+            Network::Bitcoin => 0,
+            Network::Testnet => 1,
+            Network::Signet => 1,
+            Network::Regtest => 1,
+            _ => 0,
+        };
+        
+        let change_index = if is_change { 1 } else { 0 };
+        
+        let derivation_path = match address_type.to_lowercase().as_str() {
+            "p2pkh" => {
+                // BIP44 derivation path: m/44'/coin_type'/0'/change/address_index
+                DerivationPath::from(vec![
+                    ChildNumber::from_hardened_idx(44).unwrap(), // BIP44 (Legacy)
+                    ChildNumber::from_hardened_idx(coin_type).unwrap(),
+                    ChildNumber::from_hardened_idx(0).unwrap(),
+                    ChildNumber::from_normal_idx(change_index).unwrap(),
+                    ChildNumber::from_normal_idx(index).unwrap(),
+                ])
+            },
+            "p2sh" => {
+                // BIP49 derivation path: m/49'/coin_type'/0'/change/address_index
+                DerivationPath::from(vec![
+                    ChildNumber::from_hardened_idx(49).unwrap(), // BIP49 (P2SH-wrapped SegWit)
+                    ChildNumber::from_hardened_idx(coin_type).unwrap(),
+                    ChildNumber::from_hardened_idx(0).unwrap(),
+                    ChildNumber::from_normal_idx(change_index).unwrap(),
+                    ChildNumber::from_normal_idx(index).unwrap(),
+                ])
+            },
+            "p2wpkh" => {
+                // BIP84 derivation path: m/84'/coin_type'/0'/change/address_index
+                DerivationPath::from(vec![
+                    ChildNumber::from_hardened_idx(84).unwrap(), // BIP84 (Native SegWit)
+                    ChildNumber::from_hardened_idx(coin_type).unwrap(),
+                    ChildNumber::from_hardened_idx(0).unwrap(),
+                    ChildNumber::from_normal_idx(change_index).unwrap(),
+                    ChildNumber::from_normal_idx(index).unwrap(),
+                ])
+            },
+            "p2tr" => {
+                // BIP86 derivation path: m/86'/coin_type'/0'/change/address_index
+                DerivationPath::from(vec![
+                    ChildNumber::from_hardened_idx(86).unwrap(), // BIP86 (Taproot)
+                    ChildNumber::from_hardened_idx(coin_type).unwrap(),
+                    ChildNumber::from_hardened_idx(0).unwrap(),
+                    ChildNumber::from_normal_idx(change_index).unwrap(),
+                    ChildNumber::from_normal_idx(index).unwrap(),
+                ])
+            },
+            _ => {
+                return Err(anyhow!("Unsupported address type: {}", address_type));
+            }
+        };
+        
+        let public_key = self.derive_public_key(&derivation_path)?;
+        let compressed_pubkey = CompressedPublicKey::try_from(public_key)
+            .context("Failed to compress public key")?;
+        
+        let address = match address_type.to_lowercase().as_str() {
+            "p2pkh" => {
+                Address::p2pkh(&compressed_pubkey, self.config.network)
+            },
+            "p2sh" => {
+                // Create P2SH-wrapped P2WPKH
+                let wpkh_script = Address::p2wpkh(&compressed_pubkey, self.config.network).script_pubkey();
+                Address::p2sh(&wpkh_script, self.config.network)
+                    .context("Failed to create P2SH address")?
+            },
+            "p2wpkh" => {
+                Address::p2wpkh(&compressed_pubkey, self.config.network)
+            },
+            "p2tr" => {
+                // For Taproot, we need to use the internal key
+                use bitcoin::key::UntweakedPublicKey;
+                use bitcoin::secp256k1::XOnlyPublicKey;
+                
+                let x_only_pubkey = XOnlyPublicKey::from(compressed_pubkey.0);
+                let untweaked = UntweakedPublicKey::from(x_only_pubkey);
+                Address::p2tr(&self.secp, untweaked, None, self.config.network)
+            },
+            _ => {
+                return Err(anyhow!("Unsupported address type: {}", address_type));
+            }
+        };
+        
+        // If we have custom network parameters, use protorune_support for address generation
+        if let Some(network_params) = &self.config.network_params {
+            let protorune_params = protorune_support::network::NetworkParams {
+                bech32_prefix: network_params.bech32_prefix.clone(),
+                p2pkh_prefix: network_params.p2pkh_prefix,
+                p2sh_prefix: network_params.p2sh_prefix,
+            };
+            protorune_support::network::set_network(protorune_params);
+            
+            // Convert to protorune_support format
+            let script_pubkey = address.script_pubkey();
+            let script_bytes = script_pubkey.as_bytes();
+            let bitcoin_script = bitcoin::Script::from_bytes(script_bytes);
+            
+            match protorune_support::network::to_address_str(bitcoin_script) {
+                Ok(custom_address) => return Ok(custom_address),
+                Err(e) => {
+                    warn!("Failed to generate custom address: {}, falling back to standard", e);
+                }
+            }
+        }
+        
+        Ok(address.to_string())
+    }
+    
     /// Get change address (internal chain)
     pub async fn get_change_address(&self) -> Result<String> {
         let index = self.address_index.lock().await;

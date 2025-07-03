@@ -284,6 +284,11 @@ impl WalletManager {
         self.wallet.get_addresses(count).await
     }
     
+    /// Get address of specific type at specific index
+    pub async fn get_address_of_type_at_index(&self, address_type: &str, index: u32, is_change: bool) -> Result<String> {
+        self.wallet.get_address_of_type_at_index(address_type, index, is_change).await
+    }
+    
     /// Get the mnemonic phrase (if available)
     pub async fn get_mnemonic(&self) -> Result<Option<String>> {
         Ok(Some(self.wallet.get_mnemonic()))

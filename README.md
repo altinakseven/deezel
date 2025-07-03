@@ -1,6 +1,6 @@
 # Deezel - Alkanes CLI and Tooling Suite
 
-Deezel is a comprehensive command-line interface and tooling suite for interacting with Bitcoin and the Alkanes metaprotocol. It provides wallet management, smart contract deployment, token operations, AMM functionality, and advanced blockchain analysis capabilities.
+Deezel is a comprehensive command-line interface and tooling suite for interacting with Bitcoin and the Alkanes metaprotocol. It provides wallet management, smart contract deployment, to ken  operations, AMM functionality, and advanced blockchain analysis capabilities.
 
 ## Features
 
@@ -11,6 +11,7 @@ Deezel is a comprehensive command-line interface and tooling suite for interacti
 - **UTXO Management**: Advanced UTXO tracking, freezing, and management
 - **Transaction Construction**: Create, sign, and broadcast Bitcoin transactions
 - **Fee Estimation**: Dynamic fee rate estimation and optimization
+- **Address Identifiers**: Smart address resolution system for wallet addresses
 
 ### 🔗 Alkanes Metaprotocol Integration
 - **Smart Contract Deployment**: Deploy WASM-based smart contracts to the Alkanes metaprotocol
@@ -108,7 +109,7 @@ The project is organized into several core modules:
 ./deezel --provider mainnet alkanes send-token \
   --token 2:0 \
   --amount 100 \
-  --to bc1qexampleaddress
+  --to [self:p2tr]
 ```
 
 #### Blockchain Analysis
@@ -150,12 +151,80 @@ deezel wallet send-all <ADDRESS> [--fee-rate <RATE>]
 deezel wallet create-tx <ADDRESS> <AMOUNT> [--fee-rate <RATE>]
 deezel wallet broadcast-tx <TX_HEX>
 
+# Examples with address identifiers
+deezel wallet send [self:p2tr] 100000 --fee-rate 5
+deezel wallet send-all [self:p2pkh:1] --fee-rate 3
+deezel wallet create-tx [self:testnet:p2tr:2] 50000
+
 # UTXO management
 deezel wallet utxos
 deezel wallet freeze-utxo <TXID> <VOUT>
 deezel wallet unfreeze-utxo <TXID> <VOUT>
 deezel wallet history [--limit <N>]
+
+# List supported address identifiers
+deezel wallet list-identifiers
 ```
+
+### Address Identifiers
+
+Deezel supports smart address identifiers that automatically resolve to wallet addresses, making it easy to use different address types without manually generating them.
+
+#### Supported Identifier Patterns
+
+**Basic Address Types:**
+- `[self:p2tr]` - Taproot address (BIP86)
+- `[self:p2pkh]` - Legacy P2PKH address (BIP44)
+- `[self:p2sh]` - P2SH address (BIP49)
+- `[self:p2wpkh]` - Native SegWit address (BIP84) [DEFAULT]
+- `[self:p2wsh]` - Native SegWit script hash (placeholder)
+
+**Indexed Addresses:**
+- `[self:p2tr:0]` - First Taproot address (derivation index 0)
+- `[self:p2tr:1]` - Second Taproot address (derivation index 1)
+- `[self:p2pkh:5]` - Sixth Legacy address (derivation index 5)
+
+**Network-Specific Addresses:**
+- `[self:mainnet:p2tr]` - Taproot address for mainnet
+- `[self:testnet:p2tr]` - Taproot address for testnet
+- `[self:regtest:p2tr]` - Taproot address for regtest
+- `[self:signet:p2tr]` - Taproot address for signet
+
+**Combined Examples:**
+- `[self:mainnet:p2tr:0]` - First mainnet Taproot address
+- `[self:testnet:p2pkh:3]` - Fourth testnet Legacy address
+
+#### Usage Examples
+
+```bash
+# Send to different address types
+deezel wallet send [self:p2tr] 100000 --fee-rate 5
+deezel wallet send [self:p2pkh] 50000
+deezel wallet send [self:p2wpkh] 25000  # Default type
+
+# Use indexed addresses
+deezel wallet send [self:p2tr:0] 100000  # First Taproot address
+deezel wallet send [self:p2tr:1] 100000  # Second Taproot address
+
+# Network-specific addresses
+deezel wallet send [self:mainnet:p2tr] 100000
+deezel wallet send [self:testnet:p2pkh] 100000
+
+# Alkanes operations with identifiers
+deezel alkanes send-token --token 123:456 --amount 1000 --to [self:p2tr]
+deezel alkanes balance --address [self:p2pkh:1]
+
+# Create transactions with identifiers
+deezel wallet create-tx [self:regtest:p2tr:2] 50000
+deezel wallet estimate-fee [self:p2sh] 25000
+```
+
+#### Technical Details
+
+- **BIP Standards**: Uses proper BIP44/49/84/86 derivation paths for each address type
+- **Network Support**: Handles custom network parameters automatically
+- **Wallet Integration**: Works with any command that accepts an address parameter
+- **Error Handling**: Provides clear error messages for invalid patterns
 
 ### Alkanes Commands
 
@@ -273,6 +342,7 @@ deezel/
 │   │   ├── crypto.rs            # Cryptographic utilities
 │   │   ├── esplora_backend.rs   # Custom blockchain backend
 │   │   └── sandshrew_blockchain.rs  # Sandshrew integration
+│   ├── address_resolver.rs  # Address identifier resolution system
 │   ├── rpc/                 # RPC client implementations
 │   ├── monitor/             # Blockchain monitoring
 │   ├── transaction/         # Transaction construction

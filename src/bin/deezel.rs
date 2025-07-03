@@ -26,6 +26,7 @@ use std::sync::Arc;
 // Import from our crate
 use deezel_cli::rpc::{RpcClient, RpcConfig};
 use deezel_cli::runestone_enhanced::format_runestone_with_decoded_messages;
+use deezel_cli::address_resolver::AddressResolver;
 use bitcoin::Transaction;
 use bitcoin::consensus::encode::deserialize;
 use hex;
@@ -265,6 +266,8 @@ enum WalletCommands {
     Sync,
     /// Backup wallet (show mnemonic)
     Backup,
+    /// List supported address identifiers
+    ListIdentifiers,
 }
 
 /// Alkanes subcommands
@@ -919,6 +922,21 @@ fn expand_tilde(path: &str) -> Result<String> {
     }
 }
 
+/// Resolve address identifiers in a string using the provided wallet manager
+async fn resolve_address_identifiers(input: &str, wallet_manager: Option<&Arc<deezel_cli::wallet::WalletManager>>) -> Result<String> {
+    if !AddressResolver::contains_identifiers(input) {
+        return Ok(input.to_string());
+    }
+
+    let resolver = if let Some(wm) = wallet_manager {
+        AddressResolver::with_wallet(Arc::clone(wm))
+    } else {
+        return Err(anyhow!("Address identifiers found but no wallet manager available. Please ensure wallet is loaded."));
+    };
+
+    resolver.resolve_all_identifiers(input).await
+}
+
 /// Format Uint128 as a floating point number divided by 1e8
 fn format_uint128_as_float(uint128: &protorune_support::proto::protorune::Uint128) -> String {
     // Convert Uint128 to u128
@@ -1119,8 +1137,15 @@ async fn main() -> Result<()> {
                 println!("{}", count);
             },
             BitcoindCommands::Generatetoaddress { nblocks, address } => {
-                let result = rpc_client.generate_to_address(nblocks, &address).await?;
-                println!("Generated {} blocks to address {}", nblocks, address);
+                // Resolve address identifiers (no wallet manager available for this command)
+                let resolved_address = if AddressResolver::contains_identifiers(&address) {
+                    return Err(anyhow!("Address identifiers not supported for generatetoaddress command (no wallet context available)"));
+                } else {
+                    address.clone()
+                };
+                
+                let result = rpc_client.generate_to_address(nblocks, &resolved_address).await?;
+                println!("Generated {} blocks to address {}", nblocks, resolved_address);
                 if let Some(block_hashes) = result.as_array() {
                     println!("Block hashes:");
                     for (i, hash) in block_hashes.iter().enumerate() {
@@ -1307,8 +1332,11 @@ async fn main() -> Result<()> {
                         };
                     },
                     WalletCommands::Send { address, amount, fee_rate } => {
+                        // Resolve address identifiers
+                        let resolved_address = resolve_address_identifiers(&address, Some(wallet_manager)).await?;
+                        
                         let params = deezel_cli::wallet::SendParams {
-                            address: address.clone(),
+                            address: resolved_address,
                             amount: amount,
                             fee_rate: fee_rate.clone(),
                             send_all: false,
@@ -1323,8 +1351,11 @@ async fn main() -> Result<()> {
                         };
                     },
                     WalletCommands::SendAll { address, fee_rate } => {
+                        // Resolve address identifiers
+                        let resolved_address = resolve_address_identifiers(&address, Some(wallet_manager)).await?;
+                        
                         let params = deezel_cli::wallet::SendParams {
-                            address: address.clone(),
+                            address: resolved_address,
                             amount: 0, // Not used when send_all is true
                             fee_rate: fee_rate.clone(),
                             send_all: true,
@@ -1339,8 +1370,11 @@ async fn main() -> Result<()> {
                         };
                     },
                     WalletCommands::CreateTx { address, amount, fee_rate } => {
+                        // Resolve address identifiers
+                        let resolved_address = resolve_address_identifiers(&address, Some(wallet_manager)).await?;
+                        
                         let params = deezel_cli::wallet::SendParams {
-                            address: address.clone(),
+                            address: resolved_address,
                             amount: amount,
                             fee_rate: fee_rate.clone(),
                             send_all: false,
@@ -1454,8 +1488,11 @@ async fn main() -> Result<()> {
                         };
                     },
                     WalletCommands::EstimateFee { address, amount } => {
+                        // Resolve address identifiers
+                        let resolved_address = resolve_address_identifiers(&address, Some(wallet_manager)).await?;
+                        
                         let params = deezel_cli::wallet::SendParams {
-                            address: address.clone(),
+                            address: resolved_address,
                             amount: amount,
                             fee_rate: None,
                             send_all: false,
@@ -1492,6 +1529,44 @@ async fn main() -> Result<()> {
                             Ok(None) => println!("No mnemonic available for this wallet"),
                             Err(e) => println!("Failed to get mnemonic: {}", e),
                         };
+                    },
+                    WalletCommands::ListIdentifiers => {
+                        println!("📋 Supported Address Identifiers");
+                        println!("═══════════════════════════════");
+                        println!();
+                        println!("🏠 Basic Address Types:");
+                        println!("  [self:p2tr]    - Taproot address (BIP86)");
+                        println!("  [self:p2pkh]   - Legacy P2PKH address (BIP44)");
+                        println!("  [self:p2sh]    - P2SH address (BIP49)");
+                        println!("  [self:p2wpkh]  - Native SegWit address (BIP84) [DEFAULT]");
+                        println!("  [self:p2wsh]   - Native SegWit script hash (not yet implemented)");
+                        println!();
+                        println!("🔢 Indexed Addresses:");
+                        println!("  [self:p2tr:0]  - First Taproot address (derivation index 0)");
+                        println!("  [self:p2tr:1]  - Second Taproot address (derivation index 1)");
+                        println!("  [self:p2pkh:5] - Sixth Legacy address (derivation index 5)");
+                        println!("  ... and so on for any address type");
+                        println!();
+                        println!("🌐 Network-Specific Addresses:");
+                        println!("  [self:mainnet:p2tr]   - Taproot address for mainnet");
+                        println!("  [self:testnet:p2tr]   - Taproot address for testnet");
+                        println!("  [self:regtest:p2tr]   - Taproot address for regtest");
+                        println!("  [self:signet:p2tr]    - Taproot address for signet");
+                        println!();
+                        println!("🔗 Combined Examples:");
+                        println!("  [self:mainnet:p2tr:0] - First mainnet Taproot address");
+                        println!("  [self:testnet:p2pkh:3] - Fourth testnet Legacy address");
+                        println!();
+                        println!("💡 Usage Examples:");
+                        println!("  deezel wallet send [self:p2tr] 100000 --fee-rate 5");
+                        println!("  deezel alkanes send-token --token 123:456 --amount 1000 --to [self:p2pkh:1]");
+                        println!("  deezel wallet create-tx [self:testnet:p2tr:2] 50000");
+                        println!();
+                        println!("📝 Notes:");
+                        println!("  • Address identifiers are resolved using your current wallet");
+                        println!("  • Network specification overrides the current network setting");
+                        println!("  • Index 0 is used if no index is specified");
+                        println!("  • P2WPKH is the default address type used by the wallet");
                     },
                         }
                     } else {
@@ -1727,6 +1802,9 @@ async fn main() -> Result<()> {
                         .context("Failed to initialize wallet manager")?
                 );
                 
+                // Resolve address identifiers
+                let resolved_to = resolve_address_identifiers(&to, Some(&wallet_manager)).await?;
+                
                 let alkanes_manager = deezel_cli::alkanes::AlkanesManager::new(
                     Arc::new(rpc_client),
                     wallet_manager
@@ -1737,7 +1815,7 @@ async fn main() -> Result<()> {
                 let params = deezel_cli::alkanes::types::TokenSendParams {
                     token: token_id,
                     amount: amount,
-                    to: to.clone(),
+                    to: resolved_to,
                     fee_rate: fee_rate.clone(),
                 };
                 
@@ -1767,12 +1845,19 @@ async fn main() -> Result<()> {
                         .context("Failed to initialize wallet manager")?
                 );
                 
+                // Resolve address identifiers if provided
+                let resolved_address = if let Some(addr) = address {
+                    Some(resolve_address_identifiers(&addr, Some(&wallet_manager)).await?)
+                } else {
+                    None
+                };
+                
                 let alkanes_manager = deezel_cli::alkanes::AlkanesManager::new(
                     Arc::new(rpc_client),
                     wallet_manager
                 );
                 
-                match alkanes_manager.get_balance(address.as_deref()).await {
+                match alkanes_manager.get_balance(resolved_address.as_deref()).await {
                     Ok(balances) => {
                         if balances.is_empty() {
                             println!("No alkanes tokens found");
@@ -2176,11 +2261,18 @@ async fn main() -> Result<()> {
                 ViewCommands::Protorunesbyaddress { address, protocol_tag, block_tag, hex } => {
                     let tag_str = block_tag_to_string(&block_tag);
                     
+                    // Resolve address identifiers (no wallet manager available for view commands)
+                    let resolved_address = if AddressResolver::contains_identifiers(&address) {
+                        return Err(anyhow!("Address identifiers not supported for view commands (no wallet context available)"));
+                    } else {
+                        address.clone()
+                    };
+                    
                     if hex {
                         // Output raw hex from metashrew_view
                         // Create and encode the ProtorunesWalletRequest protobuf message
                         let mut wallet_request = protorune_support::proto::protorune::ProtorunesWalletRequest::new();
-                        wallet_request.wallet = address.as_bytes().to_vec();
+                        wallet_request.wallet = resolved_address.as_bytes().to_vec();
                         
                         // Set protocol tag
                         let mut protocol = protorune_support::proto::protorune::Uint128::new();
@@ -2196,7 +2288,7 @@ async fn main() -> Result<()> {
                         let raw_hex = rpc_client.get_metashrew_view_hex("protorunesbyaddress", &hex_input, &tag_str).await?;
                         println!("{}", raw_hex);
                     } else {
-                        let result = rpc_client.get_protorunes_by_address_with_tags(&address, protocol_tag, &tag_str).await?;
+                        let result = rpc_client.get_protorunes_by_address_with_tags(&resolved_address, protocol_tag, &tag_str).await?;
                         println!("{}", serde_json::to_string_pretty(&result)?);
                     }
                 },
@@ -2218,16 +2310,23 @@ async fn main() -> Result<()> {
                 ViewCommands::Spendablesbyaddress { address, block_tag, hex } => {
                     let tag_str = block_tag_to_string(&block_tag);
                     
+                    // Resolve address identifiers (no wallet manager available for view commands)
+                    let resolved_address = if AddressResolver::contains_identifiers(&address) {
+                        return Err(anyhow!("Address identifiers not supported for view commands (no wallet context available)"));
+                    } else {
+                        address.clone()
+                    };
+                    
                     if hex {
                         // Output raw hex from metashrew_view
                         // For now, use a simplified approach with basic hex encoding
-                        let address_bytes = address.as_bytes();
+                        let address_bytes = resolved_address.as_bytes();
                         let hex_input = format!("0x{}", hex::encode(address_bytes));
                         
                         let raw_hex = rpc_client.get_metashrew_view_hex("spendablesbyaddress", &hex_input, &tag_str).await?;
                         println!("{}", raw_hex);
                     } else {
-                        let result = rpc_client.get_spendables_by_address_with_tag(&address, &tag_str).await?;
+                        let result = rpc_client.get_spendables_by_address_with_tag(&resolved_address, &tag_str).await?;
                         println!("{}", serde_json::to_string_pretty(&result)?);
                     }
                 },
