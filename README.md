@@ -1,92 +1,255 @@
-# Deezel - DIESEL Token Minting and Management Tool
+# Deezel - Alkanes CLI and Tooling Suite
 
-Deezel is a Bitcoin wallet CLI tool for automated DIESEL token minting and management using BDK (Bitcoin Development Kit) and Sandshrew RPC.
+Deezel is a comprehensive command-line interface and tooling suite for interacting with Bitcoin and the Alkanes metaprotocol. It provides wallet management, smart contract deployment, token operations, AMM functionality, and advanced blockchain analysis capabilities.
 
 ## Features
 
-- **Bitcoin Wallet Management**: Create and manage Bitcoin wallets using BDK
-- **DIESEL Token Minting**: Mint DIESEL tokens using the Runestone protocol
-- **Mempool Monitoring**: Monitor the mempool for DIESEL token minting transactions
-- **Fee Optimization**: Optimize transaction fees using Replace-By-Fee (RBF)
-- **Balance Tracking**: Track Bitcoin and DIESEL token balances
+### 🏦 Bitcoin Wallet Management
+- **HD Wallet Support**: BIP39 mnemonic-based wallets with hierarchical deterministic key derivation
+- **Multi-Network Support**: Bitcoin mainnet, testnet, signet, regtest, and custom networks
+- **Encrypted Storage**: GPG-encrypted or PBKDF2-encrypted wallet files
+- **UTXO Management**: Advanced UTXO tracking, freezing, and management
+- **Transaction Construction**: Create, sign, and broadcast Bitcoin transactions
+- **Fee Estimation**: Dynamic fee rate estimation and optimization
+
+### 🔗 Alkanes Metaprotocol Integration
+- **Smart Contract Deployment**: Deploy WASM-based smart contracts to the Alkanes metaprotocol
+- **Token Operations**: Deploy, mint, and transfer Alkanes tokens
+- **AMM/DEX Functionality**: Create liquidity pools, add/remove liquidity, and perform token swaps
+- **Contract Execution**: Execute smart contract functions with calldata and token transfers
+- **Advanced Simulation**: Simulate contract executions with comprehensive result analysis
+
+### 🔍 Blockchain Analysis Tools
+- **Runestone Decoder**: Comprehensive decoding of Runestone transactions and Protostones
+- **Transaction Tracing**: Trace Alkanes transactions and analyze their effects
+- **Contract Inspection**: Advanced WASM contract analysis with disassembly and fuzzing capabilities
+- **Balance Queries**: Query Alkanes token balances and Bitcoin UTXOs
+- **Block Data Access**: Access block data and transaction information
+
+### 🛠️ Developer Tools
+- **RPC Integration**: Direct access to Bitcoin Core and Metashrew RPC endpoints
+- **Network Flexibility**: Support for multiple Bitcoin networks and custom configurations
+- **Scripting Support**: Raw JSON output modes for integration with scripts and automation
+- **Comprehensive Logging**: Detailed logging with configurable levels
 
 ## Architecture
 
-The project is organized into several modules:
+The project is organized into several core modules:
 
-- **wallet**: Bitcoin wallet functionality using BDK
-- **monitor**: Block monitoring and transaction tracking
-- **transaction**: Transaction construction and signing
-- **rpc**: Sandshrew RPC client implementation
-- **runestone**: Runestone protocol implementation for DIESEL token minting
+- **`wallet/`**: Bitcoin wallet functionality using BDK with custom blockchain backends
+- **`alkanes/`**: Alkanes metaprotocol integration including contracts, tokens, and AMM
+- **`rpc/`**: RPC client implementations for Bitcoin Core and Metashrew
+- **`monitor/`**: Blockchain monitoring and event handling
+- **`transaction/`**: Transaction construction and management
 
 ## Getting Started
 
 ### Prerequisites
 
 - Rust 1.70 or later
-- Access to a Bitcoin node (for RPC)
-- Access to a Sandshrew node (for RPC)
+- Access to a Bitcoin node (for Bitcoin RPC operations)
+- Access to a Metashrew/Sandshrew node (for Alkanes operations)
 
 ### Installation
 
 1. Clone the repository:
-   ```
-   git clone https://github.com/yourusername/deezel.git
+   ```bash
+   git clone <repository-url>
    cd deezel
    ```
 
 2. Build the project:
+   ```bash
+   cargo build --release
    ```
-   cargo build
-   ```
 
-### Usage
+3. The binary will be available at `target/release/deezel`
 
-#### Main Application
+### Quick Start
 
-Run the main application:
+#### Create a Wallet
 
-```
-cargo run -- --bitcoin-rpc-url http://bitcoinrpc:bitcoinrpc@localhost:8332 --metashrew-rpc-url http://localhost:8080
-```
+```bash
+# Create a new GPG-encrypted wallet
+./deezel --wallet-file ~/.deezel/mainnet.json.asc wallet create
 
-#### DIESEL Token Minter
-
-Run the DIESEL token minter:
-
-```
-cargo run --bin diesel_minter -- --sandshrew-rpc-url https://mainnet.sandshrew.io/v2/lasereyes --max-fee-rate 50
+# Create a wallet with a specific mnemonic
+./deezel --wallet-file ~/.deezel/mainnet.json.asc wallet create --mnemonic "your twelve word mnemonic phrase here"
 ```
 
-### Command-line Arguments
+#### Check Wallet Information
 
-#### Main Application
+```bash
+# Show wallet info including Bitcoin and Alkanes balances
+./deezel --wallet-file ~/.deezel/mainnet.json.asc wallet info
 
-- `--bitcoin-rpc-url`: Bitcoin RPC URL (default: http://bitcoinrpc:bitcoinrpc@localhost:8332)
-- `--metashrew-rpc-url`: Metashrew RPC URL (default: http://localhost:8080)
-- `--wallet-path`: Wallet file path (default: wallet.dat)
-- `--log-level`: Log level (error, warn, info, debug, trace) (default: info)
+# Get wallet addresses
+./deezel --wallet-file ~/.deezel/mainnet.json.asc wallet addresses --count 5
+```
 
-#### DIESEL Token Minter
+#### Alkanes Operations
 
-- `--bitcoin-rpc-url`: Bitcoin RPC URL (default: http://bitcoinrpc:bitcoinrpc@localhost:8332)
-- `--sandshrew-rpc-url`: Sandshrew RPC URL (default: https://mainnet.sandshrew.io/v2/lasereyes)
-- `--wallet-path`: Wallet file path (default: wallet.dat)
-- `--max-fee-rate`: Maximum fee rate in sats/vbyte (default: 100)
-- `--log-level`: Log level (error, warn, info, debug, trace) (default: info)
+```bash
+# Check Alkanes token balances
+./deezel --provider mainnet alkanes balance
 
-## DIESEL Token Minting Process
+# Get token information
+./deezel --provider mainnet alkanes token-info 2:0
 
-The DIESEL token minting process involves:
+# Deploy a new token
+./deezel --provider mainnet alkanes deploy-token \
+  --name "MyToken" \
+  --symbol "MTK" \
+  --cap 1000000 \
+  --amount-per-mint 100 \
+  --reserve-number 1
 
-1. Creating a transaction with:
-   - A dust output (546 sats) to a wallet address
-   - An OP_RETURN output with a Runestone containing a Protostone with the DIESEL message cellpack [2, 0, 77]
+# Send tokens
+./deezel --provider mainnet alkanes send-token \
+  --token 2:0 \
+  --amount 100 \
+  --to bc1qexampleaddress
+```
 
-2. Broadcasting the transaction to the Bitcoin network
+#### Blockchain Analysis
 
-3. Tracing the transaction to verify DIESEL token minting
+```bash
+# Decode a Runestone transaction
+./deezel --provider mainnet runestone <txid>
+
+# Trace an Alkanes transaction
+./deezel --provider mainnet view trace <txid:vout>
+
+# Inspect a smart contract
+./deezel --provider mainnet inspect-alkane 2:0 --disasm --meta
+```
+
+## Command Reference
+
+### Global Options
+
+- `--provider <PROVIDER>`: Network provider (mainnet, signet, localhost, or custom URL)
+- `--wallet-file <PATH>`: Path to wallet file (supports .asc for GPG or .json for PBKDF2)
+- `--passphrase <PASS>`: Passphrase for non-interactive encryption
+- `--log-level <LEVEL>`: Logging level (error, warn, info, debug, trace)
+
+### Wallet Commands
+
+```bash
+# Wallet management
+deezel wallet create [--mnemonic <MNEMONIC>]
+deezel wallet restore <MNEMONIC>
+deezel wallet info
+deezel wallet balance
+deezel wallet addresses [--count <N>]
+deezel wallet sync
+
+# Transaction operations
+deezel wallet send <ADDRESS> <AMOUNT> [--fee-rate <RATE>]
+deezel wallet send-all <ADDRESS> [--fee-rate <RATE>]
+deezel wallet create-tx <ADDRESS> <AMOUNT> [--fee-rate <RATE>]
+deezel wallet broadcast-tx <TX_HEX>
+
+# UTXO management
+deezel wallet utxos
+deezel wallet freeze-utxo <TXID> <VOUT>
+deezel wallet unfreeze-utxo <TXID> <VOUT>
+deezel wallet history [--limit <N>]
+```
+
+### Alkanes Commands
+
+```bash
+# Token operations
+deezel alkanes deploy-token --name <NAME> --symbol <SYMBOL> --cap <CAP> --amount-per-mint <AMOUNT> --reserve-number <NUM>
+deezel alkanes send-token --token <ID> --amount <AMOUNT> --to <ADDRESS>
+deezel alkanes balance [--address <ADDRESS>]
+deezel alkanes token-info <TOKEN_ID>
+
+# Smart contract operations
+deezel alkanes deploy-contract <WASM_FILE> --calldata <DATA>
+deezel alkanes execute --calldata <DATA> [--edicts <EDICTS>]
+
+# AMM operations
+deezel alkanes create-pool --calldata <DATA> --tokens <TOKENS>
+deezel alkanes add-liquidity --calldata <DATA> --tokens <TOKENS>
+deezel alkanes remove-liquidity --calldata <DATA> --token <TOKEN> --amount <AMOUNT>
+deezel alkanes swap --calldata <DATA> --token <TOKEN> --amount <AMOUNT>
+
+# Analysis and simulation
+deezel alkanes simulate-advanced --target <CONTRACT> --inputs <INPUTS> [--tokens <TOKENS>]
+deezel alkanes preview-remove-liquidity --token <TOKEN> --amount <AMOUNT>
+deezel alkanes inspect <ALKANE_ID> [--disasm] [--fuzz] [--meta] [--codehash]
+```
+
+### Blockchain Query Commands
+
+```bash
+# RPC operations
+deezel metashrew height
+deezel bitcoind getblockcount
+deezel bitcoind generatetoaddress --nblocks <N> --address <ADDRESS>
+
+# Blockchain data
+deezel view getbytecode <CONTRACT_ID>
+deezel view getblock <HEIGHT>
+deezel view protorunesbyaddress <ADDRESS>
+deezel view spendablesbyaddress <ADDRESS>
+deezel view trace <TXID:VOUT>
+
+# Transaction analysis
+deezel runestone <TXID_OR_HEX> [--raw]
+deezel inspect-alkane <ALKANE_ID> [--disasm] [--fuzz] [--meta] [--codehash]
+```
+
+## Network Configuration
+
+Deezel supports multiple Bitcoin networks and custom configurations:
+
+### Predefined Networks
+
+- **mainnet**: Bitcoin mainnet with Sandshrew mainnet endpoint
+- **signet**: Bitcoin signet with Sandshrew signet endpoint  
+- **localhost**: Local development setup
+
+### Custom Networks
+
+You can specify custom network parameters using the `--magic` flag:
+
+```bash
+# Custom network with specific magic values
+deezel --magic "05:00:bc" wallet info
+```
+
+### RPC Endpoints
+
+Override default RPC endpoints:
+
+```bash
+deezel --bitcoin-rpc-url "http://user:pass@localhost:8332" \
+       --sandshrew-rpc-url "http://localhost:8080" \
+       wallet info
+```
+
+## Wallet Security
+
+### Encryption Options
+
+1. **GPG Encryption** (`.asc` files):
+   - Interactive mode: Prompts for GPG recipient
+   - Non-interactive mode: Uses provided passphrase
+
+2. **PBKDF2 Encryption** (`.json` files):
+   - Uses PBKDF2 key derivation with AES-GCM encryption
+   - Requires passphrase for encryption/decryption
+
+### Best Practices
+
+- Always backup your mnemonic phrase securely
+- Use strong passphrases for wallet encryption
+- Store wallet files in secure locations
+- Regularly backup wallet files
+- Test wallet restoration before relying on backups
 
 ## Development
 
@@ -95,37 +258,54 @@ The DIESEL token minting process involves:
 ```
 deezel/
 ├── src/
+│   ├── main.rs              # Legacy main application
 │   ├── bin/
-│   │   └── diesel_minter.rs  # DIESEL token minter binary
-│   ├── wallet/               # Bitcoin wallet functionality
-│   │   ├── mod.rs
-│   │   └── esplora_backend.rs
-│   ├── monitor/              # Block monitoring
-│   │   └── mod.rs
-│   ├── transaction/          # Transaction construction
-│   │   └── mod.rs
-│   ├── rpc/                  # RPC client
-│   │   └── mod.rs
-│   ├── runestone.rs          # Runestone protocol implementation
-│   ├── lib.rs                # Library exports
-│   └── main.rs               # Main application
-├── Cargo.toml                # Project configuration
-└── README.md                 # This file
+│   │   └── deezel.rs        # Primary CLI application
+│   ├── alkanes/             # Alkanes metaprotocol functionality
+│   │   ├── contract.rs      # Smart contract operations
+│   │   ├── token.rs         # Token operations
+│   │   ├── amm.rs           # AMM/DEX functionality
+│   │   ├── simulation.rs    # Contract simulation
+│   │   ├── inspector.rs     # Contract analysis tools
+│   │   └── types.rs         # Common types and structures
+│   ├── wallet/              # Bitcoin wallet functionality
+│   │   ├── bitcoin_wallet.rs    # Core wallet implementation
+│   │   ├── crypto.rs            # Cryptographic utilities
+│   │   ├── esplora_backend.rs   # Custom blockchain backend
+│   │   └── sandshrew_blockchain.rs  # Sandshrew integration
+│   ├── rpc/                 # RPC client implementations
+│   ├── monitor/             # Blockchain monitoring
+│   ├── transaction/         # Transaction construction
+│   └── tests/               # Test suites
+├── memory-bank/             # Project documentation
+├── Cargo.toml               # Project configuration
+└── README.md                # This file
 ```
 
 ### Building and Testing
 
-Build the project:
-
-```
+```bash
+# Build the project
 cargo build
-```
 
-Run tests:
-
-```
+# Run tests
 cargo test
+
+# Run with debug logging
+RUST_LOG=debug ./target/debug/deezel wallet info
+
+# Run end-to-end tests
+./run_e2e_tests.sh
 ```
+
+### Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests for new functionality
+5. Ensure all tests pass
+6. Submit a pull request
 
 ## License
 
@@ -133,6 +313,20 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## Acknowledgments
 
-- [Bitcoin Development Kit (BDK)](https://github.com/bitcoindevkit/bdk)
-- [Sandshrew](https://github.com/metashrew/sandshrew)
-- [Runestone Protocol](https://github.com/ordinals/ord)
+- [Bitcoin Development Kit (BDK)](https://github.com/bitcoindevkit/bdk) - Bitcoin wallet functionality
+- [Alkanes](https://github.com/kungfuflex/alkanes-rs) - Alkanes metaprotocol implementation
+- [Metashrew](https://github.com/sandshrewmetaprotocols/metashrew) - Metaprotocol infrastructure
+- [Ordinals](https://github.com/ordinals/ord) - Ordinals and Runestone protocols
+
+## Support
+
+For questions, issues, or contributions, please:
+
+1. Check the existing issues in the repository
+2. Create a new issue with detailed information
+3. Join the community discussions
+4. Refer to the documentation in the `memory-bank/` directory
+
+---
+
+**Note**: This is a comprehensive toolkit for Bitcoin and Alkanes metaprotocol interactions. Always test thoroughly on testnet before using on mainnet, and ensure you understand the implications of blockchain transactions before executing them.
