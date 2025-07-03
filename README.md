@@ -141,9 +141,21 @@ The project is organized into several core modules:
 deezel wallet create [--mnemonic <MNEMONIC>]
 deezel wallet restore <MNEMONIC>
 deezel wallet info
-deezel wallet balance
+deezel wallet balance [--addresses <ADDRESSES>]
 deezel wallet addresses [--count <N>]
 deezel wallet sync
+
+# Enhanced address listing with range notation and raw addresses
+deezel walletinfo --addresses "p2tr:0-10,p2pkh:5"
+deezel walletinfo --addresses "p2tr:100"
+deezel walletinfo --addresses "p2tr:0-500,p2sh:100,p2wpkh:0-50"
+deezel walletinfo --addresses "p2tr:0-5,bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"
+
+# Enhanced balance checking with address-specific queries
+deezel wallet balance  # Default: checks all address types at index 0
+deezel wallet balance --addresses "p2tr:0-10,p2pkh:0-5"
+deezel wallet balance --addresses "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"
+deezel wallet balance --addresses "p2tr:0-5,bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4,p2pkh:10"
 
 # Transaction operations
 deezel wallet send <ADDRESS> <AMOUNT> [--fee-rate <RATE>]
@@ -156,6 +168,9 @@ deezel wallet send [self:p2tr] 100000 --fee-rate 5
 deezel wallet send-all [self:p2pkh:1] --fee-rate 3
 deezel wallet create-tx [self:testnet:p2tr:2] 50000
 
+# Generate blocks to address identifiers (regtest)
+deezel bitcoind generatetoaddress --nblocks 10 --address [self:p2tr:0]
+
 # UTXO management
 deezel wallet utxos
 deezel wallet freeze-utxo <TXID> <VOUT>
@@ -165,6 +180,54 @@ deezel wallet history [--limit <N>]
 # List supported address identifiers
 deezel wallet list-identifiers
 ```
+
+#### Enhanced Address Listing and Balance Checking
+
+The `walletinfo --addresses` command provides detailed address information with HD paths and identifiers, and the `wallet balance --addresses` command allows checking balances for specific addresses:
+
+**Address Specification Format:**
+- `type:start-end` - Range of addresses (e.g., `p2tr:0-10` for addresses 0 through 10)
+- `type:index` - Single address (e.g., `p2pkh:5` for address at index 5)
+- Raw Bitcoin addresses - Any valid Bitcoin address (e.g., `bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4`)
+- Multiple entries separated by commas
+
+**Output Format:**
+For each address, the command displays:
+- **Index**: The derivation index
+- **Address**: The actual Bitcoin address
+- **Identifier**: The deezel identifier (e.g., `[self:p2tr:0]`)
+- **HD Path**: The full BIP derivation path (e.g., `m/86'/0'/0'/0/0`)
+
+**Examples:**
+```bash
+# List first 10 Taproot addresses and address at P2PKH index 5
+deezel walletinfo --addresses "p2tr:0-10,p2pkh:5"
+
+# List a single Taproot address at index 100
+deezel walletinfo --addresses "p2tr:100"
+
+# List multiple address types and ranges
+deezel walletinfo --addresses "p2tr:0-500,p2sh:100,p2wpkh:0-50"
+
+# Mix wallet addresses and raw Bitcoin addresses
+deezel walletinfo --addresses "p2tr:0-5,bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4,p2pkh:10"
+
+# Check balances for specific addresses (default: all types at index 0)
+deezel wallet balance
+
+# Check balances for specific wallet addresses
+deezel wallet balance --addresses "p2tr:0-10,p2pkh:0-5"
+
+# Check balance for raw Bitcoin addresses
+deezel wallet balance --addresses "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4,1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"
+
+# Mix wallet and raw addresses for balance checking
+deezel wallet balance --addresses "p2tr:0-5,bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4,p2pkh:10"
+```
+
+**Limitations:**
+- Maximum 1000 addresses per range for performance reasons
+- Requires an initialized wallet to generate addresses
 
 ### Address Identifiers
 

@@ -95,7 +95,11 @@ enum Commands {
         command: WalletCommands,
     },
     /// Wallet information (legacy command)
-    Walletinfo,
+    Walletinfo {
+        /// List addresses with range notation (e.g., p2tr:0-500,p2sh:100)
+        #[clap(long)]
+        addresses: Option<String>,
+    },
     /// Decode Runestone from transaction
     Runestone {
         /// Transaction ID or hex
@@ -187,7 +191,11 @@ enum WalletCommands {
         count: u32,
     },
     /// Get wallet balance
-    Balance,
+    Balance {
+        /// Check balances for specific addresses with range notation (e.g., p2tr:0-500,p2sh:100) or raw addresses
+        #[clap(long)]
+        addresses: Option<String>,
+    },
     /// Send Bitcoin to an address
     Send {
         /// Recipient address
@@ -656,6 +664,117 @@ fn parse_simulation_params(params: &str) -> Result<(String, String, Vec<String>)
     Ok((block, tx, inputs))
 }
 
+/// Parse address range notation like "p2tr:0-500,p2sh:100" or raw addresses
+/// Returns either (address_type, indices) for wallet addresses or (raw_address, empty_vec) for raw addresses
+fn parse_address_ranges(ranges_str: &str) -> Result<Vec<(String, Vec<u32>)>> {
+    let mut parsed_ranges = Vec::new();
+    
+    for range_part in ranges_str.split(',') {
+        let trimmed = range_part.trim();
+        
+        // Check if this looks like a raw Bitcoin address (starts with 1, 3, bc1, tb1, etc.)
+        if is_raw_bitcoin_address(trimmed) {
+            // Raw Bitcoin address - add with empty indices to indicate it's a raw address
+            parsed_ranges.push((trimmed.to_string(), vec![]));
+            continue;
+        }
+        
+        // Parse as address type:range format
+        let parts: Vec<&str> = trimmed.split(':').collect();
+        if parts.len() != 2 {
+            return Err(anyhow!("Invalid address range format. Expected 'type:range' (e.g., 'p2tr:0-500' or 'p2sh:100') or raw Bitcoin address"));
+        }
+        
+        let address_type = parts[0].to_string();
+        let range_spec = parts[1];
+        
+        let indices = if range_spec.contains('-') {
+            // Range format like "0-500"
+            let range_parts: Vec<&str> = range_spec.split('-').collect();
+            if range_parts.len() != 2 {
+                return Err(anyhow!("Invalid range format. Expected 'start-end' (e.g., '0-500')"));
+            }
+            
+            let start: u32 = range_parts[0].parse()
+                .context("Invalid start index in range")?;
+            let end: u32 = range_parts[1].parse()
+                .context("Invalid end index in range")?;
+            
+            if start > end {
+                return Err(anyhow!("Start index must be less than or equal to end index"));
+            }
+            
+            if end - start > 1000 {
+                return Err(anyhow!("Range too large. Maximum 1000 addresses per range."));
+            }
+            
+            (start..=end).collect()
+        } else {
+            // Single index like "100"
+            let index: u32 = range_spec.parse()
+                .context("Invalid index format")?;
+            vec![index]
+        };
+        
+        parsed_ranges.push((address_type, indices));
+    }
+    
+    Ok(parsed_ranges)
+}
+
+/// Check if a string looks like a raw Bitcoin address
+fn is_raw_bitcoin_address(addr: &str) -> bool {
+    // Basic heuristics for Bitcoin address formats
+    if addr.len() < 26 || addr.len() > 62 {
+        return false;
+    }
+    
+    // Legacy P2PKH (starts with 1)
+    if addr.starts_with('1') && addr.len() >= 26 && addr.len() <= 35 {
+        return addr.chars().all(|c| "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz".contains(c));
+    }
+    
+    // Legacy P2SH (starts with 3)
+    if addr.starts_with('3') && addr.len() >= 26 && addr.len() <= 35 {
+        return addr.chars().all(|c| "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz".contains(c));
+    }
+    
+    // Bech32 mainnet (starts with bc1)
+    if addr.starts_with("bc1") && addr.len() >= 42 && addr.len() <= 62 {
+        return addr.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit());
+    }
+    
+    // Bech32 testnet (starts with tb1)
+    if addr.starts_with("tb1") && addr.len() >= 42 && addr.len() <= 62 {
+        return addr.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit());
+    }
+    
+    // Bech32 regtest (starts with bcrt1)
+    if addr.starts_with("bcrt1") && addr.len() >= 44 && addr.len() <= 62 {
+        return addr.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit());
+    }
+    
+    false
+}
+
+/// Get BIP derivation path for address type and index
+fn get_derivation_path(address_type: &str, network: bitcoin::Network, index: u32) -> String {
+    let coin_type = match network {
+        bitcoin::Network::Bitcoin => 0,
+        bitcoin::Network::Testnet | bitcoin::Network::Signet | bitcoin::Network::Regtest => 1,
+        _ => 1, // Default to testnet for custom networks
+    };
+    
+    match address_type.to_lowercase().as_str() {
+        "p2pkh" => format!("m/44'/{}'/{}/0/{}", coin_type, 0, index),
+        "p2sh" => format!("m/49'/{}'/{}/0/{}", coin_type, 0, index),
+        "p2wpkh" => format!("m/84'/{}'/{}/0/{}", coin_type, 0, index),
+        "p2tr" => format!("m/86'/{}'/{}/0/{}", coin_type, 0, index),
+        "p2wsh" => format!("m/84'/{}'/{}/0/{}", coin_type, 0, index), // Same as P2WPKH for now
+        _ => format!("m/84'/{}'/{}/0/{}", coin_type, 0, index), // Default to P2WPKH
+    }
+}
+
 /// Address information extracted from script
 struct AddressInfo {
     address: String,
@@ -1081,11 +1200,11 @@ async fn main() -> Result<()> {
         .unwrap_or_else(|| "http://bitcoinrpc:bitcoinrpc@localhost:8332".to_string());
 
     // Initialize wallet if needed for the command (but not for wallet creation)
-    let wallet_manager = if matches!(args.command, Commands::Walletinfo) ||
+    let wallet_manager = if matches!(args.command, Commands::Walletinfo { .. }) ||
         matches!(args.command, Commands::Wallet { command: WalletCommands::Restore { .. } |
                                                             WalletCommands::Info |
                                                             WalletCommands::Addresses { .. } |
-                                                            WalletCommands::Balance |
+                                                            WalletCommands::Balance { .. } |
                                                             WalletCommands::Send { .. } |
                                                             WalletCommands::SendAll { .. } |
                                                             WalletCommands::CreateTx { .. } |
@@ -1137,9 +1256,30 @@ async fn main() -> Result<()> {
                 println!("{}", count);
             },
             BitcoindCommands::Generatetoaddress { nblocks, address } => {
-                // Resolve address identifiers (no wallet manager available for this command)
+                // Resolve address identifiers if wallet is available
                 let resolved_address = if AddressResolver::contains_identifiers(&address) {
-                    return Err(anyhow!("Address identifiers not supported for generatetoaddress command (no wallet context available)"));
+                    if let Some(wm) = &wallet_manager {
+                        resolve_address_identifiers(&address, Some(wm)).await?
+                    } else {
+                        // Try to initialize wallet manager for address resolution
+                        let wallet_config = deezel_cli::wallet::WalletConfig {
+                            wallet_path: wallet_file.clone(),
+                            network: network_params.network,
+                            bitcoin_rpc_url: bitcoin_rpc_url.clone(),
+                            metashrew_rpc_url: sandshrew_rpc_url.clone(),
+                            network_params: Some(network_params.to_protorune_params()),
+                        };
+                        
+                        match deezel_cli::wallet::WalletManager::new(wallet_config).await {
+                            Ok(temp_wallet_manager) => {
+                                let temp_wm = Arc::new(temp_wallet_manager);
+                                resolve_address_identifiers(&address, Some(&temp_wm)).await?
+                            },
+                            Err(_) => {
+                                return Err(anyhow!("Address identifiers found but wallet could not be loaded. Please ensure wallet exists or use a raw address."));
+                            }
+                        }
+                    }
                 } else {
                     address.clone()
                 };
@@ -1282,54 +1422,211 @@ async fn main() -> Result<()> {
                             println!("  {}: {}", i + 1, address);
                         }
                     },
-                    WalletCommands::Balance => {
-                        match wallet_manager.get_balance().await {
-                            Ok(balance) => {
-                                println!("💰 Bitcoin Balance Summary:");
-                                println!("═══════════════════════════");
-                                println!("  ✅ Confirmed: {} sats", balance.confirmed);
-                                println!("  ⏳ Pending: {} sats", balance.trusted_pending + balance.untrusted_pending);
-                                println!("  📊 Total: {} sats", balance.confirmed + balance.trusted_pending + balance.untrusted_pending);
-                                
-                                // Get and display individual UTXOs
-                                println!("\n🔍 UTXO Details:");
-                                println!("═══════════════");
-                                match wallet_manager.get_utxos().await {
-                                    Ok(utxos) => {
-                                        if utxos.is_empty() {
-                                            println!("  🚫 No UTXOs found");
-                                        } else {
-                                            for (i, utxo) in utxos.iter().enumerate() {
-                                                let tree_symbol = if i == utxos.len() - 1 { "└─" } else { "├─" };
-                                                let status_icon = if utxo.frozen { "🔒" } else { "🔓" };
-                                                let confirmation_icon = "✅"; // All UTXOs from wallet should be confirmed
+                    WalletCommands::Balance { addresses } => {
+                        if let Some(addresses_str) = addresses {
+                            // Handle --addresses option with specific addresses
+                            let parsed_ranges = parse_address_ranges(&addresses_str)?;
+                            
+                            println!("💰 Address Balance Report");
+                            println!("═══════════════════════════");
+                            println!();
+                            
+                            for (address_or_type, indices) in parsed_ranges {
+                                if indices.is_empty() {
+                                    // Raw Bitcoin address
+                                    println!("🏠 Raw Address: {}", address_or_type);
+                                    println!("───────────────────────");
+                                    
+                                    // Get UTXOs for this address using RPC
+                                    match rpc_client.get_address_utxos(&address_or_type).await {
+                                        Ok(utxos_result) => {
+                                            // Parse the JSON response
+                                            if let Some(utxos_array) = utxos_result.as_array() {
+                                                let mut total_balance = 0u64;
                                                 
-                                                println!("  {} {} UTXO #{}", tree_symbol, status_icon, i + 1);
-                                                println!("  {}    🆔 {}:{}", if i == utxos.len() - 1 { "  " } else { "│ " }, utxo.txid, utxo.vout);
-                                                println!("  {}    💰 {} sats", if i == utxos.len() - 1 { "  " } else { "│ " }, utxo.amount);
-                                                println!("  {}    📍 {}", if i == utxos.len() - 1 { "  " } else { "│ " }, utxo.address);
-                                                println!("  {}    {} Confirmed{}",
-                                                    if i == utxos.len() - 1 { "  " } else { "│ " },
-                                                    confirmation_icon,
-                                                    if utxo.frozen { " [FROZEN]" } else { "" }
-                                                );
+                                                if utxos_array.is_empty() {
+                                                    println!("  🚫 No UTXOs found");
+                                                } else {
+                                                    for (i, utxo) in utxos_array.iter().enumerate() {
+                                                        let tree_symbol = if i == utxos_array.len() - 1 { "└─" } else { "├─" };
+                                                        
+                                                        if let Some(utxo_obj) = utxo.as_object() {
+                                                            let value = utxo_obj.get("value").and_then(|v| v.as_u64()).unwrap_or(0);
+                                                            let txid = utxo_obj.get("txid").and_then(|v| v.as_str()).unwrap_or("unknown");
+                                                            let vout = utxo_obj.get("vout").and_then(|v| v.as_u64()).unwrap_or(0);
+                                                            let status = utxo_obj.get("status").and_then(|v| v.as_object());
+                                                            let confirmed = status.and_then(|s| s.get("confirmed")).and_then(|v| v.as_bool()).unwrap_or(false);
+                                                            let block_height = status.and_then(|s| s.get("block_height")).and_then(|v| v.as_u64()).unwrap_or(0);
+                                                            
+                                                            total_balance += value;
+                                                            
+                                                            println!("  {} {} UTXO #{}", tree_symbol, if confirmed { "✅" } else { "⏳" }, i + 1);
+                                                            println!("  {}    🆔 {}:{}", if i == utxos_array.len() - 1 { "  " } else { "│ " }, txid, vout);
+                                                            println!("  {}    💰 {} sats", if i == utxos_array.len() - 1 { "  " } else { "│ " }, value);
+                                                            println!("  {}    📍 {}", if i == utxos_array.len() - 1 { "  " } else { "│ " }, address_or_type);
+                                                            if confirmed {
+                                                                println!("  {}    📏 Block: {}", if i == utxos_array.len() - 1 { "  " } else { "│ " }, block_height);
+                                                            } else {
+                                                                println!("  {}    ⏳ Unconfirmed", if i == utxos_array.len() - 1 { "  " } else { "│ " });
+                                                            }
+                                                        }
+                                                    }
+                                                    
+                                                    println!("\n📈 Address Summary:");
+                                                    println!("  🔢 Total UTXOs: {}", utxos_array.len());
+                                                    println!("  💎 Total Balance: {} sats", total_balance);
+                                                }
+                                            } else {
+                                                println!("  ❌ Failed to parse UTXOs response");
                                             }
-                                            
-                                            println!("\n📈 Summary:");
-                                            println!("  🔢 Total UTXOs: {}", utxos.len());
-                                            let total_value: u64 = utxos.iter().map(|u| u.amount).sum();
-                                            println!("  💎 Combined Value: {} sats", total_value);
-                                            let frozen_count = utxos.iter().filter(|u| u.frozen).count();
-                                            if frozen_count > 0 {
-                                                println!("  🔒 Frozen UTXOs: {}", frozen_count);
+                                        },
+                                        Err(e) => println!("  ❌ Failed to get UTXOs: {}", e),
+                                    }
+                                } else {
+                                    // Wallet address type with indices
+                                    println!("🏠 {} Addresses:", address_or_type.to_uppercase());
+                                    println!("───────────────────────");
+                                    
+                                    for index in indices {
+                                        match wallet_manager.get_address_of_type_at_index(&address_or_type, index, false).await {
+                                            Ok(address) => {
+                                                let derivation_path = get_derivation_path(&address_or_type, network_params.network, index);
+                                                let identifier = format!("[self:{}:{}]", address_or_type, index);
+                                                
+                                                println!("  📍 Index {}: {}", index, address);
+                                                println!("     🔗 Identifier: {}", identifier);
+                                                println!("     🛤️  HD Path: {}", derivation_path);
+                                                
+                                                // Get UTXOs for this address
+                                                match rpc_client.get_address_utxos(&address).await {
+                                                    Ok(utxos_result) => {
+                                                        if let Some(utxos_array) = utxos_result.as_array() {
+                                                            let mut total_balance = 0u64;
+                                                            
+                                                            if utxos_array.is_empty() {
+                                                                println!("     💰 Balance: 0 sats (no UTXOs)");
+                                                            } else {
+                                                                for utxo in utxos_array {
+                                                                    if let Some(utxo_obj) = utxo.as_object() {
+                                                                        let value = utxo_obj.get("value").and_then(|v| v.as_u64()).unwrap_or(0);
+                                                                        total_balance += value;
+                                                                    }
+                                                                }
+                                                                println!("     💰 Balance: {} sats ({} UTXOs)", total_balance, utxos_array.len());
+                                                            }
+                                                        }
+                                                    },
+                                                    Err(e) => println!("     ❌ Failed to get balance: {}", e),
+                                                }
+                                                println!();
+                                            },
+                                            Err(e) => {
+                                                println!("  ❌ Index {}: Failed to generate address - {}", index, e);
+                                                println!();
                                             }
                                         }
+                                    }
+                                }
+                                println!();
+                            }
+                        } else {
+                            // Default behavior: check all address types at index 0 + wallet balance
+                            println!("💰 Wallet Balance Summary");
+                            println!("═══════════════════════════");
+                            
+                            // Get overall wallet balance first
+                            match wallet_manager.get_balance().await {
+                                Ok(balance) => {
+                                    println!("📊 Overall Wallet Balance:");
+                                    println!("  ✅ Confirmed: {} sats", balance.confirmed);
+                                    println!("  ⏳ Pending: {} sats", balance.trusted_pending + balance.untrusted_pending);
+                                    println!("  📊 Total: {} sats", balance.confirmed + balance.trusted_pending + balance.untrusted_pending);
+                                },
+                                Err(e) => println!("❌ Failed to get overall balance: {}", e),
+                            }
+                            
+                            println!("\n🏠 Address Type Balances (Index 0):");
+                            println!("═══════════════════════════════════");
+                            
+                            let address_types = ["p2tr", "p2wpkh", "p2sh", "p2pkh"];
+                            
+                            for address_type in &address_types {
+                                match wallet_manager.get_address_of_type_at_index(address_type, 0, false).await {
+                                    Ok(address) => {
+                                        let derivation_path = get_derivation_path(address_type, network_params.network, 0);
+                                        let identifier = format!("[self:{}:0]", address_type);
+                                        
+                                        println!("🔹 {} Address:", address_type.to_uppercase());
+                                        println!("   📍 Address: {}", address);
+                                        println!("   🔗 Identifier: {}", identifier);
+                                        println!("   🛤️  HD Path: {}", derivation_path);
+                                        
+                                        // Get balance for this specific address
+                                        match rpc_client.get_address_utxos(&address).await {
+                                            Ok(utxos_result) => {
+                                                if let Some(utxos_array) = utxos_result.as_array() {
+                                                    let mut total_balance = 0u64;
+                                                    
+                                                    for utxo in utxos_array {
+                                                        if let Some(utxo_obj) = utxo.as_object() {
+                                                            let value = utxo_obj.get("value").and_then(|v| v.as_u64()).unwrap_or(0);
+                                                            total_balance += value;
+                                                        }
+                                                    }
+                                                    
+                                                    if total_balance > 0 {
+                                                        println!("   💰 Balance: {} sats ({} UTXOs)", total_balance, utxos_array.len());
+                                                    } else {
+                                                        println!("   💰 Balance: 0 sats");
+                                                    }
+                                                }
+                                            },
+                                            Err(e) => println!("   ❌ Failed to get balance: {}", e),
+                                        }
+                                        println!();
                                     },
-                                    Err(e) => println!("  ❌ Failed to get UTXO details: {}", e),
-                                };
-                            },
-                            Err(e) => println!("❌ Failed to get balance: {}", e),
-                        };
+                                    Err(e) => {
+                                        println!("🔹 {} Address: ❌ Failed to generate - {}", address_type.to_uppercase(), e);
+                                        println!();
+                                    }
+                                }
+                            }
+                            
+                            // Get and display individual UTXOs from wallet
+                            println!("🔍 Wallet UTXO Details:");
+                            println!("═══════════════════════");
+                            match wallet_manager.get_utxos().await {
+                                Ok(utxos) => {
+                                    if utxos.is_empty() {
+                                        println!("  🚫 No UTXOs found in wallet");
+                                    } else {
+                                        for (i, utxo) in utxos.iter().enumerate() {
+                                            let tree_symbol = if i == utxos.len() - 1 { "└─" } else { "├─" };
+                                            let status_icon = if utxo.frozen { "🔒" } else { "🔓" };
+                                            
+                                            println!("  {} {} UTXO #{}", tree_symbol, status_icon, i + 1);
+                                            println!("  {}    🆔 {}:{}", if i == utxos.len() - 1 { "  " } else { "│ " }, utxo.txid, utxo.vout);
+                                            println!("  {}    💰 {} sats", if i == utxos.len() - 1 { "  " } else { "│ " }, utxo.amount);
+                                            println!("  {}    📍 {}", if i == utxos.len() - 1 { "  " } else { "│ " }, utxo.address);
+                                            println!("  {}    ✅ Confirmed{}",
+                                                if i == utxos.len() - 1 { "  " } else { "│ " },
+                                                if utxo.frozen { " [FROZEN]" } else { "" }
+                                            );
+                                        }
+                                        
+                                        println!("\n📈 UTXO Summary:");
+                                        println!("  🔢 Total UTXOs: {}", utxos.len());
+                                        let total_value: u64 = utxos.iter().map(|u| u.amount).sum();
+                                        println!("  💎 Combined Value: {} sats", total_value);
+                                        let frozen_count = utxos.iter().filter(|u| u.frozen).count();
+                                        if frozen_count > 0 {
+                                            println!("  🔒 Frozen UTXOs: {}", frozen_count);
+                                        }
+                                    }
+                                },
+                                Err(e) => println!("  ❌ Failed to get UTXO details: {}", e),
+                            };
+                        }
                     },
                     WalletCommands::Send { address, amount, fee_rate } => {
                         // Resolve address identifiers
@@ -1575,56 +1872,100 @@ async fn main() -> Result<()> {
                 }
             }
         },
-        Commands::Walletinfo => {
+        Commands::Walletinfo { addresses } => {
             if let Some(wallet_manager) = wallet_manager {
-                // Get wallet addresses for different address types
-                println!("Wallet Addresses:");
-                
-                // Native SegWit (bech32)
-                let native_segwit_address = wallet_manager.get_address().await?;
-                println!("  Native SegWit (bech32): {}", native_segwit_address);
-                
-                // Try to sync wallet with blockchain, but don't fail if it doesn't work
-                println!("\nAttempting to sync wallet with blockchain...");
-                match wallet_manager.sync().await {
-                    Ok(_) => println!("Sync successful."),
-                    Err(e) => println!("Sync failed: {}. Using offline mode.", e),
-                };
-                
-                // Get wallet balance
-                match wallet_manager.get_balance().await {
-                    Ok(balance) => {
-                        println!("\nBitcoin Balance:");
-                        println!("  Confirmed: {} sats", balance.confirmed);
-                        println!("  Pending: {} sats", balance.trusted_pending + balance.untrusted_pending);
-                        println!("  Total: {} sats", balance.confirmed + balance.trusted_pending + balance.untrusted_pending);
-                    },
-                    Err(e) => println!("\nFailed to get balance: {}", e),
-                };
-                
-                // Try to get alkanes balances
-                println!("\nAlkanes Balances:");
-                let address_str = wallet_manager.get_address().await?;
-                match rpc_client.get_protorunes_by_address(&address_str).await {
-                    Ok(protorunes) => {
-                        if let Some(runes_array) = protorunes.as_array() {
-                            if runes_array.is_empty() {
-                                println!("  No alkanes tokens found");
-                            } else {
-                                for (i, rune) in runes_array.iter().enumerate() {
-                                    if let Some(rune_obj) = rune.as_object() {
-                                        let name = rune_obj.get("name").and_then(|v| v.as_str()).unwrap_or("Unknown");
-                                        let balance = rune_obj.get("balance").and_then(|v| v.as_str()).unwrap_or("0");
-                                        println!("  {}: {} - {} units", i+1, name, balance);
+                if let Some(ranges_str) = addresses {
+                    // Handle --addresses option
+                    let parsed_ranges = parse_address_ranges(&ranges_str)?;
+                    
+                    println!("📋 Wallet Address List");
+                    println!("═══════════════════════");
+                    println!();
+                    
+                    for (address_or_type, indices) in parsed_ranges {
+                        if indices.is_empty() {
+                            // Raw Bitcoin address
+                            println!("🏠 Raw Address: {}", address_or_type);
+                            println!("───────────────────────");
+                            println!("  📍 Address: {}", address_or_type);
+                            println!("  🔗 Type: External/Raw Address");
+                            println!("  🛤️  HD Path: N/A (not from wallet)");
+                            println!();
+                        } else {
+                            // Wallet address type with indices
+                            println!("🏠 {} Addresses:", address_or_type.to_uppercase());
+                            println!("───────────────────────");
+                            
+                            for index in indices {
+                                match wallet_manager.get_address_of_type_at_index(&address_or_type, index, false).await {
+                                    Ok(address) => {
+                                        let derivation_path = get_derivation_path(&address_or_type, network_params.network, index);
+                                        let identifier = format!("[self:{}:{}]", address_or_type, index);
+                                        
+                                        println!("  📍 Index {}: {}", index, address);
+                                        println!("     🔗 Identifier: {}", identifier);
+                                        println!("     🛤️  HD Path: {}", derivation_path);
+                                        println!();
+                                    },
+                                    Err(e) => {
+                                        println!("  ❌ Index {}: Failed to generate address - {}", index, e);
+                                        println!();
                                     }
                                 }
                             }
-                        } else {
-                            println!("  Failed to parse alkanes balances");
                         }
-                    },
-                    Err(e) => println!("  Failed to get alkanes balances: {}", e),
-                };
+                    }
+                } else {
+                    // Default walletinfo behavior
+                    // Get wallet addresses for different address types
+                    println!("Wallet Addresses:");
+                    
+                    // Native SegWit (bech32)
+                    let native_segwit_address = wallet_manager.get_address().await?;
+                    println!("  Native SegWit (bech32): {}", native_segwit_address);
+                    
+                    // Try to sync wallet with blockchain, but don't fail if it doesn't work
+                    println!("\nAttempting to sync wallet with blockchain...");
+                    match wallet_manager.sync().await {
+                        Ok(_) => println!("Sync successful."),
+                        Err(e) => println!("Sync failed: {}. Using offline mode.", e),
+                    };
+                    
+                    // Get wallet balance
+                    match wallet_manager.get_balance().await {
+                        Ok(balance) => {
+                            println!("\nBitcoin Balance:");
+                            println!("  Confirmed: {} sats", balance.confirmed);
+                            println!("  Pending: {} sats", balance.trusted_pending + balance.untrusted_pending);
+                            println!("  Total: {} sats", balance.confirmed + balance.trusted_pending + balance.untrusted_pending);
+                        },
+                        Err(e) => println!("\nFailed to get balance: {}", e),
+                    };
+                    
+                    // Try to get alkanes balances
+                    println!("\nAlkanes Balances:");
+                    let address_str = wallet_manager.get_address().await?;
+                    match rpc_client.get_protorunes_by_address(&address_str).await {
+                        Ok(protorunes) => {
+                            if let Some(runes_array) = protorunes.as_array() {
+                                if runes_array.is_empty() {
+                                    println!("  No alkanes tokens found");
+                                } else {
+                                    for (i, rune) in runes_array.iter().enumerate() {
+                                        if let Some(rune_obj) = rune.as_object() {
+                                            let name = rune_obj.get("name").and_then(|v| v.as_str()).unwrap_or("Unknown");
+                                            let balance = rune_obj.get("balance").and_then(|v| v.as_str()).unwrap_or("0");
+                                            println!("  {}: {} - {} units", i+1, name, balance);
+                                        }
+                                    }
+                                }
+                            } else {
+                                println!("  Failed to parse alkanes balances");
+                            }
+                        },
+                        Err(e) => println!("  Failed to get alkanes balances: {}", e),
+                    };
+                }
             } else {
                 return Err(anyhow!("Wallet manager not initialized"));
             }
