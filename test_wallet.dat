@@ -1,0 +1,8 @@
+{
+  "mnemonic": "february perfect order bleak silly include casual device aerobic shaft unknown wheat",
+  "hdpath": "m/84'/1'/0'",
+  "network": "Testnet",
+  "external_descriptor": "wpkh(tprv8ZgxMBicQKsPeBpjF8TLK9bCiRa9jpUwLXT6cXGpi1vsaufkMEjQC5yM3J1M7kDpqARygZBfDxdi21gS4peAi7ZSZHzcidLNan3UKvzLC23/0/*)",
+  "internal_descriptor": "wpkh(tprv8ZgxMBicQKsPeBpjF8TLK9bCiRa9jpUwLXT6cXGpi1vsaufkMEjQC5yM3J1M7kDpqARygZBfDxdi21gS4peAi7ZSZHzcidLNan3UKvzLC23/1/*)",
+  "created_at": 1751149009
+}

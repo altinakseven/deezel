@@ -242,7 +242,25 @@ impl RpcClient {
     pub async fn get_spendables_by_address(&self, address: &str) -> Result<Value> {
         debug!("Getting spendables for address: {}", address);
         
-        let result = self._call("spendablesbyaddress", json!([address])).await?;
+        // Create and encode the ProtorunesWalletRequest protobuf message
+        let mut wallet_request = protorune_support::proto::protorune::ProtorunesWalletRequest::new();
+        wallet_request.wallet = address.as_bytes().to_vec();
+        
+        // Set protocol tag to 1 (for alkanes/DIESEL tokens)
+        let mut protocol_tag = protorune_support::proto::protorune::Uint128::new();
+        protocol_tag.hi = 0;
+        protocol_tag.lo = 1;
+        wallet_request.protocol_tag = protobuf::MessageField::some(protocol_tag);
+        
+        // Serialize to bytes and hex encode with 0x prefix
+        let encoded_bytes = wallet_request.write_to_bytes()
+            .context("Failed to encode ProtorunesWalletRequest")?;
+        let hex_input = format!("0x{}", hex::encode(encoded_bytes));
+        
+        let result = self._call(
+            "metashrew_view",
+            json!(["spendablesbyaddress", hex_input, "latest"])
+        ).await?;
         
         debug!("Got spendables for address: {}", address);
         Ok(result)

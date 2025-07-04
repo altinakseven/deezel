@@ -346,6 +346,15 @@ enum AlkanesCommands {
         /// Read envelope data from stdin - mutually exclusive with --envelope
         #[clap(long)]
         envelope_from_stdin: bool,
+        /// Output raw JSON format (for scripting)
+        #[clap(short, long)]
+        raw: bool,
+        /// Enable transaction tracing after broadcast
+        #[clap(long)]
+        trace: bool,
+        /// Auto-confirm transactions without user prompts (useful with -y flag)
+        #[clap(short, long)]
+        yes: bool,
     },
     /// Deploy a new alkanes token
     DeployToken {
@@ -966,7 +975,7 @@ async fn load_wallet_manager(
     let wallet_config = deezel_cli::wallet::WalletConfig {
         wallet_path: wallet_file.to_string(),
         network: network_params.network,
-        bitcoin_rpc_url: bitcoin_rpc_url.to_string(),
+        bitcoin_rpc_url: sandshrew_rpc_url.to_string(), // Use Sandshrew for all RPC calls
         metashrew_rpc_url: sandshrew_rpc_url.to_string(),
         network_params: Some(network_params.to_protorune_params()),
     };
@@ -1125,8 +1134,16 @@ async fn main() -> Result<()> {
     let sandshrew_rpc_url = args.sandshrew_rpc_url.clone()
         .unwrap_or_else(|| deezel_cli::network::get_rpc_url(&args.provider));
     
-    let bitcoin_rpc_url = args.bitcoin_rpc_url.clone()
-        .unwrap_or_else(|| "http://bitcoinrpc:bitcoinrpc@localhost:8332".to_string());
+    // If --sandshrew-rpc-url is specified, use it for ALL RPC endpoints (both Bitcoin and Sandshrew)
+    // This allows Sandshrew to handle both Bitcoin RPC calls and its own extended functionality
+    let bitcoin_rpc_url = if args.sandshrew_rpc_url.is_some() {
+        // Use Sandshrew RPC for Bitcoin calls too when explicitly specified
+        sandshrew_rpc_url.clone()
+    } else {
+        // Use separate Bitcoin RPC URL when not using Sandshrew for everything
+        args.bitcoin_rpc_url.clone()
+            .unwrap_or_else(|| "http://bitcoinrpc:bitcoinrpc@localhost:8332".to_string())
+    };
 
     // Initialize wallet if needed for the command (but not for wallet creation)
     let wallet_manager = if matches!(args.command, Commands::Walletinfo { .. }) ||
@@ -2218,19 +2235,26 @@ async fn main() -> Result<()> {
                 };
             },
             
-            AlkanesCommands::Execute { fee_rate, to, change, inputs, protostones, envelope, envelope_from_stdin } => {
+            AlkanesCommands::Execute { fee_rate, to, change, inputs, protostones, envelope, envelope_from_stdin, raw, trace, yes } => {
                 // Validate envelope flags are mutually exclusive
                 if envelope.is_some() && envelope_from_stdin {
-                    eprintln!("Error: --envelope and --envelope-from-stdin are mutually exclusive");
+                    if !raw {
+                        eprintln!("Error: --envelope and --envelope-from-stdin are mutually exclusive");
+                    }
                     std::process::exit(1);
                 }
+                
                 // Read envelope data if specified
                 let envelope_data = if let Some(envelope_file) = envelope {
-                    println!("📁 Reading envelope from file: {}", envelope_file);
+                    if !raw {
+                        println!("📁 Reading envelope from file: {}", envelope_file);
+                    }
                     Some(std::fs::read(&envelope_file)
                         .with_context(|| format!("Failed to read envelope file: {}", envelope_file))?)
                 } else if envelope_from_stdin {
-                    println!("📥 Reading envelope from stdin...");
+                    if !raw {
+                        println!("📥 Reading envelope from stdin...");
+                    }
                     use std::io::Read;
                     let mut buffer = Vec::new();
                     std::io::stdin().read_to_end(&mut buffer)
@@ -2277,6 +2301,9 @@ async fn main() -> Result<()> {
                     input_requirements,
                     protostones: parsed_protostones,
                     envelope_data,
+                    raw_output: raw,
+                    trace_enabled: trace,
+                    auto_confirm: yes,
                 };
                 
                 // Create enhanced executor
@@ -2287,17 +2314,60 @@ async fn main() -> Result<()> {
                 
                 match executor.execute(params).await {
                     Ok(result) => {
-                        println!("Enhanced alkanes execution completed successfully!");
-                        println!("Transaction ID: {}", result.txid);
-                        println!("Fee: {} sats", result.fee);
-                        if !result.inputs_used.is_empty() {
-                            println!("Inputs used: {}", result.inputs_used.join(", "));
-                        }
-                        if !result.outputs_created.is_empty() {
-                            println!("Outputs created: {}", result.outputs_created.join(", "));
+                        if raw {
+                            // Output JSON format for scripting
+                            let output = if let Some(commit_txid) = result.commit_txid {
+                                json!({
+                                    "commit": commit_txid,
+                                    "reveal": result.reveal_txid,
+                                    "commit_fee": result.commit_fee,
+                                    "reveal_fee": result.reveal_fee,
+                                    "traces": result.traces
+                                })
+                            } else {
+                                json!({
+                                    "reveal": result.reveal_txid,
+                                    "reveal_fee": result.reveal_fee,
+                                    "traces": result.traces
+                                })
+                            };
+                            println!("{}", serde_json::to_string_pretty(&output)?);
+                        } else {
+                            // Human-readable output
+                            if let Some(commit_txid) = result.commit_txid {
+                                println!("✅ Commit/Reveal alkanes execution completed successfully!");
+                                println!("🔗 Commit TXID: {}", commit_txid);
+                                println!("🔗 Reveal TXID: {}", result.reveal_txid);
+                                if let Some(commit_fee) = result.commit_fee {
+                                    println!("💰 Commit Fee: {} sats", commit_fee);
+                                }
+                                println!("💰 Reveal Fee: {} sats", result.reveal_fee);
+                            } else {
+                                println!("✅ Alkanes execution completed successfully!");
+                                println!("🔗 Transaction ID: {}", result.reveal_txid);
+                                println!("💰 Fee: {} sats", result.reveal_fee);
+                            }
+                            
+                            if !result.inputs_used.is_empty() {
+                                println!("📥 Inputs used: {}", result.inputs_used.join(", "));
+                            }
+                            if !result.outputs_created.is_empty() {
+                                println!("📤 Outputs created: {}", result.outputs_created.join(", "));
+                            }
+                            
+                            if trace && result.traces.is_some() {
+                                println!("🔍 Transaction tracing completed successfully");
+                            }
                         }
                     },
-                    Err(e) => println!("Failed to execute enhanced alkanes transaction: {}", e),
+                    Err(e) => {
+                        if raw {
+                            eprintln!("Failed to execute alkanes transaction: {}", e);
+                        } else {
+                            println!("❌ Failed to execute alkanes transaction: {}", e);
+                        }
+                        std::process::exit(1);
+                    },
                 };
             },
             

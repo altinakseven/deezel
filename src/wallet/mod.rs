@@ -459,6 +459,11 @@ impl WalletManager {
     pub async fn get_internal_key(&self) -> Result<bitcoin::secp256k1::XOnlyPublicKey> {
         self.wallet.get_internal_key().await
     }
+    
+    /// Get the network configuration
+    pub fn get_network(&self) -> Network {
+        self.config.network
+    }
 }
 
 // Re-export types for compatibility

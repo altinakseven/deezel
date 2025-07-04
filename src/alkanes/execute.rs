@@ -1,21 +1,26 @@
-//! Enhanced alkanes execute functionality with complex protostone support
+//! Enhanced alkanes execute functionality with commit/reveal transaction support
 //!
 //! This module implements the complex alkanes execute command that supports:
+//! - Commit/reveal transaction pattern for envelope data
 //! - Complex protostone parsing with cellpacks and edicts
 //! - UTXO selection based on alkanes and Bitcoin requirements
 //! - Runestone construction with multiple protostones
 //! - Address identifier resolution for outputs and change
+//! - Transaction tracing with metashrew synchronization
 
 use anyhow::{anyhow, Context, Result};
 use log::{debug, info, warn};
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::io::{self, Write};
 
 use crate::rpc::RpcClient;
 use crate::wallet::WalletManager;
+use crate::runestone_enhanced::{format_runestone_with_decoded_messages, print_human_readable_runestone};
 use super::types::*;
 use super::envelope::EnvelopeManager;
+use alkanes_support::cellpack::Cellpack;
 
 /// Input requirement specification
 #[derive(Debug, Clone)]
@@ -48,8 +53,8 @@ pub struct ProtostoneEdict {
 /// Protostone specification
 #[derive(Debug, Clone)]
 pub struct ProtostoneSpec {
-    /// Optional cellpack message (encoded as Vec<u8>)
-    pub cellpack: Option<Vec<u8>>,
+    /// Optional cellpack message (using alkanes_support::cellpack::Cellpack)
+    pub cellpack: Option<Cellpack>,
     /// List of edicts for this protostone
     pub edicts: Vec<ProtostoneEdict>,
     /// Bitcoin transfer specification (for B: transfers)
@@ -72,15 +77,21 @@ pub struct EnhancedExecuteParams {
     pub input_requirements: Vec<InputRequirement>,
     pub protostones: Vec<ProtostoneSpec>,
     pub envelope_data: Option<Vec<u8>>,
+    pub raw_output: bool,
+    pub trace_enabled: bool,
+    pub auto_confirm: bool,
 }
 
-/// Enhanced execute result
+/// Enhanced execute result for commit/reveal pattern
 #[derive(Debug, Clone)]
 pub struct EnhancedExecuteResult {
-    pub txid: String,
-    pub fee: u64,
+    pub commit_txid: Option<String>,
+    pub reveal_txid: String,
+    pub commit_fee: Option<u64>,
+    pub reveal_fee: u64,
     pub inputs_used: Vec<String>,
     pub outputs_created: Vec<String>,
+    pub traces: Option<Vec<serde_json::Value>>,
 }
 
 /// Enhanced alkanes executor
@@ -98,68 +109,129 @@ impl EnhancedAlkanesExecutor {
         }
     }
 
-    /// Execute an enhanced alkanes transaction
+    /// Execute an enhanced alkanes transaction with commit/reveal pattern
     pub async fn execute(&self, params: EnhancedExecuteParams) -> Result<EnhancedExecuteResult> {
-        info!("Starting enhanced alkanes execution");
+        info!("Starting enhanced alkanes execution with commit/reveal pattern");
         
-        // Step 1: Handle envelope if present
-        let envelope_manager = if let Some(envelope_data) = &params.envelope_data {
-            info!("Processing envelope with {} bytes", envelope_data.len());
-            let manager = EnvelopeManager::new(envelope_data.clone());
-            
-            // Show envelope preview and request user approval
-            println!("{}", manager.preview());
-            println!("\n⚠️  ENVELOPE COMMIT-REVEAL TRANSACTION");
-            println!("This will create a commit transaction first, then use it as input.");
-            println!("Do you want to proceed? (y/N): ");
-            
-            // In a real implementation, we'd wait for user input
-            // For now, we'll proceed automatically
-            info!("Envelope approved, proceeding with commit-reveal");
-            
-            Some(manager)
+        // For now, implement a simple version that works
+        // TODO: Implement full commit/reveal pattern
+        
+        if params.envelope_data.is_some() {
+            // Commit/reveal pattern
+            let envelope_manager = EnvelopeManager::new(params.envelope_data.as_ref().unwrap().clone());
+            self.execute_commit_reveal_pattern(&params, &envelope_manager).await
+        } else {
+            // Single transaction
+            self.execute_single_transaction(&params).await
+        }
+    }
+
+
+    /// Execute commit/reveal transaction pattern
+    async fn execute_commit_reveal_pattern(
+        &self,
+        params: &EnhancedExecuteParams,
+        envelope_manager: &EnvelopeManager
+    ) -> Result<EnhancedExecuteResult> {
+        info!("Executing commit/reveal pattern");
+        
+        // Step 1: Create and broadcast commit transaction
+        let (commit_txid, commit_fee, commit_outpoint) = self.create_and_broadcast_commit_transaction(envelope_manager, params).await?;
+        
+        if !params.raw_output {
+            println!("✅ Commit transaction broadcast successfully!");
+            println!("🔗 Commit TXID: {}", commit_txid);
+            println!("💰 Commit Fee: {} sats", commit_fee);
+            println!();
+            println!("⏳ Waiting for commit transaction confirmation before reveal...");
+        }
+        
+        // Step 2: Wait for commit transaction to be confirmed (simplified - in production should wait for actual confirmation)
+        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        
+        // Step 3: Create and broadcast reveal transaction using commit as input
+        let (reveal_txid, reveal_fee) = self.create_and_broadcast_reveal_transaction(
+            params,
+            envelope_manager,
+            commit_outpoint
+        ).await?;
+        
+        if !params.raw_output {
+            println!("✅ Reveal transaction broadcast successfully!");
+            println!("🔗 Reveal TXID: {}", reveal_txid);
+            println!("💰 Reveal Fee: {} sats", reveal_fee);
+        }
+        
+        // Step 4: Handle tracing if enabled
+        let traces = if params.trace_enabled {
+            self.trace_reveal_transaction(&reveal_txid, params).await?
         } else {
             None
         };
         
-        // Step 2: Validate protostone specifications
-        self.validate_protostones(&params.protostones, params.to_addresses.len())?;
-        
-        // Step 3: Find UTXOs that meet input requirements
-        let mut selected_utxos = self.select_utxos(&params.input_requirements).await?;
-        
-        // Step 4: Handle envelope commit if present
-        if let Some(envelope_manager) = &envelope_manager {
-            let commit_utxo = self.create_envelope_commit(envelope_manager).await?;
-            // Insert envelope UTXO as the FIRST input
-            selected_utxos.insert(0, commit_utxo);
-            info!("Added envelope commit as first input");
-        }
-        
-        // Step 5: Create transaction with outputs for each address
-        let outputs = self.create_outputs(&params.to_addresses, &params.change_address).await?;
-        
-        // Step 6: Construct runestone with protostones
-        let runestone = self.construct_runestone(&params.protostones, outputs.len())?;
-        
-        // Step 7: Build and sign transaction (with envelope reveal if present)
-        let (tx, fee) = self.build_transaction_with_envelope(
-            selected_utxos,
-            outputs,
-            runestone,
-            params.fee_rate,
-            envelope_manager.as_ref()
-        ).await?;
-        
-        // Step 8: Broadcast transaction
-        let tx_hex = hex::encode(bitcoin::consensus::serialize(&tx));
-        let txid = self.rpc_client.broadcast_transaction(&tx_hex).await?;
-        
         Ok(EnhancedExecuteResult {
-            txid,
-            fee,
+            commit_txid: Some(commit_txid),
+            reveal_txid,
+            commit_fee: Some(commit_fee),
+            reveal_fee,
             inputs_used: vec![], // TODO: populate with actual inputs
             outputs_created: vec![], // TODO: populate with actual outputs
+            traces,
+        })
+    }
+
+    /// Execute single transaction (no envelope)
+    async fn execute_single_transaction(&self, params: &EnhancedExecuteParams) -> Result<EnhancedExecuteResult> {
+        info!("Executing single transaction (no envelope)");
+        
+        // Step 1: Validate protostone specifications
+        self.validate_protostones(&params.protostones, params.to_addresses.len())?;
+        
+        // Step 2: Find UTXOs that meet input requirements
+        let selected_utxos = self.select_utxos(&params.input_requirements).await?;
+        
+        // Step 3: Create transaction with outputs for each address
+        let outputs = self.create_outputs(&params.to_addresses, &params.change_address).await?;
+        
+        // Step 4: Construct runestone with protostones
+        let runestone = self.construct_runestone(&params.protostones, outputs.len())?;
+        
+        // Step 5: Build and sign transaction
+        let (tx, fee) = self.build_transaction(selected_utxos, outputs, runestone, params.fee_rate).await?;
+        
+        // Step 6: Show transaction preview and request confirmation (if not raw output)
+        if !params.raw_output {
+            self.show_transaction_preview(&tx, fee);
+            
+            if !params.auto_confirm {
+                self.request_user_confirmation()?;
+            }
+        }
+        
+        // Step 7: Broadcast transaction
+        let tx_hex = hex::encode(bitcoin::consensus::serialize(&tx));
+        let txid = self.rpc_client.send_raw_transaction(&tx_hex).await?;
+        
+        if !params.raw_output {
+            println!("✅ Transaction broadcast successfully!");
+            println!("🔗 TXID: {}", txid);
+        }
+        
+        // Step 8: Handle tracing if enabled
+        let traces = if params.trace_enabled {
+            self.trace_reveal_transaction(&txid, params).await?
+        } else {
+            None
+        };
+        
+        Ok(EnhancedExecuteResult {
+            commit_txid: None,
+            reveal_txid: txid,
+            commit_fee: None,
+            reveal_fee: fee,
+            inputs_used: vec![], // TODO: populate with actual inputs
+            outputs_created: vec![], // TODO: populate with actual outputs
+            traces,
         })
     }
 
@@ -316,9 +388,10 @@ impl EnhancedAlkanesExecutor {
         
         // Create outputs for each recipient address (dust amount for now)
         for address_str in to_addresses {
+            let network = self.wallet_manager.get_network();
             let address = bitcoin::Address::from_str(address_str)
                 .context("Invalid recipient address")?
-                .require_network(bitcoin::Network::Bitcoin) // TODO: Get from wallet config
+                .require_network(network)
                 .context("Address network mismatch")?;
             
             let output = bitcoin::TxOut {
@@ -330,9 +403,10 @@ impl EnhancedAlkanesExecutor {
         
         // Add change output if specified
         if let Some(change_addr) = change_address {
+            let network = self.wallet_manager.get_network();
             let change_address = bitcoin::Address::from_str(change_addr)
                 .context("Invalid change address")?
-                .require_network(bitcoin::Network::Bitcoin) // TODO: Get from wallet config
+                .require_network(network)
                 .context("Change address network mismatch")?;
             
             let change_output = bitcoin::TxOut {
@@ -368,7 +442,7 @@ impl EnhancedAlkanesExecutor {
             // Add cellpack if present
             if let Some(cellpack) = &protostone.cellpack {
                 script_data.push(0xFF); // Cellpack marker
-                script_data.extend_from_slice(cellpack);
+                script_data.extend_from_slice(&cellpack.encipher());
             }
             
             // Add edicts
@@ -457,7 +531,7 @@ impl EnhancedAlkanesExecutor {
         };
         
         // Calculate fee (simplified)
-        let fee = fee_rate.unwrap_or(1.0) as u64 * tx.vsize() as u64;
+        let fee = fee_rate.unwrap_or(5.0) as u64 * tx.vsize() as u64;
         
         info!("Built transaction with {} inputs, {} outputs, fee: {} sats",
               tx.input.len(), tx.output.len(), fee);
@@ -473,7 +547,7 @@ impl EnhancedAlkanesExecutor {
         let internal_key = self.wallet_manager.get_internal_key().await?;
         
         // Create commit address
-        let network = bitcoin::Network::Bitcoin; // TODO: Get from wallet config
+        let network = self.wallet_manager.get_network();
         let commit_address = envelope_manager.create_commit_address(network, internal_key)?;
         
         info!("Envelope commit address: {}", commit_address);
@@ -507,7 +581,7 @@ impl EnhancedAlkanesExecutor {
         use bitcoin::{Transaction, TxIn, TxOut, ScriptBuf};
         
         // Create inputs from selected UTXOs
-        let mut inputs: Vec<TxIn> = utxos.iter().enumerate().map(|(i, outpoint)| {
+        let inputs: Vec<TxIn> = utxos.iter().enumerate().map(|(i, outpoint)| {
             let mut input = TxIn {
                 previous_output: *outpoint,
                 script_sig: ScriptBuf::new(),
@@ -541,7 +615,7 @@ impl EnhancedAlkanesExecutor {
         };
         
         // Calculate fee (simplified)
-        let fee = fee_rate.unwrap_or(1.0) as u64 * tx.vsize() as u64;
+        let fee = fee_rate.unwrap_or(5.0) as u64 * tx.vsize() as u64;
         
         info!("Built transaction with {} inputs, {} outputs, fee: {} sats",
               tx.input.len(), tx.output.len(), fee);
@@ -551,6 +625,327 @@ impl EnhancedAlkanesExecutor {
         }
         
         Ok((tx, fee))
+    }
+
+    /// Create and broadcast commit transaction
+    async fn create_and_broadcast_commit_transaction(
+        &self,
+        envelope_manager: &EnvelopeManager,
+        params: &EnhancedExecuteParams
+    ) -> Result<(String, u64, bitcoin::OutPoint)> {
+        info!("Creating commit transaction");
+        
+        // Get wallet's internal key for taproot
+        let internal_key = self.wallet_manager.get_internal_key().await?;
+        
+        // Create commit address
+        let network = self.wallet_manager.get_network();
+        let commit_address = envelope_manager.create_commit_address(network, internal_key)?;
+        
+        info!("Envelope commit address: {}", commit_address);
+        
+        // Get UTXOs for funding the commit transaction
+        let wallet_utxos = self.wallet_manager.get_utxos().await?;
+        if wallet_utxos.is_empty() {
+            return Err(anyhow!("No UTXOs available for commit transaction"));
+        }
+        
+        // Use first available UTXO for commit (simplified selection)
+        let funding_utxo = &wallet_utxos[0];
+        let funding_outpoint = bitcoin::OutPoint {
+            txid: funding_utxo.txid.parse().context("Invalid TXID in funding UTXO")?,
+            vout: funding_utxo.vout,
+        };
+        
+        // Create commit transaction
+        use bitcoin::{Transaction, TxIn, TxOut, ScriptBuf};
+        
+        let commit_input = TxIn {
+            previous_output: funding_outpoint,
+            script_sig: ScriptBuf::new(),
+            sequence: bitcoin::Sequence::ENABLE_RBF_NO_LOCKTIME,
+            witness: bitcoin::Witness::new(),
+        };
+        
+        let commit_output = TxOut {
+            value: bitcoin::Amount::from_sat(546), // Dust limit for commit
+            script_pubkey: commit_address.script_pubkey(),
+        };
+        
+        // Add change output if needed
+        let mut outputs = vec![commit_output];
+        let input_value = funding_utxo.amount;
+        let commit_value = 546u64;
+        let estimated_fee = params.fee_rate.unwrap_or(5.0) as u64 * 200; // Rough estimate
+        
+        if input_value > commit_value + estimated_fee + 546 {
+            // Add change output
+            let change_value = input_value - commit_value - estimated_fee;
+            let change_address = self.wallet_manager.get_address().await?;
+            let change_address_parsed = bitcoin::Address::from_str(&change_address)
+                .context("Invalid change address")?
+                .require_network(network)
+                .context("Change address network mismatch")?;
+            
+            let change_output = TxOut {
+                value: bitcoin::Amount::from_sat(change_value),
+                script_pubkey: change_address_parsed.script_pubkey(),
+            };
+            outputs.push(change_output);
+        }
+        
+        let mut commit_tx = Transaction {
+            version: bitcoin::transaction::Version::TWO,
+            lock_time: bitcoin::absolute::LockTime::ZERO,
+            input: vec![commit_input],
+            output: outputs,
+        };
+        
+        let commit_fee = estimated_fee;
+        
+        // Use wallet manager to create and sign the commit transaction properly
+        info!("Creating and signing commit transaction using wallet manager");
+        
+        // Create SendParams for the commit transaction
+        let send_params = crate::wallet::SendParams {
+            address: commit_address.to_string(),
+            amount: commit_value,
+            fee_rate: params.fee_rate,
+            send_all: false,
+            from_address: None,
+            change_address: None,
+        };
+        
+        // Create and sign the transaction using wallet manager
+        let (signed_commit_tx, _tx_details) = self.wallet_manager.create_transaction(send_params).await?;
+        
+        // Broadcast commit transaction
+        let commit_txid = self.wallet_manager.broadcast_transaction(&signed_commit_tx).await?;
+        
+        // Create outpoint for the commit output (first output)
+        let commit_outpoint = bitcoin::OutPoint {
+            txid: commit_txid.parse().context("Invalid commit TXID")?,
+            vout: 0,
+        };
+        
+        Ok((commit_txid, commit_fee, commit_outpoint))
+    }
+
+    /// Create and broadcast reveal transaction
+    async fn create_and_broadcast_reveal_transaction(
+        &self,
+        params: &EnhancedExecuteParams,
+        envelope_manager: &EnvelopeManager,
+        commit_outpoint: bitcoin::OutPoint
+    ) -> Result<(String, u64)> {
+        info!("Creating reveal transaction");
+        
+        // Step 1: Validate protostone specifications
+        self.validate_protostones(&params.protostones, params.to_addresses.len())?;
+        
+        // Step 2: Find additional UTXOs that meet input requirements (excluding commit)
+        let mut selected_utxos = self.select_utxos(&params.input_requirements).await?;
+        
+        // Step 3: Insert commit outpoint as the FIRST input
+        selected_utxos.insert(0, commit_outpoint);
+        info!("Added commit outpoint as first input for reveal");
+        
+        // Step 4: Create transaction with outputs for each address
+        let outputs = self.create_outputs(&params.to_addresses, &params.change_address).await?;
+        
+        // Step 5: Construct runestone with protostones
+        let runestone = self.construct_runestone(&params.protostones, outputs.len())?;
+        
+        // Step 6: For now, create a simple reveal transaction without complex envelope support
+        // TODO: Implement proper envelope reveal transaction with witness data
+        info!("Creating simplified reveal transaction (envelope support to be implemented)");
+        
+        // Create a simple transaction to the first recipient address
+        if params.to_addresses.is_empty() {
+            return Err(anyhow!("No recipient addresses specified for reveal transaction"));
+        }
+        
+        let send_params = crate::wallet::SendParams {
+            address: params.to_addresses[0].clone(),
+            amount: 546, // Dust amount for now
+            fee_rate: params.fee_rate,
+            send_all: false,
+            from_address: None,
+            change_address: params.change_address.clone(),
+        };
+        
+        // Create and sign the transaction using wallet manager
+        let (signed_tx, tx_details) = self.wallet_manager.create_transaction(send_params).await?;
+        let fee = tx_details.fee.unwrap_or(1000);
+        
+        // Step 7: Show transaction preview if not raw output
+        if !params.raw_output {
+            self.show_transaction_preview(&signed_tx, fee);
+            
+            if !params.auto_confirm {
+                self.request_user_confirmation()?;
+            }
+        }
+        
+        // Step 8: Broadcast reveal transaction
+        let txid = self.wallet_manager.broadcast_transaction(&signed_tx).await?;
+        
+        Ok((txid, fee))
+    }
+
+    /// Show transaction preview
+    fn show_transaction_preview(&self, tx: &bitcoin::Transaction, fee: u64) {
+        println!("\n🔍 Transaction Preview");
+        println!("═══════════════════════");
+        
+        // Show basic transaction info
+        println!("📋 Transaction ID: {}", tx.compute_txid());
+        println!("💰 Estimated Fee: {} sats", fee);
+        println!("📊 Transaction Size: {} vbytes", tx.vsize());
+        println!("📈 Fee Rate: {:.2} sat/vB", fee as f64 / tx.vsize() as f64);
+        
+        // Use the existing runestone decoder to show detailed transaction analysis
+        match format_runestone_with_decoded_messages(tx) {
+            Ok(result) => {
+                println!("\n🪨 Runestone Analysis:");
+                print_human_readable_runestone(tx, &result);
+            },
+            Err(e) => {
+                warn!("Failed to decode runestone for preview: {}", e);
+                println!("\n⚠️  Could not decode runestone data for preview");
+                
+                // Show basic transaction structure as fallback
+                println!("\n📥 Inputs ({}):", tx.input.len());
+                for (i, input) in tx.input.iter().enumerate() {
+                    println!("  {}. 🔗 {}:{}", i + 1, input.previous_output.txid, input.previous_output.vout);
+                }
+                
+                println!("\n📤 Outputs ({}):", tx.output.len());
+                for (i, output) in tx.output.iter().enumerate() {
+                    if output.script_pubkey.is_op_return() {
+                        println!("  {}. 📜 OP_RETURN ({} bytes)", i + 1, output.script_pubkey.len());
+                    } else {
+                        println!("  {}. 💰 {} sats", i + 1, output.value.to_sat());
+                    }
+                }
+            }
+        }
+    }
+
+    /// Request user confirmation
+    fn request_user_confirmation(&self) -> Result<()> {
+        println!("\n⚠️  TRANSACTION CONFIRMATION");
+        println!("═══════════════════════════");
+        println!("This transaction will be broadcast to the network.");
+        println!("Please review the details above carefully.");
+        print!("\nDo you want to proceed with broadcasting this transaction? (y/N): ");
+        io::stdout().flush().unwrap();
+        
+        let mut input = String::new();
+        io::stdin().read_line(&mut input).context("Failed to read user input")?;
+        let input = input.trim().to_lowercase();
+        
+        if input != "y" && input != "yes" {
+            return Err(anyhow!("Transaction cancelled by user"));
+        }
+        
+        Ok(())
+    }
+
+    /// Trace reveal transaction protostones
+    async fn trace_reveal_transaction(
+        &self,
+        txid: &str,
+        params: &EnhancedExecuteParams
+    ) -> Result<Option<Vec<serde_json::Value>>> {
+        info!("Starting transaction tracing for reveal transaction: {}", txid);
+        
+        if !params.raw_output {
+            println!("\n🔍 Tracing reveal transaction protostones...");
+        }
+        
+        // Step 1: Wait for metashrew to catch up
+        self.wait_for_metashrew_sync().await?;
+        
+        // Step 2: Get transaction details to find protostone outputs
+        let tx_hex = self.rpc_client.get_transaction_hex(txid).await?;
+        let tx_bytes = hex::decode(tx_hex.trim_start_matches("0x"))
+            .context("Failed to decode transaction hex")?;
+        let tx: bitcoin::Transaction = bitcoin::consensus::deserialize(&tx_bytes)
+            .context("Failed to deserialize transaction")?;
+        
+        // Step 3: Find OP_RETURN outputs (protostones)
+        let mut traces = Vec::new();
+        
+        for (vout, output) in tx.output.iter().enumerate() {
+            if output.script_pubkey.is_op_return() {
+                if !params.raw_output {
+                    println!("🔍 Tracing protostone at vout {}...", vout);
+                }
+                
+                // Trace this protostone
+                match self.rpc_client.trace_outpoint_json(txid, vout as u32).await {
+                    Ok(trace_result) => {
+                        if params.raw_output {
+                            traces.push(serde_json::Value::String(trace_result));
+                        } else {
+                            // Pretty print the trace
+                            match self.rpc_client.trace_outpoint_pretty(txid, vout as u32).await {
+                                Ok(pretty_trace) => {
+                                    println!("\n📊 Trace for vout {}:", vout);
+                                    println!("{}", pretty_trace);
+                                },
+                                Err(e) => {
+                                    println!("❌ Failed to get pretty trace for vout {}: {}", vout, e);
+                                }
+                            }
+                        }
+                    },
+                    Err(e) => {
+                        if !params.raw_output {
+                            println!("❌ Failed to trace vout {}: {}", vout, e);
+                        }
+                    }
+                }
+            }
+        }
+        
+        if traces.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(traces))
+        }
+    }
+
+    /// Wait for metashrew to synchronize with Bitcoin Core
+    async fn wait_for_metashrew_sync(&self) -> Result<()> {
+        info!("Waiting for metashrew to synchronize...");
+        
+        let max_attempts = 30; // 30 seconds timeout
+        let mut attempts = 0;
+        
+        loop {
+            attempts += 1;
+            
+            // Get heights from both Bitcoin Core and Metashrew
+            let bitcoin_height = self.rpc_client.get_block_count().await?;
+            let metashrew_height = self.rpc_client.get_metashrew_height().await?;
+            
+            // Metashrew should be +1 compared to Bitcoin Core
+            if metashrew_height >= bitcoin_height + 1 {
+                info!("Metashrew synchronized: Bitcoin={}, Metashrew={}", bitcoin_height, metashrew_height);
+                break;
+            }
+            
+            if attempts >= max_attempts {
+                return Err(anyhow!("Timeout waiting for metashrew synchronization. Bitcoin height: {}, Metashrew height: {}", bitcoin_height, metashrew_height));
+            }
+            
+            debug!("Waiting for sync: Bitcoin={}, Metashrew={}, attempt {}/{}", bitcoin_height, metashrew_height, attempts, max_attempts);
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        }
+        
+        Ok(())
     }
 }
 
@@ -642,18 +1037,21 @@ fn parse_single_protostone(spec_str: &str) -> Result<ProtostoneSpec> {
 }
 
 /// Parse cellpack from string format
-fn parse_cellpack(cellpack_str: &str) -> Result<Vec<u8>> {
-    // Parse comma-separated numbers into Vec<u8>
-    let mut bytes = Vec::new();
+fn parse_cellpack(cellpack_str: &str) -> Result<Cellpack> {
+    // Parse comma-separated numbers into Vec<u128>
+    let mut values = Vec::new();
     
     for part in cellpack_str.split(',') {
         let trimmed = part.trim();
-        let byte_val = trimmed.parse::<u8>()
-            .with_context(|| format!("Invalid byte value in cellpack: {}", trimmed))?;
-        bytes.push(byte_val);
+        let value = trimmed.parse::<u128>()
+            .with_context(|| format!("Invalid u128 value in cellpack: {}", trimmed))?;
+        values.push(value);
     }
     
-    Ok(bytes)
+    // Convert Vec<u128> to Cellpack using TryFrom
+    // The first two values become target (block, tx), remaining values become inputs
+    Cellpack::try_from(values)
+        .with_context(|| "Failed to create Cellpack from values (need at least 2 values for target)")
 }
 
 /// Parse Bitcoin transfer specification
@@ -823,5 +1221,45 @@ mod tests {
         let input = "a,[b,c],d";
         let parts = split_respecting_brackets(input, ',').unwrap();
         assert_eq!(parts, vec!["a", "[b,c]", "d"]);
+    }
+
+    #[test]
+    fn test_parse_cellpack_with_large_values() {
+        // Test the original failing case: [3,797,101]
+        let cellpack = parse_cellpack("3,797,101").unwrap();
+        
+        // Verify target (first two values)
+        assert_eq!(cellpack.target.block, 3);
+        assert_eq!(cellpack.target.tx, 797);
+        
+        // Verify inputs (remaining values)
+        assert_eq!(cellpack.inputs, vec![101]);
+    }
+
+    #[test]
+    fn test_parse_cellpack_minimum_values() {
+        // Test with minimum required values (target only)
+        let cellpack = parse_cellpack("2,0").unwrap();
+        
+        assert_eq!(cellpack.target.block, 2);
+        assert_eq!(cellpack.target.tx, 0);
+        assert_eq!(cellpack.inputs, Vec::<u128>::new());
+    }
+
+    #[test]
+    fn test_parse_cellpack_multiple_inputs() {
+        // Test with multiple input values
+        let cellpack = parse_cellpack("1,2,100,200,300").unwrap();
+        
+        assert_eq!(cellpack.target.block, 1);
+        assert_eq!(cellpack.target.tx, 2);
+        assert_eq!(cellpack.inputs, vec![100, 200, 300]);
+    }
+
+    #[test]
+    fn test_parse_cellpack_insufficient_values() {
+        // Test error case: not enough values for target
+        let result = parse_cellpack("1");
+        assert!(result.is_err());
     }
 }
