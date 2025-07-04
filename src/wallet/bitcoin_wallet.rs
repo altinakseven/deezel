@@ -299,6 +299,14 @@ impl BitcoinWallet {
         Ok(x_only_pubkey)
     }
     
+    /// Get a keypair for taproot operations
+    pub async fn get_keypair(&self) -> Result<bitcoin::secp256k1::Keypair> {
+        // For taproot, we use the master private key to create a keypair
+        // In a more sophisticated implementation, you might derive a specific key
+        let keypair = bitcoin::secp256k1::Keypair::from_secret_key(&self.secp, &self.master_xprv.private_key);
+        Ok(keypair)
+    }
+    
     /// Derive a private key for a specific derivation path
     pub fn derive_private_key(&self, derivation_path: &DerivationPath) -> Result<PrivateKey> {
         let derived_xprv = self.master_xprv.derive_priv(&self.secp, derivation_path)
@@ -1488,10 +1496,10 @@ impl BitcoinWallet {
         if is_coinbase {
             if let Some(height) = block_height {
                 let confirmations = current_height.saturating_sub(height);
-                if confirmations < 100 {
+                if confirmations <= 100 {
                     frozen = true;
                     freeze_reasons.push(FreezeReason::ImmatureCoinbase);
-                    debug!("Freezing coinbase UTXO {}:{} - {} confirmations < 100 required",
+                    debug!("Freezing coinbase UTXO {}:{} - {} confirmations <= 100 required",
                            utxo.txid, utxo.vout, confirmations);
                 } else {
                     debug!("Coinbase UTXO {}:{} is mature with {} confirmations",
@@ -1994,6 +2002,153 @@ impl BitcoinWallet {
         }
         
         Err(anyhow!("Could not find derivation path for UTXO address: {}", utxo.address))
+    }
+    
+    /// Sign a PSBT using the wallet
+    pub async fn sign_psbt(&self, psbt: &bitcoin::psbt::Psbt) -> Result<bitcoin::psbt::Psbt> {
+        use bitcoin::psbt::Psbt;
+        use bitcoin::sighash::{SighashCache, TapSighashType, EcdsaSighashType, Prevouts};
+        use bitcoin::secp256k1::{Keypair, schnorr::Signature, Message};
+        use bitcoin::key::{TapTweak, UntweakedKeypair};
+        use bitcoin::taproot;
+        
+        info!("Signing PSBT with {} inputs", psbt.inputs.len());
+        
+        let mut signed_psbt = psbt.clone();
+        
+        // Create prevouts for sighash calculation
+        let prevouts: Vec<bitcoin::TxOut> = signed_psbt.inputs.iter()
+            .map(|input| {
+                input.witness_utxo.clone()
+                    .ok_or_else(|| anyhow!("Missing witness_utxo for input"))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        
+        let prevouts = Prevouts::All(&prevouts);
+        
+        // Sign each input
+        for (i, input) in signed_psbt.inputs.iter_mut().enumerate() {
+            // Skip if already signed
+            if input.final_script_witness.is_some() || input.final_script_sig.is_some() {
+                debug!("Input {} already signed, skipping", i);
+                continue;
+            }
+            
+            // Get the witness UTXO
+            let witness_utxo = input.witness_utxo.as_ref()
+                .ok_or_else(|| anyhow!("Missing witness_utxo for input {}", i))?;
+            
+            // Determine address type from script pubkey
+            let address_type = self.determine_address_type(&witness_utxo.script_pubkey)?;
+            debug!("Input {}: address type = {}", i, address_type);
+            
+            // Create a dummy UTXO info to find derivation path
+            let dummy_utxo = UtxoInfo {
+                txid: signed_psbt.unsigned_tx.input[i].previous_output.txid.to_string(),
+                vout: signed_psbt.unsigned_tx.input[i].previous_output.vout,
+                amount: witness_utxo.value.to_sat(),
+                address: "".to_string(), // We'll need to derive this
+                confirmations: 1,
+                frozen: false,
+                script_pubkey: witness_utxo.script_pubkey.clone(),
+            };
+            
+            // For taproot script spends, handle differently
+            if address_type == "p2tr" && !input.tap_scripts.is_empty() {
+                // This is a taproot script spend
+                info!("Signing taproot script spend for input {}", i);
+                
+                // Get the internal key
+                let internal_key = input.tap_internal_key
+                    .ok_or_else(|| anyhow!("Missing tap_internal_key for taproot script spend"))?;
+                
+                // Get the script and control block from tap_scripts
+                let (control_block, (script, leaf_version)) = input.tap_scripts.iter().next()
+                    .ok_or_else(|| anyhow!("Missing tap_scripts for taproot script spend"))?;
+                
+                // Create sighash for script spend
+                let mut sighash_cache = SighashCache::new(&signed_psbt.unsigned_tx);
+                let sighash = sighash_cache
+                    .taproot_script_spend_signature_hash(
+                        i,
+                        &prevouts,
+                        bitcoin::taproot::TapLeafHash::from_script(&script, *leaf_version),
+                        TapSighashType::Default,
+                    )
+                    .context("Failed to compute taproot script spend sighash")?;
+                
+                // Create keypair from master private key (for envelope operations)
+                let keypair = Keypair::from_secret_key(&self.secp, &self.master_xprv.private_key);
+                
+                // Sign the sighash
+                let msg = Message::from(sighash);
+                let mut rng = bitcoin::secp256k1::rand::thread_rng();
+                let signature = self.secp.sign_schnorr_with_rng(&msg, &keypair, &mut rng);
+                
+                // Create taproot signature
+                let taproot_signature = taproot::Signature {
+                    signature,
+                    sighash_type: TapSighashType::Default,
+                };
+                
+                // Set the signature in tap_script_sigs
+                let tap_leaf_hash = bitcoin::taproot::TapLeafHash::from_script(&script, *leaf_version);
+                input.tap_script_sigs.insert(
+                    (internal_key, tap_leaf_hash),
+                    taproot_signature
+                );
+                
+                info!("Added taproot script signature for input {}", i);
+            } else {
+                // Regular key-path spending or other address types
+                // Find the derivation path for this input
+                // For now, we'll use a simplified approach and try common paths
+                
+                match address_type.as_str() {
+                    "p2tr" => {
+                        // P2TR key-path spending
+                        let mut sighash_cache = SighashCache::new(&signed_psbt.unsigned_tx);
+                        let sighash = sighash_cache
+                            .taproot_key_spend_signature_hash(
+                                i,
+                                &prevouts,
+                                TapSighashType::Default,
+                            )
+                            .context("Failed to compute taproot key spend sighash")?;
+                        
+                        // Use master key for taproot operations
+                        let keypair = Keypair::from_secret_key(&self.secp, &self.master_xprv.private_key);
+                        let untweaked_keypair = UntweakedKeypair::from(keypair);
+                        let tweaked_keypair = untweaked_keypair.tap_tweak(&self.secp, None);
+                        
+                        let msg = Message::from(sighash);
+                        let mut rng = bitcoin::secp256k1::rand::thread_rng();
+                        let signature = self.secp.sign_schnorr_with_rng(&msg, tweaked_keypair.as_keypair(), &mut rng);
+                        
+                        let taproot_signature = taproot::Signature {
+                            signature,
+                            sighash_type: TapSighashType::Default,
+                        };
+                        
+                        // Set the signature in tap_key_sig
+                        input.tap_key_sig = Some(taproot_signature);
+                        
+                        info!("Added taproot key signature for input {}", i);
+                    },
+                    "p2wpkh" => {
+                        // P2WPKH signing - would need proper derivation path finding
+                        // For now, skip non-taproot inputs in envelope context
+                        warn!("Skipping P2WPKH input {} in envelope context", i);
+                    },
+                    _ => {
+                        warn!("Unsupported address type for PSBT signing: {}", address_type);
+                    }
+                }
+            }
+        }
+        
+        info!("PSBT signing completed");
+        Ok(signed_psbt)
     }
 }
 

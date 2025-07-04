@@ -460,9 +460,19 @@ impl WalletManager {
         self.wallet.get_internal_key().await
     }
     
+    /// Get a keypair for taproot operations
+    pub async fn get_keypair(&self) -> Result<bitcoin::secp256k1::Keypair> {
+        self.wallet.get_keypair().await
+    }
+    
     /// Get the network configuration
     pub fn get_network(&self) -> Network {
         self.config.network
+    }
+    
+    /// Sign a PSBT using the wallet
+    pub async fn sign_psbt(&self, psbt: &bitcoin::psbt::Psbt) -> Result<bitcoin::psbt::Psbt> {
+        self.wallet.sign_psbt(psbt).await
     }
 }
 

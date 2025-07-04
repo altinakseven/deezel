@@ -39,7 +39,8 @@ done
     --change [self:p2tr:2] \
     --to [self:p2tr:1] \
     --fee-rate 1 \
+    --yes \
     $RAW_FLAG \
     $TRACE_FLAG \
     $ADDITIONAL_ARGS \
-    '[3,797,101]:v0:v0'
+	    '[3,797,101]:v0:v0'

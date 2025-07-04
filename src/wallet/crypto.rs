@@ -8,14 +8,14 @@
 
 use anyhow::{Context, Result, anyhow};
 use aes_gcm::{Aes256Gcm, Key, Nonce, KeyInit};
-use aes_gcm::aead::{Aead, OsRng, generic_array::GenericArray};
+use aes_gcm::aead::{Aead, OsRng};
 use pbkdf2::{pbkdf2_hmac};
 use sha2::Sha256;
 use rand::RngCore;
 use serde::{Serialize, Deserialize};
 use std::process::{Command, Stdio};
-use std::io::{Write, Read};
-use log::{info, debug, warn};
+use std::io::Write;
+use log::info;
 
 /// Encrypted wallet data structure
 #[derive(Serialize, Deserialize, Debug)]

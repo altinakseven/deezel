@@ -2,6 +2,7 @@
 export RUST_LOG=debug
 DEEZEL=/data/deezel/target/release/deezel
 
+PWD=$(pwd)
 cd /data/alkanes
 echo "restarting alkanes"
 docker-compose down -v
@@ -30,3 +31,5 @@ echo "Attempting to send transaction..."
 $DEEZEL --wallet-file ~/.deezel/regtest.json.asc -p regtest --sandshrew-rpc-url http://localhost:18888 --passphrase testtesttest wallet send --from p2tr:0 [self:p2tr:0] 10000 --fee-rate 1
 
 
+cd $PWD
+bash ./examples/run-alkanes-execute.sh

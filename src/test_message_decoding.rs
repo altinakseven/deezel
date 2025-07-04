@@ -4,7 +4,7 @@
 mod tests {
     use crate::runestone_enhanced::{decode_protostone_message, format_runestone_with_decoded_messages};
     use ordinals::Runestone;
-    use bdk::bitcoin::{Transaction, TxOut, absolute::LockTime};
+    use bitcoin::{Transaction, TxOut, absolute::LockTime};
 
     #[test]
     fn test_decode_protostone_message() {
@@ -41,8 +41,8 @@ mod tests {
         
         let script = runestone.encipher();
         
-        // Convert from bitcoin::ScriptBuf to bdk::bitcoin::ScriptBuf
-        let bdk_script = bdk::bitcoin::ScriptBuf::from_bytes(script.as_bytes().to_vec());
+        // Convert from bitcoin::ScriptBuf to bitcoin::ScriptBuf
+        let bdk_script = bitcoin::ScriptBuf::from_bytes(script.as_bytes().to_vec());
         
         let tx = Transaction {
             version: 2,
@@ -51,7 +51,7 @@ mod tests {
             output: vec![
                 TxOut {
                     value: 546, // Dust output
-                    script_pubkey: bdk::bitcoin::ScriptBuf::new(),
+                    script_pubkey: bitcoin::ScriptBuf::new(),
                 },
                 TxOut {
                     value: 0,

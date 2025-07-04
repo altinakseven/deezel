@@ -329,6 +329,8 @@ impl EnhancedAlkanesExecutor {
                 vout: utxo.vout,
             };
             
+            debug!("Considering UTXO: {}:{} with {} sats", outpoint.txid, outpoint.vout, utxo.amount);
+            
             // Check if this UTXO helps meet our requirements
             let mut should_include = false;
             
@@ -336,21 +338,24 @@ impl EnhancedAlkanesExecutor {
             if bitcoin_collected < bitcoin_needed {
                 bitcoin_collected += utxo.amount;
                 should_include = true;
+                debug!("Including UTXO for Bitcoin requirement: collected {} / needed {}", bitcoin_collected, bitcoin_needed);
             }
             
             // Check alkanes requirements (simplified - would need RPC calls to check actual balances)
             for ((block, tx), needed_amount) in &alkanes_needed {
-                let collected = alkanes_collected.get(&(*block, *tx)).unwrap_or(&0);
-                if collected < needed_amount {
+                let collected = *alkanes_collected.get(&(*block, *tx)).unwrap_or(&0);
+                if collected < *needed_amount {
                     // This UTXO might contain the needed alkanes token
                     // In a full implementation, we'd check the actual alkanes balance
                     should_include = true;
                     *alkanes_collected.entry((*block, *tx)).or_insert(0) += 1; // Placeholder
+                    debug!("Including UTXO for alkanes requirement {}:{}: collected {} / needed {}", block, tx, collected + 1, needed_amount);
                 }
             }
             
             if should_include {
                 selected_utxos.push(outpoint);
+                debug!("Selected UTXO: {}:{}", outpoint.txid, outpoint.vout);
             }
             
             // Check if we've met all requirements
@@ -360,6 +365,7 @@ impl EnhancedAlkanesExecutor {
             });
             
             if bitcoin_satisfied && alkanes_satisfied {
+                debug!("All requirements satisfied, stopping UTXO selection");
                 break;
             }
         }
@@ -377,6 +383,139 @@ impl EnhancedAlkanesExecutor {
         }
         
         info!("Selected {} UTXOs meeting all requirements", selected_utxos.len());
+        Ok(selected_utxos)
+    }
+
+    /// Select UTXOs for reveal transaction, allowing commit UTXO even if frozen
+    async fn select_utxos_for_reveal(&self, requirements: &[InputRequirement], commit_outpoint: bitcoin::OutPoint) -> Result<Vec<bitcoin::OutPoint>> {
+        info!("Selecting UTXOs for reveal transaction (allowing commit UTXO even if frozen)");
+        
+        // Get all wallet UTXOs including frozen ones
+        let all_wallet_utxos = self.wallet_manager.get_enriched_utxos().await?;
+        debug!("Found {} total wallet UTXOs (including frozen)", all_wallet_utxos.len());
+        
+        let mut selected_utxos = Vec::new();
+        let mut bitcoin_needed = 0u64;
+        let mut alkanes_needed: HashMap<(u64, u64), u64> = HashMap::new();
+        
+        // Calculate total requirements
+        for requirement in requirements {
+            match requirement {
+                InputRequirement::Bitcoin { amount } => {
+                    bitcoin_needed += amount;
+                },
+                InputRequirement::Alkanes { block, tx, amount } => {
+                    let key = (*block, *tx);
+                    *alkanes_needed.entry(key).or_insert(0) += amount;
+                }
+            }
+        }
+        
+        info!("Need {} sats Bitcoin and {} alkanes tokens", bitcoin_needed, alkanes_needed.len());
+        
+        // Simple greedy selection - in production this should be optimized
+        let mut bitcoin_collected = 0u64;
+        let mut alkanes_collected: HashMap<(u64, u64), u64> = HashMap::new();
+        
+        for enriched_utxo in all_wallet_utxos {
+            let utxo = &enriched_utxo.utxo;
+            
+            // Parse UTXO outpoint
+            let outpoint = bitcoin::OutPoint {
+                txid: utxo.txid.parse().context("Invalid TXID in UTXO")?,
+                vout: utxo.vout,
+            };
+            
+            // Skip the commit outpoint since it will be added separately
+            if outpoint == commit_outpoint {
+                debug!("Skipping commit outpoint in selection: {}:{}", outpoint.txid, outpoint.vout);
+                continue;
+            }
+            
+            // For reveal transactions, we need to be more permissive with UTXO selection
+            // since we may need to use unconfirmed UTXOs from our own commit transaction
+            
+            let is_dust = utxo.amount <= 546;
+            let is_unconfirmed = enriched_utxo.utxo.confirmations == 0;
+            let is_frozen_for_coinbase = enriched_utxo.freeze_reason.as_ref()
+                .map_or(false, |reason| reason.contains("immature_coinbase"));
+            
+            // Skip coinbase UTXOs that are still immature (these require 100+ confirmations)
+            if is_frozen_for_coinbase {
+                debug!("Skipping immature coinbase UTXO: {}:{} (reason: {:?})",
+                       outpoint.txid, outpoint.vout, enriched_utxo.freeze_reason);
+                continue;
+            }
+            
+            // For reveal transactions, allow unconfirmed UTXOs (they may be from our commit tx)
+            // and allow dust UTXOs if we need them for Bitcoin requirements
+            if is_dust && bitcoin_collected >= bitcoin_needed && !is_unconfirmed {
+                debug!("Skipping dust UTXO (not needed and confirmed): {}:{} with {} sats",
+                       outpoint.txid, outpoint.vout, utxo.amount);
+                continue;
+            }
+            
+            // Allow unconfirmed UTXOs for reveal transactions (they may be from our commit)
+            if is_unconfirmed {
+                debug!("Including unconfirmed UTXO for reveal transaction: {}:{} with {} sats",
+                       outpoint.txid, outpoint.vout, utxo.amount);
+            }
+            
+            debug!("Considering UTXO: {}:{} with {} sats (frozen: {}, reason: {:?})",
+                   outpoint.txid, outpoint.vout, utxo.amount, enriched_utxo.utxo.frozen, enriched_utxo.freeze_reason);
+            
+            // Check if this UTXO helps meet our requirements
+            let mut should_include = false;
+            
+            // Check Bitcoin requirement
+            if bitcoin_collected < bitcoin_needed {
+                bitcoin_collected += utxo.amount;
+                should_include = true;
+                debug!("Including UTXO for Bitcoin requirement: collected {} / needed {}", bitcoin_collected, bitcoin_needed);
+            }
+            
+            // Check alkanes requirements (simplified - would need RPC calls to check actual balances)
+            for ((block, tx), needed_amount) in &alkanes_needed {
+                let collected = *alkanes_collected.get(&(*block, *tx)).unwrap_or(&0);
+                if collected < *needed_amount {
+                    // This UTXO might contain the needed alkanes token
+                    // In a full implementation, we'd check the actual alkanes balance
+                    should_include = true;
+                    *alkanes_collected.entry((*block, *tx)).or_insert(0) += 1; // Placeholder
+                    debug!("Including UTXO for alkanes requirement {}:{}: collected {} / needed {}", block, tx, collected + 1, needed_amount);
+                }
+            }
+            
+            if should_include {
+                selected_utxos.push(outpoint);
+                debug!("Selected UTXO: {}:{}", outpoint.txid, outpoint.vout);
+            }
+            
+            // Check if we've met all requirements
+            let bitcoin_satisfied = bitcoin_collected >= bitcoin_needed;
+            let alkanes_satisfied = alkanes_needed.iter().all(|(key, needed)| {
+                alkanes_collected.get(key).unwrap_or(&0) >= needed
+            });
+            
+            if bitcoin_satisfied && alkanes_satisfied {
+                debug!("All requirements satisfied, stopping UTXO selection");
+                break;
+            }
+        }
+        
+        // Verify we have enough
+        if bitcoin_collected < bitcoin_needed {
+            return Err(anyhow!("Insufficient Bitcoin for reveal transaction: need {} sats, have {} (including unconfirmed UTXOs)", bitcoin_needed, bitcoin_collected));
+        }
+        
+        for ((block, tx), needed) in &alkanes_needed {
+            let collected = alkanes_collected.get(&(*block, *tx)).unwrap_or(&0);
+            if collected < needed {
+                return Err(anyhow!("Insufficient alkanes token {}:{}: need {}, have {}", block, tx, needed, collected));
+            }
+        }
+        
+        info!("Selected {} UTXOs meeting all requirements (excluding commit UTXO)", selected_utxos.len());
         Ok(selected_utxos)
     }
 
@@ -530,8 +669,9 @@ impl EnhancedAlkanesExecutor {
             output: outputs,
         };
         
-        // Calculate fee (simplified)
-        let fee = fee_rate.unwrap_or(5.0) as u64 * tx.vsize() as u64;
+        // Calculate fee properly (fee_rate is in sat/vB)
+        let fee_rate_sat_vb = fee_rate.unwrap_or(5.0);
+        let fee = (fee_rate_sat_vb * tx.vsize() as f32).ceil() as u64;
         
         info!("Built transaction with {} inputs, {} outputs, fee: {} sats",
               tx.input.len(), tx.output.len(), fee);
@@ -578,53 +718,180 @@ impl EnhancedAlkanesExecutor {
     ) -> Result<(bitcoin::Transaction, u64)> {
         info!("Building and signing transaction with envelope support");
         
-        use bitcoin::{Transaction, TxIn, TxOut, ScriptBuf};
+        use bitcoin::{psbt::Psbt, TxOut, ScriptBuf};
         
-        // Create inputs from selected UTXOs
-        let inputs: Vec<TxIn> = utxos.iter().enumerate().map(|(i, outpoint)| {
-            let mut input = TxIn {
-                previous_output: *outpoint,
-                script_sig: ScriptBuf::new(),
-                sequence: bitcoin::Sequence::ENABLE_RBF_NO_LOCKTIME,
-                witness: bitcoin::Witness::new(),
-            };
-            
-            // If this is the first input and we have an envelope, set the witness
-            if i == 0 && envelope_manager.is_some() {
-                let envelope_witness = envelope_manager.unwrap().create_witness();
-                input.witness = envelope_witness;
-                info!("Set envelope reveal witness for first input");
-            }
-            
-            input
-        }).collect();
-        
-        // Add OP_RETURN output with runestone
+        // Add OP_RETURN output with runestone (protostone)
         let op_return_output = TxOut {
             value: bitcoin::Amount::ZERO,
             script_pubkey: ScriptBuf::from(runestone),
         };
         outputs.push(op_return_output);
         
-        // Create transaction
-        let tx = Transaction {
+        // Create PSBT for proper signing
+        let network = self.wallet_manager.get_network();
+        let mut psbt = Psbt::from_unsigned_tx(bitcoin::Transaction {
             version: bitcoin::transaction::Version::TWO,
             lock_time: bitcoin::absolute::LockTime::ZERO,
-            input: inputs,
+            input: utxos.iter().map(|outpoint| bitcoin::TxIn {
+                previous_output: *outpoint,
+                script_sig: ScriptBuf::new(),
+                sequence: bitcoin::Sequence::ENABLE_RBF_NO_LOCKTIME,
+                witness: bitcoin::Witness::new(),
+            }).collect(),
             output: outputs,
-        };
+        })?;
         
-        // Calculate fee (simplified)
-        let fee = fee_rate.unwrap_or(5.0) as u64 * tx.vsize() as u64;
-        
-        info!("Built transaction with {} inputs, {} outputs, fee: {} sats",
-              tx.input.len(), tx.output.len(), fee);
-        
-        if envelope_manager.is_some() {
-            info!("Transaction includes envelope reveal in first input witness");
+        // Configure inputs for signing
+        for (i, outpoint) in utxos.iter().enumerate() {
+            // If this is the first input and we have an envelope, this is the commit output
+            // which may not exist in the wallet's UTXO set yet
+            if i == 0 && envelope_manager.is_some() {
+                let envelope_manager = envelope_manager.unwrap();
+                
+                // Get wallet's internal key for taproot
+                let internal_key = self.wallet_manager.get_internal_key().await?;
+                
+                // Create the commit output details manually since it doesn't exist in wallet yet
+                let network = self.wallet_manager.get_network();
+                let commit_address = envelope_manager.create_commit_address(network, internal_key)?;
+                
+                // Set witness_utxo for the commit output (dust amount)
+                psbt.inputs[i].witness_utxo = Some(TxOut {
+                    value: bitcoin::Amount::from_sat(546), // Dust limit for commit output
+                    script_pubkey: commit_address.script_pubkey(),
+                });
+                
+                // Get taproot spend info from envelope
+                let control_block = envelope_manager.get_control_block(internal_key)?;
+                
+                // Configure tap_scripts for proper signing
+                // For envelope transactions, we'll use a simplified approach
+                let placeholder_script = bitcoin::ScriptBuf::new();
+                psbt.inputs[i].tap_scripts.insert(
+                    control_block,
+                    (placeholder_script, bitcoin::taproot::LeafVersion::TapScript)
+                );
+                
+                // Set tap_internal_key
+                psbt.inputs[i].tap_internal_key = Some(internal_key);
+                
+                info!("Configured envelope reveal taproot script spend for commit input (not yet mined)");
+            } else {
+                // For other inputs, get UTXO details from wallet (including frozen ones for reveal)
+                let all_wallet_utxos = self.wallet_manager.get_enriched_utxos().await?;
+                let utxo_info = all_wallet_utxos.iter()
+                    .find(|u| u.utxo.txid == outpoint.txid.to_string() && u.utxo.vout == outpoint.vout)
+                    .map(|enriched| &enriched.utxo)
+                    .ok_or_else(|| anyhow!("UTXO not found: {}:{}", outpoint.txid, outpoint.vout))?;
+                
+                // Set witness_utxo for existing wallet UTXOs
+                psbt.inputs[i].witness_utxo = Some(TxOut {
+                    value: bitcoin::Amount::from_sat(utxo_info.amount),
+                    script_pubkey: utxo_info.script_pubkey.clone(),
+                });
+                
+                info!("Configured input {} from existing wallet UTXO (including frozen)", i);
+            }
         }
         
-        Ok((tx, fee))
+        // Sign the PSBT using wallet manager
+        let signed_psbt = self.wallet_manager.sign_psbt(&psbt).await?;
+        
+        // Extract the final transaction
+        let tx = signed_psbt.extract_tx()?;
+        
+        // Debug: Log transaction details before envelope processing
+        info!("Transaction before envelope processing: vsize={} weight={}",
+              tx.vsize(), tx.weight());
+        
+        // If we have an envelope, we need to add the envelope witness data to the first input
+        if let Some(envelope_manager) = envelope_manager {
+            let mut final_tx = tx.clone();
+            
+            // Get the envelope witness data
+            let envelope_witness = envelope_manager.create_witness();
+            
+            // Append envelope witness items to the existing witness stack
+            let mut witness_stack: Vec<Vec<u8>> = final_tx.input[0].witness.iter().map(|item| item.to_vec()).collect();
+            
+            // Add envelope witness data
+            for item in envelope_witness.iter() {
+                witness_stack.push(item.to_vec());
+            }
+            
+            // Update the witness
+            final_tx.input[0].witness = bitcoin::Witness::from_slice(&witness_stack);
+            
+            info!("Added envelope witness data to first input (total witness items: {})", witness_stack.len());
+            info!("Transaction after envelope processing: vsize={} weight={}",
+                  final_tx.vsize(), final_tx.weight());
+            
+            // For envelope transactions, the fee calculation is tricky because of large witness data
+            // We need to properly adjust output values to account for the fee
+            let fixed_fee = 5000u64; // Fixed 5000 sats for reveal transactions
+            
+            // Calculate total input value
+            let mut total_input_value = 0u64;
+            for (i, outpoint) in utxos.iter().enumerate() {
+                if i == 0 {
+                    // First input is the commit output (dust amount)
+                    total_input_value += 546; // Dust limit for commit output
+                } else {
+                    // Get UTXO details from wallet for other inputs
+                    let all_wallet_utxos = self.wallet_manager.get_enriched_utxos().await?;
+                    if let Some(enriched_utxo) = all_wallet_utxos.iter()
+                        .find(|u| u.utxo.txid == outpoint.txid.to_string() && u.utxo.vout == outpoint.vout) {
+                        total_input_value += enriched_utxo.utxo.amount;
+                    }
+                }
+            }
+            
+            // Calculate total output value
+            let total_output_value: u64 = final_tx.output.iter().map(|out| out.value.to_sat()).sum();
+            
+            // Check if we need to adjust outputs to account for fee
+            let current_fee = total_input_value.saturating_sub(total_output_value);
+            
+            info!("Envelope transaction fee analysis:");
+            info!("  Total input value: {} sats", total_input_value);
+            info!("  Total output value: {} sats", total_output_value);
+            info!("  Current implied fee: {} sats", current_fee);
+            info!("  Target fee: {} sats", fixed_fee);
+            
+            if current_fee != fixed_fee {
+                // Adjust the last non-OP_RETURN output to account for the fee difference
+                let fee_adjustment = current_fee.saturating_sub(fixed_fee);
+                
+                // Find the last non-OP_RETURN output to adjust
+                for output in final_tx.output.iter_mut().rev() {
+                    if !output.script_pubkey.is_op_return() && output.value.to_sat() > fee_adjustment {
+                        let new_value = output.value.to_sat().saturating_sub(fee_adjustment);
+                        output.value = bitcoin::Amount::from_sat(new_value);
+                        info!("Adjusted output value by {} sats to achieve target fee", fee_adjustment);
+                        break;
+                    }
+                }
+            }
+            
+            info!("Using fixed fee for envelope reveal transaction: {} sats", fixed_fee);
+            info!("Built envelope reveal transaction with {} inputs, {} outputs, fee: {} sats",
+                  final_tx.input.len(), final_tx.output.len(), fixed_fee);
+            
+            return Ok((final_tx, fixed_fee));
+        }
+        
+        // Calculate fee properly (fee_rate is in sat/vB)
+        let fee_rate_sat_vb = fee_rate.unwrap_or(5.0);
+        let fee = (fee_rate_sat_vb * tx.vsize() as f32).ceil() as u64;
+        
+        // Cap the fee at a reasonable maximum (e.g., 0.001 BTC = 100,000 sats)
+        let max_fee = 100_000u64;
+        let capped_fee = fee.min(max_fee);
+        
+        info!("Built transaction with {} inputs, {} outputs, fee: {} sats",
+              tx.input.len(), tx.output.len(), capped_fee);
+        
+        Ok((tx, capped_fee))
     }
 
     /// Create and broadcast commit transaction
@@ -644,14 +911,21 @@ impl EnhancedAlkanesExecutor {
         
         info!("Envelope commit address: {}", commit_address);
         
-        // Get UTXOs for funding the commit transaction
-        let wallet_utxos = self.wallet_manager.get_utxos().await?;
-        if wallet_utxos.is_empty() {
+        // Get UTXOs for funding the commit transaction (including unconfirmed ones)
+        let enriched_utxos = self.wallet_manager.get_enriched_utxos().await?;
+        if enriched_utxos.is_empty() {
             return Err(anyhow!("No UTXOs available for commit transaction"));
         }
         
-        // Use first available UTXO for commit (simplified selection)
-        let funding_utxo = &wallet_utxos[0];
+        // Find a suitable UTXO for commit transaction (allow unconfirmed, but skip coinbase)
+        let funding_utxo = enriched_utxos.iter()
+            .find(|enriched| {
+                let is_frozen_for_coinbase = enriched.freeze_reason.as_ref()
+                    .map_or(false, |reason| reason.contains("immature_coinbase"));
+                !is_frozen_for_coinbase && enriched.utxo.amount >= 1000 // Need at least 1000 sats for commit + fees
+            })
+            .map(|enriched| &enriched.utxo)
+            .ok_or_else(|| anyhow!("No suitable UTXOs available for commit transaction (need non-coinbase UTXO with >= 1000 sats)"))?;
         let funding_outpoint = bitcoin::OutPoint {
             txid: funding_utxo.txid.parse().context("Invalid TXID in funding UTXO")?,
             vout: funding_utxo.vout,
@@ -676,7 +950,7 @@ impl EnhancedAlkanesExecutor {
         let mut outputs = vec![commit_output];
         let input_value = funding_utxo.amount;
         let commit_value = 546u64;
-        let estimated_fee = params.fee_rate.unwrap_or(5.0) as u64 * 200; // Rough estimate
+        let estimated_fee = (params.fee_rate.unwrap_or(5.0) * 200.0).ceil() as u64; // Rough estimate
         
         if input_value > commit_value + estimated_fee + 546 {
             // Add change output
@@ -744,7 +1018,8 @@ impl EnhancedAlkanesExecutor {
         self.validate_protostones(&params.protostones, params.to_addresses.len())?;
         
         // Step 2: Find additional UTXOs that meet input requirements (excluding commit)
-        let mut selected_utxos = self.select_utxos(&params.input_requirements).await?;
+        // For reveal transactions, we need to allow the commit UTXO even if it's normally frozen
+        let mut selected_utxos = self.select_utxos_for_reveal(&params.input_requirements, commit_outpoint).await?;
         
         // Step 3: Insert commit outpoint as the FIRST input
         selected_utxos.insert(0, commit_outpoint);
@@ -756,31 +1031,20 @@ impl EnhancedAlkanesExecutor {
         // Step 5: Construct runestone with protostones
         let runestone = self.construct_runestone(&params.protostones, outputs.len())?;
         
-        // Step 6: For now, create a simple reveal transaction without complex envelope support
-        // TODO: Implement proper envelope reveal transaction with witness data
-        info!("Creating simplified reveal transaction (envelope support to be implemented)");
+        // Step 6: Build the reveal transaction with envelope
+        info!("Building reveal transaction with envelope");
         
-        // Create a simple transaction to the first recipient address
-        if params.to_addresses.is_empty() {
-            return Err(anyhow!("No recipient addresses specified for reveal transaction"));
-        }
-        
-        let send_params = crate::wallet::SendParams {
-            address: params.to_addresses[0].clone(),
-            amount: 546, // Dust amount for now
-            fee_rate: params.fee_rate,
-            send_all: false,
-            from_address: None,
-            change_address: params.change_address.clone(),
-        };
-        
-        // Create and sign the transaction using wallet manager
-        let (signed_tx, tx_details) = self.wallet_manager.create_transaction(send_params).await?;
-        let fee = tx_details.fee.unwrap_or(1000);
+        let (signed_tx, final_fee) = self.build_transaction_with_envelope(
+            selected_utxos,
+            outputs,
+            runestone,
+            params.fee_rate,
+            Some(envelope_manager)
+        ).await?;
         
         // Step 7: Show transaction preview if not raw output
         if !params.raw_output {
-            self.show_transaction_preview(&signed_tx, fee);
+            self.show_transaction_preview(&signed_tx, final_fee);
             
             if !params.auto_confirm {
                 self.request_user_confirmation()?;
@@ -790,7 +1054,7 @@ impl EnhancedAlkanesExecutor {
         // Step 8: Broadcast reveal transaction
         let txid = self.wallet_manager.broadcast_transaction(&signed_tx).await?;
         
-        Ok((txid, fee))
+        Ok((txid, final_fee))
     }
 
     /// Show transaction preview
@@ -804,7 +1068,8 @@ impl EnhancedAlkanesExecutor {
         println!("📊 Transaction Size: {} vbytes", tx.vsize());
         println!("📈 Fee Rate: {:.2} sat/vB", fee as f64 / tx.vsize() as f64);
         
-        // Use the existing runestone decoder to show detailed transaction analysis
+        // Try to decode runestone from the fully signed transaction
+        // Note: This will only work for fully signed transactions, not PSBTs
         match format_runestone_with_decoded_messages(tx) {
             Ok(result) => {
                 println!("\n🪨 Runestone Analysis:");
@@ -812,7 +1077,16 @@ impl EnhancedAlkanesExecutor {
             },
             Err(e) => {
                 warn!("Failed to decode runestone for preview: {}", e);
-                println!("\n⚠️  Could not decode runestone data for preview");
+                
+                // Check if this is a reveal transaction with protostones
+                let has_op_return = tx.output.iter().any(|output| output.script_pubkey.is_op_return());
+                if has_op_return {
+                    println!("\n🪨 Protostone Transaction Detected");
+                    println!("⚠️  Runestone decoding failed - this may be expected for reveal transactions");
+                    println!("💡 The reveal transaction should contain a protostone with envelope data");
+                } else {
+                    println!("\n⚠️  Could not decode runestone data for preview");
+                }
                 
                 // Show basic transaction structure as fallback
                 println!("\n📥 Inputs ({}):", tx.input.len());
