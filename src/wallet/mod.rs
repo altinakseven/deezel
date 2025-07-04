@@ -326,6 +326,11 @@ impl WalletManager {
         self.wallet.get_balance().await
     }
     
+    /// Preview a transaction before signing - shows the same output as `./deezel runestone` command
+    pub async fn preview_transaction(&self, tx: &Transaction) -> Result<()> {
+        self.wallet.preview_transaction(tx).await
+    }
+
     /// Create a transaction using rust-bitcoin with Sandshrew UTXOs
     pub async fn create_transaction(&self, params: SendParams) -> Result<(Transaction, TransactionDetails)> {
         self.wallet.create_transaction(params).await
@@ -448,6 +453,11 @@ impl WalletManager {
     /// Get the Esplora backend
     pub fn get_backend(&self) -> SandshrewEsploraBackend {
         self.backend.clone()
+    }
+    
+    /// Get the internal key for taproot operations
+    pub async fn get_internal_key(&self) -> Result<bitcoin::secp256k1::XOnlyPublicKey> {
+        self.wallet.get_internal_key().await
     }
 }
 

@@ -144,12 +144,17 @@ impl RpcClient {
     
     /// Helper method to call RPC with protobuf encoding
     async fn call_rpc(&self, method: &str, params: Vec<Value>) -> Result<Value> {
+        debug!("Calling RPC method: {}", method);
+        
         let request = RpcRequest {
             jsonrpc: "2.0".to_string(),
             method: method.to_string(),
             params: json!(params),
             id: self.next_request_id(),
         };
+        
+        // Log the full request for debugging
+        debug!("JSON-RPC Request to {}: {}", &self.config.metashrew_rpc_url, serde_json::to_string_pretty(&request).unwrap_or_else(|_| "Failed to serialize request".to_string()));
         
         let response = self.client
             .post(&self.config.metashrew_rpc_url)
@@ -168,6 +173,9 @@ impl RpcClient {
             .json::<RpcResponse>()
             .await
             .context("Failed to parse RPC response")?;
+        
+        // Log the response for debugging
+        debug!("JSON-RPC Response: {}", serde_json::to_string_pretty(&response_body).unwrap_or_else(|_| "Failed to serialize response".to_string()));
         
         match response_body.result {
             Some(result) => Ok(result),
@@ -879,10 +887,69 @@ impl RpcClient {
     pub async fn get_address_utxos(&self, address: &str) -> Result<Value> {
         debug!("Getting UTXOs for address: {}", address);
         
-        let result = self._call("esplora_address::utxo", json!([address])).await?;
+        // Use a longer timeout and larger body limit for UTXO requests since they can be very large
+        let request = RpcRequest {
+            jsonrpc: "2.0".to_string(),
+            method: "esplora_address::utxo".to_string(),
+            params: json!([address]),
+            id: self.next_request_id(),
+        };
         
-        debug!("Got UTXOs for address: {}", address);
-        Ok(result)
+        // Log the full request for debugging
+        debug!("JSON-RPC Request to {}: {}", &self.config.metashrew_rpc_url, serde_json::to_string_pretty(&request).unwrap_or_else(|_| "Failed to serialize request".to_string()));
+        
+        // Create a client with extended timeout for large UTXO responses
+        let extended_client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(120)) // 2 minutes for large UTXO responses
+            .build()
+            .context("Failed to create extended HTTP client")?;
+        
+        let response = extended_client
+            .post(&self.config.metashrew_rpc_url)
+            .header(header::CONTENT_TYPE, "application/json")
+            .json(&request)
+            .send()
+            .await
+            .context("Failed to send RPC request")?;
+        
+        let status = response.status();
+        if !status.is_success() {
+            return Err(anyhow!("RPC request failed with status: {}", status));
+        }
+        
+        // Get the response text first to handle large responses better
+        let response_text = response
+            .text()
+            .await
+            .context("Failed to get response text")?;
+        
+        debug!("Raw response size: {} bytes", response_text.len());
+        
+        // Parse the response text as JSON
+        let response_body: RpcResponse = serde_json::from_str(&response_text)
+            .context("Failed to parse RPC response JSON")?;
+        
+        // Log the response for debugging (but truncate if too large)
+        let log_response = if response_text.len() > 1000 {
+            format!("{{\"result\": \"<truncated {} bytes>\", \"id\": {}}}", response_text.len(), response_body.id)
+        } else {
+            serde_json::to_string_pretty(&response_body).unwrap_or_else(|_| "Failed to serialize response".to_string())
+        };
+        debug!("JSON-RPC Response: {}", log_response);
+        
+        match response_body.result {
+            Some(result) => {
+                debug!("Got UTXOs for address: {} (response size: {} bytes)", address, response_text.len());
+                Ok(result)
+            },
+            None => {
+                let error = response_body.error.unwrap_or(RpcError {
+                    code: -1,
+                    message: "Unknown error".to_string(),
+                });
+                Err(anyhow!("RPC error: {} (code: {})", error.message, error.code))
+            }
+        }
     }
     
     /// Get address transaction history using esplora interface
@@ -936,6 +1003,133 @@ impl RpcClient {
             .to_string();
         
         debug!("Got block hash for height {}: {}", height, block_hash);
+        Ok(block_hash)
+    }
+    
+    /// Get best block hash from Bitcoin RPC
+    pub async fn get_best_block_hash(&self) -> Result<String> {
+        debug!("Getting best block hash from Bitcoin RPC");
+        
+        let result = self._call("btc_getbestblockhash", json!([])).await?;
+        
+        let block_hash = result.as_str()
+            .context("Invalid best block hash response")?
+            .to_string();
+        
+        debug!("Got best block hash: {}", block_hash);
+        Ok(block_hash)
+    }
+    
+    /// Get block hash by height from Bitcoin RPC
+    pub async fn get_block_hash_btc(&self, height: u64) -> Result<String> {
+        debug!("Getting block hash for height {} from Bitcoin RPC", height);
+        
+        let result = self._call("btc_getblockhash", json!([height])).await?;
+        
+        let block_hash = result.as_str()
+            .context("Invalid block hash response")?
+            .to_string();
+        
+        debug!("Got block hash for height {} from Bitcoin RPC: {}", height, block_hash);
+        Ok(block_hash)
+    }
+    
+    /// Get ord block height
+    pub async fn get_ord_block_height(&self) -> Result<u64> {
+        debug!("Getting ord block height");
+        
+        let result = self._call("ord_blockheight", json!([])).await?;
+        
+        // Handle both string and number responses
+        let height = if let Some(height_str) = result.as_str() {
+            height_str.parse::<u64>().context("Invalid ord block height string")?
+        } else if let Some(height_num) = result.as_u64() {
+            height_num
+        } else {
+            return Err(anyhow!("Invalid ord block height format"));
+        };
+        
+        debug!("Current ord block height: {}", height);
+        Ok(height)
+    }
+    
+    /// Get ord block hash
+    pub async fn get_ord_block_hash(&self) -> Result<String> {
+        debug!("Getting ord block hash");
+        
+        let result = self._call("ord_blockhash", json!([])).await?;
+        
+        let block_hash = result.as_str()
+            .context("Invalid ord block hash response")?
+            .to_string();
+        
+        debug!("Got ord block hash: {}", block_hash);
+        Ok(block_hash)
+    }
+    
+    /// Get esplora tip height
+    pub async fn get_esplora_tip_height(&self) -> Result<u64> {
+        debug!("Getting esplora tip height");
+        
+        let result = self._call("esplora_block:tip:height", json!([])).await?;
+        
+        // Handle both string and number responses
+        let height = if let Some(height_str) = result.as_str() {
+            height_str.parse::<u64>().context("Invalid esplora tip height string")?
+        } else if let Some(height_num) = result.as_u64() {
+            height_num
+        } else {
+            return Err(anyhow!("Invalid esplora tip height format"));
+        };
+        
+        debug!("Current esplora tip height: {}", height);
+        Ok(height)
+    }
+
+    /// Get esplora blocks tip height using the correct method name
+    pub async fn get_esplora_blocks_tip_height(&self) -> Result<u64> {
+        debug!("Getting esplora blocks tip height");
+        
+        let result = self._call("esplora_blocks:tip:height", json!([])).await?;
+        
+        // Handle both string and number responses
+        let height = if let Some(height_str) = result.as_str() {
+            height_str.parse::<u64>().context("Invalid esplora blocks tip height string")?
+        } else if let Some(height_num) = result.as_u64() {
+            height_num
+        } else {
+            return Err(anyhow!("Invalid esplora blocks tip height format"));
+        };
+        
+        debug!("Current esplora blocks tip height: {}", height);
+        Ok(height)
+    }
+    
+    /// Get esplora tip hash
+    pub async fn get_esplora_tip_hash(&self) -> Result<String> {
+        debug!("Getting esplora tip hash");
+        
+        let result = self._call("esplora_block:tip:hash", json!([])).await?;
+        
+        let block_hash = result.as_str()
+            .context("Invalid esplora tip hash response")?
+            .to_string();
+        
+        debug!("Got esplora tip hash: {}", block_hash);
+        Ok(block_hash)
+    }
+    
+    /// Get metashrew block hash by height
+    pub async fn get_metashrew_block_hash(&self, height: u64) -> Result<String> {
+        debug!("Getting metashrew block hash for height: {}", height);
+        
+        let result = self._call("metashrew_getblockhash", json!([height])).await?;
+        
+        let block_hash = result.as_str()
+            .context("Invalid metashrew block hash response")?
+            .to_string();
+        
+        debug!("Got metashrew block hash for height {}: {}", height, block_hash);
         Ok(block_hash)
     }
     

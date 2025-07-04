@@ -789,3 +789,190 @@ pub fn format_runestone_with_decoded_messages(tx: &Transaction) -> Result<Value>
     Ok(result)
 }
 
+/// Print human-readable, styled runestone information (same as used in deezel runestone command)
+pub fn print_human_readable_runestone(tx: &Transaction, result: &serde_json::Value) {
+    println!("🔍 Transaction Analysis");
+    println!("═══════════════════════");
+    
+    // Transaction basic info
+    if let Some(txid) = result.get("transaction_id").and_then(|v| v.as_str()) {
+        println!("📋 Transaction ID: {}", txid);
+    }
+    println!("🔢 Version: {}", tx.version);
+    println!("🔒 Lock Time: {}", tx.lock_time);
+    
+    // Transaction inputs
+    println!("\n📥 Inputs ({}):", tx.input.len());
+    for (i, input) in tx.input.iter().enumerate() {
+        println!("  {}. 🔗 {}:{}", i + 1, input.previous_output.txid, input.previous_output.vout);
+        if !input.witness.is_empty() {
+            println!("     📝 Witness: {} items", input.witness.len());
+        }
+    }
+    
+    // Transaction outputs
+    println!("\n📤 Outputs ({}):", tx.output.len());
+    for (i, output) in tx.output.iter().enumerate() {
+        println!("  {}. 💰 {} sats", i, output.value);
+        
+        // Check if this is an OP_RETURN output
+        if output.script_pubkey.is_op_return() {
+            println!("     📜 OP_RETURN script ({} bytes)", output.script_pubkey.len());
+            // Show OP_RETURN data in hex
+            let op_return_bytes = output.script_pubkey.as_bytes();
+            if op_return_bytes.len() > 2 {
+                let data_bytes = &op_return_bytes[2..]; // Skip OP_RETURN and length byte
+                let hex_data = hex::encode(data_bytes);
+                println!("     📄 Data: {}", hex_data);
+            }
+        } else {
+            // Try to extract address
+            match extract_address_from_script(&output.script_pubkey) {
+                Some(address_info) => {
+                    println!("     🏠 {}: {}", address_info.get("script_type").and_then(|v| v.as_str()).unwrap_or("Unknown"), address_info.get("address").and_then(|v| v.as_str()).unwrap_or("Unknown"));
+                }
+                None => {
+                    if output.script_pubkey.is_p2pkh() {
+                        println!("     🏠 P2PKH (Legacy)");
+                    } else if output.script_pubkey.is_p2sh() {
+                        println!("     🏛️  P2SH (Script Hash)");
+                    } else if output.script_pubkey.is_p2tr() {
+                        println!("     🌳 P2TR (Taproot)");
+                    } else if output.script_pubkey.is_witness_program() {
+                        println!("     ⚡ Witness Program (SegWit)");
+                    } else {
+                        println!("     📋 Script ({} bytes)", output.script_pubkey.len());
+                    }
+                }
+            }
+        }
+    }
+    
+    // Protostones information
+    if let Some(protostones) = result.get("protostones").and_then(|v| v.as_array()) {
+        if protostones.is_empty() {
+            println!("\n🚫 No protostones found in this transaction");
+        } else {
+            println!("\n🪨 Protostones Found: {}", protostones.len());
+            println!("═══════════════════════");
+            
+            for (i, protostone) in protostones.iter().enumerate() {
+                println!("\n🪨 Protostone #{}", i + 1);
+                println!("───────────────────");
+                
+                // Protocol tag
+                if let Some(protocol_tag) = protostone.get("protocol_tag").and_then(|v| v.as_u64()) {
+                    let protocol_name = match protocol_tag {
+                        1 => "ALKANES Metaprotocol",
+                        _ => "Unknown Protocol",
+                    };
+                    println!("🏷️  Protocol: {} (tag: {})", protocol_name, protocol_tag);
+                }
+                
+                // Message information
+                if let Some(message_bytes) = protostone.get("message_bytes").and_then(|v| v.as_array()) {
+                    println!("📨 Message ({} bytes):", message_bytes.len());
+                    
+                    // Show raw bytes
+                    let bytes_str = message_bytes.iter()
+                        .filter_map(|v| v.as_u64())
+                        .map(|n| format!("{:02x}", n))
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    println!("   📄 Raw bytes: {}", bytes_str);
+                    
+                    // Show decoded values
+                    if let Some(message_decoded) = protostone.get("message_decoded").and_then(|v| v.as_array()) {
+                        let decoded_str = message_decoded.iter()
+                            .filter_map(|v| v.as_u64())
+                            .map(|n| n.to_string())
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        println!("   🔓 Decoded: [{}]", decoded_str);
+                        
+                        // Special handling for DIESEL tokens
+                        if let Some(protocol_tag) = protostone.get("protocol_tag").and_then(|v| v.as_u64()) {
+                            if protocol_tag == 1 && message_decoded.len() >= 3 {
+                                if let (Some(first), Some(second), Some(third)) = (
+                                    message_decoded[0].as_u64(),
+                                    message_decoded[1].as_u64(),
+                                    message_decoded[2].as_u64()
+                                ) {
+                                    if first == 2 && second == 0 && third == 77 {
+                                        println!("   🔥 DIESEL Token Mint Detected!");
+                                        println!("   ⚡ Cellpack: [2, 0, 77] (Standard DIESEL mint)");
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Edicts with tree view
+                if let Some(edicts) = protostone.get("edicts").and_then(|v| v.as_array()) {
+                    if !edicts.is_empty() {
+                        println!("📋 Token Transfers ({}):", edicts.len());
+                        for (j, edict) in edicts.iter().enumerate() {
+                            if let Some(edict_obj) = edict.as_object() {
+                                let id_block = edict_obj.get("id").and_then(|v| v.get("block")).and_then(|v| v.as_u64()).unwrap_or(0);
+                                let id_tx = edict_obj.get("id").and_then(|v| v.get("tx")).and_then(|v| v.as_u64()).unwrap_or(0);
+                                let amount = edict_obj.get("amount").and_then(|v| v.as_u64()).unwrap_or(0);
+                                let output_idx = edict_obj.get("output").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+                                
+                                let tree_symbol = if j == edicts.len() - 1 { "└─" } else { "├─" };
+                                println!("   {} 🪙 Token {}:{}", tree_symbol, id_block, id_tx);
+                                println!("   {}    💰 Amount: {} units", if j == edicts.len() - 1 { "  " } else { "│ " }, amount);
+                                
+                                // Show destination output details
+                                if output_idx < tx.output.len() {
+                                    let dest_output = &tx.output[output_idx];
+                                    println!("   {}    🎯 → Output {}: {} sats",
+                                        if j == edicts.len() - 1 { "  " } else { "│ " },
+                                        output_idx, dest_output.value);
+                                    
+                                    if let Some(addr_info) = extract_address_from_script(&dest_output.script_pubkey) {
+                                        println!("   {}       📍 {}",
+                                            if j == edicts.len() - 1 { "  " } else { "│ " },
+                                            addr_info.get("address").and_then(|v| v.as_str()).unwrap_or("Unknown"));
+                                    }
+                                } else {
+                                    println!("   {}    ❌ → Invalid output {}",
+                                        if j == edicts.len() - 1 { "  " } else { "│ " },
+                                        output_idx);
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Pointer and refund with output details
+                if let Some(pointer) = protostone.get("pointer").and_then(|v| v.as_u64()) {
+                    let pointer_idx = pointer as usize;
+                    println!("👉 Pointer: output {}", pointer);
+                    if pointer_idx < tx.output.len() {
+                        let pointer_output = &tx.output[pointer_idx];
+                        println!("   └─ 💰 {} sats", pointer_output.value);
+                        if let Some(addr_info) = extract_address_from_script(&pointer_output.script_pubkey) {
+                            println!("      📍 {}", addr_info.get("address").and_then(|v| v.as_str()).unwrap_or("Unknown"));
+                        }
+                    }
+                }
+                
+                if let Some(refund) = protostone.get("refund").and_then(|v| v.as_u64()) {
+                    let refund_idx = refund as usize;
+                    println!("💸 Refund: output {}", refund);
+                    if refund_idx < tx.output.len() {
+                        let refund_output = &tx.output[refund_idx];
+                        println!("   └─ 💰 {} sats", refund_output.value);
+                        if let Some(addr_info) = extract_address_from_script(&refund_output.script_pubkey) {
+                            println!("      📍 {}", addr_info.get("address").and_then(|v| v.as_str()).unwrap_or("Unknown"));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    println!("\n✅ Analysis complete!");
+}
+

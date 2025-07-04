@@ -48,8 +48,8 @@ impl SandshrewEsploraBackend {
     pub async fn get_address_utxos(&self, address: &str) -> Result<serde_json::Value> {
         debug!("Getting UTXOs for address {}", address);
         
-        // Use the esplora_address::utxo method from Sandshrew RPC
-        let utxos = self.rpc_client._call("esplora_address::utxo", serde_json::json!([address])).await?;
+        // Use the fixed get_address_utxos method which handles large responses properly
+        let utxos = self.rpc_client.get_address_utxos(address).await?;
         
         Ok(utxos)
     }

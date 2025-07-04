@@ -17,7 +17,9 @@ Deezel is a comprehensive command-line interface and tooling suite for interacti
 - **Smart Contract Deployment**: Deploy WASM-based smart contracts to the Alkanes metaprotocol
 - **Token Operations**: Deploy, mint, and transfer Alkanes tokens
 - **AMM/DEX Functionality**: Create liquidity pools, add/remove liquidity, and perform token swaps
-- **Contract Execution**: Execute smart contract functions with calldata and token transfers
+- **Enhanced Contract Execution**: Advanced execute command with complex protostone parsing and UTXO selection
+- **Envelope Support**: Commit-reveal transactions for large contract deployments using official alkanes-support
+- **Transaction Preview**: Preview transactions before signing with detailed output analysis
 - **Advanced Simulation**: Simulate contract executions with comprehensive result analysis
 
 ### 🔍 Blockchain Analysis Tools
@@ -29,8 +31,11 @@ Deezel is a comprehensive command-line interface and tooling suite for interacti
 
 ### 🛠️ Developer Tools
 - **RPC Integration**: Direct access to Bitcoin Core and Metashrew RPC endpoints
+- **Debug Logging**: Comprehensive JSON-RPC request/response logging with `RUST_LOG=debug`
 - **Network Flexibility**: Support for multiple Bitcoin networks and custom configurations
 - **Scripting Support**: Raw JSON output modes for integration with scripts and automation
+- **Transaction Preview**: Preview all transactions before signing with detailed analysis
+- **Custom Change Addresses**: Specify custom change addresses for all send operations
 - **Comprehensive Logging**: Detailed logging with configurable levels
 
 ## Architecture
@@ -38,10 +43,10 @@ Deezel is a comprehensive command-line interface and tooling suite for interacti
 The project is organized into several core modules:
 
 - **`wallet/`**: Bitcoin wallet functionality using BDK with custom blockchain backends
-- **`alkanes/`**: Alkanes metaprotocol integration including contracts, tokens, and AMM
+- **`alkanes/`**: Alkanes metaprotocol integration including contracts, tokens, AMM, and envelope support
 - **`rpc/`**: RPC client implementations for Bitcoin Core and Metashrew
 - **`monitor/`**: Blockchain monitoring and event handling
-- **`transaction/`**: Transaction construction and management
+- **`transaction/`**: Transaction construction and management with preview capabilities
 
 ## Getting Started
 
@@ -158,15 +163,15 @@ deezel wallet balance --addresses "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"
 deezel wallet balance --addresses "p2tr:0-5,bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4,p2pkh:10"
 
 # Transaction operations
-deezel wallet send <ADDRESS> <AMOUNT> [--fee-rate <RATE>]
-deezel wallet send-all <ADDRESS> [--fee-rate <RATE>]
-deezel wallet create-tx <ADDRESS> <AMOUNT> [--fee-rate <RATE>]
+deezel wallet send <ADDRESS> <AMOUNT> [--fee-rate <RATE>] [--change <ADDRESS>]
+deezel wallet send-all <ADDRESS> [--fee-rate <RATE>] [--change <ADDRESS>]
+deezel wallet create-tx <ADDRESS> <AMOUNT> [--fee-rate <RATE>] [--change <ADDRESS>]
 deezel wallet broadcast-tx <TX_HEX>
 
-# Examples with address identifiers
-deezel wallet send [self:p2tr] 100000 --fee-rate 5
-deezel wallet send-all [self:p2pkh:1] --fee-rate 3
-deezel wallet create-tx [self:testnet:p2tr:2] 50000
+# Examples with address identifiers and custom change addresses
+deezel wallet send [self:p2tr] 100000 --fee-rate 5 --change [self:p2tr:1]
+deezel wallet send-all [self:p2pkh:1] --fee-rate 3 --change [self:p2tr:0]
+deezel wallet create-tx [self:testnet:p2tr:2] 50000 --change [self:testnet:p2tr:3]
 
 # Generate blocks to address identifiers (regtest)
 deezel bitcoind generatetoaddress --nblocks 10 --address [self:p2tr:0]
@@ -294,13 +299,16 @@ deezel wallet estimate-fee [self:p2sh] 25000
 ```bash
 # Token operations
 deezel alkanes deploy-token --name <NAME> --symbol <SYMBOL> --cap <CAP> --amount-per-mint <AMOUNT> --reserve-number <NUM>
-deezel alkanes send-token --token <ID> --amount <AMOUNT> --to <ADDRESS>
+deezel alkanes send-token --token <ID> --amount <AMOUNT> --to <ADDRESS> [--change <ADDRESS>]
 deezel alkanes balance [--address <ADDRESS>]
 deezel alkanes token-info <TOKEN_ID>
 
 # Smart contract operations
 deezel alkanes deploy-contract <WASM_FILE> --calldata <DATA>
 deezel alkanes execute --calldata <DATA> [--edicts <EDICTS>]
+
+# Enhanced contract execution with complex protostone parsing
+deezel alkanes execute --fee-rate <RATE> --to <OUTPUTS> --change <ADDRESS> --inputs <INPUTS> <PROTOSTONES> [--envelope <FILE>] [--envelope-from-stdin]
 
 # AMM operations
 deezel alkanes create-pool --calldata <DATA> --tokens <TOKENS>
@@ -313,6 +321,166 @@ deezel alkanes simulate-advanced --target <CONTRACT> --inputs <INPUTS> [--tokens
 deezel alkanes preview-remove-liquidity --token <TOKEN> --amount <AMOUNT>
 deezel alkanes inspect <ALKANE_ID> [--disasm] [--fuzz] [--meta] [--codehash]
 ```
+
+### Enhanced Alkanes Execute Command
+
+The enhanced `alkanes execute` command provides advanced functionality for complex alkanes transactions with sophisticated protostone parsing, UTXO selection, and envelope support for large contract deployments.
+
+#### Command Syntax
+
+```bash
+deezel alkanes execute --fee-rate <RATE> --to <OUTPUTS> --change <ADDRESS> --inputs <INPUTS> <PROTOSTONES> [--envelope <FILE>] [--envelope-from-stdin]
+```
+
+#### Parameters
+
+- `--fee-rate <RATE>`: Transaction fee rate in sat/vB
+- `--to <OUTPUTS>`: Comma-separated list of output addresses (supports address identifiers)
+- `--change <ADDRESS>`: Change address (supports address identifiers)
+- `--inputs <INPUTS>`: UTXO input specification (see Input Format below)
+- `<PROTOSTONES>`: Protostone specifications (see Protostone Format below)
+- `--envelope <FILE>`: Path to envelope file for commit-reveal transactions (mutually exclusive with --envelope-from-stdin)
+- `--envelope-from-stdin`: Read envelope data from stdin (mutually exclusive with --envelope)
+
+#### Input Format
+
+Inputs specify which UTXOs to use and their alkanes token contents:
+
+```
+<token_id>:<output_index>:<amount>,<token_id>:<output_index>:<amount>,B:<bitcoin_amount>
+```
+
+**Examples:**
+- `2:0:1000,2:1:500,B:10000` - Use token 2 outputs with 1000 and 500 tokens, plus 10000 sats Bitcoin
+- `123:5:250,B:5000` - Use token 123 output 5 with 250 tokens, plus 5000 sats Bitcoin
+- `B:50000` - Use only Bitcoin UTXOs totaling 50000 sats
+
+#### Protostone Format
+
+Protostones define the alkanes operations to perform. They support complex cellpack syntax and output targeting:
+
+```
+[<message>]:<target>:<pointer>:[<edict>]:[<edict>],...
+```
+
+**Message Format:**
+- `[<tag>,<amount>,<divisibility>]` - Cellpack format for token operations
+- Numbers can be used directly for simple operations
+
+**Target Options:**
+- `v<N>` - Target the Nth output (0-indexed)
+- `p<N>` - Target the Nth protostone (0-indexed)
+- `split` - Distribute evenly across all outputs
+
+**Pointer Options:**
+- `v<N>` - Point to the Nth output
+- `p<N>` - Point to the Nth protostone
+
+**Edict Format:**
+- `[<token_id>:<amount>:<output_index>:<target>]` - Transfer tokens to specific output
+
+#### Examples
+
+**Basic Token Transfer:**
+```bash
+deezel alkanes execute \
+  --fee-rate 1 \
+  --to '[self:p2tr:0],[self:p2tr:1]' \
+  --change [self:p2tr:2] \
+  --inputs '2:0:1000,B:5000' \
+  '[2,1000,77]:v0:v1'
+```
+
+**Complex Multi-Token Operation:**
+```bash
+deezel alkanes execute \
+  --fee-rate 2 \
+  --to '[self:p2tr:0],[self:p2tr:1],[self:p2tr:2]' \
+  --change [self:p2tr:3] \
+  --inputs '2:0:1000,2:1:500,123:0:250,B:15000' \
+  '[2,500,77]:v0:p1:[2:500:0:v1],[123,250,18]:v1:v0,B:5000:v0,B:5000:v1'
+```
+
+**With Envelope for Large Contract Deployment:**
+```bash
+deezel alkanes execute \
+  --fee-rate 1 \
+  --to '[self:p2tr:0]' \
+  --change [self:p2tr:1] \
+  --inputs 'B:10000' \
+  '[2,1000,77]:v0:v0' \
+  --envelope ./large-contract.wasm.gz
+```
+
+**Using Envelope from Stdin:**
+```bash
+cat contract.wasm.gz | deezel alkanes execute \
+  --fee-rate 1 \
+  --to '[self:p2tr:0]' \
+  --change [self:p2tr:1] \
+  --inputs 'B:10000' \
+  '[2,1000,77]:v0:v0' \
+  --envelope-from-stdin
+```
+
+#### Envelope Support
+
+The enhanced execute command supports envelope transactions for deploying large contracts using the commit-reveal pattern:
+
+**Features:**
+- **Official Integration**: Uses `alkanes-support` crate envelope structures
+- **File Type Detection**: Automatically detects WASM, gzip, ELF, and ZIP files
+- **Preview**: Shows envelope details including size, chunks, and file type before committing
+- **Commit-Reveal**: Creates proper commit transaction with envelope as first input
+- **Witness Encoding**: Properly encodes envelope reveal in witness stack
+
+**Envelope Preview Example:**
+```
+Envelope Preview:
+- File size: 1,234,567 bytes
+- Chunks: 2,469 (500 bytes each)
+- File type: WASM (gzipped)
+- Commit address: bc1p...
+
+Do you want to proceed with this envelope? (y/N):
+```
+
+#### Transaction Preview
+
+All enhanced execute commands show a detailed transaction preview before signing:
+
+```
+Transaction Preview:
+Inputs:
+  - 2:0 (1000 tokens) from bc1p...
+  - Bitcoin UTXO: 5000 sats from bc1q...
+
+Outputs:
+  - Output 0: bc1p... (500 tokens + 546 sats)
+  - Output 1: bc1p... (500 tokens + 546 sats)
+  - Change: bc1p... (3908 sats)
+
+Fee: 1092 sats (1 sat/vB)
+Total: 5000 sats
+
+Do you want to sign and broadcast this transaction? (y/N):
+```
+
+#### Address Identifier Resolution
+
+The enhanced execute command fully supports address identifiers for all address parameters:
+
+- `--to '[self:p2tr:0],[self:p2tr:1]'` - Multiple output addresses
+- `--change [self:p2tr:2]` - Change address
+- Mixed formats: `--to 'bc1p..., [self:p2tr:1]'` - Raw addresses and identifiers
+
+#### Technical Features
+
+- **UTXO Selection**: Intelligent selection based on alkanes token requirements and Bitcoin amounts
+- **Protostone Validation**: Comprehensive validation of protostone syntax and semantics
+- **Fee Estimation**: Accurate fee estimation including envelope commit transaction costs
+- **Error Handling**: Detailed error messages for invalid inputs, insufficient funds, and parsing errors
+- **Async Resolution**: Efficient async resolution of address identifiers
 
 ### Blockchain Query Commands
 
@@ -330,8 +498,36 @@ deezel view spendablesbyaddress <ADDRESS>
 deezel view trace <TXID:VOUT>
 
 # Transaction analysis
-deezel runestone <TXID_OR_HEX> [--raw]
+deezel runestone <TXID_OR_HEX> [--raw] [--preview]
 deezel inspect-alkane <ALKANE_ID> [--disasm] [--fuzz] [--meta] [--codehash]
+```
+
+### Enhanced Runestone Command
+
+The `runestone` command provides comprehensive decoding and analysis of Runestone transactions with optional preview functionality:
+
+```bash
+# Decode a Runestone transaction
+deezel runestone <TXID_OR_HEX> [--raw] [--preview]
+```
+
+**Options:**
+- `--raw`: Show raw runestone data without formatting
+- `--preview`: Show transaction preview format (same as used in enhanced execute)
+
+**Examples:**
+```bash
+# Decode runestone from transaction ID
+deezel runestone abc123def456...
+
+# Decode from raw transaction hex
+deezel runestone 0200000001...
+
+# Show raw runestone data
+deezel runestone abc123def456... --raw
+
+# Show transaction preview format
+deezel runestone abc123def456... --preview
 ```
 
 ## Network Configuration
@@ -397,6 +593,8 @@ deezel/
 │   │   ├── contract.rs      # Smart contract operations
 │   │   ├── token.rs         # Token operations
 │   │   ├── amm.rs           # AMM/DEX functionality
+│   │   ├── execute.rs       # Enhanced execute command with protostone parsing
+│   │   ├── envelope.rs      # Envelope support for commit-reveal transactions
 │   │   ├── simulation.rs    # Contract simulation
 │   │   ├── inspector.rs     # Contract analysis tools
 │   │   └── types.rs         # Common types and structures
@@ -406,9 +604,10 @@ deezel/
 │   │   ├── esplora_backend.rs   # Custom blockchain backend
 │   │   └── sandshrew_blockchain.rs  # Sandshrew integration
 │   ├── address_resolver.rs  # Address identifier resolution system
+│   ├── runestone_enhanced.rs    # Enhanced runestone decoding with preview
 │   ├── rpc/                 # RPC client implementations
 │   ├── monitor/             # Blockchain monitoring
-│   ├── transaction/         # Transaction construction
+│   ├── transaction/         # Transaction construction with preview
 │   └── tests/               # Test suites
 ├── memory-bank/             # Project documentation
 ├── Cargo.toml               # Project configuration
@@ -430,6 +629,49 @@ RUST_LOG=debug ./target/debug/deezel wallet info
 # Run end-to-end tests
 ./run_e2e_tests.sh
 ```
+
+### Debug Logging
+
+Deezel includes comprehensive debug logging for all JSON-RPC requests and responses. This is invaluable for debugging, development, and understanding the communication between the CLI and RPC servers.
+
+#### Enable Debug Logging
+
+```bash
+# Show all debug output including RPC requests/responses
+RUST_LOG=debug ./deezel bitcoind getblockcount
+
+# Show only RPC module debug output
+RUST_LOG=deezel_cli::rpc=debug ./deezel metashrew height
+
+# Save debug output to a file
+RUST_LOG=debug ./deezel walletinfo 2> debug.log
+```
+
+#### What Gets Logged
+
+- **Request Details**: Target URL, method name, complete JSON-RPC payload
+- **Response Details**: Complete response data, errors, and status information
+- **Timing Information**: Request/response timing and performance data
+- **Error Details**: Detailed error information for troubleshooting
+
+#### Example Debug Output
+
+```
+[DEBUG deezel_cli::rpc] Calling RPC method: metashrew_height
+[DEBUG deezel_cli::rpc] JSON-RPC Request to https://mainnet.sandshrew.io/v2/lasereyes: {
+  "jsonrpc": "2.0",
+  "method": "metashrew_height",
+  "params": [],
+  "id": 0
+}
+[DEBUG deezel_cli::rpc] JSON-RPC Response: {
+  "result": "903893",
+  "error": null,
+  "id": 0
+}
+```
+
+For complete documentation, see [`docs/DEBUG_LOGGING.md`](docs/DEBUG_LOGGING.md) and try the example script at [`examples/debug-rpc-logging.sh`](examples/debug-rpc-logging.sh).
 
 ### Contributing
 

@@ -208,6 +208,9 @@ enum WalletCommands {
         /// Source address to send from (supports address identifiers like [self:p2tr:0])
         #[clap(long)]
         from: Option<String>,
+        /// Change address (supports address identifiers like [self:p2tr:2] or raw addresses)
+        #[clap(long)]
+        change: Option<String>,
     },
     /// Send all available Bitcoin to an address
     SendAll {
@@ -219,6 +222,9 @@ enum WalletCommands {
         /// Source address to send from (supports address identifiers like [self:p2tr:0])
         #[clap(long)]
         from: Option<String>,
+        /// Change address (supports address identifiers like [self:p2tr:2] or raw addresses)
+        #[clap(long)]
+        change: Option<String>,
     },
     /// Create a transaction (without broadcasting)
     CreateTx {
@@ -232,6 +238,9 @@ enum WalletCommands {
         /// Source address to send from (supports address identifiers like [self:p2tr:0])
         #[clap(long)]
         from: Option<String>,
+        /// Change address (supports address identifiers like [self:p2tr:2] or raw addresses)
+        #[clap(long)]
+        change: Option<String>,
     },
     /// Sign a transaction
     SignTx {
@@ -315,17 +324,28 @@ enum AlkanesCommands {
         #[clap(long)]
         fee_rate: Option<f32>,
     },
-    /// Execute a contract function
+    /// Execute an alkanes transaction with complex protostone support
     Execute {
-        /// Calldata for contract execution (comma-separated)
-        #[clap(long)]
-        calldata: String,
-        /// Edicts for protostone (format: block:tx:amount:output)
-        #[clap(long)]
-        edicts: Option<String>,
         /// Fee rate in sat/vB
         #[clap(long)]
         fee_rate: Option<f32>,
+        /// Recipient addresses (comma-separated, supports identifiers like [self:p2tr:0])
+        #[clap(long)]
+        to: String,
+        /// Change address (supports identifiers like [self:p2tr:2])
+        #[clap(long)]
+        change: Option<String>,
+        /// Input requirements (format: block:tx:amount,block:tx:0,B:amount)
+        #[clap(long)]
+        inputs: String,
+        /// Protostone specifications with cellpacks and edicts
+        protostones: String,
+        /// Path to envelope file (e.g., ./file.wasm.gz) - mutually exclusive with --envelope-from-stdin
+        #[clap(long)]
+        envelope: Option<String>,
+        /// Read envelope data from stdin - mutually exclusive with --envelope
+        #[clap(long)]
+        envelope_from_stdin: bool,
     },
     /// Deploy a new alkanes token
     DeployToken {
@@ -834,8 +854,8 @@ fn analyze_runestone_tx(tx: &Transaction, raw_output: bool) {
                 // Raw JSON output for scripting
                 println!("{}", serde_json::to_string_pretty(&result).unwrap_or_else(|_| "Error formatting result".to_string()));
             } else {
-                // Human-readable styled output
-                print_human_readable_runestone(tx, &result);
+                // Human-readable styled output - use the public function from runestone_enhanced
+                deezel_cli::runestone_enhanced::print_human_readable_runestone(tx, &result);
             }
         },
         Err(e) => {
@@ -848,192 +868,6 @@ fn analyze_runestone_tx(tx: &Transaction, raw_output: bool) {
     }
 }
 
-/// Print human-readable, styled runestone information
-fn print_human_readable_runestone(tx: &Transaction, result: &serde_json::Value) {
-    println!("🔍 Transaction Analysis");
-    println!("═══════════════════════");
-    
-    // Transaction basic info
-    if let Some(txid) = result.get("transaction_id").and_then(|v| v.as_str()) {
-        println!("📋 Transaction ID: {}", txid);
-    }
-    println!("🔢 Version: {}", tx.version);
-    println!("🔒 Lock Time: {}", tx.lock_time);
-    
-    // Transaction inputs
-    println!("\n📥 Inputs ({}):", tx.input.len());
-    for (i, input) in tx.input.iter().enumerate() {
-        println!("  {}. 🔗 {}:{}", i + 1, input.previous_output.txid, input.previous_output.vout);
-        if !input.witness.is_empty() {
-            println!("     📝 Witness: {} items", input.witness.len());
-        }
-    }
-    
-    // Transaction outputs
-    println!("\n📤 Outputs ({}):", tx.output.len());
-    for (i, output) in tx.output.iter().enumerate() {
-        println!("  {}. 💰 {} sats", i, output.value);
-        
-        // Check if this is an OP_RETURN output
-        if output.script_pubkey.is_op_return() {
-            println!("     📜 OP_RETURN script ({} bytes)", output.script_pubkey.len());
-            // Show OP_RETURN data in hex
-            let op_return_bytes = output.script_pubkey.as_bytes();
-            if op_return_bytes.len() > 2 {
-                let data_bytes = &op_return_bytes[2..]; // Skip OP_RETURN and length byte
-                let hex_data = hex::encode(data_bytes);
-                println!("     📄 Data: {}", hex_data);
-            }
-        } else {
-            // Try to extract address
-            match extract_address_from_script(&output.script_pubkey) {
-                Some(address_info) => {
-                    println!("     🏠 {}: {}", address_info.script_type, address_info.address);
-                }
-                None => {
-                    if output.script_pubkey.is_p2pkh() {
-                        println!("     🏠 P2PKH (Legacy)");
-                    } else if output.script_pubkey.is_p2sh() {
-                        println!("     🏛️  P2SH (Script Hash)");
-                    } else if output.script_pubkey.is_p2tr() {
-                        println!("     🌳 P2TR (Taproot)");
-                    } else if output.script_pubkey.is_witness_program() {
-                        println!("     ⚡ Witness Program (SegWit)");
-                    } else {
-                        println!("     📋 Script ({} bytes)", output.script_pubkey.len());
-                    }
-                }
-            }
-        }
-    }
-    
-    // Protostones information
-    if let Some(protostones) = result.get("protostones").and_then(|v| v.as_array()) {
-        if protostones.is_empty() {
-            println!("\n🚫 No protostones found in this transaction");
-        } else {
-            println!("\n🪨 Protostones Found: {}", protostones.len());
-            println!("═══════════════════════");
-            
-            for (i, protostone) in protostones.iter().enumerate() {
-                println!("\n🪨 Protostone #{}", i + 1);
-                println!("───────────────────");
-                
-                // Protocol tag
-                if let Some(protocol_tag) = protostone.get("protocol_tag").and_then(|v| v.as_u64()) {
-                    let protocol_name = match protocol_tag {
-                        1 => "ALKANES Metaprotocol",
-                        _ => "Unknown Protocol",
-                    };
-                    println!("🏷️  Protocol: {} (tag: {})", protocol_name, protocol_tag);
-                }
-                
-                // Message information
-                if let Some(message_bytes) = protostone.get("message_bytes").and_then(|v| v.as_array()) {
-                    println!("📨 Message ({} bytes):", message_bytes.len());
-                    
-                    // Show raw bytes
-                    let bytes_str = message_bytes.iter()
-                        .filter_map(|v| v.as_u64())
-                        .map(|n| format!("{:02x}", n))
-                        .collect::<Vec<_>>()
-                        .join(" ");
-                    println!("   📄 Raw bytes: {}", bytes_str);
-                    
-                    // Show decoded values
-                    if let Some(message_decoded) = protostone.get("message_decoded").and_then(|v| v.as_array()) {
-                        let decoded_str = message_decoded.iter()
-                            .filter_map(|v| v.as_u64())
-                            .map(|n| n.to_string())
-                            .collect::<Vec<_>>()
-                            .join(", ");
-                        println!("   🔓 Decoded: [{}]", decoded_str);
-                        
-                        // Special handling for DIESEL tokens
-                        if let Some(protocol_tag) = protostone.get("protocol_tag").and_then(|v| v.as_u64()) {
-                            if protocol_tag == 1 && message_decoded.len() >= 3 {
-                                if let (Some(first), Some(second), Some(third)) = (
-                                    message_decoded[0].as_u64(),
-                                    message_decoded[1].as_u64(),
-                                    message_decoded[2].as_u64()
-                                ) {
-                                    if first == 2 && second == 0 && third == 77 {
-                                        println!("   🔥 DIESEL Token Mint Detected!");
-                                        println!("   ⚡ Cellpack: [2, 0, 77] (Standard DIESEL mint)");
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                
-                // Edicts with tree view
-                if let Some(edicts) = protostone.get("edicts").and_then(|v| v.as_array()) {
-                    if !edicts.is_empty() {
-                        println!("📋 Token Transfers ({}):", edicts.len());
-                        for (j, edict) in edicts.iter().enumerate() {
-                            if let Some(edict_obj) = edict.as_object() {
-                                let id_block = edict_obj.get("id").and_then(|v| v.get("block")).and_then(|v| v.as_u64()).unwrap_or(0);
-                                let id_tx = edict_obj.get("id").and_then(|v| v.get("tx")).and_then(|v| v.as_u64()).unwrap_or(0);
-                                let amount = edict_obj.get("amount").and_then(|v| v.as_u64()).unwrap_or(0);
-                                let output_idx = edict_obj.get("output").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-                                
-                                let tree_symbol = if j == edicts.len() - 1 { "└─" } else { "├─" };
-                                println!("   {} 🪙 Token {}:{}", tree_symbol, id_block, id_tx);
-                                println!("   {}    💰 Amount: {} units", if j == edicts.len() - 1 { "  " } else { "│ " }, amount);
-                                
-                                // Show destination output details
-                                if output_idx < tx.output.len() {
-                                    let dest_output = &tx.output[output_idx];
-                                    println!("   {}    🎯 → Output {}: {} sats",
-                                        if j == edicts.len() - 1 { "  " } else { "│ " },
-                                        output_idx, dest_output.value);
-                                    
-                                    if let Some(addr_info) = extract_address_from_script(&dest_output.script_pubkey) {
-                                        println!("   {}       📍 {}",
-                                            if j == edicts.len() - 1 { "  " } else { "│ " },
-                                            addr_info.address);
-                                    }
-                                } else {
-                                    println!("   {}    ❌ → Invalid output {}",
-                                        if j == edicts.len() - 1 { "  " } else { "│ " },
-                                        output_idx);
-                                }
-                            }
-                        }
-                    }
-                }
-                
-                // Pointer and refund with output details
-                if let Some(pointer) = protostone.get("pointer").and_then(|v| v.as_u64()) {
-                    let pointer_idx = pointer as usize;
-                    println!("👉 Pointer: output {}", pointer);
-                    if pointer_idx < tx.output.len() {
-                        let pointer_output = &tx.output[pointer_idx];
-                        println!("   └─ 💰 {} sats", pointer_output.value);
-                        if let Some(addr_info) = extract_address_from_script(&pointer_output.script_pubkey) {
-                            println!("      📍 {}", addr_info.address);
-                        }
-                    }
-                }
-                
-                if let Some(refund) = protostone.get("refund").and_then(|v| v.as_u64()) {
-                    let refund_idx = refund as usize;
-                    println!("💸 Refund: output {}", refund);
-                    if refund_idx < tx.output.len() {
-                        let refund_output = &tx.output[refund_idx];
-                        println!("   └─ 💰 {} sats", refund_output.value);
-                        if let Some(addr_info) = extract_address_from_script(&refund_output.script_pubkey) {
-                            println!("      📍 {}", addr_info.address);
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
-    println!("\n✅ Analysis complete!");
-}
 
 /// Decode a transaction from hex
 fn decode_transaction_hex(hex_str: &str) -> Result<Transaction> {
@@ -1113,6 +947,42 @@ fn is_shorthand_address_identifier(input: &str) -> bool {
     }
     
     true
+}
+
+/// Helper function to load an existing wallet with proper error handling
+async fn load_wallet_manager(
+    wallet_file: &str,
+    network_params: &deezel_cli::network::NetworkParams,
+    bitcoin_rpc_url: &str,
+    sandshrew_rpc_url: &str,
+    passphrase: Option<&str>
+) -> Result<Arc<deezel_cli::wallet::WalletManager>> {
+    // Check if wallet file exists first
+    let wallet_path = std::path::Path::new(wallet_file);
+    if !wallet_path.exists() {
+        return Err(anyhow!("Wallet file not found at {}. Please create a wallet first using 'deezel wallet create'", wallet_file));
+    }
+    
+    let wallet_config = deezel_cli::wallet::WalletConfig {
+        wallet_path: wallet_file.to_string(),
+        network: network_params.network,
+        bitcoin_rpc_url: bitcoin_rpc_url.to_string(),
+        metashrew_rpc_url: sandshrew_rpc_url.to_string(),
+        network_params: Some(network_params.to_protorune_params()),
+    };
+    
+    // Use passphrase-aware wallet loading if passphrase is provided
+    let wallet_manager = if let Some(passphrase) = passphrase {
+        deezel_cli::wallet::WalletManager::load_with_passphrase(wallet_config, passphrase)
+            .await
+            .context("Failed to load wallet with passphrase")?
+    } else {
+        deezel_cli::wallet::WalletManager::new(wallet_config)
+            .await
+            .context("Failed to load wallet. If the wallet is encrypted with a passphrase, use --passphrase option")?
+    };
+    
+    Ok(Arc::new(wallet_manager))
 }
 
 /// Format Uint128 as a floating point number divided by 1e8
@@ -1277,20 +1147,17 @@ async fn main() -> Result<()> {
                                                             WalletCommands::EstimateFee { .. } |
                                                             WalletCommands::FeeRates |
                                                             WalletCommands::Sync |
-                                                            WalletCommands::Backup }) {
-       let wallet_config = deezel_cli::wallet::WalletConfig {
-           wallet_path: wallet_file.clone(),
-           network: network_params.network,
-           bitcoin_rpc_url: bitcoin_rpc_url.clone(),
-           metashrew_rpc_url: sandshrew_rpc_url.clone(),
-           network_params: Some(network_params.to_protorune_params()),
-       };
+                                                            WalletCommands::Backup |
+                                                            WalletCommands::ListIdentifiers }) {
+        let wallet_manager = load_wallet_manager(
+            &wallet_file,
+            &network_params,
+            &bitcoin_rpc_url,
+            &sandshrew_rpc_url,
+            args.passphrase.as_deref()
+        ).await?;
         
-        Some(Arc::new(
-            deezel_cli::wallet::WalletManager::new(wallet_config)
-                .await
-                .context("Failed to initialize wallet manager")?
-        ))
+        Some(wallet_manager)
     } else {
         None
     };
@@ -1320,19 +1187,16 @@ async fn main() -> Result<()> {
                     if let Some(wm) = &wallet_manager {
                         resolve_address_identifiers(&address, Some(wm)).await?
                     } else {
-                        // Try to initialize wallet manager for address resolution
-                        let wallet_config = deezel_cli::wallet::WalletConfig {
-                            wallet_path: wallet_file.clone(),
-                            network: network_params.network,
-                            bitcoin_rpc_url: bitcoin_rpc_url.clone(),
-                            metashrew_rpc_url: sandshrew_rpc_url.clone(),
-                            network_params: Some(network_params.to_protorune_params()),
-                        };
-                        
-                        match deezel_cli::wallet::WalletManager::new(wallet_config).await {
+                        // Try to load wallet manager for address resolution
+                        match load_wallet_manager(
+                            &wallet_file,
+                            &network_params,
+                            &bitcoin_rpc_url,
+                            &sandshrew_rpc_url,
+                            args.passphrase.as_deref()
+                        ).await {
                             Ok(temp_wallet_manager) => {
-                                let temp_wm = Arc::new(temp_wallet_manager);
-                                resolve_address_identifiers(&address, Some(&temp_wm)).await?
+                                resolve_address_identifiers(&address, Some(&temp_wallet_manager)).await?
                             },
                             Err(_) => {
                                 return Err(anyhow!("Address identifiers found but wallet could not be loaded. Please ensure wallet exists or use a raw address."));
@@ -1687,7 +1551,7 @@ async fn main() -> Result<()> {
                             };
                         }
                     },
-                    WalletCommands::Send { address, amount, fee_rate, from } => {
+                    WalletCommands::Send { address, amount, fee_rate, from, change } => {
                         // Resolve recipient address identifiers
                         let resolved_address = resolve_address_identifiers(&address, Some(wallet_manager)).await?;
                         
@@ -1698,12 +1562,20 @@ async fn main() -> Result<()> {
                             None
                         };
                         
+                        // Resolve change address identifiers if provided
+                        let resolved_change = if let Some(change_addr) = change {
+                            Some(resolve_address_identifiers(&change_addr, Some(wallet_manager)).await?)
+                        } else {
+                            None
+                        };
+                        
                         let params = deezel_cli::wallet::SendParams {
                             address: resolved_address,
                             amount: amount,
                             fee_rate: fee_rate.clone(),
                             send_all: false,
                             from_address: resolved_from,
+                            change_address: resolved_change,
                         };
                         
                         match wallet_manager.send(params).await {
@@ -1714,13 +1586,20 @@ async fn main() -> Result<()> {
                             Err(e) => println!("Failed to send transaction: {}", e),
                         };
                     },
-                    WalletCommands::SendAll { address, fee_rate, from } => {
+                    WalletCommands::SendAll { address, fee_rate, from, change } => {
                         // Resolve recipient address identifiers
                         let resolved_address = resolve_address_identifiers(&address, Some(wallet_manager)).await?;
                         
                         // Resolve source address identifiers if provided
                         let resolved_from = if let Some(from_addr) = from {
                             Some(resolve_address_identifiers(&from_addr, Some(wallet_manager)).await?)
+                        } else {
+                            None
+                        };
+                        
+                        // Resolve change address identifiers if provided
+                        let resolved_change = if let Some(change_addr) = change {
+                            Some(resolve_address_identifiers(&change_addr, Some(wallet_manager)).await?)
                         } else {
                             None
                         };
@@ -1731,6 +1610,7 @@ async fn main() -> Result<()> {
                             fee_rate: fee_rate.clone(),
                             send_all: true,
                             from_address: resolved_from,
+                            change_address: resolved_change,
                         };
                         
                         match wallet_manager.send(params).await {
@@ -1741,7 +1621,7 @@ async fn main() -> Result<()> {
                             Err(e) => println!("Failed to send all funds: {}", e),
                         };
                     },
-                    WalletCommands::CreateTx { address, amount, fee_rate, from } => {
+                    WalletCommands::CreateTx { address, amount, fee_rate, from, change } => {
                         // Resolve recipient address identifiers
                         let resolved_address = resolve_address_identifiers(&address, Some(wallet_manager)).await?;
                         
@@ -1752,12 +1632,20 @@ async fn main() -> Result<()> {
                             None
                         };
                         
+                        // Resolve change address identifiers if provided
+                        let resolved_change = if let Some(change_addr) = change {
+                            Some(resolve_address_identifiers(&change_addr, Some(wallet_manager)).await?)
+                        } else {
+                            None
+                        };
+                        
                         let params = deezel_cli::wallet::SendParams {
                             address: resolved_address,
                             amount: amount,
                             fee_rate: fee_rate.clone(),
                             send_all: false,
                             from_address: resolved_from,
+                            change_address: resolved_change,
                         };
                         
                         match wallet_manager.create_transaction(params).await {
@@ -2087,6 +1975,7 @@ async fn main() -> Result<()> {
                             fee_rate: None,
                             send_all: false,
                             from_address: resolved_from,
+                            change_address: None, // EstimateFee doesn't need custom change address
                         };
                         
                         match wallet_manager.create_transaction(params).await {
@@ -2298,20 +2187,14 @@ async fn main() -> Result<()> {
             
             // Enhanced alkanes commands
             AlkanesCommands::DeployContract { wasm_file, calldata, fee_rate } => {
-                // Initialize alkanes manager
-                let wallet_config = deezel_cli::wallet::WalletConfig {
-                    wallet_path: wallet_file.clone(),
-                    network: network_params.network,
-                    bitcoin_rpc_url: bitcoin_rpc_url.clone(),
-                    metashrew_rpc_url: sandshrew_rpc_url.clone(),
-                    network_params: Some(network_params.to_protorune_params()),
-                };
-                
-                let wallet_manager = Arc::new(
-                    deezel_cli::wallet::WalletManager::new(wallet_config)
-                        .await
-                        .context("Failed to initialize wallet manager")?
-                );
+                // Load existing wallet
+                let wallet_manager = load_wallet_manager(
+                    &wallet_file,
+                    &network_params,
+                    &bitcoin_rpc_url,
+                    &sandshrew_rpc_url,
+                    args.passphrase.as_deref()
+                ).await?;
                 
                 let alkanes_manager = deezel_cli::alkanes::AlkanesManager::new(
                     Arc::new(rpc_client),
@@ -2335,64 +2218,98 @@ async fn main() -> Result<()> {
                 };
             },
             
-            AlkanesCommands::Execute { calldata, edicts, fee_rate } => {
-                // Initialize alkanes manager
-                let wallet_config = deezel_cli::wallet::WalletConfig {
-                    wallet_path: wallet_file.clone(),
-                    network: network_params.network,
-                    bitcoin_rpc_url: bitcoin_rpc_url.clone(),
-                    metashrew_rpc_url: sandshrew_rpc_url.clone(),
-                    network_params: Some(network_params.to_protorune_params()),
-                };
-                
-                let wallet_manager = Arc::new(
-                    deezel_cli::wallet::WalletManager::new(wallet_config)
-                        .await
-                        .context("Failed to initialize wallet manager")?
-                );
-                
-                let alkanes_manager = deezel_cli::alkanes::AlkanesManager::new(
-                    Arc::new(rpc_client),
-                    wallet_manager
-                );
-                
-                let parsed_edicts = if let Some(edicts_str) = edicts {
-                    Some(deezel_cli::alkanes::contract::parse_edicts(&edicts_str)?)
+            AlkanesCommands::Execute { fee_rate, to, change, inputs, protostones, envelope, envelope_from_stdin } => {
+                // Validate envelope flags are mutually exclusive
+                if envelope.is_some() && envelope_from_stdin {
+                    eprintln!("Error: --envelope and --envelope-from-stdin are mutually exclusive");
+                    std::process::exit(1);
+                }
+                // Read envelope data if specified
+                let envelope_data = if let Some(envelope_file) = envelope {
+                    println!("📁 Reading envelope from file: {}", envelope_file);
+                    Some(std::fs::read(&envelope_file)
+                        .with_context(|| format!("Failed to read envelope file: {}", envelope_file))?)
+                } else if envelope_from_stdin {
+                    println!("📥 Reading envelope from stdin...");
+                    use std::io::Read;
+                    let mut buffer = Vec::new();
+                    std::io::stdin().read_to_end(&mut buffer)
+                        .context("Failed to read envelope data from stdin")?;
+                    Some(buffer)
                 } else {
                     None
                 };
                 
-                let params = deezel_cli::alkanes::types::ContractExecuteParams {
-                    calldata: deezel_cli::alkanes::contract::parse_calldata(&calldata),
-                    edicts: parsed_edicts,
-                    fee_rate: fee_rate.clone(),
+                // Load existing wallet
+                let wallet_manager = load_wallet_manager(
+                    &wallet_file,
+                    &network_params,
+                    &bitcoin_rpc_url,
+                    &sandshrew_rpc_url,
+                    args.passphrase.as_deref()
+                ).await?;
+                
+                // Parse to addresses (comma-separated, supports identifiers)
+                let mut resolved_to_addresses = Vec::new();
+                for addr in to.split(',') {
+                    let resolved = resolve_address_identifiers(addr.trim(), Some(&wallet_manager)).await?;
+                    resolved_to_addresses.push(resolved);
+                }
+                
+                // Resolve change address if provided
+                let resolved_change = if let Some(change_addr) = change {
+                    Some(resolve_address_identifiers(&change_addr, Some(&wallet_manager)).await?)
+                } else {
+                    None
                 };
                 
-                match alkanes_manager.contract.execute_contract(params).await {
+                // Parse input requirements
+                let input_requirements = deezel_cli::alkanes::execute::parse_input_requirements(&inputs)?;
+                
+                // Parse protostone specifications
+                let parsed_protostones = deezel_cli::alkanes::execute::parse_protostones(&protostones)?;
+                
+                // Create enhanced execute parameters
+                let params = deezel_cli::alkanes::execute::EnhancedExecuteParams {
+                    fee_rate: fee_rate.clone(),
+                    to_addresses: resolved_to_addresses,
+                    change_address: resolved_change,
+                    input_requirements,
+                    protostones: parsed_protostones,
+                    envelope_data,
+                };
+                
+                // Create enhanced executor
+                let executor = deezel_cli::alkanes::execute::EnhancedAlkanesExecutor::new(
+                    Arc::new(rpc_client),
+                    wallet_manager
+                );
+                
+                match executor.execute(params).await {
                     Ok(result) => {
-                        println!("Contract executed successfully!");
+                        println!("Enhanced alkanes execution completed successfully!");
                         println!("Transaction ID: {}", result.txid);
                         println!("Fee: {} sats", result.fee);
+                        if !result.inputs_used.is_empty() {
+                            println!("Inputs used: {}", result.inputs_used.join(", "));
+                        }
+                        if !result.outputs_created.is_empty() {
+                            println!("Outputs created: {}", result.outputs_created.join(", "));
+                        }
                     },
-                    Err(e) => println!("Failed to execute contract: {}", e),
+                    Err(e) => println!("Failed to execute enhanced alkanes transaction: {}", e),
                 };
             },
             
             AlkanesCommands::DeployToken { name, symbol, cap, amount_per_mint, reserve_number, premine, image, fee_rate } => {
-                // Initialize alkanes manager
-                let wallet_config = deezel_cli::wallet::WalletConfig {
-                    wallet_path: wallet_file.clone(),
-                    network: network_params.network,
-                    bitcoin_rpc_url: bitcoin_rpc_url.clone(),
-                    metashrew_rpc_url: sandshrew_rpc_url.clone(),
-                    network_params: Some(network_params.to_protorune_params()),
-                };
-                
-                let wallet_manager = Arc::new(
-                    deezel_cli::wallet::WalletManager::new(wallet_config)
-                        .await
-                        .context("Failed to initialize wallet manager")?
-                );
+                // Load existing wallet
+                let wallet_manager = load_wallet_manager(
+                    &wallet_file,
+                    &network_params,
+                    &bitcoin_rpc_url,
+                    &sandshrew_rpc_url,
+                    args.passphrase.as_deref()
+                ).await?;
                 
                 let alkanes_manager = deezel_cli::alkanes::AlkanesManager::new(
                     Arc::new(rpc_client),
@@ -2422,20 +2339,14 @@ async fn main() -> Result<()> {
             },
             
             AlkanesCommands::SendToken { token, amount, to, fee_rate } => {
-                // Initialize alkanes manager
-                let wallet_config = deezel_cli::wallet::WalletConfig {
-                    wallet_path: wallet_file.clone(),
-                    network: network_params.network,
-                    bitcoin_rpc_url: bitcoin_rpc_url.clone(),
-                    metashrew_rpc_url: sandshrew_rpc_url.clone(),
-                    network_params: Some(network_params.to_protorune_params()),
-                };
-                
-                let wallet_manager = Arc::new(
-                    deezel_cli::wallet::WalletManager::new(wallet_config)
-                        .await
-                        .context("Failed to initialize wallet manager")?
-                );
+                // Load existing wallet
+                let wallet_manager = load_wallet_manager(
+                    &wallet_file,
+                    &network_params,
+                    &bitcoin_rpc_url,
+                    &sandshrew_rpc_url,
+                    args.passphrase.as_deref()
+                ).await?;
                 
                 // Resolve address identifiers
                 let resolved_to = resolve_address_identifiers(&to, Some(&wallet_manager)).await?;
@@ -2465,20 +2376,14 @@ async fn main() -> Result<()> {
             },
             
             AlkanesCommands::Balance { address } => {
-                // Initialize alkanes manager
-                let wallet_config = deezel_cli::wallet::WalletConfig {
-                    wallet_path: wallet_file.clone(),
-                    network: network_params.network,
-                    bitcoin_rpc_url: bitcoin_rpc_url.clone(),
-                    metashrew_rpc_url: sandshrew_rpc_url.clone(),
-                    network_params: Some(network_params.to_protorune_params()),
-                };
-                
-                let wallet_manager = Arc::new(
-                    deezel_cli::wallet::WalletManager::new(wallet_config)
-                        .await
-                        .context("Failed to initialize wallet manager")?
-                );
+                // Load existing wallet
+                let wallet_manager = load_wallet_manager(
+                    &wallet_file,
+                    &network_params,
+                    &bitcoin_rpc_url,
+                    &sandshrew_rpc_url,
+                    args.passphrase.as_deref()
+                ).await?;
                 
                 // Resolve address identifiers if provided
                 let resolved_address = if let Some(addr) = address {
@@ -2515,20 +2420,14 @@ async fn main() -> Result<()> {
             },
             
             AlkanesCommands::TokenInfo { token } => {
-                // Initialize alkanes manager
-                let wallet_config = deezel_cli::wallet::WalletConfig {
-                    wallet_path: wallet_file.clone(),
-                    network: network_params.network,
-                    bitcoin_rpc_url: bitcoin_rpc_url.clone(),
-                    metashrew_rpc_url: sandshrew_rpc_url.clone(),
-                    network_params: Some(network_params.to_protorune_params()),
-                };
-                
-                let wallet_manager = Arc::new(
-                    deezel_cli::wallet::WalletManager::new(wallet_config)
-                        .await
-                        .context("Failed to initialize wallet manager")?
-                );
+                // Load existing wallet
+                let wallet_manager = load_wallet_manager(
+                    &wallet_file,
+                    &network_params,
+                    &bitcoin_rpc_url,
+                    &sandshrew_rpc_url,
+                    args.passphrase.as_deref()
+                ).await?;
                 
                 let alkanes_manager = deezel_cli::alkanes::AlkanesManager::new(
                     Arc::new(rpc_client),
@@ -2553,20 +2452,14 @@ async fn main() -> Result<()> {
             },
             
             AlkanesCommands::CreatePool { calldata, tokens, fee_rate } => {
-                // Initialize alkanes manager
-                let wallet_config = deezel_cli::wallet::WalletConfig {
-                    wallet_path: wallet_file.clone(),
-                    network: network_params.network,
-                    bitcoin_rpc_url: bitcoin_rpc_url.clone(),
-                    metashrew_rpc_url: sandshrew_rpc_url.clone(),
-                    network_params: Some(network_params.to_protorune_params()),
-                };
-                
-                let wallet_manager = Arc::new(
-                    deezel_cli::wallet::WalletManager::new(wallet_config)
-                        .await
-                        .context("Failed to initialize wallet manager")?
-                );
+                // Load existing wallet
+                let wallet_manager = load_wallet_manager(
+                    &wallet_file,
+                    &network_params,
+                    &bitcoin_rpc_url,
+                    &sandshrew_rpc_url,
+                    args.passphrase.as_deref()
+                ).await?;
                 
                 let alkanes_manager = deezel_cli::alkanes::AlkanesManager::new(
                     Arc::new(rpc_client),
@@ -2592,20 +2485,14 @@ async fn main() -> Result<()> {
             },
             
             AlkanesCommands::AddLiquidity { calldata, tokens, fee_rate } => {
-                // Initialize alkanes manager
-                let wallet_config = deezel_cli::wallet::WalletConfig {
-                    wallet_path: wallet_file.clone(),
-                    network: network_params.network,
-                    bitcoin_rpc_url: bitcoin_rpc_url.clone(),
-                    metashrew_rpc_url: sandshrew_rpc_url.clone(),
-                    network_params: Some(network_params.to_protorune_params()),
-                };
-                
-                let wallet_manager = Arc::new(
-                    deezel_cli::wallet::WalletManager::new(wallet_config)
-                        .await
-                        .context("Failed to initialize wallet manager")?
-                );
+                // Load existing wallet
+                let wallet_manager = load_wallet_manager(
+                    &wallet_file,
+                    &network_params,
+                    &bitcoin_rpc_url,
+                    &sandshrew_rpc_url,
+                    args.passphrase.as_deref()
+                ).await?;
                 
                 let alkanes_manager = deezel_cli::alkanes::AlkanesManager::new(
                     Arc::new(rpc_client),
@@ -2631,20 +2518,14 @@ async fn main() -> Result<()> {
             },
             
             AlkanesCommands::RemoveLiquidity { calldata, token, amount, fee_rate } => {
-                // Initialize alkanes manager
-                let wallet_config = deezel_cli::wallet::WalletConfig {
-                    wallet_path: wallet_file.clone(),
-                    network: network_params.network,
-                    bitcoin_rpc_url: bitcoin_rpc_url.clone(),
-                    metashrew_rpc_url: sandshrew_rpc_url.clone(),
-                    network_params: Some(network_params.to_protorune_params()),
-                };
-                
-                let wallet_manager = Arc::new(
-                    deezel_cli::wallet::WalletManager::new(wallet_config)
-                        .await
-                        .context("Failed to initialize wallet manager")?
-                );
+                // Load existing wallet
+                let wallet_manager = load_wallet_manager(
+                    &wallet_file,
+                    &network_params,
+                    &bitcoin_rpc_url,
+                    &sandshrew_rpc_url,
+                    args.passphrase.as_deref()
+                ).await?;
                 
                 let alkanes_manager = deezel_cli::alkanes::AlkanesManager::new(
                     Arc::new(rpc_client),
@@ -2671,20 +2552,14 @@ async fn main() -> Result<()> {
             },
             
             AlkanesCommands::Swap { calldata, token, amount, fee_rate } => {
-                // Initialize alkanes manager
-                let wallet_config = deezel_cli::wallet::WalletConfig {
-                    wallet_path: wallet_file.clone(),
-                    network: network_params.network,
-                    bitcoin_rpc_url: bitcoin_rpc_url.clone(),
-                    metashrew_rpc_url: sandshrew_rpc_url.clone(),
-                    network_params: Some(network_params.to_protorune_params()),
-                };
-                
-                let wallet_manager = Arc::new(
-                    deezel_cli::wallet::WalletManager::new(wallet_config)
-                        .await
-                        .context("Failed to initialize wallet manager")?
-                );
+                // Load existing wallet
+                let wallet_manager = load_wallet_manager(
+                    &wallet_file,
+                    &network_params,
+                    &bitcoin_rpc_url,
+                    &sandshrew_rpc_url,
+                    args.passphrase.as_deref()
+                ).await?;
                 
                 let alkanes_manager = deezel_cli::alkanes::AlkanesManager::new(
                     Arc::new(rpc_client),
@@ -2711,20 +2586,14 @@ async fn main() -> Result<()> {
             },
             
             AlkanesCommands::SimulateAdvanced { target, inputs, tokens, decoder } => {
-                // Initialize alkanes manager
-                let wallet_config = deezel_cli::wallet::WalletConfig {
-                    wallet_path: wallet_file.clone(),
-                    network: network_params.network,
-                    bitcoin_rpc_url: bitcoin_rpc_url.clone(),
-                    metashrew_rpc_url: sandshrew_rpc_url.clone(),
-                    network_params: Some(network_params.to_protorune_params()),
-                };
-                
-                let wallet_manager = Arc::new(
-                    deezel_cli::wallet::WalletManager::new(wallet_config)
-                        .await
-                        .context("Failed to initialize wallet manager")?
-                );
+                // Load existing wallet
+                let wallet_manager = load_wallet_manager(
+                    &wallet_file,
+                    &network_params,
+                    &bitcoin_rpc_url,
+                    &sandshrew_rpc_url,
+                    args.passphrase.as_deref()
+                ).await?;
                 
                 let alkanes_manager = deezel_cli::alkanes::AlkanesManager::new(
                     Arc::new(rpc_client),
@@ -2757,20 +2626,14 @@ async fn main() -> Result<()> {
             },
             
             AlkanesCommands::PreviewRemoveLiquidity { token, amount } => {
-                // Initialize alkanes manager
-                let wallet_config = deezel_cli::wallet::WalletConfig {
-                    wallet_path: wallet_file.clone(),
-                    network: network_params.network,
-                    bitcoin_rpc_url: bitcoin_rpc_url.clone(),
-                    metashrew_rpc_url: sandshrew_rpc_url.clone(),
-                    network_params: Some(network_params.to_protorune_params()),
-                };
-                
-                let wallet_manager = Arc::new(
-                    deezel_cli::wallet::WalletManager::new(wallet_config)
-                        .await
-                        .context("Failed to initialize wallet manager")?
-                );
+                // Load existing wallet
+                let wallet_manager = load_wallet_manager(
+                    &wallet_file,
+                    &network_params,
+                    &bitcoin_rpc_url,
+                    &sandshrew_rpc_url,
+                    args.passphrase.as_deref()
+                ).await?;
                 
                 let alkanes_manager = deezel_cli::alkanes::AlkanesManager::new(
                     Arc::new(rpc_client),

@@ -9,6 +9,8 @@ pub mod amm;
 pub mod simulation;
 pub mod inspector;
 pub mod types;
+pub mod execute;
+pub mod envelope;
 
 use anyhow::{Context, Result};
 use log::{debug, info};
