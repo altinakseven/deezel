@@ -17,7 +17,7 @@ Deezel is a comprehensive command-line interface and tooling suite for interacti
 - **Smart Contract Deployment**: Deploy WASM-based smart contracts to the Alkanes metaprotocol
 - **Token Operations**: Deploy, mint, and transfer Alkanes tokens
 - **AMM/DEX Functionality**: Create liquidity pools, add/remove liquidity, and perform token swaps
-- **Enhanced Contract Execution**: Advanced execute command with complex protostone parsing and UTXO selection
+- **Contract Execution**: Advanced execute command with complex protostone parsing and UTXO selection
 - **Envelope Support**: Commit-reveal transactions for large contract deployments using official alkanes-support
 - **Transaction Preview**: Preview transactions before signing with detailed output analysis
 - **Advanced Simulation**: Simulate contract executions with comprehensive result analysis
@@ -307,7 +307,7 @@ deezel alkanes token-info <TOKEN_ID>
 deezel alkanes deploy-contract <WASM_FILE> --calldata <DATA>
 deezel alkanes execute --calldata <DATA> [--edicts <EDICTS>]
 
-# Enhanced contract execution with complex protostone parsing
+# Contract execution with complex protostone parsing
 deezel alkanes execute --fee-rate <RATE> --to <OUTPUTS> --change <ADDRESS> --inputs <INPUTS> <PROTOSTONES> [--envelope <FILE>] [--envelope-from-stdin]
 
 # AMM operations
@@ -322,9 +322,9 @@ deezel alkanes preview-remove-liquidity --token <TOKEN> --amount <AMOUNT>
 deezel alkanes inspect <ALKANE_ID> [--disasm] [--fuzz] [--meta] [--codehash]
 ```
 
-### Enhanced Alkanes Execute Command
+### Alkanes Execute Command
 
-The enhanced `alkanes execute` command provides advanced functionality for complex alkanes transactions with sophisticated protostone parsing, UTXO selection, and envelope support for large contract deployments.
+The `alkanes execute` command provides advanced functionality for complex alkanes transactions with sophisticated protostone parsing, UTXO selection, and envelope support for large contract deployments.
 
 #### Command Syntax
 
@@ -364,7 +364,11 @@ Protostones define the alkanes operations to perform. They support complex cellp
 ```
 
 **Message Format:**
-- `[<tag>,<amount>,<divisibility>]` - Cellpack format for token operations
+- `[<header1>,<header2>,<opcode>,<input1>,<input2>,...]` - Cellpack format as comma-separated list of u128 values
+  - First two values are the "header"
+  - Third value is the "opcode"
+  - Remaining values are the "inputs"
+- `[<tag>,<amount>,<divisibility>]` - Common token operation format
 - Numbers can be used directly for simple operations
 
 **Target Options:**
@@ -425,7 +429,7 @@ cat contract.wasm.gz | deezel alkanes execute \
 
 #### Envelope Support
 
-The enhanced execute command supports envelope transactions for deploying large contracts using the commit-reveal pattern:
+The execute command supports envelope transactions for deploying large contracts using the commit-reveal pattern:
 
 **Features:**
 - **Official Integration**: Uses `alkanes-support` crate envelope structures
@@ -447,7 +451,7 @@ Do you want to proceed with this envelope? (y/N):
 
 #### Transaction Preview
 
-All enhanced execute commands show a detailed transaction preview before signing:
+All execute commands show a detailed transaction preview before signing:
 
 ```
 Transaction Preview:
@@ -468,7 +472,7 @@ Do you want to sign and broadcast this transaction? (y/N):
 
 #### Address Identifier Resolution
 
-The enhanced execute command fully supports address identifiers for all address parameters:
+The execute command fully supports address identifiers for all address parameters:
 
 - `--to '[self:p2tr:0],[self:p2tr:1]'` - Multiple output addresses
 - `--change [self:p2tr:2]` - Change address
@@ -502,7 +506,7 @@ deezel runestone <TXID_OR_HEX> [--raw] [--preview]
 deezel inspect-alkane <ALKANE_ID> [--disasm] [--fuzz] [--meta] [--codehash]
 ```
 
-### Enhanced Runestone Command
+### Runestone Command
 
 The `runestone` command provides comprehensive decoding and analysis of Runestone transactions with optional preview functionality:
 
@@ -513,7 +517,7 @@ deezel runestone <TXID_OR_HEX> [--raw] [--preview]
 
 **Options:**
 - `--raw`: Show raw runestone data without formatting
-- `--preview`: Show transaction preview format (same as used in enhanced execute)
+- `--preview`: Show transaction preview format (same as used in execute command)
 
 **Examples:**
 ```bash
@@ -529,6 +533,8 @@ deezel runestone abc123def456... --raw
 # Show transaction preview format
 deezel runestone abc123def456... --preview
 ```
+
+The runestone command decodes all Runestone protocol data including protostones, edicts, and metadata, providing detailed analysis of alkanes transactions.
 
 ## Network Configuration
 
@@ -593,7 +599,7 @@ deezel/
 │   │   ├── contract.rs      # Smart contract operations
 │   │   ├── token.rs         # Token operations
 │   │   ├── amm.rs           # AMM/DEX functionality
-│   │   ├── execute.rs       # Enhanced execute command with protostone parsing
+│   │   ├── execute.rs       # Execute command with protostone parsing
 │   │   ├── envelope.rs      # Envelope support for commit-reveal transactions
 │   │   ├── simulation.rs    # Contract simulation
 │   │   ├── inspector.rs     # Contract analysis tools
@@ -604,7 +610,7 @@ deezel/
 │   │   ├── esplora_backend.rs   # Custom blockchain backend
 │   │   └── sandshrew_blockchain.rs  # Sandshrew integration
 │   ├── address_resolver.rs  # Address identifier resolution system
-│   ├── runestone_enhanced.rs    # Enhanced runestone decoding with preview
+│   ├── runestone_enhanced.rs    # Runestone decoding with preview
 │   ├── rpc/                 # RPC client implementations
 │   ├── monitor/             # Blockchain monitoring
 │   ├── transaction/         # Transaction construction with preview
