@@ -11,6 +11,7 @@ pub mod e2e_helpers;
 pub mod test_alkanes_fee_debug;
 pub mod test_fee_debug_simple;
 pub mod test_envelope_fee_issue;
+pub mod test_envelope_witness_corruption;
 
 use anyhow::Result;
 use std::collections::HashMap;

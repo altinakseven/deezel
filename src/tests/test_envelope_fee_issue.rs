@@ -1,4 +1,4 @@
-alida//! Test suite for envelope transaction fee issue
+//! Test suite for envelope transaction fee issue
 //!
 //! This test reproduces the "absurdly high fee rate" error that occurs when
 //! broadcasting envelope transactions with large witness data (117KB).

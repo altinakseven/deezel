@@ -19,7 +19,7 @@ use crate::rpc::RpcClient;
 use crate::wallet::WalletManager;
 use crate::runestone_enhanced::{format_runestone_with_decoded_messages, print_human_readable_runestone};
 use super::types::*;
-use super::envelope::EnvelopeManager;
+use super::envelope::AlkanesEnvelope;
 use super::fee_validation::{validate_transaction_fee_rate, create_fee_adjusted_transaction};
 use alkanes_support::cellpack::Cellpack;
 
@@ -119,8 +119,8 @@ impl EnhancedAlkanesExecutor {
         
         if params.envelope_data.is_some() {
             // Commit/reveal pattern
-            let envelope_manager = EnvelopeManager::new(params.envelope_data.as_ref().unwrap().clone());
-            self.execute_commit_reveal_pattern(&params, &envelope_manager).await
+            let envelope = AlkanesEnvelope::for_contract(params.envelope_data.as_ref().unwrap().clone());
+            self.execute_commit_reveal_pattern(&params, &envelope).await
         } else {
             // Single transaction
             self.execute_single_transaction(&params).await
@@ -132,12 +132,12 @@ impl EnhancedAlkanesExecutor {
     async fn execute_commit_reveal_pattern(
         &self,
         params: &EnhancedExecuteParams,
-        envelope_manager: &EnvelopeManager
+        envelope: &AlkanesEnvelope
     ) -> Result<EnhancedExecuteResult> {
         info!("Executing commit/reveal pattern");
         
         // Step 1: Create and broadcast commit transaction
-        let (commit_txid, commit_fee, commit_outpoint) = self.create_and_broadcast_commit_transaction(envelope_manager, params).await?;
+        let (commit_txid, commit_fee, commit_outpoint) = self.create_and_broadcast_commit_transaction(envelope, params).await?;
         
         if !params.raw_output {
             println!("✅ Commit transaction broadcast successfully!");
@@ -153,7 +153,7 @@ impl EnhancedAlkanesExecutor {
         // Step 3: Create and broadcast reveal transaction using commit as input
         let (reveal_txid, reveal_fee) = self.create_and_broadcast_reveal_transaction(
             params,
-            envelope_manager,
+            envelope,
             commit_outpoint
         ).await?;
         
@@ -589,11 +589,8 @@ impl EnhancedAlkanesExecutor {
     fn construct_runestone(&self, protostones: &[ProtostoneSpec], num_outputs: usize) -> Result<Vec<u8>> {
         info!("Constructing runestone with {} protostones", protostones.len());
         
-        // Create OP_RETURN script with runestone data
+        // Create runestone data payload (without OP_RETURN opcode)
         let mut script_data = Vec::new();
-        
-        // OP_RETURN opcode
-        script_data.push(0x6a);
         
         // Runestone magic bytes and subprotocol ID 1
         script_data.extend_from_slice(b"RUNE_TEST"); // Placeholder magic
@@ -681,9 +678,15 @@ impl EnhancedAlkanesExecutor {
         }).collect();
         
         // Add OP_RETURN output with runestone
+        use bitcoin::script::{Builder, PushBytesBuf};
+        let push_bytes = PushBytesBuf::try_from(runestone.clone())
+            .map_err(|_| anyhow!("Runestone data too large for OP_RETURN"))?;
         let op_return_output = TxOut {
             value: bitcoin::Amount::ZERO,
-            script_pubkey: ScriptBuf::from(runestone),
+            script_pubkey: Builder::new()
+                .push_opcode(bitcoin::opcodes::all::OP_RETURN)
+                .push_slice(&push_bytes)
+                .into_script(),
         };
         outputs.push(op_return_output);
         
@@ -705,33 +708,6 @@ impl EnhancedAlkanesExecutor {
         Ok((tx, fee))
     }
 
-    /// Create envelope commit transaction and return its outpoint
-    async fn create_envelope_commit(&self, envelope_manager: &EnvelopeManager) -> Result<bitcoin::OutPoint> {
-        info!("Creating envelope commit transaction");
-        
-        // Get wallet's internal key for taproot
-        let internal_key = self.wallet_manager.get_internal_key().await?;
-        
-        // Create commit address
-        let network = self.wallet_manager.get_network();
-        let commit_address = envelope_manager.create_commit_address(network, internal_key)?;
-        
-        info!("Envelope commit address: {}", commit_address);
-        
-        // Create a simple transaction to the commit address
-        // In a real implementation, this would be a proper transaction
-        // For now, we'll create a placeholder outpoint
-        let commit_txid = bitcoin::Txid::from_str("0000000000000000000000000000000000000000000000000000000000000001")
-            .context("Failed to create placeholder commit txid")?;
-        
-        let commit_outpoint = bitcoin::OutPoint {
-            txid: commit_txid,
-            vout: 0,
-        };
-        
-        info!("Created envelope commit outpoint: {}:{}", commit_outpoint.txid, commit_outpoint.vout);
-        Ok(commit_outpoint)
-    }
 
     /// Build and sign transaction with envelope reveal support
     async fn build_transaction_with_envelope(
@@ -740,16 +716,22 @@ impl EnhancedAlkanesExecutor {
         mut outputs: Vec<bitcoin::TxOut>,
         runestone: Vec<u8>,
         fee_rate: Option<f32>,
-        envelope_manager: Option<&EnvelopeManager>
+        envelope: Option<&AlkanesEnvelope>
     ) -> Result<(bitcoin::Transaction, u64)> {
         info!("Building and signing transaction with envelope support");
         
         use bitcoin::{psbt::Psbt, TxOut, ScriptBuf};
         
         // Add OP_RETURN output with runestone (protostone)
+        use bitcoin::script::{Builder, PushBytesBuf};
+        let push_bytes = PushBytesBuf::try_from(runestone.clone())
+            .map_err(|_| anyhow!("Runestone data too large for OP_RETURN"))?;
         let op_return_output = TxOut {
             value: bitcoin::Amount::ZERO,
-            script_pubkey: ScriptBuf::from(runestone),
+            script_pubkey: Builder::new()
+                .push_opcode(bitcoin::opcodes::all::OP_RETURN)
+                .push_slice(&push_bytes)
+                .into_script(),
         };
         outputs.push(op_return_output);
         
@@ -771,15 +753,15 @@ impl EnhancedAlkanesExecutor {
         for (i, outpoint) in utxos.iter().enumerate() {
             // If this is the first input and we have an envelope, this is the commit output
             // which may not exist in the wallet's UTXO set yet
-            if i == 0 && envelope_manager.is_some() {
-                let envelope_manager = envelope_manager.unwrap();
+            if i == 0 && envelope.is_some() {
+                let envelope = envelope.unwrap();
                 
                 // Get wallet's internal key for taproot
                 let internal_key = self.wallet_manager.get_internal_key().await?;
                 
                 // Create the commit output details manually since it doesn't exist in wallet yet
                 let network = self.wallet_manager.get_network();
-                let commit_address = envelope_manager.create_commit_address(network, internal_key)?;
+                let commit_address = self.create_commit_address_for_envelope(envelope, network, internal_key).await?;
                 
                 // Set witness_utxo for the commit output (dust amount)
                 psbt.inputs[i].witness_utxo = Some(TxOut {
@@ -788,9 +770,9 @@ impl EnhancedAlkanesExecutor {
                 });
                 
                 // For envelope transactions, we need script-path spending to match the commit address
-                // Get the taproot spend info and control block from the envelope
-                let taproot_spend_info = envelope_manager.get_taproot_spend_info(internal_key)?;
-                let control_block = envelope_manager.get_control_block(internal_key)?;
+                // Create taproot spend info using the envelope script
+                let reveal_script = envelope.build_reveal_script();
+                let (taproot_spend_info, control_block) = self.create_taproot_spend_info_for_envelope(envelope, internal_key).await?;
                 
                 // Set the internal key for taproot
                 psbt.inputs[i].tap_internal_key = Some(internal_key);
@@ -840,18 +822,36 @@ impl EnhancedAlkanesExecutor {
         // This is necessary for envelope transactions with large witness data (117KB)
         // which appear to have absurdly high fee rates but are actually reasonable
         info!("🔧 Using extract_tx_unchecked_fee_rate() to bypass fee validation for envelope transaction");
-        let tx = signed_psbt.extract_tx_unchecked_fee_rate();
+        let tx = signed_psbt.clone().extract_tx_unchecked_fee_rate();
         
         // Debug: Log transaction details before envelope processing
         info!("Transaction before envelope processing: vsize={} weight={}",
               tx.vsize(), tx.weight());
         
         // If we have an envelope, we need to add the envelope witness data to the first input
-        if let Some(envelope_manager) = envelope_manager {
+        if let Some(envelope) = envelope {
             let mut final_tx = tx.clone();
             
-            // Get the envelope witness data
-            let envelope_witness = envelope_manager.create_witness();
+            // Get the actual internal key used in the transaction
+            let internal_key = self.wallet_manager.get_internal_key().await?;
+            
+            // Create the envelope witness using the new ord-based system
+            let (_, control_block) = self.create_taproot_spend_info_for_envelope(envelope, internal_key).await?;
+            let envelope_witness = envelope.create_witness(control_block)?;
+            
+            // Validate the witness was created properly
+            if envelope_witness.len() < 2 {
+                return Err(anyhow!("Failed to create proper envelope witness: expected at least 2 items (script + control_block), got {}", envelope_witness.len()));
+            }
+            
+            // Check if critical witness items are empty
+            for (i, item) in envelope_witness.iter().enumerate() {
+                if item.is_empty() {
+                    return Err(anyhow!("Envelope witness item {} is empty, this will cause 'bad-witness-nonstandard'", i));
+                }
+            }
+            
+            info!("🎯 Using new ord-based envelope witness system");
             
             info!("🔍 Debugging envelope witness:");
             info!("  Original witness items: {}", final_tx.input[0].witness.len());
@@ -868,50 +868,209 @@ impl EnhancedAlkanesExecutor {
                 }
             }
             
-            // The issue is that extract_tx_unchecked_fee_rate() doesn't preserve the witness from PSBT
-            // We need to manually finalize the PSBT to get the proper witness stack
-            // For script-path spending, the witness should be: [signature, script, control_block, ...envelope_data]
+            // Check if the envelope witness is properly formatted for taproot script-path spending
+            // For ord-style envelope, we have: [script, control_block]
             
-            // Get the wallet's internal key for taproot
-            let internal_key = self.wallet_manager.get_internal_key().await?;
-            let control_block = envelope_manager.get_control_block(internal_key)?;
-            let taproot_spend_info = envelope_manager.get_taproot_spend_info(internal_key)?;
-            
-            // Get the script from the taproot spend info
-            let script_map = taproot_spend_info.script_map();
-            if let Some(((script, _leaf_version), _merkle_branches)) = script_map.iter().next() {
-                // Construct the proper witness stack for script-path spending
-                let mut witness_stack = Vec::new();
-                
-                // Add the envelope witness items first (this contains the script signature and envelope data)
-                for item in envelope_witness.iter() {
-                    witness_stack.push(item.to_vec());
-                }
-                
-                // Add the script
-                witness_stack.push(script.to_bytes());
-                
-                // Add the control block
-                witness_stack.push(control_block.serialize());
-                
-                // Update the witness with the proper stack
-                final_tx.input[0].witness = bitcoin::Witness::from_slice(&witness_stack);
-                
-                info!("Constructed script-path witness stack with {} items:", witness_stack.len());
-                for (i, item) in witness_stack.iter().enumerate() {
-                    info!("  Item {}: {} bytes", i, item.len());
-                }
-            } else {
-                return Err(anyhow!("No script found in taproot spend info for envelope"));
+            if envelope_witness.len() != 2 {
+                return Err(anyhow!("Invalid envelope witness: expected exactly 2 items (script + control_block), got {}", envelope_witness.len()));
             }
             
-            info!("Added envelope witness data to first input (total witness items: {})", final_tx.input[0].witness.len());
-            info!("Transaction after envelope processing: vsize={} weight={}",
-                  final_tx.vsize(), final_tx.weight());
+            // Check if the control block (last item) is empty - this would cause "bad-witness-nonstandard"
+            let control_block_item = &envelope_witness[1];
+            if control_block_item.is_empty() {
+                return Err(anyhow!("Invalid envelope witness: control block is empty, this will cause 'bad-witness-nonstandard' error"));
+            }
             
-            // For envelope transactions, the fee calculation is tricky because of large witness data
-            // We need to properly adjust output values to account for the fee
-            let fixed_fee = 5000u64; // Fixed 5000 sats for reveal transactions
+            // Check if the script (first item) is empty
+            let script_item = &envelope_witness[0];
+            if script_item.is_empty() {
+                return Err(anyhow!("Invalid envelope witness: script is empty, this will cause 'bad-witness-nonstandard' error"));
+            }
+            
+            info!("✅ Envelope witness has proper ord-style structure with {} items", envelope_witness.len());
+            
+            // CRITICAL FIX: The witness data is being corrupted during transaction operations.
+            // Instead of modifying the existing transaction, create a completely new transaction
+            // with the envelope witness data properly embedded from the start.
+            
+            info!("🔧 Creating new transaction with envelope witness to prevent serialization corruption");
+            
+            // Create a completely new transaction with the envelope witness
+            let mut new_tx = bitcoin::Transaction {
+                version: final_tx.version,
+                lock_time: final_tx.lock_time,
+                input: Vec::new(),
+                output: final_tx.output.clone(),
+            };
+            
+            // Recreate all inputs with proper witness data
+            for (i, input) in final_tx.input.iter().enumerate() {
+                let mut new_input = bitcoin::TxIn {
+                    previous_output: input.previous_output,
+                    script_sig: input.script_sig.clone(),
+                    sequence: input.sequence,
+                    witness: bitcoin::Witness::new(),
+                };
+                
+                if i == 0 {
+                    // First input gets the envelope witness
+                    info!("🔧 Adding ord-style envelope witness to input 0");
+                    info!("  Envelope witness has {} items", envelope_witness.len());
+                    
+                    // CRITICAL FIX: Instead of cloning the witness (which can corrupt data),
+                    // manually push each witness item to ensure data integrity
+                    let mut new_witness = bitcoin::Witness::new();
+                    
+                    for (j, item) in envelope_witness.iter().enumerate() {
+                        info!("  Pushing witness item {}: {} bytes", j, item.len());
+                        new_witness.push(item);
+                    }
+                    
+                    new_input.witness = new_witness;
+                    
+                    info!("🎯 Applied envelope witness to input 0: {} items", new_input.witness.len());
+                    
+                    // Verify the witness was actually added
+                    for (j, item) in new_input.witness.iter().enumerate() {
+                        info!("  Verification - item {}: {} bytes", j, item.len());
+                    }
+                    
+                    // Double-check that the witness data is preserved
+                    if new_input.witness.len() != envelope_witness.len() {
+                        return Err(anyhow!("Witness assignment failed: expected {} items, got {}", envelope_witness.len(), new_input.witness.len()));
+                    }
+                    
+                    // Verify each item has the correct size
+                    for (j, (original_item, new_item)) in envelope_witness.iter().zip(new_input.witness.iter()).enumerate() {
+                        if original_item.len() != new_item.len() {
+                            return Err(anyhow!("Witness item {} size mismatch: expected {} bytes, got {} bytes", j, original_item.len(), new_item.len()));
+                        }
+                        
+                        // Verify the actual content matches
+                        if original_item != new_item {
+                            return Err(anyhow!("Witness item {} content mismatch", j));
+                        }
+                    }
+                    
+                    info!("✅ Witness assignment verified successfully");
+                } else {
+                    // Other inputs need their witness from the signed PSBT
+                    // The key insight is that we need to check the PSBT input for taproot signatures
+                    
+                    info!("🔧 Copying witness for input {}: {} items", i, input.witness.len());
+                    
+                    if let Some(psbt_input) = signed_psbt.inputs.get(i) {
+                        // For taproot inputs, check for tap_key_sig first (key-path spending)
+                        if let Some(tap_key_sig) = &psbt_input.tap_key_sig {
+                            // Create witness with the taproot key signature
+                            let mut witness = bitcoin::Witness::new();
+                            witness.push(tap_key_sig.to_vec());
+                            new_input.witness = witness;
+                            info!("🔧 Created taproot key-path witness from tap_key_sig for input {}: {} items", i, new_input.witness.len());
+                        } else if let Some(final_script_witness) = &psbt_input.final_script_witness {
+                            // Use the final script witness from PSBT
+                            new_input.witness = final_script_witness.clone();
+                            info!("🔧 Using final_script_witness from PSBT for input {}: {} items", i, final_script_witness.len());
+                        } else {
+                            // Try to get witness from the original extracted transaction
+                            new_input.witness = input.witness.clone();
+                            info!("🔧 Fallback: copying witness from extracted transaction for input {}: {} items", i, input.witness.len());
+                        }
+                    } else {
+                        // Fallback: copy from extracted transaction
+                        new_input.witness = input.witness.clone();
+                        info!("🔧 Fallback: no PSBT input found, copying witness from extracted transaction for input {}: {} items", i, input.witness.len());
+                    }
+                    
+                    // Debug: Log witness info for non-envelope inputs
+                    for (j, item) in new_input.witness.iter().enumerate() {
+                        info!("  Input {} witness item {}: {} bytes", i, j, item.len());
+                    }
+                    
+                    // If the witness is still empty, this is the problem
+                    if new_input.witness.is_empty() {
+                        warn!("⚠️  Input {} has empty witness - this will cause 'Witness program was passed an empty witness'", i);
+                        return Err(anyhow!("Input {} has empty witness. This taproot input requires a witness signature but none was provided.", i));
+                    }
+                }
+                
+                new_tx.input.push(new_input);
+            }
+            
+            let final_tx_with_witness = new_tx;
+            
+            info!("Applied envelope witness with {} items:", final_tx_with_witness.input[0].witness.len());
+            for (i, item) in final_tx_with_witness.input[0].witness.iter().enumerate() {
+                info!("  Item {}: {} bytes", i, item.len());
+                if item.len() <= 64 {
+                    info!("    Content (hex): {}", hex::encode(item));
+                } else {
+                    info!("    Content (first 32 bytes): {}", hex::encode(&item[..32]));
+                    info!("    Content (last 32 bytes): {}", hex::encode(&item[item.len()-32..]));
+                }
+            }
+            
+            // Double-check the witness after assignment by re-reading it
+            info!("🔍 Double-checking witness after assignment:");
+            info!("  Final transaction input 0 witness items: {}", final_tx_with_witness.input[0].witness.len());
+            for (i, item) in final_tx_with_witness.input[0].witness.iter().enumerate() {
+                info!("  Final item {}: {} bytes", i, item.len());
+            }
+            
+            // Test serialization to make sure witness data is preserved
+            let serialized = bitcoin::consensus::serialize(&final_tx_with_witness);
+            info!("🔍 Testing serialization: {} bytes", serialized.len());
+            
+            // Debug: Check the raw witness data before serialization
+            info!("🔍 Raw witness data before serialization:");
+            let witness_total_size: usize = final_tx_with_witness.input[0].witness.iter().map(|item| item.len()).sum();
+            info!("  Witness vector length: {} bytes", witness_total_size);
+            for (i, item) in final_tx_with_witness.input[0].witness.iter().enumerate() {
+                info!("    Raw witness item {}: {} bytes", i, item.len());
+                if item.len() <= 64 {
+                    info!("      Content (hex): {}", hex::encode(item));
+                } else {
+                    info!("      Content (first 32 bytes): {}", hex::encode(&item[..32]));
+                    info!("      Content (last 32 bytes): {}", hex::encode(&item[item.len()-32..]));
+                }
+            }
+            
+            let deserialized: bitcoin::Transaction = bitcoin::consensus::deserialize(&serialized)
+                .context("Failed to deserialize test transaction")?;
+            info!("🔍 After deserialization: witness items: {}", deserialized.input[0].witness.len());
+            for (i, item) in deserialized.input[0].witness.iter().enumerate() {
+                info!("  Deserialized item {}: {} bytes", i, item.len());
+                if item.len() <= 64 {
+                    info!("    Content (hex): {}", hex::encode(item));
+                } else if item.len() > 0 {
+                    info!("    Content (first 32 bytes): {}", hex::encode(&item[..32]));
+                    info!("    Content (last 32 bytes): {}", hex::encode(&item[item.len()-32..]));
+                }
+            }
+            
+            // Check if the serialized data contains the witness
+            info!("🔍 Checking serialized transaction structure:");
+            info!("  Serialized hex (first 128 chars): {}", hex::encode(&serialized[..std::cmp::min(serialized.len(), 64)]));
+            info!("  Serialized hex (last 128 chars): {}", hex::encode(&serialized[serialized.len().saturating_sub(64)..]));
+            
+            // Envelope witness applied successfully
+            info!("✅ Envelope witness applied successfully using ord-style system");
+            info!("Added envelope witness data to first input (total witness items: {})", final_tx_with_witness.input[0].witness.len());
+            info!("Transaction after envelope processing: vsize={} weight={}",
+                  final_tx_with_witness.vsize(), final_tx_with_witness.weight());
+            
+            let mut final_tx = final_tx_with_witness;
+            
+            // For envelope transactions, calculate fee based on actual transaction size and fee rate
+            let fee_rate_sat_vb = fee_rate.unwrap_or(5.0);
+            let calculated_fee = (fee_rate_sat_vb * final_tx.vsize() as f32).ceil() as u64;
+            
+            // Cap the fee at a reasonable maximum to avoid absurdly high fees due to large witness data
+            let max_fee = 50_000u64; // Cap at 50,000 sats (0.0005 BTC)
+            let reveal_fee = calculated_fee.min(max_fee);
+            
+            info!("Calculated reveal fee: {} sats (fee rate: {} sat/vB, vsize: {} vbytes, capped at: {} sats)",
+                  calculated_fee, fee_rate_sat_vb, final_tx.vsize(), max_fee);
             
             // Calculate total input value
             let mut total_input_value = 0u64;
@@ -939,11 +1098,11 @@ impl EnhancedAlkanesExecutor {
             info!("  Total input value: {} sats", total_input_value);
             info!("  Total output value: {} sats", total_output_value);
             info!("  Current implied fee: {} sats", current_fee);
-            info!("  Target fee: {} sats", fixed_fee);
+            info!("  Target fee: {} sats", reveal_fee);
             
-            if current_fee != fixed_fee {
+            if current_fee != reveal_fee {
                 // Adjust the last non-OP_RETURN output to account for the fee difference
-                let fee_adjustment = current_fee.saturating_sub(fixed_fee);
+                let fee_adjustment = current_fee.saturating_sub(reveal_fee);
                 
                 // Find the last non-OP_RETURN output to adjust
                 for output in final_tx.output.iter_mut().rev() {
@@ -956,11 +1115,11 @@ impl EnhancedAlkanesExecutor {
                 }
             }
             
-            info!("Using fixed fee for envelope reveal transaction: {} sats", fixed_fee);
+            info!("Using calculated fee for envelope reveal transaction: {} sats", reveal_fee);
             info!("Built envelope reveal transaction with {} inputs, {} outputs, fee: {} sats",
-                  final_tx.input.len(), final_tx.output.len(), fixed_fee);
+                  final_tx.input.len(), final_tx.output.len(), reveal_fee);
             
-            return Ok((final_tx, fixed_fee));
+            return Ok((final_tx, reveal_fee));
         }
         
         // Calculate fee properly (fee_rate is in sat/vB)
@@ -980,7 +1139,7 @@ impl EnhancedAlkanesExecutor {
     /// Create and broadcast commit transaction
     async fn create_and_broadcast_commit_transaction(
         &self,
-        envelope_manager: &EnvelopeManager,
+        envelope: &AlkanesEnvelope,
         params: &EnhancedExecuteParams
     ) -> Result<(String, u64, bitcoin::OutPoint)> {
         info!("Creating commit transaction");
@@ -988,9 +1147,9 @@ impl EnhancedAlkanesExecutor {
         // Get wallet's internal key for taproot
         let internal_key = self.wallet_manager.get_internal_key().await?;
         
-        // Create commit address
+        // Create commit address using taproot with envelope script
         let network = self.wallet_manager.get_network();
-        let commit_address = envelope_manager.create_commit_address(network, internal_key)?;
+        let commit_address = self.create_commit_address_for_envelope(envelope, network, internal_key).await?;
         
         info!("Envelope commit address: {}", commit_address);
         
@@ -1033,7 +1192,30 @@ impl EnhancedAlkanesExecutor {
         let mut outputs = vec![commit_output];
         let input_value = funding_utxo.amount;
         let commit_value = 546u64;
-        let estimated_fee = (params.fee_rate.unwrap_or(5.0) * 200.0).ceil() as u64; // Rough estimate
+        let fee_rate_sat_vb = params.fee_rate.unwrap_or(5.0);
+        
+        // Create a temporary transaction to calculate the actual size for fee estimation
+        let temp_inputs = vec![bitcoin::TxIn {
+            previous_output: funding_outpoint,
+            script_sig: bitcoin::ScriptBuf::new(),
+            sequence: bitcoin::Sequence::ENABLE_RBF_NO_LOCKTIME,
+            witness: bitcoin::Witness::new(),
+        }];
+        
+        let temp_outputs = vec![bitcoin::TxOut {
+            value: bitcoin::Amount::from_sat(commit_value),
+            script_pubkey: commit_address.script_pubkey(),
+        }];
+        
+        let temp_tx = bitcoin::Transaction {
+            version: bitcoin::transaction::Version::TWO,
+            lock_time: bitcoin::absolute::LockTime::ZERO,
+            input: temp_inputs,
+            output: temp_outputs,
+        };
+        
+        // Calculate fee based on actual transaction size
+        let estimated_fee = (fee_rate_sat_vb * temp_tx.vsize() as f32).ceil() as u64;
         
         if input_value > commit_value + estimated_fee + 546 {
             // Add change output
@@ -1098,7 +1280,7 @@ impl EnhancedAlkanesExecutor {
     async fn create_and_broadcast_reveal_transaction(
         &self,
         params: &EnhancedExecuteParams,
-        envelope_manager: &EnvelopeManager,
+        envelope: &AlkanesEnvelope,
         commit_outpoint: bitcoin::OutPoint
     ) -> Result<(String, u64)> {
         info!("Creating reveal transaction");
@@ -1131,7 +1313,7 @@ impl EnhancedAlkanesExecutor {
             outputs,
             runestone,
             params.fee_rate,
-            Some(envelope_manager)
+            Some(envelope)
         ).await?;
         
         // Step 7: Show transaction preview if not raw output
@@ -1181,6 +1363,27 @@ impl EnhancedAlkanesExecutor {
                     println!("\n🪨 Protostone Transaction Detected");
                     println!("⚠️  Runestone decoding failed - this may be expected for reveal transactions");
                     println!("💡 The reveal transaction should contain a protostone with envelope data");
+                    
+                    // Try to show OP_RETURN data for envelope transactions
+                    for (i, output) in tx.output.iter().enumerate() {
+                        if output.script_pubkey.is_op_return() {
+                            println!("\n📜 OP_RETURN Output {} Analysis:", i);
+                            let script_bytes = output.script_pubkey.as_bytes();
+                            if script_bytes.len() > 2 {
+                                let data_bytes = &script_bytes[2..]; // Skip OP_RETURN and length byte
+                                println!("  📊 Data size: {} bytes", data_bytes.len());
+                                println!("  🔍 First 32 bytes: {}", hex::encode(&data_bytes[..std::cmp::min(data_bytes.len(), 32)]));
+                                
+                                // Check for runestone magic (OP_13 = 0x5d)
+                                if data_bytes.len() > 0 && data_bytes[0] == 0x5d {
+                                    println!("  🪨 Contains Runestone magic number (OP_13)");
+                                    if data_bytes.len() > 1 {
+                                        println!("  🏷️  Protocol tag candidate: {}", data_bytes[1]);
+                                    }
+                                }
+                            }
+                        }
+                    }
                 } else {
                     println!("\n⚠️  Could not decode runestone data for preview");
                 }
@@ -1317,6 +1520,66 @@ impl EnhancedAlkanesExecutor {
         }
         
         Ok(())
+    }
+
+    /// Create commit address for envelope using taproot
+    async fn create_commit_address_for_envelope(
+        &self,
+        envelope: &AlkanesEnvelope,
+        network: bitcoin::Network,
+        internal_key: bitcoin::XOnlyPublicKey,
+    ) -> Result<bitcoin::Address> {
+        use bitcoin::taproot::{TaprootBuilder, LeafVersion};
+        
+        // Build the reveal script
+        let reveal_script = envelope.build_reveal_script();
+        
+        // Create taproot builder with the reveal script
+        let taproot_builder = TaprootBuilder::new()
+            .add_leaf(0, reveal_script.clone())
+            .context("Failed to add reveal script to taproot builder")?;
+        
+        // Finalize the taproot spend info
+        let taproot_spend_info = taproot_builder
+            .finalize(&bitcoin::secp256k1::Secp256k1::verification_only(), internal_key)
+            .map_err(|e| anyhow::anyhow!("Failed to finalize taproot spend info: {:?}", e))?;
+        
+        // Create the commit address
+        let commit_address = bitcoin::Address::p2tr_tweaked(
+            taproot_spend_info.output_key(),
+            network,
+        );
+        
+        Ok(commit_address)
+    }
+
+    /// Create taproot spend info for envelope
+    async fn create_taproot_spend_info_for_envelope(
+        &self,
+        envelope: &AlkanesEnvelope,
+        internal_key: bitcoin::XOnlyPublicKey,
+    ) -> Result<(bitcoin::taproot::TaprootSpendInfo, bitcoin::taproot::ControlBlock)> {
+        use bitcoin::taproot::{TaprootBuilder, LeafVersion};
+        
+        // Build the reveal script
+        let reveal_script = envelope.build_reveal_script();
+        
+        // Create taproot builder with the reveal script
+        let taproot_builder = TaprootBuilder::new()
+            .add_leaf(0, reveal_script.clone())
+            .context("Failed to add reveal script to taproot builder")?;
+        
+        // Finalize the taproot spend info
+        let taproot_spend_info = taproot_builder
+            .finalize(&bitcoin::secp256k1::Secp256k1::verification_only(), internal_key)
+            .map_err(|e| anyhow::anyhow!("Failed to finalize taproot spend info: {:?}", e))?;
+        
+        // Create control block for script-path spending
+        let control_block = taproot_spend_info
+            .control_block(&(reveal_script, LeafVersion::TapScript))
+            .context("Failed to create control block for reveal script")?;
+        
+        Ok((taproot_spend_info, control_block))
     }
 }
 

@@ -913,14 +913,15 @@ impl RpcClient {
                 eprintln!("  VSize: {} vbytes", tx.vsize());
                 eprintln!("  Size: {} bytes", tx.vsize());
                 
-                // Analyze witness data
+                // Analyze witness data (FIXED: avoid calling to_vec() which corrupts witness data)
                 let mut total_witness_size = 0;
                 for (i, input) in tx.input.iter().enumerate() {
-                    let witness_size = input.witness.to_vec().len();
-                    total_witness_size += witness_size;
-                    eprintln!("  Input {} witness: {} bytes ({} items)", i, witness_size, input.witness.len());
+                    // Calculate witness size by summing individual item lengths + overhead
+                    let witness_item_size: usize = input.witness.iter().map(|item| item.len()).sum();
+                    total_witness_size += witness_item_size;
+                    eprintln!("  Input {} witness: {} bytes ({} items)", i, witness_item_size, input.witness.len());
                     
-                    if witness_size > 10000 {
+                    if witness_item_size > 10000 {
                         eprintln!("    ⚠️  Large witness data detected!");
                         for (j, item) in input.witness.iter().enumerate() {
                             eprintln!("      Item {}: {} bytes", j, item.len());

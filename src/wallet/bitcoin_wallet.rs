@@ -2017,6 +2017,7 @@ impl BitcoinWallet {
         use bitcoin::secp256k1::{Keypair, schnorr::Signature, Message};
         use bitcoin::key::{TapTweak, UntweakedKeypair};
         use bitcoin::taproot;
+        use bitcoin::bip32::{DerivationPath, ChildNumber};
         
         info!("Signing PSBT with {} inputs", psbt.inputs.len());
         
@@ -2122,8 +2123,51 @@ impl BitcoinWallet {
                             )
                             .context("Failed to compute taproot key spend sighash")?;
                         
-                        // Use master key for taproot operations
-                        let keypair = Keypair::from_secret_key(&self.secp, &self.master_xprv.private_key);
+                        // CRITICAL FIX: Use proper derivation path for P2TR instead of master key
+                        // Find the correct derivation path for this UTXO
+                        let coin_type = match self.config.network {
+                            Network::Bitcoin => 0,
+                            Network::Testnet => 1,
+                            Network::Signet => 1,
+                            Network::Regtest => 1,
+                            _ => 0,
+                        };
+                        
+                        // Try to find the correct derivation path by checking common indices
+                        let mut found_key = None;
+                        'outer: for is_change in [false, true] {
+                            let change_index = if is_change { 1 } else { 0 };
+                            for index in 0..100 { // Check first 100 addresses
+                                let derivation_path = DerivationPath::from(vec![
+                                    ChildNumber::from_hardened_idx(86).unwrap(), // BIP86 (Taproot)
+                                    ChildNumber::from_hardened_idx(coin_type).unwrap(),
+                                    ChildNumber::from_hardened_idx(0).unwrap(),
+                                    ChildNumber::from_normal_idx(change_index).unwrap(),
+                                    ChildNumber::from_normal_idx(index).unwrap(),
+                                ]);
+                                
+                                // Generate address for this path and check if it matches the UTXO
+                                if let Ok(test_address) = self.get_address_of_type_at_index("p2tr", index, is_change).await {
+                                    // Convert script pubkey to address to compare
+                                    if let Ok(utxo_address) = bitcoin::Address::from_script(&witness_utxo.script_pubkey, self.config.network) {
+                                        if test_address == utxo_address.to_string() {
+                                            // Found the correct derivation path
+                                            let private_key = self.derive_private_key(&derivation_path)?;
+                                            found_key = Some(private_key);
+                                            debug!("Found matching P2TR derivation path for input {}: index={}, is_change={}", i, index, is_change);
+                                            break 'outer;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        let private_key = found_key.unwrap_or_else(|| {
+                            warn!("Could not find derivation path for P2TR input {}, using master key as fallback", i);
+                            PrivateKey::new(self.master_xprv.private_key, self.config.network)
+                        });
+                        
+                        let keypair = Keypair::from_secret_key(&self.secp, &private_key.inner);
                         let untweaked_keypair = UntweakedKeypair::from(keypair);
                         let tweaked_keypair = untweaked_keypair.tap_tweak(&self.secp, None);
                         

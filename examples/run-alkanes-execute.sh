@@ -29,7 +29,7 @@ done
 
 cargo build
 # Execute the alkanes command with commit/reveal pattern
-./target/debug/deezel \
+/home/ubuntu/deezel/target/debug/deezel \
     --sandshrew-rpc-url http://localhost:18888 \
     -p regtest \
     --wallet-file ~/.deezel/regtest.json.asc \

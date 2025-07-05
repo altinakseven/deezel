@@ -9,7 +9,7 @@ use std::sync::Arc;
 use tokio;
 
 use crate::alkanes::execute::{EnhancedAlkanesExecutor, EnhancedExecuteParams, InputRequirement, parse_protostones};
-use crate::alkanes::envelope::EnvelopeManager;
+use crate::alkanes::envelope::AlkanesEnvelope;
 use crate::rpc::{RpcClient, RpcConfig};
 use crate::wallet::WalletManager;
 use crate::wallet::bitcoin_wallet::{BitcoinWallet, BitcoinWalletConfig};

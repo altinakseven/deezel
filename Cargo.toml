@@ -50,6 +50,9 @@ async-trait = "0.1"
 dirs = "5.0"
 base64 = "0.22"
 regex = "1.10"
+flate2 = "1.0"
+tempfile = "3.8"
+chrono = { version = "0.4", features = ["serde"] }
 
 # Alkanes-rs crates
 alkanes-support = { git = "https://github.com/kungfuflex/alkanes-rs" }
@@ -64,8 +67,6 @@ sha3 = "0.10"
 
 # Test dependencies
 [dev-dependencies]
-tempfile = "3.8"
-chrono = { version = "0.4", features = ["serde"] }
 
 [features]
 default = ["gpg"]

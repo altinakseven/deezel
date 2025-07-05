@@ -13,7 +13,6 @@ pub mod alkanes;
 pub mod address_resolver;
 
 // Test modules for e2e testing with mock metashrew
-#[cfg(test)]
 pub mod tests;
 
 // Test module for message decoding verification
