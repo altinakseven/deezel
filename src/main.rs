@@ -303,6 +303,9 @@ enum AlkanesCommands {
         /// Enable transaction tracing
         #[arg(long)]
         trace: bool,
+        /// Auto-mine blocks on regtest after transaction broadcast
+        #[arg(long)]
+        mine: bool,
         /// Auto-confirm without user prompt
         #[arg(short = 'y', long)]
         yes: bool,
@@ -1096,6 +1099,7 @@ async fn main() -> Result<()> {
                     protostones,
                     raw,
                     trace,
+                    mine,
                     yes
                 } => {
                     info!("🚀 Starting alkanes execute command");
@@ -1143,6 +1147,7 @@ async fn main() -> Result<()> {
                         envelope_data,
                         raw_output: raw,
                         trace_enabled: trace,
+                        mine_enabled: mine,
                         auto_confirm: yes,
                     };
                     

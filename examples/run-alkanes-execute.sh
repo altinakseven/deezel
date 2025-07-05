@@ -27,7 +27,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-cargo build
+cargo build --release
 # Execute the alkanes command with commit/reveal pattern
 /home/ubuntu/deezel/target/release/deezel \
     --sandshrew-rpc-url http://localhost:18888 \
@@ -39,6 +39,8 @@ cargo build
     --inputs B:1000 \
     --change [self:p2tr:2] \
     --to [self:p2tr:1] \
+    --trace \
+    --mine \
     --fee-rate 1 \
     -y \
     $RAW_FLAG \
