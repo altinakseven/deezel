@@ -1460,7 +1460,10 @@ impl EnhancedAlkanesExecutor {
         // Step 3: Wait for metashrew to catch up
         self.wait_for_metashrew_sync_enhanced(params).await?;
         
-        // Step 4: Get transaction details to find protostone outputs
+        // Step 4: Wait for Esplora to catch up before getting transaction hex
+        self.wait_for_esplora_sync_enhanced(params).await?;
+        
+        // Step 5: Get transaction details to find protostone outputs
         let tx_hex = self.rpc_client.get_transaction_hex(txid).await?;
         
         // Debug: Log the raw hex string returned from RPC
@@ -1672,6 +1675,48 @@ impl EnhancedAlkanesExecutor {
             }
             
             debug!("Waiting for sync: Bitcoin={}, Metashrew={}, attempt {}/{}", bitcoin_height, metashrew_height, attempts, max_attempts);
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        }
+        
+        Ok(())
+    }
+    
+    /// Enhanced Esplora synchronization with logging
+    async fn wait_for_esplora_sync_enhanced(&self, params: &EnhancedExecuteParams) -> Result<()> {
+        info!("Waiting for Esplora to synchronize with enhanced logging...");
+        
+        if !params.raw_output {
+            println!("🔄 Waiting for Esplora to synchronize...");
+        }
+        
+        let max_attempts = 30; // 30 seconds timeout
+        let mut attempts = 0;
+        
+        loop {
+            attempts += 1;
+            
+            // Get heights from both Bitcoin Core and Esplora
+            let bitcoin_height = self.rpc_client.get_block_count().await?;
+            let esplora_height = self.rpc_client.get_esplora_blocks_tip_height().await?;
+            
+            // Esplora should be at least equal to Bitcoin Core height
+            if esplora_height >= bitcoin_height {
+                info!("✅ Esplora synchronized: Bitcoin={}, Esplora={}", bitcoin_height, esplora_height);
+                if !params.raw_output {
+                    println!("✅ Esplora synchronized (Bitcoin: {}, Esplora: {})", bitcoin_height, esplora_height);
+                }
+                break;
+            }
+            
+            if attempts >= max_attempts {
+                return Err(anyhow!("Timeout waiting for Esplora synchronization. Bitcoin height: {}, Esplora height: {}", bitcoin_height, esplora_height));
+            }
+            
+            if !params.raw_output && attempts % 5 == 0 {
+                println!("🔄 Still waiting for Esplora sync: Bitcoin={}, Esplora={} (attempt {}/{})", bitcoin_height, esplora_height, attempts, max_attempts);
+            }
+            
+            debug!("Waiting for Esplora sync: Bitcoin={}, Esplora={}, attempt {}/{}", bitcoin_height, esplora_height, attempts, max_attempts);
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         }
         
