@@ -1902,28 +1902,65 @@ fn parse_single_protostone(spec_str: &str) -> Result<ProtostoneSpec> {
     let mut edicts = Vec::new();
     let mut bitcoin_transfer = None;
     
-    // Split by colon, but respect brackets for cellpacks
-    let parts = split_respecting_brackets(spec_str, ':')?;
+    info!("Parsing single protostone: {}", spec_str);
     
-    for part in parts {
+    // First, we need to handle the complex format properly
+    // The format can be: [cellpack]:target:pointer:[edict1]:[edict2],...
+    // We need to split by colon but respect both [] brackets and nested structures
+    
+    // Use a more sophisticated parsing approach
+    let parts = split_complex_protostone(spec_str)?;
+    
+    for (i, part) in parts.iter().enumerate() {
         let trimmed = part.trim();
+        info!("Processing protostone part {}: '{}'", i, trimmed);
         
         if trimmed.starts_with('[') && trimmed.ends_with(']') {
-            // This is a cellpack
-            let cellpack_content = &trimmed[1..trimmed.len()-1];
-            cellpack = Some(parse_cellpack(cellpack_content)?);
+            let content = &trimmed[1..trimmed.len()-1];
+            
+            // Check if this is a cellpack (contains commas) or an edict (contains colons)
+            if content.contains(',') && !content.contains(':') {
+                // This is a cellpack: [3,797,101]
+                info!("Found cellpack: {}", content);
+                cellpack = Some(parse_cellpack(content)?);
+            } else if content.contains(':') {
+                // This is a bracketed edict: [4:797:1:p1]
+                info!("Found bracketed edict: {}", content);
+                let edict = parse_edict(trimmed)?;
+                edicts.push(edict);
+            } else {
+                // Ambiguous - try cellpack first, then edict
+                if let Ok(cp) = parse_cellpack(content) {
+                    info!("Parsed as cellpack: {}", content);
+                    cellpack = Some(cp);
+                } else {
+                    info!("Failed as cellpack, trying as edict: {}", content);
+                    let edict = parse_edict(trimmed)?;
+                    edicts.push(edict);
+                }
+            }
         } else if trimmed.starts_with("B:") {
             // This is a Bitcoin transfer
+            info!("Found Bitcoin transfer: {}", trimmed);
             bitcoin_transfer = Some(parse_bitcoin_transfer(trimmed)?);
         } else if trimmed.starts_with('v') || trimmed.starts_with('p') || trimmed == "split" {
-            // This is an output target (should be part of an edict)
+            // This is an output target (standalone, not part of an edict)
+            info!("Found standalone target: {}", trimmed);
+            // For now, skip standalone targets - they should be part of edicts
             continue;
-        } else {
-            // This should be an edict: block:tx:amount:target
-            let edict = parse_edict(trimmed)?;
-            edicts.push(edict);
+        } else if !trimmed.is_empty() {
+            // This might be a simple edict: block:tx:amount:target
+            info!("Trying to parse as simple edict: {}", trimmed);
+            if let Ok(edict) = parse_edict(trimmed) {
+                edicts.push(edict);
+            } else {
+                warn!("Could not parse protostone part: {}", trimmed);
+            }
         }
     }
+    
+    info!("Parsed protostone - cellpack: {:?}, edicts: {}, bitcoin_transfer: {:?}",
+          cellpack.is_some(), edicts.len(), bitcoin_transfer.is_some());
     
     Ok(ProtostoneSpec {
         cellpack,
@@ -1967,28 +2004,54 @@ fn parse_bitcoin_transfer(transfer_str: &str) -> Result<BitcoinTransfer> {
 
 /// Parse edict specification
 fn parse_edict(edict_str: &str) -> Result<ProtostoneEdict> {
-    // Format: block:tx:amount:target or block,tx,amount:target:target
-    // Need to handle the complex format from the example
+    // Handle both formats:
+    // 1. Simple format: block:tx:amount:target
+    // 2. Bracketed format: [block:tx:amount:output] (where output becomes target)
     
-    // For now, implement basic format
-    let parts: Vec<&str> = edict_str.split(':').collect();
-    if parts.len() < 4 {
-        return Err(anyhow!("Invalid edict format. Expected at least 'block:tx:amount:target'"));
+    let trimmed = edict_str.trim();
+    
+    if trimmed.starts_with('[') && trimmed.ends_with(']') {
+        // Bracketed format: [block:tx:amount:output]
+        let content = &trimmed[1..trimmed.len()-1];
+        let parts: Vec<&str> = content.split(':').collect();
+        if parts.len() != 4 {
+            return Err(anyhow!("Invalid bracketed edict format. Expected '[block:tx:amount:output]'"));
+        }
+        
+        let block = parts[0].parse::<u64>()
+            .context("Invalid block number in bracketed edict")?;
+        let tx = parts[1].parse::<u64>()
+            .context("Invalid tx number in bracketed edict")?;
+        let amount = parts[2].parse::<u64>()
+            .context("Invalid amount in bracketed edict")?;
+        let target = parse_output_target(parts[3])?;
+        
+        Ok(ProtostoneEdict {
+            alkane_id: AlkaneId { block, tx },
+            amount,
+            target,
+        })
+    } else {
+        // Simple format: block:tx:amount:target
+        let parts: Vec<&str> = trimmed.split(':').collect();
+        if parts.len() < 4 {
+            return Err(anyhow!("Invalid edict format. Expected 'block:tx:amount:target' or '[block:tx:amount:output]'"));
+        }
+        
+        let block = parts[0].parse::<u64>()
+            .context("Invalid block number in edict")?;
+        let tx = parts[1].parse::<u64>()
+            .context("Invalid tx number in edict")?;
+        let amount = parts[2].parse::<u64>()
+            .context("Invalid amount in edict")?;
+        let target = parse_output_target(parts[3])?;
+        
+        Ok(ProtostoneEdict {
+            alkane_id: AlkaneId { block, tx },
+            amount,
+            target,
+        })
     }
-    
-    let block = parts[0].parse::<u64>()
-        .context("Invalid block number in edict")?;
-    let tx = parts[1].parse::<u64>()
-        .context("Invalid tx number in edict")?;
-    let amount = parts[2].parse::<u64>()
-        .context("Invalid amount in edict")?;
-    let target = parse_output_target(parts[3])?;
-    
-    Ok(ProtostoneEdict {
-        alkane_id: AlkaneId { block, tx },
-        amount,
-        target,
-    })
 }
 
 /// Parse complex edict specification (handles formats like "2:1000:0:v1")
@@ -2055,6 +2118,60 @@ fn split_respecting_brackets(input: &str, delimiter: char) -> Result<Vec<String>
                 }
             },
             c if c == delimiter && bracket_depth == 0 => {
+                if !current.trim().is_empty() {
+                    parts.push(current.trim().to_string());
+                }
+                current.clear();
+            },
+            _ => {
+                current.push(ch);
+            }
+        }
+    }
+    
+    if bracket_depth != 0 {
+        return Err(anyhow!("Unmatched opening bracket"));
+    }
+    
+    if !current.trim().is_empty() {
+        parts.push(current.trim().to_string());
+    }
+    
+    Ok(parts)
+}
+
+/// Split complex protostone specification while respecting nested brackets
+fn split_complex_protostone(input: &str) -> Result<Vec<String>> {
+    // Handle complex format like: [3,797,101]:v0:v0:[4:797:1:p1]:[4:797:2:p2],v1:v1,v2:v2
+    // We need to split by colon but respect brackets for both cellpacks and edicts
+    
+    let mut parts = Vec::new();
+    let mut current = String::new();
+    let mut bracket_depth = 0;
+    let mut chars = input.chars().peekable();
+    
+    while let Some(ch) = chars.next() {
+        match ch {
+            '[' => {
+                bracket_depth += 1;
+                current.push(ch);
+            },
+            ']' => {
+                bracket_depth -= 1;
+                current.push(ch);
+                if bracket_depth < 0 {
+                    return Err(anyhow!("Unmatched closing bracket"));
+                }
+            },
+            ':' if bracket_depth == 0 => {
+                // Split on colon only when not inside brackets
+                if !current.trim().is_empty() {
+                    parts.push(current.trim().to_string());
+                }
+                current.clear();
+            },
+            ',' if bracket_depth == 0 => {
+                // Also split on comma when not inside brackets (for multiple edicts)
                 if !current.trim().is_empty() {
                     parts.push(current.trim().to_string());
                 }
@@ -2157,5 +2274,71 @@ mod tests {
         // Test error case: not enough values for target
         let result = parse_cellpack("1");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_bracketed_edict() {
+        // Test the new bracketed edict format: [block:tx:amount:output]
+        let edict = parse_edict("[4:797:1:p1]").unwrap();
+        
+        assert_eq!(edict.alkane_id.block, 4);
+        assert_eq!(edict.alkane_id.tx, 797);
+        assert_eq!(edict.amount, 1);
+        assert!(matches!(edict.target, OutputTarget::Protostone(1)));
+    }
+
+    #[test]
+    fn test_parse_bracketed_edict_with_output() {
+        // Test bracketed edict with output target: [4:797:2:v0]
+        let edict = parse_edict("[4:797:2:v0]").unwrap();
+        
+        assert_eq!(edict.alkane_id.block, 4);
+        assert_eq!(edict.alkane_id.tx, 797);
+        assert_eq!(edict.amount, 2);
+        assert!(matches!(edict.target, OutputTarget::Output(0)));
+    }
+
+    #[test]
+    fn test_parse_complex_protostone_format() {
+        // Test the complex format from the script: [3,797,101]:v0:v0:[4:797:1:p1]:[4:797:2:p2]
+        let parts = split_complex_protostone("[3,797,101]:v0:v0:[4:797:1:p1]:[4:797:2:p2]").unwrap();
+        
+        // Should split into: ["[3,797,101]", "v0", "v0", "[4:797:1:p1]", "[4:797:2:p2]"]
+        assert_eq!(parts.len(), 5);
+        assert_eq!(parts[0], "[3,797,101]");
+        assert_eq!(parts[1], "v0");
+        assert_eq!(parts[2], "v0");
+        assert_eq!(parts[3], "[4:797:1:p1]");
+        assert_eq!(parts[4], "[4:797:2:p2]");
+    }
+
+    #[test]
+    fn test_parse_single_protostone_with_edicts() {
+        // Test parsing a protostone with cellpack and edicts
+        let spec = parse_single_protostone("[3,797,101]:v0:v0:[4:797:1:p1]:[4:797:2:p2]").unwrap();
+        
+        // Should have cellpack
+        assert!(spec.cellpack.is_some());
+        let cellpack = spec.cellpack.unwrap();
+        assert_eq!(cellpack.target.block, 3);
+        assert_eq!(cellpack.target.tx, 797);
+        assert_eq!(cellpack.inputs, vec![101]);
+        
+        // Should have 2 edicts
+        assert_eq!(spec.edicts.len(), 2);
+        
+        // First edict: [4:797:1:p1]
+        let edict1 = &spec.edicts[0];
+        assert_eq!(edict1.alkane_id.block, 4);
+        assert_eq!(edict1.alkane_id.tx, 797);
+        assert_eq!(edict1.amount, 1);
+        assert!(matches!(edict1.target, OutputTarget::Protostone(1)));
+        
+        // Second edict: [4:797:2:p2]
+        let edict2 = &spec.edicts[1];
+        assert_eq!(edict2.alkane_id.block, 4);
+        assert_eq!(edict2.alkane_id.tx, 797);
+        assert_eq!(edict2.amount, 2);
+        assert!(matches!(edict2.target, OutputTarget::Protostone(2)));
     }
 }

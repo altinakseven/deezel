@@ -381,7 +381,11 @@ Protostones define the alkanes operations to perform. They support complex cellp
 - `p<N>` - Point to the Nth protostone
 
 **Edict Format:**
-- `[<token_id>:<amount>:<output_index>:<target>]` - Transfer tokens to specific output
+- `[<block>:<tx>:<amount>:<output>]` - Transfer tokens from alkane (block:tx) with specified amount to output target
+  - `block`: Block number where the alkane was deployed
+  - `tx`: Transaction number within that block
+  - `amount`: Amount of tokens to transfer
+  - `output`: Output target (vN for output N, pN for protostone N, or split)
 
 #### Examples
 

@@ -343,11 +343,26 @@ enum AlkanesCommands {
     },
     /// Inspect alkanes bytecode
     Inspect {
-        /// Bytecode file or hex string
-        bytecode: String,
+        /// Alkane ID (format: block:tx) or bytecode file/hex string
+        target: String,
         /// Show raw JSON output
         #[arg(long)]
         raw: bool,
+        /// Enable disassembly to WAT format
+        #[arg(long)]
+        disasm: bool,
+        /// Enable fuzzing analysis
+        #[arg(long)]
+        fuzz: bool,
+        /// Opcode ranges for fuzzing (e.g., "100-150,200-250")
+        #[arg(long)]
+        fuzz_ranges: Option<String>,
+        /// Extract and display metadata
+        #[arg(long)]
+        meta: bool,
+        /// Compute and display codehash
+        #[arg(long)]
+        codehash: bool,
     },
     /// Get bytecode for an alkanes contract
     Getbytecode {
@@ -1270,20 +1285,50 @@ async fn main() -> Result<()> {
                         }
                     }
                 },
-                AlkanesCommands::Inspect { bytecode, raw } => {
-                    // Inspect bytecode (no wallet needed)
-                    // This is a placeholder - actual implementation would analyze the bytecode
-                    if raw {
-                        let result = serde_json::json!({
-                            "bytecode": bytecode,
-                            "analysis": "Bytecode inspection not yet implemented"
-                        });
-                        println!("{}", serde_json::to_string_pretty(&result)?);
+                AlkanesCommands::Inspect { target, raw, disasm, fuzz, fuzz_ranges, meta, codehash } => {
+                    // Create alkane inspector
+                    let inspector = deezel::alkanes::inspector::AlkaneInspector::new(Arc::clone(&rpc_client))?;
+                    
+                    // Check if target is an alkane ID (format: block:tx) or bytecode
+                    if target.contains(':') && !target.starts_with("0x") {
+                        // Parse as alkane ID
+                        let alkane_parts: Vec<&str> = target.split(':').collect();
+                        if alkane_parts.len() != 2 {
+                            return Err(anyhow!("Invalid alkane ID format. Expected 'block:tx'"));
+                        }
+                        
+                        let block: u64 = alkane_parts[0].parse()
+                            .context("Invalid block number in alkane ID")?;
+                        let tx: u64 = alkane_parts[1].parse()
+                            .context("Invalid transaction number in alkane ID")?;
+                        
+                        let alkane_id = deezel::alkanes::types::AlkaneId { block, tx };
+                        
+                        // Perform inspection with specified flags
+                        inspector.inspect_alkane(
+                            &alkane_id,
+                            disasm,
+                            fuzz,
+                            fuzz_ranges.as_deref(),
+                            meta,
+                            codehash,
+                            raw
+                        ).await?;
                     } else {
-                        println!("🔍 Alkanes Bytecode Inspection");
-                        println!("═══════════════════════════");
-                        println!("📄 Bytecode: {}", bytecode);
-                        println!("⚠️  Detailed inspection not yet implemented");
+                        // Handle as bytecode file or hex string (legacy mode)
+                        if raw {
+                            let result = serde_json::json!({
+                                "target": target,
+                                "analysis": "Direct bytecode inspection not yet implemented. Use alkane ID format (block:tx) for full inspection."
+                            });
+                            println!("{}", serde_json::to_string_pretty(&result)?);
+                        } else {
+                            println!("🔍 Alkanes Bytecode Inspection");
+                            println!("═══════════════════════════");
+                            println!("📄 Target: {}", target);
+                            println!("⚠️  Direct bytecode inspection not yet implemented.");
+                            println!("💡 Use alkane ID format (block:tx) for full inspection with --fuzz, --meta, --disasm, --codehash flags.");
+                        }
                     }
                 },
                 AlkanesCommands::Simulate { contract_id, params, raw } => {
