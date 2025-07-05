@@ -39,7 +39,7 @@ struct Args {
     sandshrew_rpc_url: Option<String>,
 
     /// Network provider
-    #[arg(short = 'p', long, default_value = "mainnet")]
+    #[arg(short = 'p', long, default_value = "regtest")]
     provider: String,
 
     /// Custom network magic (overrides provider)
@@ -185,6 +185,9 @@ enum WalletCommands {
         /// Send all available funds
         #[arg(long)]
         send_all: bool,
+        /// Auto-confirm without user prompt
+        #[arg(short = 'y', long)]
+        yes: bool,
     },
     /// Sign a transaction
     SignTx {
@@ -195,6 +198,9 @@ enum WalletCommands {
     BroadcastTx {
         /// Transaction hex to broadcast
         tx_hex: String,
+        /// Auto-confirm without user prompt
+        #[arg(short = 'y', long)]
+        yes: bool,
     },
     /// List UTXOs
     Utxos {
@@ -329,10 +335,8 @@ enum AlkanesCommands {
     },
     /// Trace an alkanes transaction
     Trace {
-        /// Transaction ID
-        txid: String,
-        /// Output index
-        vout: u32,
+        /// Transaction outpoint (format: txid:vout)
+        outpoint: String,
         /// Show raw JSON output
         #[arg(long)]
         raw: bool,
@@ -1223,7 +1227,10 @@ async fn main() -> Result<()> {
                         }
                     }
                 },
-                AlkanesCommands::Trace { txid, vout, raw } => {
+                AlkanesCommands::Trace { outpoint, raw } => {
+                    // Parse outpoint format (txid:vout)
+                    let (txid, vout) = parse_outpoint(&outpoint)?;
+                    
                     // Trace transaction using RPC client (no wallet needed)
                     match rpc_client.trace_outpoint_pretty(&txid, vout).await {
                         Ok(trace_output) => {
@@ -1234,6 +1241,7 @@ async fn main() -> Result<()> {
                                     Err(e) => {
                                         let error_result = serde_json::json!({
                                             "error": e.to_string(),
+                                            "outpoint": outpoint,
                                             "txid": txid,
                                             "vout": vout
                                         });
@@ -1249,12 +1257,13 @@ async fn main() -> Result<()> {
                             if raw {
                                 let error_result = serde_json::json!({
                                     "error": e.to_string(),
+                                    "outpoint": outpoint,
                                     "txid": txid,
                                     "vout": vout
                                 });
                                 println!("{}", serde_json::to_string_pretty(&error_result)?);
                             } else {
-                                println!("❌ Failed to trace transaction {}:{}", txid, vout);
+                                println!("❌ Failed to trace transaction {}", outpoint);
                                 println!("Error: {}", e);
                             }
                             return Err(e);
@@ -1454,7 +1463,10 @@ async fn main() -> Result<()> {
                         }
                     }
                 },
-                AlkanesCommands::Trace { txid, vout, raw } => {
+                AlkanesCommands::Trace { outpoint, raw } => {
+                    // Parse outpoint format (txid:vout)
+                    let (txid, vout) = parse_outpoint(&outpoint)?;
+                    
                     let alkanes_manager = AlkanesManager::new(Arc::clone(&rpc_client), Arc::clone(wm));
                     let trace_result = alkanes_manager.trace_transaction(&txid, vout).await?;
                     

@@ -49,9 +49,14 @@ impl NetworkParams {
         }
     }
 
-    /// Create network parameters for signet (same as testnet)
+    /// Create network parameters for signet (uses testnet address encoding)
     pub fn signet() -> Self {
-        Self::testnet()
+        Self {
+            bech32_prefix: String::from("tb"),
+            p2pkh_prefix: 0x6f,
+            p2sh_prefix: 0xc4,
+            network: Network::Signet,
+        }
     }
 
     /// Create network parameters for dogecoin
@@ -142,7 +147,8 @@ impl NetworkParams {
     pub fn from_provider(provider: &str) -> Result<Self, String> {
         match provider.to_lowercase().as_str() {
             "mainnet" => Ok(Self::mainnet()),
-            "testnet" | "signet" => Ok(Self::testnet()),
+            "testnet" => Ok(Self::testnet()),
+            "signet" => Ok(Self::signet()),
             "regtest" | "localhost" => Ok(Self::regtest()),
             "dogecoin" | "doge" => Ok(Self::dogecoin()),
             "luckycoin" | "lucky" => Ok(Self::luckycoin()),
