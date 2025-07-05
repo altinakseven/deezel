@@ -807,11 +807,9 @@ async fn main() -> Result<()> {
                                                             WalletCommands::Backup |
                                                             WalletCommands::ListIdentifiers }) ||
         matches!(args.command, Commands::Alkanes { command: AlkanesCommands::Execute { .. } |
-                                                             AlkanesCommands::Balance { .. } |
-                                                             AlkanesCommands::TokenInfo { .. } |
-                                                             AlkanesCommands::Trace { .. } |
-                                                             AlkanesCommands::Inspect { .. } |
-                                                             AlkanesCommands::Simulate { .. } }) {
+                                                             AlkanesCommands::Balance { .. } }) {
+        // FIXED: Only load wallet for alkanes commands that actually need it (Execute and Balance)
+        // Commands like TokenInfo, Trace, Inspect, Getbytecode, and Simulate work with RPC client only
         let wallet_manager = load_wallet_manager(
             &wallet_file,
             &network_params,
@@ -1111,6 +1109,7 @@ async fn main() -> Result<()> {
         },
         Commands::Alkanes { command } => {
             match command {
+                // Commands that work with RPC client only (no wallet needed)
                 AlkanesCommands::Getbytecode { alkane_id, raw } => {
                     // Parse alkane ID
                     let alkane_parts: Vec<&str> = alkane_id.split(':').collect();
@@ -1185,8 +1184,130 @@ async fn main() -> Result<()> {
                         }
                     }
                 },
-                _ => {
-                    // For other alkanes commands that need wallet access
+                AlkanesCommands::TokenInfo { alkane_id, raw } => {
+                    // Parse alkane ID
+                    let alkane_parts: Vec<&str> = alkane_id.split(':').collect();
+                    if alkane_parts.len() != 2 {
+                        return Err(anyhow!("Invalid alkane ID format. Expected 'block:tx'"));
+                    }
+                    
+                    let block = alkane_parts[0];
+                    let tx = alkane_parts[1];
+                    
+                    // Get contract metadata using RPC client (no wallet needed)
+                    match rpc_client.get_contract_meta(block, tx).await {
+                        Ok(metadata) => {
+                            if raw {
+                                println!("{}", serde_json::to_string_pretty(&metadata)?);
+                            } else {
+                                println!("🏷️  Alkanes Token Information");
+                                println!("═══════════════════════════");
+                                println!("🔗 Alkane ID: {}", alkane_id);
+                                println!("📦 Block: {}", block);
+                                println!("🔗 Transaction: {}", tx);
+                                println!("📋 Metadata: {}", serde_json::to_string_pretty(&metadata)?);
+                            }
+                        },
+                        Err(e) => {
+                            if raw {
+                                let error_result = serde_json::json!({
+                                    "error": e.to_string(),
+                                    "alkane_id": alkane_id
+                                });
+                                println!("{}", serde_json::to_string_pretty(&error_result)?);
+                            } else {
+                                println!("❌ Failed to get token info for alkane {}", alkane_id);
+                                println!("Error: {}", e);
+                            }
+                            return Err(e);
+                        }
+                    }
+                },
+                AlkanesCommands::Trace { txid, vout, raw } => {
+                    // Trace transaction using RPC client (no wallet needed)
+                    match rpc_client.trace_outpoint_pretty(&txid, vout).await {
+                        Ok(trace_output) => {
+                            if raw {
+                                // For raw output, use JSON format
+                                match rpc_client.trace_outpoint_json(&txid, vout).await {
+                                    Ok(json_output) => println!("{}", json_output),
+                                    Err(e) => {
+                                        let error_result = serde_json::json!({
+                                            "error": e.to_string(),
+                                            "txid": txid,
+                                            "vout": vout
+                                        });
+                                        println!("{}", serde_json::to_string_pretty(&error_result)?);
+                                        return Err(e);
+                                    }
+                                }
+                            } else {
+                                println!("{}", trace_output);
+                            }
+                        },
+                        Err(e) => {
+                            if raw {
+                                let error_result = serde_json::json!({
+                                    "error": e.to_string(),
+                                    "txid": txid,
+                                    "vout": vout
+                                });
+                                println!("{}", serde_json::to_string_pretty(&error_result)?);
+                            } else {
+                                println!("❌ Failed to trace transaction {}:{}", txid, vout);
+                                println!("Error: {}", e);
+                            }
+                            return Err(e);
+                        }
+                    }
+                },
+                AlkanesCommands::Inspect { bytecode, raw } => {
+                    // Inspect bytecode (no wallet needed)
+                    // This is a placeholder - actual implementation would analyze the bytecode
+                    if raw {
+                        let result = serde_json::json!({
+                            "bytecode": bytecode,
+                            "analysis": "Bytecode inspection not yet implemented"
+                        });
+                        println!("{}", serde_json::to_string_pretty(&result)?);
+                    } else {
+                        println!("🔍 Alkanes Bytecode Inspection");
+                        println!("═══════════════════════════");
+                        println!("📄 Bytecode: {}", bytecode);
+                        println!("⚠️  Detailed inspection not yet implemented");
+                    }
+                },
+                AlkanesCommands::Simulate { contract_id, params, raw } => {
+                    // Simulate contract execution (no wallet needed)
+                    let (block, tx) = parse_contract_id(&contract_id)?;
+                    let simulation_params = if let Some(p) = params {
+                        parse_simulation_params(&p)?
+                    } else {
+                        ("default_method".to_string(), "default_input".to_string(), vec!["default_arg".to_string()])
+                    };
+                    
+                    // This is a placeholder - actual implementation would use RPC simulation
+                    if raw {
+                        let result = serde_json::json!({
+                            "contract_id": contract_id,
+                            "block": block,
+                            "tx": tx,
+                            "simulation": "Contract simulation not yet implemented"
+                        });
+                        println!("{}", serde_json::to_string_pretty(&result)?);
+                    } else {
+                        println!("🧪 Alkanes Contract Simulation");
+                        println!("═══════════════════════════");
+                        println!("🔗 Contract ID: {}", contract_id);
+                        println!("📦 Block: {}", block);
+                        println!("🔗 Transaction: {}", tx);
+                        println!("⚠️  Simulation not yet implemented");
+                    }
+                },
+                
+                // Commands that require wallet access
+                AlkanesCommands::Execute { .. } | AlkanesCommands::Balance { .. } => {
+                    // For alkanes commands that need wallet access
                     let wm = wallet_manager.as_ref().ok_or_else(|| anyhow!("Wallet required for this alkanes operation"))?;
                     
                     match command {

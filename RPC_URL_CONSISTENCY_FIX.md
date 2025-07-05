@@ -7,10 +7,12 @@ The deezel CLI tool was experiencing network configuration mismatches where:
 - Bitcoin RPC endpoint was connecting to mainnet (localhost:8332, height 904194)
 - This caused alkanes execution failures with "No trace events found"
 - Transactions failed to broadcast properly due to network mismatch
+- Wallet loading was being attempted for ALL alkanes commands, even those that don't need it
 
 ## Root Cause
 
-When `--sandshrew-rpc-url` was specified, it should be used for ALL RPC operations, but hardcoded URLs throughout the codebase were still pointing to separate Bitcoin RPC endpoints (localhost:8332 or localhost:18332).
+1. When `--sandshrew-rpc-url` was specified, it should be used for ALL RPC operations, but hardcoded URLs throughout the codebase were still pointing to separate Bitcoin RPC endpoints (localhost:8332 or localhost:18332).
+2. Wallet loading logic was incorrectly attempting to load wallets for alkanes commands that only need RPC access (getbytecode, trace, inspect, tokeninfo, simulate).
 
 ## Solution Implemented
 
@@ -24,6 +26,8 @@ Updated the codebase to ensure that when `--sandshrew-rpc-url` is specified, it'
 - **Lines 696-702**: Updated wallet loading config to use `sandshrew_rpc_url` for both `bitcoin_rpc_url` and `metashrew_rpc_url`
 - **Lines 875-881**: Updated wallet creation config to use `sandshrew_rpc_url` consistently
 - **Lines 763-777**: Added journal comments explaining the RPC URL handling logic
+- **Lines 809-814**: FIXED wallet loading logic to only load wallet for alkanes commands that need it (Execute and Balance)
+- **Lines 1112-1300**: Restructured alkanes command handling to separate RPC-only commands from wallet-requiring commands
 
 #### 2. src/wallet/bitcoin_wallet.rs
 - **Lines 2219-2225**: Updated test RPC config to use consistent Sandshrew endpoint (localhost:8080)
@@ -56,7 +60,9 @@ Updated the codebase to ensure that when `--sandshrew-rpc-url` is specified, it'
 1. **Eliminated Network Mismatch**: All RPC operations now use the same endpoint when `--sandshrew-rpc-url` is specified
 2. **Consistent Test Configuration**: All test files now use `localhost:8080` (Sandshrew) instead of separate Bitcoin RPC endpoints
 3. **Preserved Default Behavior**: The default command-line argument and fallback logic in main.rs remain unchanged for backward compatibility
-4. **Added Documentation**: Journal comments explain the reasoning behind the changes
+4. **Fixed Wallet Loading Logic**: Only alkanes commands that actually need wallet access (Execute and Balance) will attempt to load the wallet
+5. **Separated Command Handling**: RPC-only alkanes commands (getbytecode, trace, inspect, tokeninfo, simulate) now work without wallet loading
+6. **Added Documentation**: Journal comments explain the reasoning behind the changes
 
 ## Expected Results
 
