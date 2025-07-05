@@ -1,7 +1,0 @@
-{
-  "mnemonic": "magic focus garden elephant relief flame tree sauce sense nation enroll garment",
-  "network": "Regtest",
-  "external_descriptor": "wpkh(tprv8ZgxMBicQKsPf3A6JFjj8C8ZyBAaqPMB9tixGn3W3bkKqUbLD2pmwHba4no7tx8u8EYmWAQEk7SLLmZfaQ3DUWubJuxMwwkvQY9rVbGsUps/84'/1'/0/0/*)",
-  "internal_descriptor": "wpkh(tprv8ZgxMBicQKsPf3A6JFjj8C8ZyBAaqPMB9tixGn3W3bkKqUbLD2pmwHba4no7tx8u8EYmWAQEk7SLLmZfaQ3DUWubJuxMwwkvQY9rVbGsUps/84'/1'/0/1/*)",
-  "created_at": 1751069521
-}
