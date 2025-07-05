@@ -44,22 +44,22 @@ struct RpcRequest {
 
 /// RPC response
 #[derive(Serialize, Deserialize, Debug)]
-struct RpcResponse {
+pub struct RpcResponse {
     /// Result value
-    result: Option<Value>,
+    pub result: Option<Value>,
     /// Error value
-    error: Option<RpcError>,
+    pub error: Option<RpcError>,
     /// Response ID
-    id: u64,
+    pub id: u64,
 }
 
 /// RPC error
 #[derive(Serialize, Deserialize, Debug)]
-struct RpcError {
+pub struct RpcError {
     /// Error code
-    code: i32,
+    pub code: i32,
     /// Error message
-    message: String,
+    pub message: String,
 }
 
 /// RPC client for Bitcoin and Metashrew
@@ -73,6 +73,9 @@ pub struct RpcClient {
 }
 
 impl RpcClient {
+    /// Maximum size for logging JSON responses (in characters)
+    pub const MAX_LOG_SIZE: usize = 2000;
+    
     /// Create a new RPC client
     pub fn new(config: RpcConfig) -> Self {
         // Create HTTP client with appropriate timeouts
@@ -85,6 +88,74 @@ impl RpcClient {
             client,
             config,
             request_id: std::sync::atomic::AtomicU64::new(0),
+        }
+    }
+    
+    /// Helper function to truncate large JSON responses for logging
+    pub fn truncate_json_for_logging(&self, json_value: &Value) -> String {
+        let full_json = serde_json::to_string_pretty(json_value)
+            .unwrap_or_else(|_| "Failed to serialize response".to_string());
+        
+        if full_json.len() <= Self::MAX_LOG_SIZE {
+            full_json
+        } else {
+            // For large responses, show structure but truncate content
+            match json_value {
+                Value::Object(obj) => {
+                    let mut truncated = serde_json::Map::new();
+                    for (key, value) in obj {
+                        match value {
+                            Value::Array(arr) => {
+                                truncated.insert(key.clone(), json!({
+                                    "_truncated": format!("Array with {} elements", arr.len()),
+                                    "_first_few": arr.iter().take(2).cloned().collect::<Vec<_>>()
+                                }));
+                            },
+                            Value::String(s) if s.len() > 100 => {
+                                truncated.insert(key.clone(), json!({
+                                    "_truncated": format!("String with {} chars", s.len()),
+                                    "_preview": format!("{}...", &s[..std::cmp::min(100, s.len())])
+                                }));
+                            },
+                            _ => {
+                                truncated.insert(key.clone(), value.clone());
+                            }
+                        }
+                    }
+                    serde_json::to_string_pretty(&Value::Object(truncated))
+                        .unwrap_or_else(|_| format!("{{\"_truncated\": \"Large response ({} chars)\"}}", full_json.len()))
+                },
+                Value::Array(arr) => {
+                    json!({
+                        "_truncated": format!("Array with {} elements", arr.len()),
+                        "_first_few": arr.iter().take(3).cloned().collect::<Vec<_>>(),
+                        "_total_size": format!("{} chars", full_json.len())
+                    }).to_string()
+                },
+                _ => {
+                    format!("{{\"_truncated\": \"Large response ({} chars)\", \"_type\": \"{}\"}}",
+                           full_json.len(),
+                           match json_value {
+                               Value::String(_) => "string",
+                               Value::Number(_) => "number",
+                               Value::Bool(_) => "boolean",
+                               Value::Null => "null",
+                               _ => "unknown"
+                           })
+                }
+            }
+        }
+    }
+    
+    /// Helper function to truncate RPC response for logging
+    pub fn truncate_rpc_response_for_logging(&self, response: &RpcResponse) -> String {
+        if let Some(ref result) = response.result {
+            let truncated_result = self.truncate_json_for_logging(result);
+            format!("{{\"result\": {}, \"id\": {}}}", truncated_result, response.id)
+        } else {
+            // For error responses, always show full content since they're typically small
+            serde_json::to_string_pretty(response)
+                .unwrap_or_else(|_| "Failed to serialize response".to_string())
         }
     }
     
@@ -106,8 +177,8 @@ impl RpcClient {
             id: self.next_request_id(),
         };
         
-        // Log the full request for debugging
-        debug!("JSON-RPC Request to {}: {}", url, serde_json::to_string_pretty(&request).unwrap_or_else(|_| "Failed to serialize request".to_string()));
+        // Log the request for debugging (truncated if large)
+        debug!("JSON-RPC Request to {}: {}", url, self.truncate_json_for_logging(&json!(request)));
         
         let response = self.client
             .post(url)
@@ -127,8 +198,8 @@ impl RpcClient {
             .await
             .context("Failed to parse RPC response")?;
         
-        // Log the response for debugging
-        debug!("JSON-RPC Response: {}", serde_json::to_string_pretty(&response_body).unwrap_or_else(|_| "Failed to serialize response".to_string()));
+        // Log the response for debugging (truncated if large)
+        debug!("JSON-RPC Response: {}", self.truncate_rpc_response_for_logging(&response_body));
         
         match response_body.result {
             Some(result) => Ok(result),
@@ -153,8 +224,8 @@ impl RpcClient {
             id: self.next_request_id(),
         };
         
-        // Log the full request for debugging
-        debug!("JSON-RPC Request to {}: {}", &self.config.metashrew_rpc_url, serde_json::to_string_pretty(&request).unwrap_or_else(|_| "Failed to serialize request".to_string()));
+        // Log the request for debugging (truncated if large)
+        debug!("JSON-RPC Request to {}: {}", &self.config.metashrew_rpc_url, self.truncate_json_for_logging(&json!(request)));
         
         let response = self.client
             .post(&self.config.metashrew_rpc_url)
@@ -174,8 +245,8 @@ impl RpcClient {
             .await
             .context("Failed to parse RPC response")?;
         
-        // Log the response for debugging
-        debug!("JSON-RPC Response: {}", serde_json::to_string_pretty(&response_body).unwrap_or_else(|_| "Failed to serialize response".to_string()));
+        // Log the response for debugging (truncated if large)
+        debug!("JSON-RPC Response: {}", self.truncate_rpc_response_for_logging(&response_body));
         
         match response_body.result {
             Some(result) => Ok(result),
@@ -915,8 +986,8 @@ impl RpcClient {
             id: self.next_request_id(),
         };
         
-        // Log the full request for debugging
-        debug!("JSON-RPC Request to {}: {}", &self.config.metashrew_rpc_url, serde_json::to_string_pretty(&request).unwrap_or_else(|_| "Failed to serialize request".to_string()));
+        // Log the request for debugging (truncated if large)
+        debug!("JSON-RPC Request to {}: {}", &self.config.metashrew_rpc_url, self.truncate_json_for_logging(&json!(request)));
         
         // Create a client with extended timeout for large UTXO responses
         let extended_client = reqwest::Client::builder()
@@ -949,13 +1020,8 @@ impl RpcClient {
         let response_body: RpcResponse = serde_json::from_str(&response_text)
             .context("Failed to parse RPC response JSON")?;
         
-        // Log the response for debugging (but truncate if too large)
-        let log_response = if response_text.len() > 1000 {
-            format!("{{\"result\": \"<truncated {} bytes>\", \"id\": {}}}", response_text.len(), response_body.id)
-        } else {
-            serde_json::to_string_pretty(&response_body).unwrap_or_else(|_| "Failed to serialize response".to_string())
-        };
-        debug!("JSON-RPC Response: {}", log_response);
+        // Log the response for debugging (truncated if large)
+        debug!("JSON-RPC Response: {}", self.truncate_rpc_response_for_logging(&response_body));
         
         match response_body.result {
             Some(result) => {
@@ -1719,7 +1785,7 @@ mod tests {
     #[test]
     fn test_rpc_client_creation() {
         let config = RpcConfig {
-            bitcoin_rpc_url: "http://localhost:18332".to_string(),
+            bitcoin_rpc_url: "http://localhost:8080".to_string(), // FIXED: Use Sandshrew endpoint
             metashrew_rpc_url: "http://localhost:8080".to_string(),
         };
         

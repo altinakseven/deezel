@@ -2217,9 +2217,12 @@ mod tests {
         };
         
         let rpc_config = RpcConfig {
-            bitcoin_rpc_url: "http://localhost:8332".to_string(),
+            bitcoin_rpc_url: "http://localhost:8080".to_string(), // FIXED: Use Sandshrew for all RPC calls
             metashrew_rpc_url: "http://localhost:8080".to_string(),
         };
+        
+        // Journal: Updated test RPC config to use consistent Sandshrew endpoint (localhost:8080)
+        // for both bitcoin_rpc_url and metashrew_rpc_url to avoid network mismatch issues
         let rpc_client = Arc::new(RpcClient::new(rpc_config));
         
         let wallet = BitcoinWallet::create_new(config, rpc_client).unwrap();

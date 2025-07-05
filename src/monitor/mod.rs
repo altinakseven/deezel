@@ -227,8 +227,9 @@ mod tests {
     #[tokio::test]
     async fn test_block_monitor_creation() {
         // Create RPC client
+        // FIXED: Use Sandshrew RPC for all operations to avoid network mismatch
         let rpc_config = RpcConfig {
-            bitcoin_rpc_url: "http://localhost:18332".to_string(),
+            bitcoin_rpc_url: "http://localhost:8080".to_string(), // Use Sandshrew endpoint
             metashrew_rpc_url: "http://localhost:8080".to_string(),
         };
         let rpc_client = Arc::new(RpcClient::new(rpc_config));

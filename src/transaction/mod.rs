@@ -224,15 +224,16 @@ mod tests {
         let wallet_config = WalletConfig {
             wallet_path: "test_wallet.dat".to_string(),
             network: Network::Testnet,
-            bitcoin_rpc_url: "http://localhost:18332".to_string(),
+            bitcoin_rpc_url: "http://localhost:8080".to_string(), // FIXED: Use Sandshrew endpoint
             metashrew_rpc_url: "http://localhost:8080".to_string(),
             network_params: None,
         };
         let wallet_manager = WalletManager::new(wallet_config).await.unwrap();
         
         // Create RPC client
+        // FIXED: Use Sandshrew RPC for all operations to avoid network mismatch
         let rpc_config = RpcConfig {
-            bitcoin_rpc_url: "http://localhost:18332".to_string(),
+            bitcoin_rpc_url: "http://localhost:8080".to_string(), // Use Sandshrew endpoint
             metashrew_rpc_url: "http://localhost:8080".to_string(),
         };
         let rpc_client = RpcClient::new(rpc_config);

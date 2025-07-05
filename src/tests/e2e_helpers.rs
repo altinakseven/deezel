@@ -139,8 +139,13 @@ impl E2ETestEnv {
         cmd.args(args);
         
         // Set environment variables for test configuration
-        cmd.env("DEEZEL_BITCOIN_RPC_URL", "http://bitcoinrpc:bitcoinrpc@localhost:18332");
-        cmd.env("DEEZEL_METASHREW_RPC_URL", &format!("http://localhost:{}", self.config.rpc_port));
+        // FIXED: Use Sandshrew RPC for both Bitcoin and Metashrew operations
+        let sandshrew_rpc_url = format!("http://localhost:{}", self.config.rpc_port);
+        cmd.env("DEEZEL_BITCOIN_RPC_URL", &sandshrew_rpc_url);
+        cmd.env("DEEZEL_METASHREW_RPC_URL", &sandshrew_rpc_url);
+        
+        // Journal: Updated test environment to use consistent Sandshrew RPC endpoint
+        // for both Bitcoin and Metashrew operations to avoid network mismatch issues
         cmd.env("DEEZEL_WALLET_DIR", &self.wallet_dir);
         
         if self.config.debug {

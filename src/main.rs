@@ -345,6 +345,14 @@ enum AlkanesCommands {
         #[arg(long)]
         raw: bool,
     },
+    /// Get bytecode for an alkanes contract
+    Getbytecode {
+        /// Alkane ID (format: block:tx)
+        alkane_id: String,
+        /// Show raw JSON output
+        #[arg(long)]
+        raw: bool,
+    },
     /// Simulate alkanes execution
     Simulate {
         /// Contract ID (format: txid:vout)
@@ -688,10 +696,13 @@ async fn load_wallet_manager(
     let wallet_config = deezel::wallet::WalletConfig {
         wallet_path: wallet_file.to_string(),
         network: network_params.network,
-        bitcoin_rpc_url: sandshrew_rpc_url.to_string(), // Use Sandshrew for all RPC calls
+        bitcoin_rpc_url: sandshrew_rpc_url.to_string(), // FIXED: Use Sandshrew for all RPC calls
         metashrew_rpc_url: sandshrew_rpc_url.to_string(),
         network_params: Some(network_params.to_protorune_params()),
     };
+    
+    // Journal: Updated wallet config to use sandshrew_rpc_url for both bitcoin_rpc_url and
+    // metashrew_rpc_url to ensure consistent endpoint usage throughout the wallet operations
     
     // Use passphrase-aware wallet loading if passphrase is provided
     let wallet_manager = if let Some(passphrase) = passphrase {
@@ -752,8 +763,8 @@ async fn main() -> Result<()> {
     let sandshrew_rpc_url = args.sandshrew_rpc_url.clone()
         .unwrap_or_else(|| deezel::network::get_rpc_url(&args.provider));
     
-    // If --sandshrew-rpc-url is specified, use it for ALL RPC endpoints (both Bitcoin and Sandshrew)
-    // This allows Sandshrew to handle both Bitcoin RPC calls and its own extended functionality
+    // CRITICAL FIX: When --sandshrew-rpc-url is specified, use it for ALL RPC endpoints
+    // This ensures Sandshrew handles both Bitcoin RPC calls and its own extended functionality
     let bitcoin_rpc_url = if args.sandshrew_rpc_url.is_some() {
         // Use Sandshrew RPC for Bitcoin calls too when explicitly specified
         sandshrew_rpc_url.clone()
@@ -762,6 +773,10 @@ async fn main() -> Result<()> {
         args.bitcoin_rpc_url.clone()
             .unwrap_or_else(|| "http://bitcoinrpc:bitcoinrpc@localhost:8332".to_string())
     };
+    
+    // Journal: Updated RPC URL handling to ensure --sandshrew-rpc-url is used for ALL operations
+    // when specified. This fixes the network mismatch issue where Bitcoin RPC was connecting
+    // to mainnet while wallet expected regtest.
 
     // Initialize RPC client
     let rpc_config = RpcConfig {
@@ -791,7 +806,12 @@ async fn main() -> Result<()> {
                                                             WalletCommands::Sync |
                                                             WalletCommands::Backup |
                                                             WalletCommands::ListIdentifiers }) ||
-        matches!(args.command, Commands::Alkanes { .. }) {
+        matches!(args.command, Commands::Alkanes { command: AlkanesCommands::Execute { .. } |
+                                                             AlkanesCommands::Balance { .. } |
+                                                             AlkanesCommands::TokenInfo { .. } |
+                                                             AlkanesCommands::Trace { .. } |
+                                                             AlkanesCommands::Inspect { .. } |
+                                                             AlkanesCommands::Simulate { .. } }) {
         let wallet_manager = load_wallet_manager(
             &wallet_file,
             &network_params,
@@ -862,10 +882,13 @@ async fn main() -> Result<()> {
                     let wallet_config = deezel::wallet::WalletConfig {
                         wallet_path: wallet_file.clone(),
                         network: network_params.network,
-                        bitcoin_rpc_url: bitcoin_rpc_url.clone(),
+                        bitcoin_rpc_url: sandshrew_rpc_url.clone(), // FIXED: Use Sandshrew for all RPC calls
                         metashrew_rpc_url: sandshrew_rpc_url.clone(),
                         network_params: Some(network_params.to_protorune_params()),
                     };
+                    
+                    // Journal: Updated wallet creation config to use sandshrew_rpc_url consistently
+                    // for both bitcoin_rpc_url and metashrew_rpc_url
                     
                     // Determine encryption mode based on file extension and passphrase
                     let use_gpg = wallet_file.ends_with(".asc");
@@ -1087,9 +1110,86 @@ async fn main() -> Result<()> {
             }
         },
         Commands::Alkanes { command } => {
-            let wm = wallet_manager.as_ref().ok_or_else(|| anyhow!("Wallet required for alkanes operations"))?;
-            
             match command {
+                AlkanesCommands::Getbytecode { alkane_id, raw } => {
+                    // Parse alkane ID
+                    let alkane_parts: Vec<&str> = alkane_id.split(':').collect();
+                    if alkane_parts.len() != 2 {
+                        return Err(anyhow!("Invalid alkane ID format. Expected 'block:tx'"));
+                    }
+                    
+                    let block = alkane_parts[0];
+                    let tx = alkane_parts[1];
+                    
+                    // Get bytecode using RPC client (no wallet needed)
+                    match rpc_client.get_bytecode(block, tx).await {
+                        Ok(bytecode) => {
+                            if raw {
+                                // Output raw JSON for scripting
+                                let json_result = serde_json::json!({
+                                    "alkane_id": alkane_id,
+                                    "block": block,
+                                    "tx": tx,
+                                    "bytecode": bytecode
+                                });
+                                println!("{}", serde_json::to_string_pretty(&json_result)?);
+                            } else {
+                                // Human-readable output
+                                println!("🔍 Alkanes Contract Bytecode");
+                                println!("═══════════════════════════");
+                                println!("🏷️  Alkane ID: {}", alkane_id);
+                                println!("📦 Block: {}", block);
+                                println!("🔗 Transaction: {}", tx);
+                                println!();
+                                
+                                if bytecode.is_empty() || bytecode == "0x" {
+                                    println!("❌ No bytecode found for this contract");
+                                } else {
+                                    // Remove 0x prefix if present for display
+                                    let clean_bytecode = bytecode.strip_prefix("0x").unwrap_or(&bytecode);
+                                    
+                                    println!("💾 Bytecode:");
+                                    println!("   Length: {} bytes", clean_bytecode.len() / 2);
+                                    println!("   Hex: {}", bytecode);
+                                    
+                                    // Show first few bytes for quick inspection
+                                    if clean_bytecode.len() >= 8 {
+                                        println!("   First 4 bytes: {}", &clean_bytecode[..8]);
+                                    }
+                                    
+                                    // Try to identify common patterns
+                                    if clean_bytecode.starts_with("6080604052") {
+                                        println!("   🔍 Pattern: Looks like Solidity bytecode (starts with common constructor pattern)");
+                                    } else if clean_bytecode.starts_with("fe") {
+                                        println!("   🔍 Pattern: Starts with INVALID opcode (0xfe)");
+                                    } else if clean_bytecode.starts_with("60") {
+                                        println!("   🔍 Pattern: Starts with PUSH opcode");
+                                    }
+                                }
+                            }
+                        },
+                        Err(e) => {
+                            if raw {
+                                let error_result = serde_json::json!({
+                                    "error": e.to_string(),
+                                    "alkane_id": alkane_id,
+                                    "block": block,
+                                    "tx": tx
+                                });
+                                println!("{}", serde_json::to_string_pretty(&error_result)?);
+                            } else {
+                                println!("❌ Failed to get bytecode for alkane {}:{}", block, tx);
+                                println!("Error: {}", e);
+                            }
+                            return Err(e);
+                        }
+                    }
+                },
+                _ => {
+                    // For other alkanes commands that need wallet access
+                    let wm = wallet_manager.as_ref().ok_or_else(|| anyhow!("Wallet required for this alkanes operation"))?;
+                    
+                    match command {
                 AlkanesCommands::Execute {
                     inputs,
                     to,
@@ -1247,6 +1347,8 @@ async fn main() -> Result<()> {
                 },
                 _ => {
                     println!("Alkanes command not yet implemented");
+                }
+                    }
                 }
             }
         },

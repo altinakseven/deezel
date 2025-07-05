@@ -39,7 +39,6 @@ cargo build --release
     --inputs B:1000 \
     --change [self:p2tr:2] \
     --to [self:p2tr:1] \
-    --trace \
     --mine \
     --fee-rate 1 \
     -y \

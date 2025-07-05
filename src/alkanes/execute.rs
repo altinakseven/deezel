@@ -1466,8 +1466,12 @@ impl EnhancedAlkanesExecutor {
         // Step 5: Get transaction details to find protostone outputs
         let tx_hex = self.rpc_client.get_transaction_hex(txid).await?;
         
-        // Debug: Log the raw hex string returned from RPC
-        info!("🔍 Raw transaction hex from RPC: '{}'", tx_hex);
+        // Debug: Log the raw hex string returned from RPC (truncated for readability)
+        let truncated_raw_hex = if tx_hex.len() > 128 {
+            format!("{}...{} (truncated)", &tx_hex[..64], &tx_hex[tx_hex.len()-64..])
+        } else {
+            tx_hex.clone()
+        };
         info!("🔍 Hex string length: {} characters", tx_hex.len());
         
         // Clean the hex string more thoroughly
@@ -1477,7 +1481,13 @@ impl EnhancedAlkanesExecutor {
             .trim_start_matches("0X")
             .trim_end();
         
-        info!("🔍 Cleaned hex string: '{}'", cleaned_hex);
+        // Log cleaned hex with truncation for readability
+        let truncated_cleaned_hex = if cleaned_hex.len() > 128 {
+            format!("{}...{} (truncated)", &cleaned_hex[..64], &cleaned_hex[cleaned_hex.len()-64..])
+        } else {
+            cleaned_hex.to_string()
+        };
+        info!("🔍 Cleaned hex string: '{}'", truncated_cleaned_hex);
         info!("🔍 Cleaned hex length: {} characters", cleaned_hex.len());
         
         // Check if the hex string has an even number of characters
