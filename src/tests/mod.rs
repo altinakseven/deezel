@@ -9,6 +9,8 @@ pub mod mock_metashrew;
 pub mod test_blocks;
 pub mod e2e_helpers;
 pub mod test_alkanes_fee_debug;
+pub mod test_fee_debug_simple;
+pub mod test_envelope_fee_issue;
 
 use anyhow::Result;
 use std::collections::HashMap;

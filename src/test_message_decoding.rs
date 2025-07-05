@@ -45,16 +45,16 @@ mod tests {
         let bdk_script = bitcoin::ScriptBuf::from_bytes(script.as_bytes().to_vec());
         
         let tx = Transaction {
-            version: 2,
+            version: bitcoin::transaction::Version(2),
             lock_time: LockTime::ZERO,
             input: vec![],
             output: vec![
                 TxOut {
-                    value: 546, // Dust output
+                    value: bitcoin::Amount::from_sat(546), // Dust output
                     script_pubkey: bitcoin::ScriptBuf::new(),
                 },
                 TxOut {
-                    value: 0,
+                    value: bitcoin::Amount::ZERO,
                     script_pubkey: bdk_script,
                 },
             ],

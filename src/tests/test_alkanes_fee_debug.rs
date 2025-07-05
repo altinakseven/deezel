@@ -240,7 +240,7 @@ impl MockTransactionBuilder {
         // Output 1: Recipient (dust)
         outputs.push(TxOut {
             value: Amount::from_sat(546),
-            script_pubkey: ScriptBuf::from_hex("5120" + &"a".repeat(64)).unwrap(), // Mock P2TR
+            script_pubkey: ScriptBuf::from_hex(&format!("5120{}", "a".repeat(64))).unwrap(), // Mock P2TR
         });
         
         // Output 2: Change (large amount)
@@ -249,7 +249,7 @@ impl MockTransactionBuilder {
         let change_amount = total_input - 546 - target_fee;
         outputs.push(TxOut {
             value: Amount::from_sat(change_amount),
-            script_pubkey: ScriptBuf::from_hex("5120" + &"b".repeat(64)).unwrap(), // Mock P2TR
+            script_pubkey: ScriptBuf::from_hex(&format!("5120{}", "b".repeat(64))).unwrap(), // Mock P2TR
         });
         
         // Output 3: OP_RETURN (protostone)

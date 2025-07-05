@@ -132,6 +132,8 @@ pub struct SendParams {
     pub from_address: Option<String>,
     /// Change address (optional - if None, uses default change address from sender)
     pub change_address: Option<String>,
+    /// Auto-confirm without user prompt
+    pub auto_confirm: bool,
 }
 
 /// Transaction details
@@ -1738,18 +1740,22 @@ impl BitcoinWallet {
         // Show transaction preview before signing
         self.preview_transaction(&unsigned_tx).await?;
         
-        // Ask for confirmation before signing
-        println!("\n❓ Do you want to proceed with signing this transaction? (y/N)");
-        use std::io::{self, Write};
-        print!("Enter your choice: ");
-        io::stdout().flush().unwrap();
-        
-        let mut input = String::new();
-        io::stdin().read_line(&mut input).unwrap();
-        let input = input.trim().to_lowercase();
-        
-        if input != "y" && input != "yes" {
-            return Err(anyhow!("Transaction signing cancelled by user"));
+        // Ask for confirmation before signing (unless auto-confirm is enabled)
+        if !params.auto_confirm {
+            println!("\n❓ Do you want to proceed with signing this transaction? (y/N)");
+            use std::io::{self, Write};
+            print!("Enter your choice: ");
+            io::stdout().flush().unwrap();
+            
+            let mut input = String::new();
+            io::stdin().read_line(&mut input).unwrap();
+            let input = input.trim().to_lowercase();
+            
+            if input != "y" && input != "yes" {
+                return Err(anyhow!("Transaction signing cancelled by user"));
+            }
+        } else {
+            println!("\n✅ Auto-confirming transaction signing (--yes flag enabled)");
         }
         
         println!("\n🔐 Signing transaction...");

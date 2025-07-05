@@ -3,7 +3,7 @@
 # Enhanced alkanes execute script with commit/reveal pattern support
 # Usage: ./run-alkanes-execute.sh [--raw] [--trace] [additional-args...]
 
-export RUST_LOG=debug
+export RUST_LOG=info
 
 # Parse command line arguments
 RAW_FLAG=""
@@ -27,19 +27,20 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+cargo build
 # Execute the alkanes command with commit/reveal pattern
-/data/deezel/target/debug/deezel \
+./target/debug/deezel \
     --sandshrew-rpc-url http://localhost:18888 \
     -p regtest \
     --wallet-file ~/.deezel/regtest.json.asc \
     --passphrase testtesttest \
     alkanes execute \
-    --envelope ~/free_mint.wasm.gz \
+    --envelope ./examples/free_mint.wasm.gz \
     --inputs B:1000 \
     --change [self:p2tr:2] \
     --to [self:p2tr:1] \
     --fee-rate 1 \
-    --yes \
+    -y \
     $RAW_FLAG \
     $TRACE_FLAG \
     $ADDITIONAL_ARGS \

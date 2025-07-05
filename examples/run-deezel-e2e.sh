@@ -31,5 +31,4 @@ echo "Attempting to send transaction..."
 $DEEZEL --wallet-file ~/.deezel/regtest.json.asc -p regtest --sandshrew-rpc-url http://localhost:18888 --passphrase testtesttest wallet send --from p2tr:0 [self:p2tr:0] 10000 --fee-rate 1
 
 
-cd $PWD
-bash ./examples/run-alkanes-execute.sh
+bash /home/ubuntu/deezel/examples/run-alkanes-execute.sh

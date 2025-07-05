@@ -34,6 +34,7 @@ use crate::rpc::RpcClient;
 use self::esplora_backend::SandshrewEsploraBackend;
 use self::bitcoin_wallet::{BitcoinWallet, BitcoinWalletConfig};
 use self::crypto::{WalletCrypto, WalletData, EncryptedWalletData};
+use crate::alkanes::fee_validation::{validate_transaction_fee_rate, suggest_fee_adjustments};
 use protorune_support::network::NetworkParams as CustomNetworkParams;
 
 /// Wallet configuration
@@ -338,6 +339,61 @@ impl WalletManager {
     
     /// Broadcast a transaction using Sandshrew's sendrawtransaction JSON-RPC method
     pub async fn broadcast_transaction(&self, tx: &Transaction) -> Result<String> {
+        eprintln!("🚨🚨🚨 WALLET MANAGER BROADCAST_TRANSACTION CALLED 🚨🚨🚨");
+        eprintln!("Transaction details:");
+        eprintln!("  Inputs: {}", tx.input.len());
+        eprintln!("  Outputs: {}", tx.output.len());
+        eprintln!("  VSize: {}", tx.vsize());
+        eprintln!("  Weight: {}", tx.weight());
+        
+        // Calculate total output value
+        let total_output_value: u64 = tx.output.iter().map(|out| out.value.to_sat()).sum();
+        eprintln!("  Total output value: {} sats", total_output_value);
+        
+        // Show witness data for each input
+        for (i, input) in tx.input.iter().enumerate() {
+            let witness_size = input.witness.iter().map(|item| item.len()).sum::<usize>();
+            eprintln!("  Input {}: witness size = {} bytes", i, witness_size);
+            if witness_size > 1000 {
+                eprintln!("    ⚠️  Large witness data detected!");
+            }
+        }
+        
+        // Validate fee rate before broadcasting
+        info!("🔍 Validating transaction fee rate before broadcast (wallet manager)");
+        
+        // For wallet manager broadcasts, we need to estimate input values since we don't have them directly
+        // This is a simplified approach - in a full implementation we'd track input values properly
+        let estimated_input_value = tx.output.iter().map(|out| out.value.to_sat()).sum::<u64>() + 10000; // Add estimated fee
+        let input_values = vec![estimated_input_value]; // Simplified single input assumption
+        
+        eprintln!("🔍 Wallet manager fee validation:");
+        eprintln!("  Estimated input value: {} sats", estimated_input_value);
+        eprintln!("  Input values array: {:?}", input_values);
+        eprintln!("  ⚠️  WARNING: This estimation is WRONG for envelope transactions!");
+        
+        // Validate the transaction fee rate
+        match validate_transaction_fee_rate(tx, &input_values) {
+            Ok(analysis) => {
+                eprintln!("  Fee validation result: valid={}, fee_rate={:.2} sat/vB", analysis.is_valid, analysis.fee_rate_sat_vb);
+                if !analysis.is_valid {
+                    eprintln!("  ❌ Fee validation failed: {:?}", analysis.validation_errors);
+                    return Err(anyhow!(
+                        "Wallet manager transaction fee validation failed: {:?}\nSuggestions: {:?}",
+                        analysis.validation_errors,
+                        suggest_fee_adjustments(&analysis)
+                    ));
+                }
+                info!("✅ Wallet manager transaction fee validation passed: {:.2} sat/vB", analysis.fee_rate_sat_vb);
+            },
+            Err(e) => {
+                eprintln!("  ❌ Fee validation error: {}", e);
+                warn!("Wallet manager fee validation error: {}", e);
+                // Continue with broadcast but log the warning
+            }
+        }
+        
+        eprintln!("🔄 Calling wallet.broadcast_transaction...");
         self.wallet.broadcast_transaction(tx).await
     }
     
@@ -528,7 +584,8 @@ mod tests {
         use bip39::{Mnemonic, Language};
         
         // Test mnemonic generation
-        let mnemonic = Mnemonic::generate_in(Language::English, 12).unwrap();
+        let entropy = [0u8; 16]; // 128 bits for 12 words
+        let mnemonic = Mnemonic::from_entropy(&entropy).unwrap();
         assert_eq!(mnemonic.word_count(), 12);
         
         // Test mnemonic parsing

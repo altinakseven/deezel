@@ -11,6 +11,7 @@ pub mod inspector;
 pub mod types;
 pub mod execute;
 pub mod envelope;
+pub mod fee_validation;
 
 use anyhow::{Context, Result};
 use log::{debug, info};

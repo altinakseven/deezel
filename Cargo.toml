@@ -1,5 +1,5 @@
 [package]
-name = "deezel-cli"
+name = "deezel"
 version = "0.1.0"
 edition = "2021"
 description = "A Bitcoin wallet CLI tool for automated DIESEL token minting and management"

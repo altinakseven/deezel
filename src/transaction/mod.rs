@@ -226,6 +226,7 @@ mod tests {
             network: Network::Testnet,
             bitcoin_rpc_url: "http://localhost:18332".to_string(),
             metashrew_rpc_url: "http://localhost:8080".to_string(),
+            network_params: None,
         };
         let wallet_manager = WalletManager::new(wallet_config).await.unwrap();
         
