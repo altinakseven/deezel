@@ -22,6 +22,7 @@ use super::types::*;
 use super::envelope::AlkanesEnvelope;
 use super::fee_validation::{validate_transaction_fee_rate, create_fee_adjusted_transaction};
 use alkanes_support::cellpack::Cellpack;
+use ordinals::Runestone;
 
 /// Input requirement specification
 #[derive(Debug, Clone)]
@@ -195,13 +196,13 @@ impl EnhancedAlkanesExecutor {
         let outputs = self.create_outputs(&params.to_addresses, &params.change_address).await?;
         
         // Step 4: Construct runestone with protostones
-        let runestone = self.construct_runestone(&params.protostones, outputs.len())?;
+        let runestone_script = self.construct_runestone(&params.protostones, outputs.len())?;
         
         // Clone selected_utxos for fee validation since build_transaction takes ownership
         let selected_utxos_for_validation = selected_utxos.clone();
         
         // Step 5: Build and sign transaction
-        let (tx, fee) = self.build_transaction(selected_utxos, outputs, runestone, params.fee_rate).await?;
+        let (tx, fee) = self.build_transaction(selected_utxos, outputs, runestone_script, params.fee_rate).await?;
         
         // Step 6: Show transaction preview and request confirmation (if not raw output)
         if !params.raw_output {
@@ -585,74 +586,95 @@ impl EnhancedAlkanesExecutor {
         Ok(outputs)
     }
 
-    /// Construct runestone with protostones
-    fn construct_runestone(&self, protostones: &[ProtostoneSpec], num_outputs: usize) -> Result<Vec<u8>> {
-        info!("Constructing runestone with {} protostones", protostones.len());
+    /// Construct runestone with protostones using proper ordinals crate
+    fn construct_runestone(&self, protostones: &[ProtostoneSpec], num_outputs: usize) -> Result<bitcoin::ScriptBuf> {
+        info!("Constructing runestone with {} protostones using proper ordinals crate implementation", protostones.len());
         
-        // Create runestone data payload (without OP_RETURN opcode)
-        let mut script_data = Vec::new();
+        use protorune_support::protostone::Protostone;
+        use protorune_support::utils::encode_varint_list;
         
-        // Runestone magic bytes and subprotocol ID 1
-        script_data.extend_from_slice(b"RUNE_TEST"); // Placeholder magic
-        script_data.push(1); // Subprotocol ID 1 for alkanes
+        // Convert our ProtostoneSpec to proper Protostone structures
+        let mut proper_protostones = Vec::<Protostone>::new();
         
-        // Encode protostones
-        for (i, protostone) in protostones.iter().enumerate() {
-            // Add protostone index
-            script_data.push(i as u8);
+        for (i, protostone_spec) in protostones.iter().enumerate() {
+            info!("Converting protostone spec {} to proper Protostone", i);
             
-            // Add cellpack if present
-            if let Some(cellpack) = &protostone.cellpack {
-                script_data.push(0xFF); // Cellpack marker
-                script_data.extend_from_slice(&cellpack.encipher());
+            // Create the message field from cellpack if present
+            let message = if let Some(cellpack) = &protostone_spec.cellpack {
+                info!("Encoding cellpack for protostone {}: target={}:{}, inputs={:?}",
+                      i, cellpack.target.block, cellpack.target.tx, cellpack.inputs);
+                
+                // Use Cellpack::encipher() to get LEB128 encoded Vec<u8> for the message field
+                let cellpack_bytes = cellpack.encipher();
+                info!("Cellpack encoded to {} bytes for message field", cellpack_bytes.len());
+                cellpack_bytes
+            } else {
+                Vec::new()
+            };
+            
+            // Create the Protostone with proper structure
+            let protostone = Protostone {
+                burn: None, // TODO: Handle burn if needed
+                message,
+                edicts: Vec::new(), // TODO: Convert ProtostoneEdict to protorune_support::protostone::ProtostoneEdict
+                refund: Some(0), // Default refund to output 0
+                pointer: Some(0), // Default pointer to output 0
+                from: None,
+                protocol_tag: 1, // DIESEL protocol tag
+            };
+            
+            proper_protostones.push(protostone);
+            
+            // Log warnings for unimplemented features
+            if !protostone_spec.edicts.is_empty() {
+                warn!("Protostone {} has {} edicts - these are not yet implemented in proper ordinals crate integration",
+                      i, protostone_spec.edicts.len());
             }
             
-            // Add edicts
-            for edict in &protostone.edicts {
-                // Encode edict: alkane_id, amount, target
-                script_data.extend_from_slice(&edict.alkane_id.block.to_le_bytes());
-                script_data.extend_from_slice(&edict.alkane_id.tx.to_le_bytes());
-                script_data.extend_from_slice(&edict.amount.to_le_bytes());
-                
-                // Encode target
-                match edict.target {
-                    OutputTarget::Output(v) => {
-                        script_data.push(0x01); // Output target marker
-                        script_data.extend_from_slice(&v.to_le_bytes());
-                    },
-                    OutputTarget::Protostone(p) => {
-                        script_data.push(0x02); // Protostone target marker
-                        script_data.extend_from_slice(&p.to_le_bytes());
-                    },
-                    OutputTarget::Split => {
-                        script_data.push(0x03); // Split target marker
-                    }
-                }
-            }
-            
-            // Add Bitcoin transfer if present
-            if let Some(bitcoin_transfer) = &protostone.bitcoin_transfer {
-                script_data.push(0xFE); // Bitcoin transfer marker
-                script_data.extend_from_slice(&bitcoin_transfer.amount.to_le_bytes());
-                
-                // Encode target
-                match bitcoin_transfer.target {
-                    OutputTarget::Output(v) => {
-                        script_data.push(0x01);
-                        script_data.extend_from_slice(&v.to_le_bytes());
-                    },
-                    OutputTarget::Split => {
-                        script_data.push(0x03);
-                    },
-                    OutputTarget::Protostone(_) => {
-                        return Err(anyhow!("Bitcoin transfers cannot target protostones"));
-                    }
-                }
+            if protostone_spec.bitcoin_transfer.is_some() {
+                warn!("Protostone {} has Bitcoin transfer - this is not yet implemented in proper ordinals crate integration", i);
             }
         }
         
-        info!("Constructed runestone with {} bytes", script_data.len());
-        Ok(script_data)
+        // Implement the Protostones::encipher() logic directly since we don't have the trait
+        // Based on reference/alkanes-rs/crates/protorune/src/protostone.rs:232-241
+        let mut protocol_values = Vec::<u128>::new();
+        
+        for stone in &proper_protostones {
+            protocol_values.push(stone.protocol_tag);
+            
+            // Get the protostone integers (this calls to_integers() method)
+            let varints = stone.to_integers()
+                .context("Failed to convert protostone to integers")?;
+            
+            protocol_values.push(varints.len() as u128);
+            protocol_values.extend(&varints);
+        }
+        
+        // Encode the protocol values using LEB128 and split into u128 chunks
+        let encoded_bytes = encode_varint_list(&protocol_values);
+        let protocol_data = protorune_support::protostone::split_bytes(&encoded_bytes);
+        
+        info!("Encoded {} protostones into {} protocol values, {} encoded bytes, {} final u128 values",
+              proper_protostones.len(), protocol_values.len(), encoded_bytes.len(), protocol_data.len());
+        
+        // Create the Runestone using the ordinals crate with proper protocol field
+        let runestone = Runestone {
+            edicts: Vec::new(), // TODO: Convert ProtostoneEdict to ordinals::Edict if needed
+            etching: None,
+            mint: None,
+            pointer: None, // Let the protostone pointer field handle targeting
+            protocol: if protocol_data.is_empty() { None } else { Some(protocol_data) },
+        };
+        
+        // Use the ordinals crate's encipher method to create the proper OP_RETURN script
+        let script = runestone.encipher();
+        
+        info!("Constructed runestone script with {} bytes using proper ordinals crate implementation", script.len());
+        info!("Protocol field contains {} u128 values from {} protostones",
+              runestone.protocol.as_ref().map_or(0, |p| p.len()), proper_protostones.len());
+        
+        Ok(script)
     }
 
     /// Build and sign transaction
@@ -660,7 +682,7 @@ impl EnhancedAlkanesExecutor {
         &self,
         utxos: Vec<bitcoin::OutPoint>,
         mut outputs: Vec<bitcoin::TxOut>,
-        runestone: Vec<u8>,
+        runestone_script: bitcoin::ScriptBuf,
         fee_rate: Option<f32>
     ) -> Result<(bitcoin::Transaction, u64)> {
         info!("Building and signing transaction");
@@ -677,16 +699,10 @@ impl EnhancedAlkanesExecutor {
             }
         }).collect();
         
-        // Add OP_RETURN output with runestone
-        use bitcoin::script::{Builder, PushBytesBuf};
-        let push_bytes = PushBytesBuf::try_from(runestone.clone())
-            .map_err(|_| anyhow!("Runestone data too large for OP_RETURN"))?;
+        // Add OP_RETURN output with runestone (already properly formatted by ordinals crate)
         let op_return_output = TxOut {
             value: bitcoin::Amount::ZERO,
-            script_pubkey: Builder::new()
-                .push_opcode(bitcoin::opcodes::all::OP_RETURN)
-                .push_slice(&push_bytes)
-                .into_script(),
+            script_pubkey: runestone_script,
         };
         outputs.push(op_return_output);
         
@@ -714,7 +730,7 @@ impl EnhancedAlkanesExecutor {
         &self,
         utxos: Vec<bitcoin::OutPoint>,
         mut outputs: Vec<bitcoin::TxOut>,
-        runestone: Vec<u8>,
+        runestone_script: bitcoin::ScriptBuf,
         fee_rate: Option<f32>,
         envelope: Option<&AlkanesEnvelope>
     ) -> Result<(bitcoin::Transaction, u64)> {
@@ -722,16 +738,10 @@ impl EnhancedAlkanesExecutor {
         
         use bitcoin::{psbt::Psbt, TxOut, ScriptBuf};
         
-        // Add OP_RETURN output with runestone (protostone)
-        use bitcoin::script::{Builder, PushBytesBuf};
-        let push_bytes = PushBytesBuf::try_from(runestone.clone())
-            .map_err(|_| anyhow!("Runestone data too large for OP_RETURN"))?;
+        // Add OP_RETURN output with runestone (protostone) - already properly formatted by ordinals crate
         let op_return_output = TxOut {
             value: bitcoin::Amount::ZERO,
-            script_pubkey: Builder::new()
-                .push_opcode(bitcoin::opcodes::all::OP_RETURN)
-                .push_slice(&push_bytes)
-                .into_script(),
+            script_pubkey: runestone_script,
         };
         outputs.push(op_return_output);
         
@@ -1300,7 +1310,7 @@ impl EnhancedAlkanesExecutor {
         let outputs = self.create_outputs(&params.to_addresses, &params.change_address).await?;
         
         // Step 5: Construct runestone with protostones
-        let runestone = self.construct_runestone(&params.protostones, outputs.len())?;
+        let runestone_script = self.construct_runestone(&params.protostones, outputs.len())?;
         
         // Step 6: Build the reveal transaction with envelope
         info!("Building reveal transaction with envelope");
@@ -1311,7 +1321,7 @@ impl EnhancedAlkanesExecutor {
         let (signed_tx, final_fee) = self.build_transaction_with_envelope(
             selected_utxos,
             outputs,
-            runestone,
+            runestone_script,
             params.fee_rate,
             Some(envelope)
         ).await?;
@@ -1372,7 +1382,7 @@ impl EnhancedAlkanesExecutor {
                             if script_bytes.len() > 2 {
                                 let data_bytes = &script_bytes[2..]; // Skip OP_RETURN and length byte
                                 println!("  📊 Data size: {} bytes", data_bytes.len());
-                                println!("  🔍 First 32 bytes: {}", hex::encode(&data_bytes[..std::cmp::min(data_bytes.len(), 32)]));
+                                println!("  🔍 Complete hex data: {}", hex::encode(data_bytes));
                                 
                                 // Check for runestone magic (OP_13 = 0x5d)
                                 if data_bytes.len() > 0 && data_bytes[0] == 0x5d {

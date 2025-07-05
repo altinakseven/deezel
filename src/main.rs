@@ -204,6 +204,9 @@ enum WalletCommands {
         /// Include frozen UTXOs
         #[arg(long)]
         include_frozen: bool,
+        /// Filter UTXOs by specific addresses (comma-separated, supports identifiers like p2tr:0)
+        #[arg(long)]
+        addresses: Option<String>,
     },
     /// Freeze a UTXO
     FreezeUtxo {
@@ -964,6 +967,113 @@ async fn main() -> Result<()> {
                             Err(e) => {
                                 println!("❌ Failed to send all funds: {}", e);
                                 return Err(e);
+                            }
+                        }
+                    }
+                },
+                WalletCommands::Utxos { raw, include_frozen, addresses } => {
+                    if let Some(wm) = &wallet_manager {
+                        // Handle address filtering
+                        let utxos = if let Some(addresses_str) = addresses {
+                            // Parse and resolve addresses
+                            let address_list: Vec<String> = addresses_str.split(',')
+                                .map(|addr| addr.trim().to_string())
+                                .collect();
+                            
+                            let mut all_utxos = Vec::new();
+                            for address in address_list {
+                                // Resolve address identifiers (supports p2tr:0, etc.)
+                                let resolved_address = resolve_address_identifiers(&address, Some(wm)).await?;
+                                
+                                // Get UTXOs for this specific address
+                                let address_utxos = wm.get_enriched_utxos_for_address(&resolved_address).await?;
+                                all_utxos.extend(address_utxos);
+                            }
+                            all_utxos
+                        } else {
+                            // Get UTXOs for all wallet addresses
+                            wm.get_enriched_utxos().await?
+                        };
+                        
+                        // Filter by frozen status if needed
+                        let filtered_utxos: Vec<_> = if include_frozen {
+                            utxos
+                        } else {
+                            utxos.into_iter().filter(|u| !u.utxo.frozen).collect()
+                        };
+                        
+                        if raw {
+                            // Raw JSON output
+                            let json_utxos: Vec<serde_json::Value> = filtered_utxos.iter().map(|enriched_utxo| {
+                                serde_json::json!({
+                                    "txid": enriched_utxo.utxo.txid,
+                                    "vout": enriched_utxo.utxo.vout,
+                                    "amount": enriched_utxo.utxo.amount,
+                                    "address": enriched_utxo.utxo.address,
+                                    "confirmations": enriched_utxo.utxo.confirmations,
+                                    "frozen": enriched_utxo.utxo.frozen,
+                                    "freeze_reason": enriched_utxo.freeze_reason,
+                                    "block_height": enriched_utxo.block_height,
+                                    "has_inscriptions": enriched_utxo.has_inscriptions,
+                                    "has_runes": enriched_utxo.has_runes,
+                                    "has_alkanes": enriched_utxo.has_alkanes,
+                                    "is_coinbase": enriched_utxo.is_coinbase
+                                })
+                            }).collect();
+                            println!("{}", serde_json::to_string_pretty(&json_utxos)?);
+                        } else {
+                            // Human-readable output
+                            println!("💰 Wallet UTXOs");
+                            println!("═══════════════");
+                            
+                            if filtered_utxos.is_empty() {
+                                println!("No UTXOs found");
+                            } else {
+                                let total_amount: u64 = filtered_utxos.iter().map(|u| u.utxo.amount).sum();
+                                println!("📊 Total: {} UTXOs, {} sats\n", filtered_utxos.len(), total_amount);
+                                
+                                for (i, enriched_utxo) in filtered_utxos.iter().enumerate() {
+                                    let utxo = &enriched_utxo.utxo;
+                                    println!("{}. 🔗 {}:{}", i + 1, utxo.txid, utxo.vout);
+                                    println!("   💰 Amount: {} sats", utxo.amount);
+                                    println!("   🏠 Address: {}", utxo.address);
+                                    println!("   ✅ Confirmations: {}", utxo.confirmations);
+                                    
+                                    if let Some(block_height) = enriched_utxo.block_height {
+                                        println!("   📦 Block: {}", block_height);
+                                    }
+                                    
+                                    // Show special properties
+                                    let mut properties = Vec::new();
+                                    if enriched_utxo.is_coinbase {
+                                        properties.push("coinbase");
+                                    }
+                                    if enriched_utxo.has_inscriptions {
+                                        properties.push("inscriptions");
+                                    }
+                                    if enriched_utxo.has_runes {
+                                        properties.push("runes");
+                                    }
+                                    if enriched_utxo.has_alkanes {
+                                        properties.push("alkanes");
+                                    }
+                                    if !properties.is_empty() {
+                                        println!("   🏷️  Properties: {}", properties.join(", "));
+                                    }
+                                    
+                                    if utxo.frozen {
+                                        println!("   ❄️  Status: FROZEN");
+                                        if let Some(reason) = &enriched_utxo.freeze_reason {
+                                            println!("   📝 Reason: {}", reason);
+                                        }
+                                    } else {
+                                        println!("   ✅ Status: spendable");
+                                    }
+                                    
+                                    if i < filtered_utxos.len() - 1 {
+                                        println!();
+                                    }
+                                }
                             }
                         }
                     }

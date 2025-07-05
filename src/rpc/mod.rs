@@ -889,82 +889,10 @@ impl RpcClient {
     
     /// Send raw transaction using Bitcoin JSON-RPC sendrawtransaction method
     pub async fn send_raw_transaction(&self, tx_hex: &str) -> Result<String> {
-        eprintln!("🚨🚨🚨 SEND_RAW_TRANSACTION METHOD CALLED 🚨🚨🚨");
         debug!("Sending raw transaction via Bitcoin RPC: {}", &tx_hex[..std::cmp::min(tx_hex.len(), 64)]);
-        
-        // DEBUG: Analyze the transaction before sending to Bitcoin Core
-        eprintln!("🔍 RPC CLIENT TRANSACTION ANALYSIS BEFORE BITCOIN CORE SUBMISSION");
-        eprintln!("═══════════════════════════════════════════════════════════════");
-        eprintln!("📊 Transaction hex length: {} characters", tx_hex.len());
-        eprintln!("📊 Transaction hex (first 128 chars): {}", &tx_hex[..std::cmp::min(tx_hex.len(), 128)]);
-        
-        // Try to decode and analyze the transaction
-        if let Ok(tx_bytes) = hex::decode(tx_hex) {
-            eprintln!("📊 Transaction bytes length: {} bytes", tx_bytes.len());
-            
-            // Try to deserialize as Bitcoin transaction
-            if let Ok(tx) = bitcoin::consensus::deserialize::<bitcoin::Transaction>(&tx_bytes) {
-                eprintln!("📊 Successfully decoded transaction:");
-                eprintln!("  Transaction ID: {}", tx.compute_txid());
-                eprintln!("  Version: {}", tx.version);
-                eprintln!("  Inputs: {}", tx.input.len());
-                eprintln!("  Outputs: {}", tx.output.len());
-                eprintln!("  Weight: {} WU", tx.weight());
-                eprintln!("  VSize: {} vbytes", tx.vsize());
-                eprintln!("  Size: {} bytes", tx.vsize());
-                
-                // Analyze witness data (FIXED: avoid calling to_vec() which corrupts witness data)
-                let mut total_witness_size = 0;
-                for (i, input) in tx.input.iter().enumerate() {
-                    // Calculate witness size by summing individual item lengths + overhead
-                    let witness_item_size: usize = input.witness.iter().map(|item| item.len()).sum();
-                    total_witness_size += witness_item_size;
-                    eprintln!("  Input {} witness: {} bytes ({} items)", i, witness_item_size, input.witness.len());
-                    
-                    if witness_item_size > 10000 {
-                        eprintln!("    ⚠️  Large witness data detected!");
-                        for (j, item) in input.witness.iter().enumerate() {
-                            eprintln!("      Item {}: {} bytes", j, item.len());
-                            if item.len() > 1000 {
-                                eprintln!("        🚨 Very large witness item!");
-                            }
-                        }
-                    }
-                }
-                eprintln!("  Total witness size: {} bytes", total_witness_size);
-                
-                // Analyze outputs
-                let mut total_output_value = 0u64;
-                for (i, output) in tx.output.iter().enumerate() {
-                    total_output_value += output.value.to_sat();
-                    eprintln!("  Output {}: {} sats", i, output.value.to_sat());
-                    if output.script_pubkey.is_op_return() {
-                        eprintln!("    OP_RETURN: {} bytes", output.script_pubkey.len());
-                    }
-                }
-                eprintln!("  Total output value: {} sats", total_output_value);
-                
-                // Estimate fee rate (we don't have input values here, so this is just for debugging)
-                eprintln!("  ⚠️  Cannot calculate exact fee rate without input values");
-                eprintln!("  📊 VSize: {} vbytes (used for fee rate calculation)", tx.vsize());
-                
-                if total_witness_size > 50000 {
-                    eprintln!("  🚨 LARGE WITNESS DATA DETECTED: {} bytes", total_witness_size);
-                    eprintln!("  💡 This may cause Bitcoin Core to calculate a very high fee rate");
-                    eprintln!("  💡 Bitcoin Core fee rate = (input_value - output_value) / vsize");
-                    eprintln!("  🛠️  Using maxfeerate=0 to bypass Bitcoin Core fee validation");
-                }
-            } else {
-                eprintln!("❌ Failed to decode transaction as Bitcoin transaction");
-            }
-        } else {
-            eprintln!("❌ Failed to decode transaction hex");
-        }
-        eprintln!("═══════════════════════════════════════════════════════════════");
         
         // Use maxfeerate=0 to bypass Bitcoin Core's fee rate validation for envelope transactions
         // This is necessary because Bitcoin Core incorrectly calculates fee rates for transactions with large witness data
-        eprintln!("🛠️  Sending transaction with maxfeerate=0 to bypass Bitcoin Core fee validation");
         let result = self._call("btc_sendrawtransaction", json!([tx_hex, 0])).await?;
         
         let txid = result.as_str()

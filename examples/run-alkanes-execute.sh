@@ -29,13 +29,13 @@ done
 
 cargo build
 # Execute the alkanes command with commit/reveal pattern
-/home/ubuntu/deezel/target/debug/deezel \
+/home/ubuntu/deezel/target/release/deezel \
     --sandshrew-rpc-url http://localhost:18888 \
     -p regtest \
     --wallet-file ~/.deezel/regtest.json.asc \
     --passphrase testtesttest \
     alkanes execute \
-    --envelope ./examples/free_mint.wasm.gz \
+    --envelope ~/free_mint.wasm.gz \
     --inputs B:1000 \
     --change [self:p2tr:2] \
     --to [self:p2tr:1] \

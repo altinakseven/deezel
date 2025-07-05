@@ -1,6 +1,6 @@
 #!/bin/bash
 export RUST_LOG=debug
-DEEZEL=/data/deezel/target/release/deezel
+DEEZEL=/home/ubuntu/deezel/target/release/deezel
 
 PWD=$(pwd)
 cd /data/alkanes
@@ -19,7 +19,7 @@ echo "🔍 Initial UTXO check..."
 $DEEZEL --wallet-file ~/.deezel/regtest.json.asc -p regtest --sandshrew-rpc-url http://localhost:18888 --passphrase testtesttest wallet utxos --addresses p2tr:0
 
 echo "⛏️  Generating 400 blocks to P2TR address..."
-$DEEZEL --wallet-file ~/.deezel/regtest.json.asc -p regtest --sandshrew-rpc-url http://localhost:18888 --passphrase testtesttest bitcoind generatetoaddress --address [self:p2tr:0] --nblocks 201
+$DEEZEL --wallet-file ~/.deezel/regtest.json.asc -p regtest --sandshrew-rpc-url http://localhost:18888 --passphrase testtesttest bitcoind generatetoaddress 201 [self:p2tr:0]
 
 echo "Waiting for blockchain sync..."
 sleep 6

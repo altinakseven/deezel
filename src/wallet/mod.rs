@@ -412,6 +412,11 @@ impl WalletManager {
         self.wallet.get_enriched_utxos().await
     }
     
+    /// Get enriched UTXOs for a specific address
+    pub async fn get_enriched_utxos_for_address(&self, address: &str) -> Result<Vec<bitcoin_wallet::EnrichedUtxoInfo>> {
+        self.wallet.get_enriched_utxos_for_address(address).await
+    }
+    
     /// Freeze a UTXO
     pub async fn freeze_utxo(&self, txid: &str, vout: u32) -> Result<()> {
         self.wallet.freeze_utxo(txid, vout).await

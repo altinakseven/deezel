@@ -20,6 +20,22 @@ pub mod tests;
 pub mod test_message_decoding;
 pub mod test_integration;
 
+// Test module for ordinals crate integration
+#[cfg(test)]
+pub mod test_ordinals_integration;
+
+// Test module for runestone encoding debugging
+#[cfg(test)]
+pub mod test_runestone_encoding;
+
+// Test module for protostone parsing debugging
+#[cfg(test)]
+pub mod test_protostone_parsing;
+
+// Test module for runestone construction debugging
+#[cfg(test)]
+pub mod test_runestone_construction;
+
 // Re-export key types for convenience
 pub use wallet::WalletManager;
 pub use monitor::BlockMonitor;
