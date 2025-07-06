@@ -28,7 +28,7 @@ echo "Checking UTXOs after block generation..."
 $DEEZEL --wallet-file ~/.deezel/regtest.json.asc -p regtest --sandshrew-rpc-url http://localhost:18888 --passphrase testtesttest wallet utxos --addresses p2tr:0
 
 echo "Attempting to send transaction..."
-$DEEZEL --wallet-file ~/.deezel/regtest.json.asc -p regtest --sandshrew-rpc-url http://localhost:18888 --passphrase testtesttest wallet send --from p2tr:0 [self:p2tr:0] 10000 --fee-rate 1
+$DEEZEL --wallet-file ~/.deezel/regtest.json.asc -p regtest --sandshrew-rpc-url http://localhost:18888 --passphrase testtesttest wallet send -y --from p2tr:0 [self:p2tr:0] 10000 --fee-rate 1
 
 
 bash /home/ubuntu/deezel/examples/run-alkanes-execute.sh

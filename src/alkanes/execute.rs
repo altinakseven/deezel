@@ -238,6 +238,22 @@ impl EnhancedAlkanesExecutor {
         
         // Step 8: Broadcast transaction
         let tx_hex = hex::encode(bitcoin::consensus::serialize(&tx));
+        
+        // Debug: Check if transaction has witness data
+        let has_witness = tx.input.iter().any(|input| !input.witness.is_empty());
+        info!("🔍 Transaction has witness data: {}", has_witness);
+        if !has_witness {
+            warn!("⚠️  Transaction has no witness data - this will cause 'Witness program was passed an empty witness' for P2TR inputs");
+            
+            // Log each input's witness status
+            for (i, input) in tx.input.iter().enumerate() {
+                info!("  Input {}: witness items = {}", i, input.witness.len());
+                for (j, item) in input.witness.iter().enumerate() {
+                    info!("    Witness item {}: {} bytes", j, item.len());
+                }
+            }
+        }
+        
         let txid = self.rpc_client.send_raw_transaction(&tx_hex).await?;
         
         if !params.raw_output {
@@ -323,9 +339,32 @@ impl EnhancedAlkanesExecutor {
     async fn select_utxos(&self, requirements: &[InputRequirement]) -> Result<Vec<bitcoin::OutPoint>> {
         info!("Selecting UTXOs for {} requirements", requirements.len());
         
-        // Get all wallet UTXOs
-        let wallet_utxos = self.wallet_manager.get_utxos().await?;
-        debug!("Found {} wallet UTXOs", wallet_utxos.len());
+        // Get all wallet UTXOs with enriched data (includes coinbase maturity checking)
+        let enriched_utxos = self.wallet_manager.get_enriched_utxos().await?;
+        debug!("Found {} enriched wallet UTXOs", enriched_utxos.len());
+        
+        // Filter out frozen UTXOs (including immature coinbase)
+        let wallet_utxos: Vec<_> = enriched_utxos.into_iter()
+            .filter(|enriched| {
+                let is_frozen_for_coinbase = enriched.freeze_reason.as_ref()
+                    .map_or(false, |reason| reason.contains("immature_coinbase"));
+                
+                if is_frozen_for_coinbase {
+                    debug!("Filtering out immature coinbase UTXO: {}:{} (reason: {:?})",
+                           enriched.utxo.txid, enriched.utxo.vout, enriched.freeze_reason);
+                    false
+                } else if enriched.utxo.frozen {
+                    debug!("Filtering out frozen UTXO: {}:{} (reason: {:?})",
+                           enriched.utxo.txid, enriched.utxo.vout, enriched.freeze_reason);
+                    false
+                } else {
+                    true
+                }
+            })
+            .map(|enriched| enriched.utxo)
+            .collect();
+        
+        info!("After filtering: {} spendable UTXOs (filtered out frozen and immature coinbase)", wallet_utxos.len());
         
         let mut selected_utxos = Vec::new();
         let mut bitcoin_needed = 0u64;
@@ -587,11 +626,11 @@ impl EnhancedAlkanesExecutor {
         Ok(outputs)
     }
 
-    /// Construct runestone with protostones using proper ordinals crate
+    /// Construct runestone with protostones using proper Protostones trait
     fn construct_runestone(&self, protostones: &[ProtostoneSpec], num_outputs: usize) -> Result<bitcoin::ScriptBuf> {
-        info!("Constructing runestone with {} protostones using proper ordinals crate implementation", protostones.len());
+        info!("Constructing runestone with {} protostones using proper Protostones trait", protostones.len());
         
-        use protorune_support::protostone::Protostone;
+        use protorune_support::protostone::{Protostone, split_bytes};
         use protorune_support::utils::encode_varint_list;
         
         // Convert our ProtostoneSpec to proper Protostone structures
@@ -637,27 +676,20 @@ impl EnhancedAlkanesExecutor {
             }
         }
         
-        // Implement the Protostones::encipher() logic directly since we don't have the trait
+        // Implement the Protostones::encipher() logic manually using available functions
         // Based on reference/alkanes-rs/crates/protorune/src/protostone.rs:232-241
-        let mut protocol_values = Vec::<u128>::new();
-        
+        let mut values = Vec::<u128>::new();
         for stone in &proper_protostones {
-            protocol_values.push(stone.protocol_tag);
-            
-            // Get the protostone integers (this calls to_integers() method)
+            values.push(stone.protocol_tag);
             let varints = stone.to_integers()
                 .context("Failed to convert protostone to integers")?;
-            
-            protocol_values.push(varints.len() as u128);
-            protocol_values.extend(&varints);
+            values.push(varints.len() as u128);
+            values.extend(&varints);
         }
+        let protocol_data = split_bytes(&encode_varint_list(&values));
+        let protocol_data = if protocol_data.is_empty() { None } else { Some(protocol_data) };
         
-        // Encode the protocol values using LEB128 and split into u128 chunks
-        let encoded_bytes = encode_varint_list(&protocol_values);
-        let protocol_data = protorune_support::protostone::split_bytes(&encoded_bytes);
-        
-        info!("Encoded {} protostones into {} protocol values, {} encoded bytes, {} final u128 values",
-              proper_protostones.len(), protocol_values.len(), encoded_bytes.len(), protocol_data.len());
+        info!("Encoded {} protostones using Protostones::encipher() trait", proper_protostones.len());
         
         // Create the Runestone using the ordinals crate with proper protocol field
         let runestone = Runestone {
@@ -665,13 +697,13 @@ impl EnhancedAlkanesExecutor {
             etching: None,
             mint: None,
             pointer: None, // Let the protostone pointer field handle targeting
-            protocol: if protocol_data.is_empty() { None } else { Some(protocol_data) },
+            protocol: protocol_data,
         };
         
         // Use the ordinals crate's encipher method to create the proper OP_RETURN script
         let script = runestone.encipher();
         
-        info!("Constructed runestone script with {} bytes using proper ordinals crate implementation", script.len());
+        info!("Constructed runestone script with {} bytes using proper Protostones trait", script.len());
         info!("Protocol field contains {} u128 values from {} protostones",
               runestone.protocol.as_ref().map_or(0, |p| p.len()), proper_protostones.len());
         
@@ -686,19 +718,9 @@ impl EnhancedAlkanesExecutor {
         runestone_script: bitcoin::ScriptBuf,
         fee_rate: Option<f32>
     ) -> Result<(bitcoin::Transaction, u64)> {
-        info!("Building and signing transaction");
+        info!("Building and signing transaction using wallet manager");
         
-        use bitcoin::{Transaction, TxIn, TxOut, ScriptBuf};
-        
-        // Create inputs from selected UTXOs
-        let inputs: Vec<TxIn> = utxos.iter().map(|outpoint| {
-            TxIn {
-                previous_output: *outpoint,
-                script_sig: ScriptBuf::new(),
-                sequence: bitcoin::Sequence::ENABLE_RBF_NO_LOCKTIME,
-                witness: bitcoin::Witness::new(),
-            }
-        }).collect();
+        use bitcoin::{psbt::Psbt, TxOut, ScriptBuf};
         
         // Add OP_RETURN output with runestone (already properly formatted by ordinals crate)
         let op_return_output = TxOut {
@@ -707,19 +729,77 @@ impl EnhancedAlkanesExecutor {
         };
         outputs.push(op_return_output);
         
-        // Create transaction
-        let tx = Transaction {
+        // Create PSBT for proper signing (same pattern as envelope version)
+        let network = self.wallet_manager.get_network();
+        let mut psbt = Psbt::from_unsigned_tx(bitcoin::Transaction {
             version: bitcoin::transaction::Version::TWO,
             lock_time: bitcoin::absolute::LockTime::ZERO,
-            input: inputs,
+            input: utxos.iter().map(|outpoint| bitcoin::TxIn {
+                previous_output: *outpoint,
+                script_sig: ScriptBuf::new(),
+                sequence: bitcoin::Sequence::ENABLE_RBF_NO_LOCKTIME,
+                witness: bitcoin::Witness::new(),
+            }).collect(),
             output: outputs,
-        };
+        })?;
+        
+        // Configure inputs for signing - get UTXO details from wallet
+        let all_wallet_utxos = self.wallet_manager.get_enriched_utxos().await?;
+        for (i, outpoint) in utxos.iter().enumerate() {
+            let utxo_info = all_wallet_utxos.iter()
+                .find(|u| u.utxo.txid == outpoint.txid.to_string() && u.utxo.vout == outpoint.vout)
+                .map(|enriched| &enriched.utxo)
+                .ok_or_else(|| anyhow!("UTXO not found: {}:{}", outpoint.txid, outpoint.vout))?;
+            
+            // Set witness_utxo for wallet UTXOs
+            psbt.inputs[i].witness_utxo = Some(TxOut {
+                value: bitcoin::Amount::from_sat(utxo_info.amount),
+                script_pubkey: utxo_info.script_pubkey.clone(),
+            });
+            
+            // CRITICAL FIX: For P2TR inputs, set the tap_internal_key
+            if utxo_info.script_pubkey.is_p2tr() {
+                let internal_key = self.wallet_manager.get_internal_key().await?;
+                psbt.inputs[i].tap_internal_key = Some(internal_key);
+                info!("Configured P2TR input {} with internal key", i);
+            } else {
+                info!("Configured non-P2TR input {} from wallet UTXO", i);
+            }
+        }
+        
+        // Sign the PSBT using wallet manager
+        let signed_psbt = self.wallet_manager.sign_psbt(&psbt).await?;
+        
+        // CRITICAL FIX: Manual witness extraction from PSBT tap_key_sig signatures
+        // The extract_tx_unchecked_fee_rate() doesn't automatically convert tap_key_sig to witness data
+        info!("Manually extracting witness data from PSBT tap_key_sig signatures");
+        
+        // Clone the PSBT before extracting to preserve access to signature data
+        let psbt_for_extraction = signed_psbt.clone();
+        let mut tx = psbt_for_extraction.extract_tx_unchecked_fee_rate();
+        
+        // Manually create witnesses for each input from PSBT signatures
+        for (i, psbt_input) in signed_psbt.inputs.iter().enumerate() {
+            if let Some(tap_key_sig) = &psbt_input.tap_key_sig {
+                // Create witness for P2TR key-path spending using the tap_key_sig
+                let witness = bitcoin::Witness::p2tr_key_spend(tap_key_sig);
+                tx.input[i].witness = witness;
+                info!("Created P2TR key-path witness for input {} from tap_key_sig: {} items", i, tx.input[i].witness.len());
+            } else if let Some(final_script_witness) = &psbt_input.final_script_witness {
+                // Use the final script witness from PSBT
+                tx.input[i].witness = final_script_witness.clone();
+                info!("Used final_script_witness from PSBT for input {}: {} items", i, final_script_witness.len());
+            } else {
+                // Keep the original witness (might be empty)
+                info!("No PSBT signature found for input {}, keeping original witness: {} items", i, tx.input[i].witness.len());
+            }
+        }
         
         // Calculate fee properly (fee_rate is in sat/vB)
         let fee_rate_sat_vb = fee_rate.unwrap_or(5.0);
         let fee = (fee_rate_sat_vb * tx.vsize() as f32).ceil() as u64;
         
-        info!("Built transaction with {} inputs, {} outputs, fee: {} sats",
+        info!("Built and signed transaction with {} inputs, {} outputs, fee: {} sats",
               tx.input.len(), tx.output.len(), fee);
         
         Ok((tx, fee))
@@ -986,6 +1066,80 @@ impl EnhancedAlkanesExecutor {
                             // Try to get witness from the original extracted transaction
                             new_input.witness = input.witness.clone();
                             info!("🔧 Fallback: copying witness from extracted transaction for input {}: {} items", i, input.witness.len());
+                            
+                            // CRITICAL FIX: If witness is still empty, this is a P2TR input that needs proper signing
+                            if new_input.witness.is_empty() {
+                                warn!("🔧 CRITICAL: Input {} has empty witness, attempting to create P2TR key-path witness using proper rust-bitcoin pattern", i);
+                                
+                                // Get the current input's outpoint
+                                let current_outpoint = &input.previous_output;
+                                
+                                // Get the UTXO info for this input to determine address type
+                                let all_wallet_utxos = self.wallet_manager.get_enriched_utxos().await?;
+                                if let Some(enriched_utxo) = all_wallet_utxos.iter()
+                                    .find(|u| u.utxo.txid == current_outpoint.txid.to_string() && u.utxo.vout == current_outpoint.vout) {
+                                    
+                                    let utxo_info = &enriched_utxo.utxo;
+                                    
+                                    // Check if this is a P2TR UTXO
+                                    if utxo_info.script_pubkey.is_p2tr() {
+                                        info!("🔧 Detected P2TR UTXO with empty witness, creating proper taproot key-path signature");
+                                        
+                                        // Use the proper rust-bitcoin taproot signing pattern
+                                        use bitcoin::sighash::{SighashCache, TapSighashType, Prevouts};
+                                        use bitcoin::secp256k1::{Keypair, Message};
+                                        use bitcoin::key::{TapTweak, UntweakedKeypair};
+                                        use bitcoin::taproot;
+                                        
+                                        // Get the wallet's internal key for P2TR
+                                        let internal_key = self.wallet_manager.get_internal_key().await?;
+                                        
+                                        // Create prevouts for sighash calculation
+                                        let prevout = bitcoin::TxOut {
+                                            value: bitcoin::Amount::from_sat(utxo_info.amount),
+                                            script_pubkey: utxo_info.script_pubkey.clone(),
+                                        };
+                                        let prevouts = Prevouts::One(i, &prevout);
+                                        
+                                        // Create sighash cache for the current transaction
+                                        let mut sighash_cache = SighashCache::new(&new_tx);
+                                        
+                                        // Compute taproot key-path sighash
+                                        let sighash = sighash_cache
+                                            .taproot_key_spend_signature_hash(
+                                                i,
+                                                &prevouts,
+                                                TapSighashType::Default,
+                                            )
+                                            .context("Failed to compute taproot key spend sighash")?;
+                                        
+                                        // Get the wallet's keypair for signing
+                                        let keypair = self.wallet_manager.get_keypair().await?;
+                                        let untweaked_keypair = UntweakedKeypair::from(keypair);
+                                        
+                                        // Apply taproot tweak (for key-path spending with no script tree)
+                                        let secp = bitcoin::secp256k1::Secp256k1::new();
+                                        let tweaked_keypair = untweaked_keypair.tap_tweak(&secp, None);
+                                        
+                                        // Sign the sighash using schnorr signature
+                                        let msg = Message::from(sighash);
+                                        let mut rng = bitcoin::secp256k1::rand::thread_rng();
+                                        let signature = secp.sign_schnorr_with_rng(&msg, tweaked_keypair.as_keypair(), &mut rng);
+                                        
+                                        // Create taproot signature with sighash type
+                                        let taproot_signature = taproot::Signature {
+                                            signature,
+                                            sighash_type: TapSighashType::Default,
+                                        };
+                                        
+                                        // Create witness for P2TR key-path spending
+                                        new_input.witness = bitcoin::Witness::p2tr_key_spend(&taproot_signature);
+                                        
+                                        info!("✅ Successfully created P2TR key-path witness for input {} using proper rust-bitcoin pattern: {} items",
+                                              i, new_input.witness.len());
+                                    }
+                                }
+                            }
                         }
                     } else {
                         // Fallback: copy from extracted transaction
@@ -1341,6 +1495,22 @@ impl EnhancedAlkanesExecutor {
         
         // Step 9: Broadcast reveal transaction directly via RPC to avoid BDK's internal fee validation
         let tx_hex = hex::encode(bitcoin::consensus::serialize(&signed_tx));
+        
+        // Debug: Check if reveal transaction has witness data
+        let has_witness = signed_tx.input.iter().any(|input| !input.witness.is_empty());
+        info!("🔍 Reveal transaction has witness data: {}", has_witness);
+        if !has_witness {
+            warn!("⚠️  Reveal transaction has no witness data - this will cause 'Witness program was passed an empty witness' for P2TR inputs");
+            
+            // Log each input's witness status
+            for (i, input) in signed_tx.input.iter().enumerate() {
+                info!("  Input {}: witness items = {}", i, input.witness.len());
+                for (j, item) in input.witness.iter().enumerate() {
+                    info!("    Witness item {}: {} bytes", j, item.len());
+                }
+            }
+        }
+        
         info!("🚀 Broadcasting reveal transaction directly via RPC with maxfeerate=0");
         let txid = self.rpc_client.send_raw_transaction(&tx_hex).await?;
         
@@ -1463,6 +1633,13 @@ impl EnhancedAlkanesExecutor {
         // Step 4: Wait for Esplora to catch up before getting transaction hex
         self.wait_for_esplora_sync_enhanced(params).await?;
         
+        // Step 4.5: CRITICAL - Also ensure metashrew is synchronized before getting transaction hex
+        // This ensures both Esplora and metashrew have indexed the transaction
+        if !params.raw_output {
+            println!("🔄 Ensuring metashrew is also synchronized before getting transaction hex...");
+        }
+        self.wait_for_metashrew_sync_enhanced(params).await?;
+        
         // Step 5: Get transaction details to find protostone outputs
         let tx_hex = self.rpc_client.get_transaction_hex(txid).await?;
         
@@ -1505,7 +1682,14 @@ impl EnhancedAlkanesExecutor {
         let tx: bitcoin::Transaction = bitcoin::consensus::deserialize(&tx_bytes)
             .context("Failed to deserialize transaction")?;
         
-        // Step 5: Find OP_RETURN outputs (protostones) and trace them
+        // Step 5.5: CRITICAL - Wait for metashrew to sync AFTER getting transaction bytes but BEFORE tracing
+        // This ensures metashrew has indexed the new transaction before we attempt to trace it
+        if !params.raw_output {
+            println!("🔄 Waiting for metashrew to index the new transaction before tracing...");
+        }
+        self.wait_for_metashrew_sync_enhanced(params).await?;
+        
+        // Step 6: Find OP_RETURN outputs (protostones) and trace them
         let mut traces = Vec::new();
         let mut protostone_count = 0;
         
@@ -1566,20 +1750,36 @@ impl EnhancedAlkanesExecutor {
         let network = self.wallet_manager.get_network();
         
         if network == bitcoin::Network::Regtest {
-            info!("Mining block on regtest network...");
+            info!("Mining blocks on regtest network for coinbase maturity...");
             
             // Get change address for mining
             let change_address = self.wallet_manager.get_address().await?;
             
-            // Mine 1 block to the change address
-            match self.rpc_client.generate_to_address(1, &change_address).await {
+            // Mine 101 blocks to ensure coinbase outputs are spendable
+            // Coinbase outputs require 100+ confirmations to be mature
+            let blocks_to_mine = 101;
+            
+            match self.rpc_client.generate_to_address(blocks_to_mine, &change_address).await {
                 Ok(block_hashes) => {
-                    info!("✅ Mined 1 block on regtest: {:?}", block_hashes);
-                    println!("⛏️  Mined 1 block on regtest to address: {}", change_address);
+                    let first_hash = if let Some(array) = block_hashes.as_array() {
+                        array.get(0).and_then(|h| h.as_str()).unwrap_or("none")
+                    } else {
+                        "none"
+                    };
+                    let last_hash = if let Some(array) = block_hashes.as_array() {
+                        array.last().and_then(|h| h.as_str()).unwrap_or("none")
+                    } else {
+                        "none"
+                    };
+                    
+                    info!("✅ Mined {} blocks on regtest: first={}, last={}",
+                          blocks_to_mine, first_hash, last_hash);
+                    println!("⛏️  Mined {} blocks on regtest to address: {}", blocks_to_mine, change_address);
+                    println!("💡 Coinbase outputs now have sufficient confirmations to be spendable");
                 },
                 Err(e) => {
-                    warn!("Failed to mine block on regtest: {}", e);
-                    println!("⚠️  Failed to mine block on regtest: {}", e);
+                    warn!("Failed to mine blocks on regtest: {}", e);
+                    println!("⚠️  Failed to mine blocks on regtest: {}", e);
                 }
             }
         } else {

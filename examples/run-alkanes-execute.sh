@@ -3,7 +3,7 @@
 # Enhanced alkanes execute script with commit/reveal pattern support
 # Usage: ./run-alkanes-execute.sh [--raw] [--trace] [additional-args...]
 
-export RUST_LOG=info
+export RUST_LOG=debug
 
 # Parse command line arguments
 RAW_FLAG=""
@@ -35,14 +35,11 @@ cargo build --release
     --wallet-file ~/.deezel/regtest.json.asc \
     --passphrase testtesttest \
     alkanes execute \
-    --envelope ~/free_mint.wasm.gz \
     --inputs B:1000 \
     --change [self:p2tr:2] \
     --to [self:p2tr:1],[self:p2tr:2],[self:p2tr:3] \
     --mine \
     --fee-rate 1 \
     -y \
-    $RAW_FLAG \
     --trace \
-    $ADDITIONAL_ARGS \
-	    '[3,797,101]:v0:v0'
+	    '[6,0,0]:v0:v0'

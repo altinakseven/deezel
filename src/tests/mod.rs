@@ -14,6 +14,7 @@ pub mod test_envelope_fee_issue;
 pub mod test_envelope_witness_corruption;
 pub mod test_rpc_logging_truncation;
 pub mod demo_rpc_truncation;
+pub mod test_p2tr_signing;
 
 use anyhow::Result;
 use std::collections::HashMap;
