@@ -35,6 +35,7 @@ cargo build --release
     --wallet-file ~/.deezel/regtest.json.asc \
     --passphrase testtesttest \
     alkanes execute \
+    --envelope ~/free_mint.wasm.gz \
     --inputs B:1000 \
     --change [self:p2tr:2] \
     --to [self:p2tr:1],[self:p2tr:2],[self:p2tr:3] \
@@ -42,4 +43,4 @@ cargo build --release
     --fee-rate 1 \
     -y \
     --trace \
-	    '[6,0,0]:v0:v0'
+	    '[3,797,101]:v0:v0'

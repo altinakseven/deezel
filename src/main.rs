@@ -107,6 +107,11 @@ enum Commands {
         #[command(subcommand)]
         command: MonitorCommands,
     },
+    /// Esplora API operations
+    Esplora {
+        #[command(subcommand)]
+        command: EsploraCommands,
+    },
 }
 
 /// Wallet subcommands
@@ -443,6 +448,154 @@ enum MonitorCommands {
     },
 }
 
+/// Esplora API subcommands
+#[derive(Subcommand)]
+enum EsploraCommands {
+    /// Get blocks tip hash
+    BlocksTipHash,
+    /// Get blocks tip height
+    BlocksTipHeight,
+    /// Get blocks starting from height
+    Blocks {
+        /// Starting height (optional)
+        start_height: Option<u64>,
+    },
+    /// Get block by height
+    BlockHeight {
+        /// Block height
+        height: u64,
+    },
+    /// Get block information
+    Block {
+        /// Block hash
+        hash: String,
+    },
+    /// Get block status
+    BlockStatus {
+        /// Block hash
+        hash: String,
+    },
+    /// Get block transaction IDs
+    BlockTxids {
+        /// Block hash
+        hash: String,
+    },
+    /// Get block header
+    BlockHeader {
+        /// Block hash
+        hash: String,
+    },
+    /// Get raw block data
+    BlockRaw {
+        /// Block hash
+        hash: String,
+    },
+    /// Get transaction ID by block hash and index
+    BlockTxid {
+        /// Block hash
+        hash: String,
+        /// Transaction index
+        index: u32,
+    },
+    /// Get block transactions
+    BlockTxs {
+        /// Block hash
+        hash: String,
+        /// Start index (optional)
+        start_index: Option<u32>,
+    },
+    /// Get address information
+    Address {
+        /// Address or colon-separated parameters
+        params: String,
+    },
+    /// Get address transactions
+    AddressTxs {
+        /// Address or colon-separated parameters
+        params: String,
+    },
+    /// Get address chain transactions
+    AddressTxsChain {
+        /// Address or colon-separated parameters (address:last_seen_txid)
+        params: String,
+    },
+    /// Get address mempool transactions
+    AddressTxsMempool {
+        /// Address
+        address: String,
+    },
+    /// Get address UTXOs
+    AddressUtxo {
+        /// Address
+        address: String,
+    },
+    /// Search addresses by prefix
+    AddressPrefix {
+        /// Address prefix
+        prefix: String,
+    },
+    /// Get transaction information
+    Tx {
+        /// Transaction ID
+        txid: String,
+    },
+    /// Get transaction hex
+    TxHex {
+        /// Transaction ID
+        txid: String,
+    },
+    /// Get raw transaction
+    TxRaw {
+        /// Transaction ID
+        txid: String,
+    },
+    /// Get transaction status
+    TxStatus {
+        /// Transaction ID
+        txid: String,
+    },
+    /// Get transaction merkle proof
+    TxMerkleProof {
+        /// Transaction ID
+        txid: String,
+    },
+    /// Get transaction merkle block proof
+    TxMerkleblockProof {
+        /// Transaction ID
+        txid: String,
+    },
+    /// Get transaction output spend status
+    TxOutspend {
+        /// Transaction ID
+        txid: String,
+        /// Output index
+        index: u32,
+    },
+    /// Get transaction output spends
+    TxOutspends {
+        /// Transaction ID
+        txid: String,
+    },
+    /// Broadcast transaction
+    Broadcast {
+        /// Transaction hex
+        tx_hex: String,
+    },
+    /// Post transaction (alias for broadcast)
+    PostTx {
+        /// Transaction hex
+        tx_hex: String,
+    },
+    /// Get mempool information
+    Mempool,
+    /// Get mempool transaction IDs
+    MempoolTxids,
+    /// Get recent mempool transactions
+    MempoolRecent,
+    /// Get fee estimates
+    FeeEstimates,
+}
+
 /// Block tag for monitoring
 #[derive(Debug, Clone)]
 enum BlockTag {
@@ -702,7 +855,6 @@ fn is_shorthand_address_identifier(input: &str) -> bool {
 async fn load_wallet_manager(
     wallet_file: &str,
     network_params: &deezel::network::NetworkParams,
-    _bitcoin_rpc_url: &str,
     sandshrew_rpc_url: &str,
     passphrase: Option<&str>
 ) -> Result<Arc<deezel::wallet::WalletManager>> {
@@ -778,29 +930,20 @@ async fn main() -> Result<()> {
             .context("Failed to create wallet directory")?;
     }
 
-    // Determine RPC URLs based on provider
+    // CRITICAL FIX: Always use unified Sandshrew endpoint for ALL RPC operations
+    // Sandshrew is a superset of Bitcoin Core RPC and handles both Bitcoin and Metashrew calls
+    // This ensures consistent endpoint usage and eliminates 404 errors from routing to wrong endpoints
     let sandshrew_rpc_url = args.sandshrew_rpc_url.clone()
         .unwrap_or_else(|| deezel::network::get_rpc_url(&args.provider));
     
-    // CRITICAL FIX: When --sandshrew-rpc-url is specified, use it for ALL RPC endpoints
-    // This ensures Sandshrew handles both Bitcoin RPC calls and its own extended functionality
-    let bitcoin_rpc_url = if args.sandshrew_rpc_url.is_some() {
-        // Use Sandshrew RPC for Bitcoin calls too when explicitly specified
-        sandshrew_rpc_url.clone()
-    } else {
-        // Use separate Bitcoin RPC URL when not using Sandshrew for everything
-        args.bitcoin_rpc_url.clone()
-            .unwrap_or_else(|| "http://bitcoinrpc:bitcoinrpc@localhost:8332".to_string())
-    };
+    // Journal: Updated RPC URL handling to ALWAYS use the unified Sandshrew endpoint for both
+    // bitcoin_rpc_url and metashrew_rpc_url. This eliminates the routing confusion where btc_*
+    // methods were going to a separate Bitcoin RPC endpoint that might not exist or be accessible.
     
-    // Journal: Updated RPC URL handling to ensure --sandshrew-rpc-url is used for ALL operations
-    // when specified. This fixes the network mismatch issue where Bitcoin RPC was connecting
-    // to mainnet while wallet expected regtest.
-
-    // Initialize RPC client
+    // Initialize RPC client with unified endpoint
     let rpc_config = RpcConfig {
-        bitcoin_rpc_url: bitcoin_rpc_url.clone(),
-        metashrew_rpc_url: sandshrew_rpc_url.clone(),
+        bitcoin_rpc_url: sandshrew_rpc_url.clone(),  // Use Sandshrew for Bitcoin RPC calls
+        metashrew_rpc_url: sandshrew_rpc_url.clone(), // Use Sandshrew for Metashrew RPC calls
     };
     let rpc_client = Arc::new(RpcClient::new(rpc_config));
 
@@ -832,7 +975,6 @@ async fn main() -> Result<()> {
         let wallet_manager = load_wallet_manager(
             &wallet_file,
             &network_params,
-            &bitcoin_rpc_url,
             &sandshrew_rpc_url,
             args.passphrase.as_deref()
         ).await?;
@@ -864,7 +1006,6 @@ async fn main() -> Result<()> {
                         match load_wallet_manager(
                             &wallet_file,
                             &network_params,
-                            &bitcoin_rpc_url,
                             &sandshrew_rpc_url,
                             args.passphrase.as_deref()
                         ).await {
@@ -1575,6 +1716,165 @@ async fn main() -> Result<()> {
                 println!("🔍 Monitoring blocks starting from height: {}", start_height);
                 println!("⚠️  Block monitoring not yet implemented");
             },
+        },
+        Commands::Esplora { command } => {
+            match command {
+                EsploraCommands::BlocksTipHash => {
+                    let result = rpc_client._call("esplora_blocks:tip:hash", serde_json::json!([])).await?;
+                    println!("{}", result.as_str().unwrap_or(""));
+                },
+                EsploraCommands::BlocksTipHeight => {
+                    let result = rpc_client._call("esplora_blocks:tip:height", serde_json::json!([])).await?;
+                    println!("{}", result.as_u64().unwrap_or(0));
+                },
+                EsploraCommands::Blocks { start_height } => {
+                    let params = if let Some(height) = start_height {
+                        serde_json::json!([height])
+                    } else {
+                        serde_json::json!([])
+                    };
+                    let result = rpc_client._call("esplora_blocks", params).await?;
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                },
+                EsploraCommands::BlockHeight { height } => {
+                    let result = rpc_client._call("esplora_block:height", serde_json::json!([height])).await?;
+                    println!("{}", result.as_str().unwrap_or(""));
+                },
+                EsploraCommands::Block { hash } => {
+                    let result = rpc_client._call("esplora_block", serde_json::json!([hash])).await?;
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                },
+                EsploraCommands::BlockStatus { hash } => {
+                    let result = rpc_client._call("esplora_block::status", serde_json::json!([hash])).await?;
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                },
+                EsploraCommands::BlockTxids { hash } => {
+                    let result = rpc_client._call("esplora_block::txids", serde_json::json!([hash])).await?;
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                },
+                EsploraCommands::BlockHeader { hash } => {
+                    let result = rpc_client._call("esplora_block::header", serde_json::json!([hash])).await?;
+                    println!("{}", result.as_str().unwrap_or(""));
+                },
+                EsploraCommands::BlockRaw { hash } => {
+                    let result = rpc_client._call("esplora_block::raw", serde_json::json!([hash])).await?;
+                    println!("{}", result.as_str().unwrap_or(""));
+                },
+                EsploraCommands::BlockTxid { hash, index } => {
+                    let result = rpc_client._call("esplora_block::txid", serde_json::json!([hash, index])).await?;
+                    println!("{}", result.as_str().unwrap_or(""));
+                },
+                EsploraCommands::BlockTxs { hash, start_index } => {
+                    let params = if let Some(index) = start_index {
+                        serde_json::json!([hash, index])
+                    } else {
+                        serde_json::json!([hash])
+                    };
+                    let result = rpc_client._call("esplora_block::txs", params).await?;
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                },
+                EsploraCommands::Address { params } => {
+                    // Handle address resolution if needed
+                    let resolved_params = resolve_address_identifiers(&params, wallet_manager.as_ref()).await?;
+                    let result = rpc_client._call("esplora_address", serde_json::json!([resolved_params])).await?;
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                },
+                EsploraCommands::AddressTxs { params } => {
+                    // Handle address resolution if needed
+                    let resolved_params = resolve_address_identifiers(&params, wallet_manager.as_ref()).await?;
+                    let result = rpc_client._call("esplora_address::txs", serde_json::json!([resolved_params])).await?;
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                },
+                EsploraCommands::AddressTxsChain { params } => {
+                    // Handle address resolution for the first part (address:last_seen_txid)
+                    let parts: Vec<&str> = params.split(':').collect();
+                    if parts.len() >= 2 {
+                        let address_part = parts[0];
+                        let resolved_address = resolve_address_identifiers(address_part, wallet_manager.as_ref()).await?;
+                        let resolved_params = if parts.len() == 2 {
+                            format!("{}:{}", resolved_address, parts[1])
+                        } else {
+                            format!("{}:{}", resolved_address, parts[1..].join(":"))
+                        };
+                        let result = rpc_client._call("esplora_address::txs:chain", serde_json::json!([resolved_params])).await?;
+                        println!("{}", serde_json::to_string_pretty(&result)?);
+                    } else {
+                        let resolved_params = resolve_address_identifiers(&params, wallet_manager.as_ref()).await?;
+                        let result = rpc_client._call("esplora_address::txs:chain", serde_json::json!([resolved_params])).await?;
+                        println!("{}", serde_json::to_string_pretty(&result)?);
+                    }
+                },
+                EsploraCommands::AddressTxsMempool { address } => {
+                    let resolved_address = resolve_address_identifiers(&address, wallet_manager.as_ref()).await?;
+                    let result = rpc_client._call("esplora_address::txs:mempool", serde_json::json!([resolved_address])).await?;
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                },
+                EsploraCommands::AddressUtxo { address } => {
+                    let resolved_address = resolve_address_identifiers(&address, wallet_manager.as_ref()).await?;
+                    let result = rpc_client._call("esplora_address::utxo", serde_json::json!([resolved_address])).await?;
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                },
+                EsploraCommands::AddressPrefix { prefix } => {
+                    let result = rpc_client._call("esplora_address:prefix", serde_json::json!([prefix])).await?;
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                },
+                EsploraCommands::Tx { txid } => {
+                    let result = rpc_client._call("esplora_tx", serde_json::json!([txid])).await?;
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                },
+                EsploraCommands::TxHex { txid } => {
+                    let result = rpc_client._call("esplora_tx::hex", serde_json::json!([txid])).await?;
+                    println!("{}", result.as_str().unwrap_or(""));
+                },
+                EsploraCommands::TxRaw { txid } => {
+                    let result = rpc_client._call("esplora_tx::raw", serde_json::json!([txid])).await?;
+                    println!("{}", result.as_str().unwrap_or(""));
+                },
+                EsploraCommands::TxStatus { txid } => {
+                    let result = rpc_client._call("esplora_tx::status", serde_json::json!([txid])).await?;
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                },
+                EsploraCommands::TxMerkleProof { txid } => {
+                    let result = rpc_client._call("esplora_tx::merkle:proof", serde_json::json!([txid])).await?;
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                },
+                EsploraCommands::TxMerkleblockProof { txid } => {
+                    let result = rpc_client._call("esplora_tx::merkleblock:proof", serde_json::json!([txid])).await?;
+                    println!("{}", result.as_str().unwrap_or(""));
+                },
+                EsploraCommands::TxOutspend { txid, index } => {
+                    let result = rpc_client._call("esplora_tx::outspend", serde_json::json!([txid, index])).await?;
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                },
+                EsploraCommands::TxOutspends { txid } => {
+                    let result = rpc_client._call("esplora_tx::outspends", serde_json::json!([txid])).await?;
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                },
+                EsploraCommands::Broadcast { tx_hex } => {
+                    let result = rpc_client._call("esplora_broadcast", serde_json::json!([tx_hex])).await?;
+                    println!("{}", result.as_str().unwrap_or(""));
+                },
+                EsploraCommands::PostTx { tx_hex } => {
+                    let result = rpc_client._call("esplora_tx", serde_json::json!([tx_hex])).await?;
+                    println!("{}", result.as_str().unwrap_or(""));
+                },
+                EsploraCommands::Mempool => {
+                    let result = rpc_client._call("esplora_mempool", serde_json::json!([])).await?;
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                },
+                EsploraCommands::MempoolTxids => {
+                    let result = rpc_client._call("esplora_mempool::txids", serde_json::json!([])).await?;
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                },
+                EsploraCommands::MempoolRecent => {
+                    let result = rpc_client._call("esplora_mempool::recent", serde_json::json!([])).await?;
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                },
+                EsploraCommands::FeeEstimates => {
+                    let result = rpc_client._call("esplora_fee:estimates", serde_json::json!([])).await?;
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                },
+            }
         },
         Commands::Walletinfo { raw } => {
             if let Some(wm) = &wallet_manager {

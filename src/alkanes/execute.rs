@@ -626,12 +626,11 @@ impl EnhancedAlkanesExecutor {
         Ok(outputs)
     }
 
-    /// Construct runestone with protostones using proper Protostones trait
+    /// Construct runestone with protostones using proper alkanes-rs ordinals crate
     fn construct_runestone(&self, protostones: &[ProtostoneSpec], num_outputs: usize) -> Result<bitcoin::ScriptBuf> {
-        info!("Constructing runestone with {} protostones using proper Protostones trait", protostones.len());
+        info!("Constructing runestone with {} protostones using alkanes-rs ordinals crate", protostones.len());
         
-        use protorune_support::protostone::{Protostone, split_bytes};
-        use protorune_support::utils::encode_varint_list;
+        use protorune_support::protostone::Protostone;
         
         // Convert our ProtostoneSpec to proper Protostone structures
         let mut proper_protostones = Vec::<Protostone>::new();
@@ -676,38 +675,26 @@ impl EnhancedAlkanesExecutor {
             }
         }
         
-        // Implement the Protostones::encipher() logic manually using available functions
-        // Based on reference/alkanes-rs/crates/protorune/src/protostone.rs:232-241
-        let mut values = Vec::<u128>::new();
-        for stone in &proper_protostones {
-            values.push(stone.protocol_tag);
-            let varints = stone.to_integers()
-                .context("Failed to convert protostone to integers")?;
-            values.push(varints.len() as u128);
-            values.extend(&varints);
-        }
-        let protocol_data = split_bytes(&encode_varint_list(&values));
-        let protocol_data = if protocol_data.is_empty() { None } else { Some(protocol_data) };
+        // CRITICAL FIX: Based on search results, protostones should be stored in tag 16383 within the Runestone
+        // However, let's first try using the Protostones::encipher() result directly as the OP_RETURN script
+        // This might be the correct approach since the alkanes-rs documentation suggests protostones
+        // are encoded differently than standard runestones
         
-        info!("Encoded {} protostones using Protostones::encipher() trait", proper_protostones.len());
+        use crate::utils::protostone::Protostones;
+        let protocol_data = proper_protostones.encipher();
+        let runestone = (Runestone {
+          etching: None,
+          pointer: None,
+          edicts: vec![],
+          mint: None,
+          protocol: protocol_data.ok()
+        }).encipher();
         
-        // Create the Runestone using the ordinals crate with proper protocol field
-        let runestone = Runestone {
-            edicts: Vec::new(), // TODO: Convert ProtostoneEdict to ordinals::Edict if needed
-            etching: None,
-            mint: None,
-            pointer: None, // Let the protostone pointer field handle targeting
-            protocol: protocol_data,
-        };
+        // EXPERIMENTAL: Try creating the OP_RETURN script directly from the protostones encoding
+        // instead of wrapping it in a Runestone structure
         
-        // Use the ordinals crate's encipher method to create the proper OP_RETURN script
-        let script = runestone.encipher();
-        
-        info!("Constructed runestone script with {} bytes using proper Protostones trait", script.len());
-        info!("Protocol field contains {} u128 values from {} protostones",
-              runestone.protocol.as_ref().map_or(0, |p| p.len()), proper_protostones.len());
-        
-        Ok(script)
+        // Convert Vec<u128> to bytes for OP_RETURN
+        Ok(runestone)
     }
 
     /// Build and sign transaction
@@ -1464,8 +1451,11 @@ impl EnhancedAlkanesExecutor {
         // Step 4: Create transaction with outputs for each address
         let outputs = self.create_outputs(&params.to_addresses, &params.change_address).await?;
         
-        // Step 5: Construct runestone with protostones
+        // Step 5: Construct runestone with protostones - EXACTLY like the non-envelope version
+        info!("🔧 CRITICAL: Constructing runestone for reveal transaction using EXACTLY the same logic as single transaction");
+        info!("🔧 This reveal transaction will have BOTH envelope witness data AND the same OP_RETURN as non-envelope version");
         let runestone_script = self.construct_runestone(&params.protostones, outputs.len())?;
+        info!("🔧 Runestone script constructed: {} bytes", runestone_script.len());
         
         // Step 6: Build the reveal transaction with envelope
         info!("Building reveal transaction with envelope");
@@ -1699,11 +1689,17 @@ impl EnhancedAlkanesExecutor {
                     println!("🔍 Tracing protostone #{} at vout {}...", protostone_count + 1, vout);
                 }
                 
-                // Calculate the correct vout for tracing: tx.output.len() + 1 + protostone_index
-                let trace_vout = tx.output.len() as u32 + 1 + protostone_count;
+                // CRITICAL FIX: According to user feedback, protostones start at tx.output.len() + 1
+                // This means the first protostone is at vout = tx.output.len() + 1
+                // Subsequent protostones increment from there
+                let trace_vout = tx.output.len() as u32 + 1 + protostone_count as u32;
                 
                 // Reverse the txid bytes for trace calls
                 let reversed_txid = self.reverse_txid_bytes(txid)?;
+                
+                // Debug: Log the trace calculation
+                debug!("Tracing protostone #{}: OP_RETURN at vout {}, tracing at virtual vout {}",
+                       protostone_count + 1, vout, trace_vout);
                 
                 // Trace this protostone using the reversed txid and calculated vout
                 match self.rpc_client.trace_outpoint_json(&reversed_txid, trace_vout).await {

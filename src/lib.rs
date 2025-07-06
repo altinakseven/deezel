@@ -3,6 +3,7 @@
 //! This library provides functionality for automated DIESEL token minting
 //! and management using BDK and Sandshrew RPC.
 
+pub mod utils;
 pub mod wallet;
 pub mod monitor;
 pub mod network;

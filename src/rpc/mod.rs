@@ -163,12 +163,10 @@ impl RpcClient {
     pub async fn _call(&self, method: &str, params: Value) -> Result<Value> {
         debug!("Calling RPC method: {}", method);
         
-        // Determine which RPC endpoint to use based on the method prefix
-        let (url, jsonrpc_version) = if method.starts_with("btc_") {
-            (&self.config.bitcoin_rpc_url, "1.0")
-        } else {
-            (&self.config.metashrew_rpc_url, "2.0")
-        };
+        // CRITICAL FIX: Always route ALL RPC requests through the unified Sandshrew endpoint
+        // Sandshrew is a superset of Bitcoin Core RPC and handles both Bitcoin and Metashrew calls
+        // This ensures consistent endpoint usage regardless of method prefix
+        let (url, jsonrpc_version) = (&self.config.metashrew_rpc_url, "2.0");
         
         let request = RpcRequest {
             jsonrpc: jsonrpc_version.to_string(),
@@ -1761,6 +1759,313 @@ impl RpcClient {
     fn next_request_id(&self) -> u64 {
         // Use atomic fetch_add for thread safety
         self.request_id.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+    }
+    
+    /// Generic esplora API call - handles all esplora endpoints
+    pub async fn esplora_call(&self, endpoint: &str, params: Vec<String>) -> Result<Value> {
+        debug!("Making esplora call to endpoint: {} with params: {:?}", endpoint, params);
+        
+        // Convert endpoint format from CLI to RPC method name
+        // Examples:
+        // "blocks:tip:hash" -> "esplora_blocks:tip:hash"
+        // "address::utxo" -> "esplora_address::utxo"
+        // "tx::hex" -> "esplora_tx::hex"
+        let method_name = if endpoint.starts_with("esplora_") {
+            endpoint.to_string()
+        } else {
+            format!("esplora_{}", endpoint)
+        };
+        
+        let result = self._call(&method_name, serde_json::json!(params)).await?;
+        
+        debug!("Esplora call completed for endpoint: {}", endpoint);
+        Ok(result)
+    }
+    
+    /// Get blocks tip hash
+    pub async fn get_esplora_blocks_tip_hash(&self) -> Result<String> {
+        debug!("Getting esplora blocks tip hash");
+        
+        let result = self._call("esplora_blocks:tip:hash", serde_json::json!([])).await?;
+        
+        let hash = result.as_str()
+            .context("Invalid blocks tip hash response")?
+            .to_string();
+        
+        debug!("Got esplora blocks tip hash: {}", hash);
+        Ok(hash)
+    }
+    
+    /// Get block by hash
+    pub async fn get_esplora_block(&self, hash: &str) -> Result<Value> {
+        debug!("Getting esplora block: {}", hash);
+        
+        let result = self._call("esplora_block", serde_json::json!([hash])).await?;
+        
+        debug!("Got esplora block: {}", hash);
+        Ok(result)
+    }
+    
+    /// Get block status
+    pub async fn get_esplora_block_status(&self, hash: &str) -> Result<Value> {
+        debug!("Getting esplora block status: {}", hash);
+        
+        let result = self._call("esplora_block::status", serde_json::json!([hash])).await?;
+        
+        debug!("Got esplora block status: {}", hash);
+        Ok(result)
+    }
+    
+    /// Get block transaction IDs
+    pub async fn get_esplora_block_txids(&self, hash: &str) -> Result<Value> {
+        debug!("Getting esplora block txids: {}", hash);
+        
+        let result = self._call("esplora_block::txids", serde_json::json!([hash])).await?;
+        
+        debug!("Got esplora block txids: {}", hash);
+        Ok(result)
+    }
+    
+    /// Get block header
+    pub async fn get_esplora_block_header(&self, hash: &str) -> Result<String> {
+        debug!("Getting esplora block header: {}", hash);
+        
+        let result = self._call("esplora_block::header", serde_json::json!([hash])).await?;
+        
+        let header = result.as_str()
+            .context("Invalid block header response")?
+            .to_string();
+        
+        debug!("Got esplora block header: {}", hash);
+        Ok(header)
+    }
+    
+    /// Get raw block data
+    pub async fn get_esplora_block_raw(&self, hash: &str) -> Result<String> {
+        debug!("Getting esplora raw block: {}", hash);
+        
+        let result = self._call("esplora_block::raw", serde_json::json!([hash])).await?;
+        
+        let raw_block = result.as_str()
+            .context("Invalid raw block response")?
+            .to_string();
+        
+        debug!("Got esplora raw block: {}", hash);
+        Ok(raw_block)
+    }
+    
+    /// Get transaction ID by block hash and index
+    pub async fn get_esplora_block_txid(&self, hash: &str, index: u32) -> Result<String> {
+        debug!("Getting esplora block txid: {} index: {}", hash, index);
+        
+        let result = self._call("esplora_block::txid", serde_json::json!([hash, index])).await?;
+        
+        let txid = result.as_str()
+            .context("Invalid block txid response")?
+            .to_string();
+        
+        debug!("Got esplora block txid: {} index: {}", hash, index);
+        Ok(txid)
+    }
+    
+    /// Get block transactions
+    pub async fn get_esplora_block_txs(&self, hash: &str, start_index: Option<u32>) -> Result<Value> {
+        debug!("Getting esplora block txs: {} start_index: {:?}", hash, start_index);
+        
+        let params = if let Some(index) = start_index {
+            serde_json::json!([hash, index])
+        } else {
+            serde_json::json!([hash])
+        };
+        
+        let result = self._call("esplora_block::txs", params).await?;
+        
+        debug!("Got esplora block txs: {}", hash);
+        Ok(result)
+    }
+    
+    /// Get address information
+    pub async fn get_esplora_address(&self, address: &str) -> Result<Value> {
+        debug!("Getting esplora address info: {}", address);
+        
+        let result = self._call("esplora_address", serde_json::json!([address])).await?;
+        
+        debug!("Got esplora address info: {}", address);
+        Ok(result)
+    }
+    
+    /// Get address transactions
+    pub async fn get_esplora_address_txs(&self, address: &str) -> Result<Value> {
+        debug!("Getting esplora address txs: {}", address);
+        
+        let result = self._call("esplora_address::txs", serde_json::json!([address])).await?;
+        
+        debug!("Got esplora address txs: {}", address);
+        Ok(result)
+    }
+    
+    /// Get address chain transactions
+    pub async fn get_esplora_address_txs_chain(&self, address: &str, last_seen_txid: Option<&str>) -> Result<Value> {
+        debug!("Getting esplora address chain txs: {} last_seen: {:?}", address, last_seen_txid);
+        
+        let params = if let Some(txid) = last_seen_txid {
+            serde_json::json!([address, txid])
+        } else {
+            serde_json::json!([address])
+        };
+        
+        let result = self._call("esplora_address::txs:chain", params).await?;
+        
+        debug!("Got esplora address chain txs: {}", address);
+        Ok(result)
+    }
+    
+    /// Get address mempool transactions
+    pub async fn get_esplora_address_txs_mempool(&self, address: &str) -> Result<Value> {
+        debug!("Getting esplora address mempool txs: {}", address);
+        
+        let result = self._call("esplora_address::txs:mempool", serde_json::json!([address])).await?;
+        
+        debug!("Got esplora address mempool txs: {}", address);
+        Ok(result)
+    }
+    
+    /// Get address UTXOs (already exists as get_address_utxos, but adding esplora-specific version)
+    pub async fn get_esplora_address_utxo(&self, address: &str) -> Result<Value> {
+        debug!("Getting esplora address UTXOs: {}", address);
+        
+        let result = self._call("esplora_address::utxo", serde_json::json!([address])).await?;
+        
+        debug!("Got esplora address UTXOs: {}", address);
+        Ok(result)
+    }
+    
+    /// Search addresses by prefix
+    pub async fn get_esplora_address_prefix(&self, prefix: &str) -> Result<Value> {
+        debug!("Getting esplora address prefix search: {}", prefix);
+        
+        let result = self._call("esplora_address:prefix", serde_json::json!([prefix])).await?;
+        
+        debug!("Got esplora address prefix search: {}", prefix);
+        Ok(result)
+    }
+    
+    /// Get transaction information
+    pub async fn get_esplora_tx(&self, txid: &str) -> Result<Value> {
+        debug!("Getting esplora transaction: {}", txid);
+        
+        let result = self._call("esplora_tx", serde_json::json!([txid])).await?;
+        
+        debug!("Got esplora transaction: {}", txid);
+        Ok(result)
+    }
+    
+    /// Get transaction status (already exists as get_transaction_status, but adding esplora-specific version)
+    pub async fn get_esplora_tx_status(&self, txid: &str) -> Result<Value> {
+        debug!("Getting esplora transaction status: {}", txid);
+        
+        let result = self._call("esplora_tx::status", serde_json::json!([txid])).await?;
+        
+        debug!("Got esplora transaction status: {}", txid);
+        Ok(result)
+    }
+    
+    /// Get transaction merkle proof
+    pub async fn get_esplora_tx_merkle_proof(&self, txid: &str) -> Result<Value> {
+        debug!("Getting esplora transaction merkle proof: {}", txid);
+        
+        let result = self._call("esplora_tx::merkle:proof", serde_json::json!([txid])).await?;
+        
+        debug!("Got esplora transaction merkle proof: {}", txid);
+        Ok(result)
+    }
+    
+    /// Get transaction merkle block proof
+    pub async fn get_esplora_tx_merkleblock_proof(&self, txid: &str) -> Result<String> {
+        debug!("Getting esplora transaction merkleblock proof: {}", txid);
+        
+        let result = self._call("esplora_tx::merkleblock:proof", serde_json::json!([txid])).await?;
+        
+        let proof = result.as_str()
+            .context("Invalid merkleblock proof response")?
+            .to_string();
+        
+        debug!("Got esplora transaction merkleblock proof: {}", txid);
+        Ok(proof)
+    }
+    
+    /// Get transaction output spend status
+    pub async fn get_esplora_tx_outspend(&self, txid: &str, index: u32) -> Result<Value> {
+        debug!("Getting esplora transaction outspend: {} index: {}", txid, index);
+        
+        let result = self._call("esplora_tx::outspend", serde_json::json!([txid, index])).await?;
+        
+        debug!("Got esplora transaction outspend: {} index: {}", txid, index);
+        Ok(result)
+    }
+    
+    /// Get transaction output spends
+    pub async fn get_esplora_tx_outspends(&self, txid: &str) -> Result<Value> {
+        debug!("Getting esplora transaction outspends: {}", txid);
+        
+        let result = self._call("esplora_tx::outspends", serde_json::json!([txid])).await?;
+        
+        debug!("Got esplora transaction outspends: {}", txid);
+        Ok(result)
+    }
+    
+    /// Broadcast transaction (already exists as broadcast_transaction, but adding esplora-specific version)
+    pub async fn esplora_broadcast(&self, tx_hex: &str) -> Result<String> {
+        debug!("Broadcasting transaction via esplora");
+        
+        let result = self._call("esplora_broadcast", serde_json::json!([tx_hex])).await?;
+        
+        let txid = result.as_str()
+            .context("Invalid broadcast response")?
+            .to_string();
+        
+        debug!("Transaction broadcast successful via esplora: {}", txid);
+        Ok(txid)
+    }
+    
+    /// Get mempool information
+    pub async fn get_esplora_mempool(&self) -> Result<Value> {
+        debug!("Getting esplora mempool info");
+        
+        let result = self._call("esplora_mempool", serde_json::json!([])).await?;
+        
+        debug!("Got esplora mempool info");
+        Ok(result)
+    }
+    
+    /// Get mempool transaction IDs
+    pub async fn get_esplora_mempool_txids(&self) -> Result<Value> {
+        debug!("Getting esplora mempool txids");
+        
+        let result = self._call("esplora_mempool::txids", serde_json::json!([])).await?;
+        
+        debug!("Got esplora mempool txids");
+        Ok(result)
+    }
+    
+    /// Get recent mempool transactions
+    pub async fn get_esplora_mempool_recent(&self) -> Result<Value> {
+        debug!("Getting esplora mempool recent");
+        
+        let result = self._call("esplora_mempool::recent", serde_json::json!([])).await?;
+        
+        debug!("Got esplora mempool recent");
+        Ok(result)
+    }
+    
+    /// Get fee estimates (already exists as get_fee_estimates, but adding esplora-specific version)
+    pub async fn get_esplora_fee_estimates(&self) -> Result<Value> {
+        debug!("Getting esplora fee estimates");
+        
+        let result = self._call("esplora_fee:estimates", serde_json::json!([])).await?;
+        
+        debug!("Got esplora fee estimates");
+        Ok(result)
     }
 }
 
