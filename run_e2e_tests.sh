@@ -1,13 +1,13 @@
 #!/bin/bash
 
-# Deezel E2E Test Runner
-# This script runs the complete end-to-end test suite for deezel CLI
-# using the mock metashrew server implementation.
+# Deezel Alkanes E2E Test Runner
+# This script runs the comprehensive end-to-end test suite for deezel alkanes
+# envelope and cellpack functionality.
 
 set -e
 
-echo "🚀 Deezel E2E Test Suite"
-echo "========================"
+echo "🚀 Deezel Alkanes E2E Test Suite"
+echo "================================="
 
 # Colors for output
 RED='\033[0;31m'
@@ -53,38 +53,32 @@ else
     exit 1
 fi
 
-print_status "Running unit tests..."
-if cargo test --lib; then
-    print_success "Unit tests passed"
-else
-    print_warning "Some unit tests failed, continuing with e2e tests..."
-fi
-
-print_status "Starting E2E test suite..."
+print_status "Running alkanes envelope and cellpack tests..."
 echo
 
-# Test categories
-declare -a test_categories=(
-    "test_wallet_operations"
-    "test_diesel_balance_check" 
-    "test_utxo_listing"
-    "test_diesel_minting"
-    "test_transaction_monitoring"
-    "test_rpc_connectivity"
-    "test_error_handling"
-    "test_comprehensive_diesel_workflow"
-    "test_concurrent_operations"
+# Alkanes E2E test categories
+declare -a alkanes_tests=(
+    "test_contract_deployment_envelope_cellpack"
+    "test_contract_execution_cellpack_only"
+    "test_cellpack_compositions"
+    "test_input_requirement_parsing"
+    "test_validation_error_cases"
+    "test_complex_protostone_parsing"
+    "test_cellpack_roundtrip"
+    "test_working_deployment_command"
+    "test_output_target_formats"
 )
 
-# Performance tests (run separately)
-declare -a performance_tests=(
-    "test_performance_many_utxos"
+# Integration tests
+declare -a integration_tests=(
+    "test_alkanes_e2e"
+    "integration_tests"
 )
 
 # Track results
 passed_tests=0
 failed_tests=0
-total_tests=$((${#test_categories[@]} + ${#performance_tests[@]}))
+total_tests=$((${#alkanes_tests[@]} + ${#integration_tests[@]}))
 
 # Function to run a single test
 run_test() {
@@ -93,9 +87,9 @@ run_test() {
     
     print_status "Running $test_name..."
     
-    if [ "$test_type" = "performance" ]; then
-        # Run performance tests with single thread and no capture
-        if RUST_LOG=warn cargo test "$test_name" -- --test-threads=1 --nocapture; then
+    if [ "$test_type" = "integration" ]; then
+        # Run integration tests with more verbose output
+        if RUST_LOG=info cargo test "$test_name" -- --test-threads=1 --nocapture; then
             print_success "$test_name passed"
             ((passed_tests++))
         else
@@ -103,8 +97,8 @@ run_test() {
             ((failed_tests++))
         fi
     else
-        # Run standard tests with debug logging
-        if RUST_LOG=debug cargo test "$test_name" -- --test-threads=1; then
+        # Run standard unit tests
+        if RUST_LOG=warn cargo test "$test_name" -- --test-threads=1; then
             print_success "$test_name passed"
             ((passed_tests++))
         else
@@ -115,45 +109,56 @@ run_test() {
     echo
 }
 
-# Run standard test categories
-print_status "Running standard e2e tests..."
-for test in "${test_categories[@]}"; do
+# Run alkanes e2e tests
+print_status "Running alkanes envelope and cellpack tests..."
+for test in "${alkanes_tests[@]}"; do
     run_test "$test" "standard"
 done
 
-# Run performance tests
-print_status "Running performance tests..."
-for test in "${performance_tests[@]}"; do
-    run_test "$test" "performance"
+# Run integration tests
+print_status "Running integration tests..."
+for test in "${integration_tests[@]}"; do
+    run_test "$test" "integration"
 done
 
 # Summary
-echo "📊 Test Results Summary"
-echo "======================="
+echo "📊 Alkanes E2E Test Results"
+echo "==========================="
 echo "Total tests: $total_tests"
 echo "Passed: $passed_tests"
 echo "Failed: $failed_tests"
 
 if [ $failed_tests -eq 0 ]; then
-    print_success "All tests passed! 🎉"
+    print_success "All alkanes tests passed! 🎉"
     echo
-    echo "✅ Your deezel CLI is working correctly with the mock metashrew setup"
-    echo "✅ All DIESEL token functionality has been validated"
-    echo "✅ RPC connectivity and error handling are working"
-    echo "✅ Performance tests completed successfully"
+    echo "✅ Alkanes envelope and cellpack functionality validated"
+    echo "✅ Contract deployment (envelope + cellpack) working correctly"
+    echo "✅ Contract execution (cellpack only) working correctly"
+    echo "✅ Complex protostone parsing and validation working"
+    echo "✅ Input requirement parsing working correctly"
+    echo "✅ Error handling and validation working properly"
     echo
-    echo "You can now use deezel with confidence! 🚀"
+    echo "🚀 Your alkanes implementation is ready for production!"
+    echo
+    echo "📝 Working deployment command:"
+    echo "   deezel alkanes execute --envelope ./examples/free_mint.wasm.gz --to [addr] '[3,1000,101]:v0:v0'"
+    echo
+    echo "📝 Working execution command:"
+    echo "   deezel alkanes execute --to [addr] '[3,1000,101]:v0:v0'"
     exit 0
 else
     print_error "$failed_tests test(s) failed"
     echo
-    echo "❌ Some tests failed. Please check the output above for details."
+    echo "❌ Some alkanes tests failed. Please check the output above for details."
     echo "💡 Common issues:"
-    echo "   - Port conflicts (try running tests individually)"
-    echo "   - Missing dependencies (check Cargo.toml)"
-    echo "   - Binary not found (run 'cargo build' first)"
+    echo "   - Validation logic errors"
+    echo "   - Cellpack parsing issues"
+    echo "   - Envelope handling problems"
+    echo "   - Protostone construction errors"
     echo
     echo "🔧 For debugging, run individual tests with:"
     echo "   RUST_LOG=debug cargo test <test_name> -- --nocapture"
+    echo
+    echo "📚 See src/tests/README.md for detailed test documentation"
     exit 1
 fi

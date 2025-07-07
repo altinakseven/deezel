@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use protorune_support::{
     protostone::{split_bytes, Protostone},
     utils::encode_varint_list,

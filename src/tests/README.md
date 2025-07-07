@@ -1,321 +1,141 @@
-# Deezel E2E Testing with Mock Metashrew
+# Deezel E2E Test Suite
 
-This directory contains a complete end-to-end testing framework for the deezel CLI that uses a mock metashrew server implementation. This allows you to test all deezel functionality without requiring a full metashrew indexer setup.
+This directory contains comprehensive end-to-end tests for deezel alkanes functionality.
 
-## Overview
+## Test Structure
 
-The testing framework consists of several key components:
+### Core Test Modules
 
-### Core Components
+- **`test_alkanes_e2e.rs`** - Comprehensive e2e tests for alkanes envelope and cellpack functionality
+- **`integration_tests.rs`** - Integration tests for core deezel functionality
+- **`e2e_helpers.rs`** - Helper utilities for e2e testing
+- **`mock_metashrew.rs`** - Mock metashrew server for testing
 
-1. **Mock Metashrew Server** (`mock_metashrew.rs`)
-   - Complete RPC server implementation that mimics metashrew behavior
-   - Supports all metashrew RPC methods used by deezel
-   - Provides configurable test data and responses
+### Test Coverage
 
-2. **Test Block Generation** (`test_blocks.rs`)
-   - Utilities for creating Bitcoin test blocks
-   - DIESEL token transaction generation
-   - Mock blockchain state management
+The test suite covers:
 
-3. **E2E Test Helpers** (`e2e_helpers.rs`)
-   - High-level test scenario builder
-   - Deezel CLI command execution
-   - Test environment management
+#### 1. Contract Deployment (Envelope + Cellpack)
+- ✅ Envelope with WASM bytecode in witness data
+- ✅ Cellpack in protostone message to trigger deployment
+- ✅ Validation of correct deployment patterns
+- ✅ Various cellpack compositions and target formats
 
-4. **Integration Tests** (`integration_tests.rs`)
-   - Complete e2e test scenarios
-   - Demonstrates all deezel functionality
-   - Performance and error handling tests
+#### 2. Contract Execution (Cellpack Only)
+- ✅ Cellpack without envelope for existing contract execution
+- ✅ Multiple input patterns and edict structures
+- ✅ Output target validation (v0, p1, split, etc.)
 
-## Architecture
+#### 3. Input Requirements
+- ✅ Bitcoin requirements (B:amount)
+- ✅ Alkanes token requirements (block:tx:amount)
+- ✅ Mixed requirement parsing and validation
 
-The mock metashrew implementation is based on patterns learned from the alkanes-rs and metashrew reference implementations:
+#### 4. Validation Error Cases
+- ✅ Incomplete deployment (envelope without cellpack)
+- ✅ Empty operations (no envelope, no cellpack)
+- ✅ Invalid argument combinations
 
-### From Alkanes-RS Reference
-- Test block creation with [`create_block_with_coinbase_tx()`](../../reference/alkanes-rs/src/tests/helpers.rs:98)
-- Network configuration with [`configure_network()`](../../reference/alkanes-rs/src/tests/helpers.rs:43)
-- State management with [`clear()`](../../reference/alkanes-rs/src/tests/helpers.rs:92) pattern
-- Cellpack and protorune handling
+#### 5. Complex Protostone Parsing
+- ✅ Multi-edict protostones: `[3,797,101]:v0:v0:[4:797:1:p1]:[4:797:2:p2]`
+- ✅ Cellpack encoding/decoding roundtrip
+- ✅ Output target format validation
 
-### From Metashrew Reference
-- WASM runtime patterns from [`MetashrewRuntime`](../../reference/metashrew/crates/metashrew-runtime/src/runtime.rs:253)
-- Host function interface (`__get`, `__flush`, `__load_input`)
-- Storage abstraction with [`KeyValueStoreLike`](../../reference/metashrew/crates/metashrew-runtime/src/traits.rs)
-- Caching and state management from [`metashrew-core`](../../reference/metashrew/crates/metashrew-core/src/lib.rs)
+## Running Tests
 
-## Usage
+### Run All Tests
+```bash
+cargo test
+```
 
-### Running Individual Tests
+### Run Alkanes E2E Tests Only
+```bash
+cargo test test_alkanes_e2e
+```
+
+### Run Specific Test
+```bash
+cargo test test_contract_deployment_envelope_cellpack
+```
+
+### Run with Output
+```bash
+cargo test -- --nocapture
+```
+
+## Test Examples
+
+### Working Deployment Command
+The test suite validates the corrected deployment pattern:
 
 ```bash
-# Run a specific test
-cargo test test_wallet_operations
-
-# Run all integration tests
-cargo test integration_tests
-
-# Run with debug output
-RUST_LOG=debug cargo test test_comprehensive_diesel_workflow -- --nocapture
+deezel alkanes execute \
+    --envelope ./examples/free_mint.wasm.gz \
+    --to [address] \
+    '[3,1000,101]:v0:v0'
 ```
 
-### Running All E2E Tests
+This command:
+1. ✅ Passes validation (envelope + cellpack = deployment)
+2. ✅ Creates commit transaction with envelope script
+3. ✅ Creates reveal transaction with envelope witness AND protostone
+4. ✅ Deploys new contract to `[4,1000]`
+5. ✅ Provides trace from reveal txid + vout
+
+### Execution Command
+For executing existing contracts:
 
 ```bash
-# Run all tests in the tests module
-cargo test tests::
-
-# Run with parallel execution disabled (recommended for e2e tests)
-cargo test tests:: -- --test-threads=1
+deezel alkanes execute \
+    --to [address] \
+    '[3,1000,101]:v0:v0'
 ```
 
-### Creating Custom Test Scenarios
+This command:
+1. ✅ Executes existing contract `[3,1000]` with input `101`
+2. ✅ No new contract deployment
+3. ✅ Single transaction without envelope
 
-```rust
-use deezel_cli::tests::{
-    TestConfig,
-    e2e_helpers::{E2ETestScenario, TestStep},
-    test_blocks::create_test_utxos,
-};
+## Key Insights from alkanes-rs Reference
 
-#[tokio::test]
-async fn my_custom_test() -> Result<()> {
-    let config = TestConfig {
-        start_height: 840000,
-        network: "regtest".to_string(),
-        rpc_port: 18091, // Use unique port for each test
-        debug: true,
-    };
+The test suite validates the correct alkanes deployment pattern based on the alkanes-rs reference implementation:
 
-    let test_address = "bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080";
-    let test_utxos = create_test_utxos(test_address, 1, 100000000);
+1. **Contract deployment requires BOTH**:
+   - Envelope with WASM bytecode (accessed via `find_witness_payload`)
+   - Cellpack in protostone message (triggers `cellpack.target.is_create()`)
 
-    E2ETestScenario::new(config).await?
-        .step(TestStep::CreateWallet { 
-            name: "my_wallet".to_string() 
-        })
-        .step(TestStep::AddUtxos { 
-            address: test_address.to_string(), 
-            utxos: test_utxos 
-        })
-        .step(TestStep::RunCommand { 
-            args: vec![
-                "balance".to_string(),
-                "--address".to_string(), 
-                test_address.to_string()
-            ], 
-            expect_success: true 
-        })
-        .execute()
-        .await
-}
-```
+2. **Contract execution requires**:
+   - Cellpack only (no envelope)
+   - Targets existing contract
 
-## Test Data Management
+3. **Trace calculation**:
+   - For protostones: `vout = tx.output.len() + 1 + protostone_index`
 
-### Mock UTXOs
+## Mock Environment
 
-```rust
-use deezel_cli::tests::{
-    mock_metashrew::add_mock_utxos,
-    test_blocks::create_test_utxos,
-    MockUtxo,
-};
+The test suite uses mock implementations for:
+- Bitcoin RPC server
+- Metashrew indexer
+- Wallet management
+- Transaction broadcasting
 
-// Create test UTXOs
-let utxos = vec![
-    MockUtxo {
-        txid: "abc123...".to_string(),
-        vout: 0,
-        amount: 100000000, // 1 BTC in sats
-        script_pubkey: "76a914...88ac".to_string(),
-        confirmations: 6,
-    }
-];
+This allows comprehensive testing without requiring a full Bitcoin node setup.
 
-// Add to mock server
-add_mock_utxos("bcrt1q...", utxos)?;
-```
+## Contributing
 
-### Mock DIESEL Balances
+When adding new tests:
 
-```rust
-use deezel_cli::tests::mock_metashrew::add_mock_protorune_balance;
-
-// Add DIESEL balance for an address
-add_mock_protorune_balance(
-    "bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080",
-    "2:0", // DIESEL rune ID
-    50000000 // 0.5 DIESEL in base units
-)?;
-```
-
-### Mock Block Heights
-
-```rust
-use deezel_cli::tests::mock_metashrew::set_mock_height;
-
-// Set current block height
-set_mock_height(840001)?;
-```
-
-## Supported RPC Methods
-
-The mock metashrew server implements all RPC methods used by deezel:
-
-### Core Methods
-- `metashrew_height` - Get current block height
-- `metashrew_view` - Generic view function calls
-- `spendablesbyaddress` - Get UTXOs for an address
-- `alkanes_protorunesbyaddress` - Get DIESEL balances
-- `alkanes_protorunesbyoutpoint` - Get protorunes for specific outpoint
-- `alkanes_trace` - Trace DIESEL transactions
-- `alkanes_simulate` - Simulate contract execution
-- `alkanes_meta` - Get contract metadata
-- `esplora_gettransaction` - Get transaction data
-
-### View Functions
-- `getblock` - Get block data
-- `getbytecode` - Get contract bytecode
-- `traceblock` - Trace entire block
-- `spendablesbyaddress` - Address UTXO lookup
-- `protorunesbyaddress` - Address protorune lookup
-- `protorunesbyoutpoint` - Outpoint protorune lookup
-- `trace` - Transaction trace
-
-## Test Configuration
-
-### TestConfig Options
-
-```rust
-pub struct TestConfig {
-    /// Starting block height for tests
-    pub start_height: u32,
-    /// Network type (regtest, testnet, mainnet)
-    pub network: String,
-    /// Mock RPC server port (use unique port per test)
-    pub rpc_port: u16,
-    /// Enable debug logging
-    pub debug: bool,
-}
-```
-
-### Environment Variables
-
-The test framework sets these environment variables for deezel CLI:
-
-- `DEEZEL_BITCOIN_RPC_URL` - Bitcoin RPC endpoint
-- `DEEZEL_METASHREW_RPC_URL` - Metashrew RPC endpoint (mock server)
-- `DEEZEL_WALLET_DIR` - Temporary wallet directory
-- `RUST_LOG` - Logging level (if debug enabled)
-
-## Best Practices
-
-### Port Management
-- Use unique ports for each test to avoid conflicts
-- Ports 18081-18099 are reserved for tests
-- Tests run in parallel by default
-
-### Test Isolation
-- Each test gets its own temporary directory
-- Mock server state is isolated per test
-- Use `clear_test_state()` if needed
-
-### Error Handling
-- Always use `expect_success: false` for negative tests
-- Check both stdout and stderr in assertions
-- Use `assert_output_contains()` for specific checks
-
-### Performance
-- Disable debug logging for performance tests
-- Use fewer UTXOs for faster tests
-- Consider `--test-threads=1` for complex scenarios
+1. Follow the existing test structure
+2. Use descriptive test names
+3. Include both positive and negative test cases
+4. Add documentation for complex test scenarios
+5. Ensure tests are deterministic and isolated
 
 ## Debugging
 
-### Enable Debug Logging
+For debugging test failures:
 
-```bash
-RUST_LOG=debug cargo test test_name -- --nocapture
-```
-
-### Mock Server Debugging
-
-The mock server logs all incoming requests and responses when debug is enabled:
-
-```
-[DEBUG] Received request: {"jsonrpc":"2.0","method":"metashrew_height","params":[],"id":1}
-[DEBUG] Handling RPC method: metashrew_height
-```
-
-### CLI Command Debugging
-
-Test output includes full command execution details:
-
-```
-[DEBUG] Running deezel command: "target/debug/deezel" with args: ["balance", "--address", "bcrt1q..."]
-[DEBUG] Command output - stdout: {...}, stderr: {...}
-```
-
-## Extending the Framework
-
-### Adding New RPC Methods
-
-1. Add method handler in `mock_metashrew.rs`:
-
-```rust
-async fn handle_new_method(params: &Value, state: Arc<Mutex<TestState>>) -> Result<Value> {
-    // Implementation
-    Ok(json!({"result": "success"}))
-}
-```
-
-2. Add to method dispatcher:
-
-```rust
-match method {
-    // ... existing methods
-    "new_method" => Self::handle_new_method(params, state).await,
-    _ => Err(anyhow!("Unknown method: {}", method)),
-}
-```
-
-### Adding New Test Steps
-
-1. Add step type in `e2e_helpers.rs`:
-
-```rust
-pub enum TestStep {
-    // ... existing steps
-    NewStep { param: String },
-}
-```
-
-2. Add execution logic:
-
-```rust
-match step {
-    // ... existing steps
-    TestStep::NewStep { param } => {
-        // Implementation
-    }
-}
-```
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Port conflicts**: Use unique ports for each test
-2. **Binary not found**: Run `cargo build` before tests
-3. **Server startup timeout**: Increase wait time in `wait_for_metashrew_ready()`
-4. **Test isolation**: Ensure each test uses its own `TestConfig`
-
-### Getting Help
-
-- Check the integration tests for examples
-- Enable debug logging for detailed output
-- Review the reference implementations in `./reference/`
-- Look at the alkanes-rs test patterns for inspiration
-
-This mock metashrew setup provides everything needed to test deezel end-to-end without external dependencies, making it perfect for CI/CD, development testing, and feature validation.
+1. Run with `--nocapture` to see println! output
+2. Check the mock server logs
+3. Verify test data setup
+4. Use `cargo test -- --test-threads=1` for sequential execution

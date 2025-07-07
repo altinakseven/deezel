@@ -11,16 +11,14 @@ use anyhow::{Context, Result, anyhow};
 use bitcoin::{
     Network, Address, Txid, OutPoint, TxOut, TxIn, Transaction, Witness,
     PrivateKey, PublicKey, CompressedPublicKey,
-    script::{PushBytesBuf, Builder},
-    opcodes::all::{OP_DUP, OP_HASH160, OP_EQUALVERIFY, OP_CHECKSIG},
     sighash::{SighashCache, EcdsaSighashType, Prevouts},
     absolute::LockTime,
     Sequence, Amount, ScriptBuf,
 };
-use bitcoin::bip32::{ExtendedPrivKey, ExtendedPubKey, DerivationPath, ChildNumber};
-use bitcoin::secp256k1::{Secp256k1, Message, SecretKey, All};
-use bip39::{Mnemonic, Language};
-use serde::{Serialize, Deserialize};
+use bitcoin::bip32::{Xpriv, Xpub, DerivationPath, ChildNumber};
+use bitcoin::secp256k1::{Secp256k1, Message, All};
+use bip39::Mnemonic;
+use serde::Serialize;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -28,7 +26,7 @@ use tokio::sync::Mutex;
 use log::{debug, info, warn};
 
 use crate::rpc::RpcClient;
-use super::crypto::{WalletCrypto, WalletData, EncryptedWalletData};
+use super::crypto::{WalletCrypto, WalletData};
 
 /// Bitcoin wallet configuration
 #[derive(Clone, Debug)]
@@ -188,9 +186,9 @@ pub struct BitcoinWallet {
     /// Wallet configuration
     config: BitcoinWalletConfig,
     /// Master extended private key
-    master_xprv: ExtendedPrivKey,
+    master_xprv: Xpriv,
     /// Master extended public key
-    master_xpub: ExtendedPubKey,
+    master_xpub: Xpub,
     /// Secp256k1 context
     secp: Secp256k1<All>,
     /// RPC client for blockchain data
@@ -220,11 +218,11 @@ impl BitcoinWallet {
         let seed = mnemonic.to_seed(""); // No passphrase for BIP39
         
         // Create master extended private key
-        let master_xprv = ExtendedPrivKey::new_master(config.network, &seed)
+        let master_xprv = Xpriv::new_master(config.network, &seed)
             .context("Failed to create master extended private key")?;
         
         // Derive master extended public key
-        let master_xpub = ExtendedPubKey::from_priv(&secp, &master_xprv);
+        let master_xpub = Xpub::from_priv(&secp, &master_xprv);
         
         info!("Wallet created successfully");
         debug!("Master public key: {}", master_xpub);
@@ -283,12 +281,12 @@ impl BitcoinWallet {
     }
     
     /// Get the master extended private key
-    pub fn get_master_xprv(&self) -> ExtendedPrivKey {
+    pub fn get_master_xprv(&self) -> Xpriv {
         self.master_xprv
     }
     
     /// Get the master extended public key
-    pub fn get_master_xpub(&self) -> ExtendedPubKey {
+    pub fn get_master_xpub(&self) -> Xpub {
         self.master_xpub
     }
     
@@ -719,7 +717,7 @@ impl BitcoinWallet {
     /// Get UTXOs for a specific address with proper confirmation calculation
     async fn get_utxos_for_address(&self, address: &str, current_height: u64) -> Result<Vec<UtxoInfo>> {
         let frozen_utxos = self.frozen_utxos.lock().await;
-        let mut utxo_infos = Vec::new();
+        let utxo_infos = Vec::new();
         
         info!("🔍 Fetching UTXOs for address: {}", address);
         
@@ -988,7 +986,7 @@ impl BitcoinWallet {
     }
     
     /// Check if a UTXO is spent by looking for spending transactions
-    async fn check_if_utxo_is_spent(&self, txid: &str, vout: u32) -> Result<bool> {
+    async fn check_if_utxo_is_spent(&self, _txid: &str, _vout: u32) -> Result<bool> {
         // For now, assume UTXOs are unspent since we don't have a direct way to check
         // In a full implementation, we would check if this outpoint appears as an input in any transaction
         Ok(false)
@@ -1807,7 +1805,7 @@ impl BitcoinWallet {
                 "p2tr" => {
                     // P2TR (Taproot) signing - following rust-bitcoin cookbook
                     use bitcoin::sighash::TapSighashType;
-                    use bitcoin::secp256k1::{Keypair, schnorr::Signature};
+                    use bitcoin::secp256k1::Keypair;
                     use bitcoin::key::{TapTweak, UntweakedKeypair};
                     use bitcoin::taproot;
                     
@@ -2012,9 +2010,9 @@ impl BitcoinWallet {
     
     /// Sign a PSBT using the wallet
     pub async fn sign_psbt(&self, psbt: &bitcoin::psbt::Psbt) -> Result<bitcoin::psbt::Psbt> {
-        use bitcoin::psbt::Psbt;
-        use bitcoin::sighash::{SighashCache, TapSighashType, EcdsaSighashType, Prevouts};
-        use bitcoin::secp256k1::{Keypair, schnorr::Signature, Message};
+        
+        use bitcoin::sighash::{SighashCache, TapSighashType, Prevouts};
+        use bitcoin::secp256k1::{Keypair, Message};
         use bitcoin::key::{TapTweak, UntweakedKeypair};
         use bitcoin::taproot;
         use bitcoin::bip32::{DerivationPath, ChildNumber};
@@ -2050,7 +2048,7 @@ impl BitcoinWallet {
             debug!("Input {}: address type = {}", i, address_type);
             
             // Create a dummy UTXO info to find derivation path
-            let dummy_utxo = UtxoInfo {
+            let _dummy_utxo = UtxoInfo {
                 txid: signed_psbt.unsigned_tx.input[i].previous_output.txid.to_string(),
                 vout: signed_psbt.unsigned_tx.input[i].previous_output.vout,
                 amount: witness_utxo.value.to_sat(),
@@ -2070,7 +2068,7 @@ impl BitcoinWallet {
                     .ok_or_else(|| anyhow!("Missing tap_internal_key for taproot script spend"))?;
                 
                 // Get the script and control block from tap_scripts
-                let (control_block, (script, leaf_version)) = input.tap_scripts.iter().next()
+                let (_control_block, (script, leaf_version)) = input.tap_scripts.iter().next()
                     .ok_or_else(|| anyhow!("Missing tap_scripts for taproot script spend"))?;
                 
                 // Create sighash for script spend

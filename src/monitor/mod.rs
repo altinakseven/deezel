@@ -6,7 +6,7 @@
 //! - Transaction confirmation tracking
 //! - Event notifications for new blocks
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use log::{debug, info, warn, error};
 use std::sync::Arc;
 use std::time::Duration;

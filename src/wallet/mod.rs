@@ -12,28 +12,15 @@ pub mod crypto;
 pub mod bitcoin_wallet;
 mod esplora_backend;
 
-use anyhow::{Context, Result, anyhow};
-use bitcoin::{Network, Address, Txid, OutPoint, TxOut, TxIn, Transaction, Witness};
-use bitcoin::secp256k1::{Secp256k1, Message, SecretKey, PublicKey};
-use bitcoin::sighash::{SighashCache, EcdsaSighashType};
-use bitcoin::script::Builder;
-use bitcoin::opcodes::all::OP_DUP;
-use bitcoin::hashes::{Hash, sha256d};
-use bitcoin::ecdsa::Signature;
-use bip39::{Mnemonic, Language};
+use anyhow::{Result, anyhow};
+use bitcoin::{Network, Transaction};
 use log::{debug, info, warn};
-use serde::{Serialize, Deserialize};
-use std::collections::HashMap;
 use std::path::Path;
-use std::str::FromStr;
 use std::sync::Arc;
-use tokio::sync::Mutex;
-use tokio::fs;
 
 use crate::rpc::RpcClient;
 use self::esplora_backend::SandshrewEsploraBackend;
 use self::bitcoin_wallet::{BitcoinWallet, BitcoinWalletConfig};
-use self::crypto::{WalletCrypto, WalletData, EncryptedWalletData};
 use crate::alkanes::fee_validation::{validate_transaction_fee_rate, suggest_fee_adjustments};
 use protorune_support::network::NetworkParams as CustomNetworkParams;
 

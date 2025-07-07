@@ -1808,7 +1808,7 @@ async fn main() -> Result<()> {
             },
         },
         Commands::Monitor { command } => match command {
-            MonitorCommands::Blocks { start, raw } => {
+            MonitorCommands::Blocks { start, raw: _ } => {
                 let start_height = start.unwrap_or_else(|| {
                     // Get current height as default
                     0 // Placeholder - would need async context

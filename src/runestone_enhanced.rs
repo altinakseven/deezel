@@ -18,7 +18,6 @@ use ordinals::{Artifact, Runestone};
 use protorune_support::protostone::Protostone;
 use protorune_support::utils::decode_varint_list;
 use hex;
-use std::str::FromStr;
 use std::io::Cursor;
 
 

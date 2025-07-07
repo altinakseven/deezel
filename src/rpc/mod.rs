@@ -15,9 +15,7 @@ use std::time::Duration;
 use alkanes_support::proto::alkanes::{
     BlockRequest, BlockResponse, BytecodeRequest, TraceBlockRequest
 };
-use protorune_support::proto::protorune::{
-    WalletRequest, OutpointResponse
-};
+use protorune_support::proto::protorune::OutpointResponse;
 use protobuf::Message;
 
 /// RPC client configuration
@@ -1683,7 +1681,7 @@ impl RpcClient {
         vout: u32,
         pointer: u32,
         refund_pointer: u32,
-        block_tag: &str
+        _block_tag: &str
     ) -> Result<Value> {
         debug!("Simulating contract execution with detailed parameters");
         

@@ -96,13 +96,13 @@ impl NetworkParams {
     pub fn from_magic(magic: &str) -> Result<Self, String> {
         // First try to parse as a network name
         match magic.to_lowercase().as_str() {
-            "mainnet" => return Ok(Self::mainnet()),
-            "testnet" => return Ok(Self::testnet()),
-            "signet" => return Ok(Self::signet()),
-            "regtest" => return Ok(Self::regtest()),
-            "dogecoin" | "doge" => return Ok(Self::dogecoin()),
-            "luckycoin" | "lucky" => return Ok(Self::luckycoin()),
-            "bellscoin" | "bells" => return Ok(Self::bellscoin()),
+            "mainnet" => Ok(Self::mainnet()),
+            "testnet" => Ok(Self::testnet()),
+            "signet" => Ok(Self::signet()),
+            "regtest" => Ok(Self::regtest()),
+            "dogecoin" | "doge" => Ok(Self::dogecoin()),
+            "luckycoin" | "lucky" => Ok(Self::luckycoin()),
+            "bellscoin" | "bells" => Ok(Self::bellscoin()),
             _ => {
                 // If not a network name, try to parse as magic format
                 let parts: Vec<&str> = magic.split(':').collect();
@@ -122,16 +122,14 @@ impl NetworkParams {
                 let bech32_prefix = parts[2].to_string();
                 
                 // Default to Bitcoin network for custom magic values
-                return Ok(Self {
+                Ok(Self {
                     bech32_prefix,
                     p2pkh_prefix,
                     p2sh_prefix,
                     network: Network::Bitcoin,
-                });
+                })
             }
         }
-
-        Err(format!("Invalid magic format: {}", magic))
     }
 
     /// Convert to protorune_support::network::NetworkParams

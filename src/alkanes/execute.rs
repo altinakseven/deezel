@@ -20,7 +20,6 @@ use crate::wallet::WalletManager;
 use crate::runestone_enhanced::{format_runestone_with_decoded_messages, print_human_readable_runestone};
 use super::types::*;
 use super::envelope::AlkanesEnvelope;
-use super::fee_validation::{validate_transaction_fee_rate, create_fee_adjusted_transaction};
 use alkanes_support::cellpack::Cellpack;
 use ordinals::Runestone;
 
@@ -114,40 +113,38 @@ impl EnhancedAlkanesExecutor {
 
     /// Execute an enhanced alkanes transaction with commit/reveal pattern
     pub async fn execute(&self, params: EnhancedExecuteParams) -> Result<EnhancedExecuteResult> {
-        info!("Starting enhanced alkanes execution with commit/reveal pattern");
+        info!("Starting enhanced alkanes execution");
         
-        // CRITICAL FIX: Validate that envelope and cellpack usage is correct
+        // Validate that envelope and cellpack usage is correct
         self.validate_envelope_cellpack_usage(&params)?;
         
         if params.envelope_data.is_some() {
             // Contract deployment with envelope BIN data
-            info!("🚀 CONTRACT DEPLOYMENT: Using envelope with BIN data for contract deployment");
+            info!("CONTRACT DEPLOYMENT: Using envelope with BIN data for contract deployment");
             let envelope_data = params.envelope_data.as_ref().unwrap();
-            info!("📦 Envelope data size: {} bytes", envelope_data.len());
+            info!("Envelope data size: {} bytes", envelope_data.len());
             
             let envelope = AlkanesEnvelope::for_contract(envelope_data.clone());
-            info!("🏷️  Created AlkanesEnvelope with BIN protocol tag and gzip compression for contract deployment");
+            info!("Created AlkanesEnvelope with BIN protocol tag and gzip compression");
             
             self.execute_commit_reveal_pattern(&params, &envelope).await
         } else {
             // Contract execution without envelope
-            info!("⚡ CONTRACT EXECUTION: Single transaction without envelope");
+            info!("CONTRACT EXECUTION: Single transaction without envelope");
             self.execute_single_transaction(&params).await
         }
     }
 
 
     /// Execute commit/reveal transaction pattern with proper script-path spending
-    /// CORRECTED: Uses proper commit/reveal with script-path spending and 3-element witness
     async fn execute_commit_reveal_pattern(
         &self,
         params: &EnhancedExecuteParams,
         envelope: &AlkanesEnvelope
     ) -> Result<EnhancedExecuteResult> {
-        info!("🔧 CORRECTED: Using proper commit/reveal pattern with script-path spending");
-        info!("🎯 Step 1: Create commit transaction with envelope script in taproot tree");
-        info!("🎯 Step 2: Create reveal transaction with script-path spending and 3-element witness");
-        info!("🎯 Witness structure: [signature, BIN_envelope_script, control_block]");
+        info!("Using commit/reveal pattern with script-path spending");
+        info!("Step 1: Create commit transaction with envelope script in taproot tree");
+        info!("Step 2: Create reveal transaction with script-path spending and 3-element witness");
         
         // Step 1: Create and broadcast commit transaction
         let (commit_txid, commit_fee, commit_outpoint) = self.create_and_broadcast_commit_transaction(
@@ -200,8 +197,8 @@ impl EnhancedAlkanesExecutor {
             reveal_txid,
             commit_fee: Some(commit_fee),
             reveal_fee,
-            inputs_used: vec![], // TODO: populate with actual inputs
-            outputs_created: vec![], // TODO: populate with actual outputs
+            inputs_used: vec![], // Will be populated in future versions
+            outputs_created: vec![], // Will be populated in future versions
             traces,
         })
     }
@@ -296,23 +293,23 @@ impl EnhancedAlkanesExecutor {
             reveal_txid: txid,
             commit_fee: None,
             reveal_fee: fee,
-            inputs_used: vec![], // TODO: populate with actual inputs
-            outputs_created: vec![], // TODO: populate with actual outputs
+            inputs_used: vec![], // Will be populated in future versions
+            outputs_created: vec![], // Will be populated in future versions
             traces,
         })
     }
 
     /// Validate envelope and cellpack usage according to alkanes-rs reference implementation
-    /// CORRECTED: Contract deployment requires BOTH envelope (WASM in witness) AND cellpack (deployment trigger)
+    /// Contract deployment requires BOTH envelope (WASM in witness) AND cellpack (deployment trigger)
     fn validate_envelope_cellpack_usage(&self, params: &EnhancedExecuteParams) -> Result<()> {
         let has_envelope = params.envelope_data.is_some();
         let has_cellpacks = params.protostones.iter().any(|p| p.cellpack.is_some());
         
         if has_envelope && has_cellpacks {
-            // CORRECTED: This is the CORRECT pattern for alkanes contract deployment!
+            // This is the correct pattern for alkanes contract deployment
             // Based on alkanes-rs reference: find_witness_payload + cellpack.target.is_create()
-            info!("✅ ALKANES CONTRACT DEPLOYMENT: Envelope (WASM in witness) + Cellpack (deployment trigger)");
-            info!("🔍 This matches alkanes-rs pattern: find_witness_payload(&tx, 0) + cellpack.target.is_create()");
+            info!("ALKANES CONTRACT DEPLOYMENT: Envelope (WASM in witness) + Cellpack (deployment trigger)");
+            info!("This matches alkanes-rs pattern: find_witness_payload(&tx, 0) + cellpack.target.is_create()");
             
             // Validate that cellpacks are appropriate for deployment
             for (i, protostone) in params.protostones.iter().enumerate() {
@@ -733,9 +730,9 @@ impl EnhancedAlkanesExecutor {
             
             // Create the Protostone with proper structure
             let protostone = Protostone {
-                burn: None, // TODO: Handle burn if needed
+                burn: None, // Burn functionality not implemented yet
                 message,
-                edicts: Vec::new(), // TODO: Convert ProtostoneEdict to protorune_support::protostone::ProtostoneEdict
+                edicts: Vec::new(), // Edict conversion not implemented yet
                 refund: Some(0), // Default refund to output 0
                 pointer: Some(0), // Default pointer to output 0
                 from: None,
@@ -807,7 +804,7 @@ impl EnhancedAlkanesExecutor {
         outputs.push(op_return_output);
         
         // Create PSBT for proper signing (same pattern as envelope version)
-        let network = self.wallet_manager.get_network();
+        let _network = self.wallet_manager.get_network();
         let mut psbt = Psbt::from_unsigned_tx(bitcoin::Transaction {
             version: bitcoin::transaction::Version::TWO,
             lock_time: bitcoin::absolute::LockTime::ZERO,
@@ -904,7 +901,7 @@ impl EnhancedAlkanesExecutor {
         outputs.push(op_return_output);
         
         // Create PSBT for proper signing
-        let network = self.wallet_manager.get_network();
+        let _network = self.wallet_manager.get_network();
         let mut psbt = Psbt::from_unsigned_tx(bitcoin::Transaction {
             version: bitcoin::transaction::Version::TWO,
             lock_time: bitcoin::absolute::LockTime::ZERO,
@@ -1001,7 +998,7 @@ impl EnhancedAlkanesExecutor {
             info!("🔧 CRITICAL: Processing envelope with BIN data for first input");
             info!("🏷️  Envelope contains BIN protocol data that will be embedded in first input witness");
             
-            let mut final_tx = tx.clone();
+            let final_tx = tx.clone();
             
             // Get the actual internal key used in the transaction
             let internal_key = self.wallet_manager.get_internal_key().await?;
@@ -1207,12 +1204,12 @@ impl EnhancedAlkanesExecutor {
                                         
                                         // Use the proper rust-bitcoin taproot signing pattern
                                         use bitcoin::sighash::{SighashCache, TapSighashType, Prevouts};
-                                        use bitcoin::secp256k1::{Keypair, Message};
+                                        use bitcoin::secp256k1::Message;
                                         use bitcoin::key::{TapTweak, UntweakedKeypair};
                                         use bitcoin::taproot;
                                         
                                         // Get the wallet's internal key for P2TR
-                                        let internal_key = self.wallet_manager.get_internal_key().await?;
+                                        let _internal_key = self.wallet_manager.get_internal_key().await?;
                                         
                                         // Create prevouts for sighash calculation
                                         let prevout = bitcoin::TxOut {
@@ -1545,7 +1542,7 @@ impl EnhancedAlkanesExecutor {
             outputs.push(change_output);
         }
         
-        let mut commit_tx = Transaction {
+        let _commit_tx = Transaction {
             version: bitcoin::transaction::Version::TWO,
             lock_time: bitcoin::absolute::LockTime::ZERO,
             input: vec![commit_input],
@@ -1623,7 +1620,7 @@ impl EnhancedAlkanesExecutor {
         info!("Building reveal transaction with envelope");
         
         // Clone selected_utxos for fee validation since build_transaction_with_envelope takes ownership
-        let selected_utxos_for_validation = selected_utxos.clone();
+        let _selected_utxos_for_validation = selected_utxos.clone();
         
         let (signed_tx, final_fee) = self.build_transaction_with_envelope(
             selected_utxos,
@@ -2200,7 +2197,7 @@ impl EnhancedAlkanesExecutor {
         network: bitcoin::Network,
         internal_key: bitcoin::XOnlyPublicKey,
     ) -> Result<bitcoin::Address> {
-        use bitcoin::taproot::{TaprootBuilder, LeafVersion};
+        use bitcoin::taproot::TaprootBuilder;
         
         // Build the reveal script
         let reveal_script = envelope.build_reveal_script();
@@ -2386,7 +2383,7 @@ impl EnhancedAlkanesExecutor {
         self.validate_protostones(&params.protostones, params.to_addresses.len())?;
         
         // Step 2: Check if commit output has sufficient Bitcoin value for single input optimization
-        let mut all_inputs = vec![commit_outpoint]; // Start with commit input
+        let all_inputs = vec![commit_outpoint]; // Start with commit input
         
         // Calculate total Bitcoin needed for reveal transaction
         let mut total_bitcoin_needed = 0u64;
@@ -2668,7 +2665,7 @@ impl EnhancedAlkanesExecutor {
         // CRITICAL: Create witnesses for all inputs
         info!("🔧 Creating witnesses for {} inputs", tx.input.len());
         
-        for (i, input_outpoint) in all_inputs.iter().enumerate() {
+        for (i, _input_outpoint) in all_inputs.iter().enumerate() {
             if i == 0 {
                 // First input: script-path spending with 3-element witness
                 info!("🔧 Creating 3-element witness for commit input: [signature, BIN_envelope_script, control_block]");

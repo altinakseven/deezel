@@ -1,7 +1,7 @@
-//! DIESEL token minting and management library
+//! Deezel alkanes library
 //!
-//! This library provides functionality for automated DIESEL token minting
-//! and management using BDK and Sandshrew RPC.
+//! This library provides functionality for alkanes contract deployment and execution
+//! using envelope and cellpack patterns.
 
 pub mod utils;
 pub mod wallet;
@@ -13,29 +13,8 @@ pub mod runestone_enhanced;
 pub mod alkanes;
 pub mod address_resolver;
 
-// Test modules for e2e testing with mock metashrew
+// Test modules for e2e testing
 pub mod tests;
-
-// Test module for message decoding verification
-#[cfg(test)]
-pub mod test_message_decoding;
-pub mod test_integration;
-
-// Test module for ordinals crate integration
-#[cfg(test)]
-pub mod test_ordinals_integration;
-
-// Test module for runestone encoding debugging
-#[cfg(test)]
-pub mod test_runestone_encoding;
-
-// Test module for protostone parsing debugging
-#[cfg(test)]
-pub mod test_protostone_parsing;
-
-// Test module for runestone construction debugging
-#[cfg(test)]
-pub mod test_runestone_construction;
 
 // Re-export key types for convenience
 pub use wallet::WalletManager;

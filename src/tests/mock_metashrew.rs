@@ -209,7 +209,7 @@ impl MockMetashrewServer {
             .ok_or_else(|| anyhow!("Address must be a string"))?;
 
         let state_guard = state.lock().unwrap();
-        let balances = state_guard.protorune_balances.get(address).cloned().unwrap_or_default();
+        let balances = state_guard.alkanes_balances.get(address).cloned().unwrap_or_default();
 
         // Convert to expected protorune format
         let protorunes: Vec<Value> = balances.iter().map(|(rune_id, amount)| {
@@ -334,7 +334,7 @@ impl MockMetashrewServer {
 
         // For now, return a mock block response
         let state_guard = state.lock().unwrap();
-        let current_height = state_guard.height;
+        let _current_height = state_guard.height;
 
         // Create a mock block response
         let mock_block_data = vec![0u8; 80]; // Mock 80-byte block header
@@ -439,7 +439,7 @@ pub fn add_mock_protorune_balance(address: &str, rune_id: &str, amount: u64) -> 
     let state = get_test_state()?;
     let mut state_guard = state.lock().unwrap();
     
-    let balances = state_guard.protorune_balances
+    let balances = state_guard.alkanes_balances
         .entry(address.to_string())
         .or_insert_with(HashMap::new);
     balances.insert(rune_id.to_string(), amount);

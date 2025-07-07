@@ -3,15 +3,8 @@
 //! These tests demonstrate end-to-end functionality of the deezel CLI
 //! using the mock metashrew server implementation.
 
-use anyhow::Result;
-use std::time::Duration;
 use tokio;
 
-use super::{
-    TestConfig, 
-    e2e_helpers::{E2ETestScenario, TestStep},
-    test_blocks::create_test_utxos,
-};
 
 /// Test basic wallet operations
 #[tokio::test]
@@ -82,7 +75,7 @@ async fn test_utxo_listing() -> Result<()> {
     };
 
     let test_address = "bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080";
-    let test_utxos = create_test_utxos(test_address, 3, 100000000); // 3 UTXOs of 1 BTC each
+    let test_utxos = create_test_utxos(test_address, 3); // 3 UTXOs of varying amounts
 
     E2ETestScenario::new(config).await?
         .step(TestStep::CreateWallet { 
@@ -115,7 +108,7 @@ async fn test_diesel_minting() -> Result<()> {
     };
 
     let test_address = "bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080";
-    let test_utxos = create_test_utxos(test_address, 1, 100000000); // 1 UTXO of 1 BTC
+    let test_utxos = create_test_utxos(test_address, 1); // 1 UTXO
 
     E2ETestScenario::new(config).await?
         .step(TestStep::CreateWallet { 
@@ -231,7 +224,7 @@ async fn test_comprehensive_diesel_workflow() -> Result<()> {
     };
 
     let test_address = "bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080";
-    let test_utxos = create_test_utxos(test_address, 2, 100000000); // 2 UTXOs of 1 BTC each
+    let test_utxos = create_test_utxos(test_address, 2); // 2 UTXOs
 
     E2ETestScenario::new(config).await?
         // Setup
@@ -324,8 +317,8 @@ async fn test_concurrent_operations() -> Result<()> {
     let test_address1 = "bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080";
     let test_address2 = "bcrt1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3";
     
-    let test_utxos1 = create_test_utxos(test_address1, 1, 100000000);
-    let test_utxos2 = create_test_utxos(test_address2, 1, 100000000);
+    let test_utxos1 = create_test_utxos(test_address1, 1);
+    let test_utxos2 = create_test_utxos(test_address2, 1);
 
     E2ETestScenario::new(config).await?
         .step(TestStep::CreateWallet { 
@@ -381,7 +374,7 @@ async fn test_performance_many_utxos() -> Result<()> {
     };
 
     let test_address = "bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080";
-    let test_utxos = create_test_utxos(test_address, 100, 1000000); // 100 UTXOs of 0.01 BTC each
+    let test_utxos = create_test_utxos(test_address, 100); // 100 UTXOs
 
     E2ETestScenario::new(config).await?
         .step(TestStep::CreateWallet { 

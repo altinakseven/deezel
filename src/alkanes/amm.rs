@@ -1,6 +1,6 @@
 //! AMM/DEX functionality for alkanes
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use log::{debug, info};
 use std::sync::Arc;
 

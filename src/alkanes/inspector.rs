@@ -14,7 +14,6 @@ use crate::rpc::RpcClient;
 use super::types::AlkaneId;
 use wasmtime::*;
 use alkanes_support::{
-    cellpack::Cellpack,
     id::AlkaneId as AlkanesAlkaneId,
     parcel::AlkaneTransferParcel,
     trace::Trace,
@@ -699,7 +698,7 @@ impl AlkaneInspector {
             .context("Failed to instantiate WASM module")?;
         
         // Get memory export
-        let memory = instance.get_export(&mut store, "memory")
+        let _memory = instance.get_export(&mut store, "memory")
             .and_then(|export| export.into_memory())
             .ok_or_else(|| anyhow::anyhow!("No memory export found"))?;
         

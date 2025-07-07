@@ -14,7 +14,7 @@ pub mod envelope;
 pub mod fee_validation;
 
 use anyhow::{Context, Result};
-use log::{debug, info};
+use log::info;
 use std::sync::Arc;
 
 use crate::rpc::RpcClient;

@@ -10,9 +10,7 @@
 //! - [self:mainnet:p2tr] - Network-specific addresses
 
 use anyhow::{Context, Result, anyhow};
-use bitcoin::{Network, Address, CompressedPublicKey, PublicKey};
-use bitcoin::bip32::{ExtendedPrivKey, ExtendedPubKey, DerivationPath, ChildNumber};
-use bitcoin::secp256k1::Secp256k1;
+use bitcoin::Network;
 use log::{debug, warn};
 use regex::Regex;
 use std::str::FromStr;

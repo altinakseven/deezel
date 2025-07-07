@@ -13,10 +13,8 @@ use std::fs;
 use tempfile::TempDir;
 
 use super::{
-    TestConfig, TestState, init_test_state, get_test_state,
-    mock_metashrew::{MockMetashrewServer, add_mock_utxos, add_mock_protorune_balance, set_mock_height},
-    test_blocks::{create_test_utxos, setup_test_blockchain},
-    MockUtxo,
+    TestConfig, TestState, init_test_state,
+    mock_metashrew::{MockMetashrewServer, add_mock_utxos, add_mock_protorune_balance, set_mock_height}, MockUtxo, setup_test_blockchain,
 };
 
 /// E2E test environment
@@ -85,7 +83,7 @@ impl E2ETestEnv {
     pub async fn setup_blockchain(&self, num_blocks: u32) -> Result<()> {
         info!("Setting up test blockchain with {} blocks", num_blocks);
         
-        setup_test_blockchain(self.config.start_height, num_blocks)?;
+        setup_test_blockchain(self.config.start_height)?;
         
         info!("Test blockchain setup complete");
         Ok(())

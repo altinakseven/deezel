@@ -6,9 +6,8 @@
 use anyhow::{Context, Result};
 use bitcoin::{
     blockdata::opcodes,
-    script::{self, Builder as ScriptBuilder},
-    taproot::{ControlBlock, LeafVersion, TapLeafHash},
-    Address, Amount, Network, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Witness, XOnlyPublicKey,
+    script::Builder as ScriptBuilder,
+    taproot::ControlBlock, ScriptBuf, Witness,
 };
 use flate2::{write::GzEncoder, Compression};
 use std::io::Write;

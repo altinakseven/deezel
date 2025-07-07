@@ -1,6 +1,6 @@
 //! Simulation functionality for alkanes operations
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use log::{debug, info};
 use std::sync::Arc;
 
@@ -37,9 +37,9 @@ impl SimulationManager {
         // 3. Execute the simulation with the specified decoder
         // 4. Return detailed simulation results
         
-        let simulation_params = format!("{}:{}:{}", 
-            params.target.block, 
-            params.target.tx, 
+        let _simulation_params = format!("{}:{}:{}",
+            params.target.block,
+            params.target.tx,
             params.inputs.join(":")
         );
         

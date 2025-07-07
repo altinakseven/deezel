@@ -5,7 +5,7 @@
 
 use anyhow::{anyhow, Result};
 use bitcoin::Transaction;
-use log::{debug, info, warn};
+use log::{info, warn};
 
 /// Maximum allowed fee rate in sat/vB (1000 sat/vB = ~$40 at $40k BTC)
 const MAX_FEE_RATE_SAT_VB: f64 = 1000.0;
