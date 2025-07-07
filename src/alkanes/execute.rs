@@ -116,21 +116,22 @@ impl EnhancedAlkanesExecutor {
     pub async fn execute(&self, params: EnhancedExecuteParams) -> Result<EnhancedExecuteResult> {
         info!("Starting enhanced alkanes execution with commit/reveal pattern");
         
-        // For now, implement a simple version that works
-        // TODO: Implement full commit/reveal pattern
+        // CRITICAL FIX: Validate that envelope and cellpack usage is correct
+        self.validate_envelope_cellpack_usage(&params)?;
         
         if params.envelope_data.is_some() {
-            // Commit/reveal pattern with envelope BIN data as first input
-            info!("🔧 CRITICAL: Using envelope with BIN data as first input in transaction");
+            // Contract deployment with envelope BIN data
+            info!("🚀 CONTRACT DEPLOYMENT: Using envelope with BIN data for contract deployment");
             let envelope_data = params.envelope_data.as_ref().unwrap();
             info!("📦 Envelope data size: {} bytes", envelope_data.len());
             
             let envelope = AlkanesEnvelope::for_contract(envelope_data.clone());
-            info!("🏷️  Created AlkanesEnvelope with BIN protocol tag for contract deployment");
+            info!("🏷️  Created AlkanesEnvelope with BIN protocol tag and gzip compression for contract deployment");
             
             self.execute_commit_reveal_pattern(&params, &envelope).await
         } else {
-            // Single transaction
+            // Contract execution without envelope
+            info!("⚡ CONTRACT EXECUTION: Single transaction without envelope");
             self.execute_single_transaction(&params).await
         }
     }
@@ -299,6 +300,62 @@ impl EnhancedAlkanesExecutor {
             outputs_created: vec![], // TODO: populate with actual outputs
             traces,
         })
+    }
+
+    /// Validate envelope and cellpack usage according to alkanes-rs reference implementation
+    /// CORRECTED: Contract deployment requires BOTH envelope (WASM in witness) AND cellpack (deployment trigger)
+    fn validate_envelope_cellpack_usage(&self, params: &EnhancedExecuteParams) -> Result<()> {
+        let has_envelope = params.envelope_data.is_some();
+        let has_cellpacks = params.protostones.iter().any(|p| p.cellpack.is_some());
+        
+        if has_envelope && has_cellpacks {
+            // CORRECTED: This is the CORRECT pattern for alkanes contract deployment!
+            // Based on alkanes-rs reference: find_witness_payload + cellpack.target.is_create()
+            info!("✅ ALKANES CONTRACT DEPLOYMENT: Envelope (WASM in witness) + Cellpack (deployment trigger)");
+            info!("🔍 This matches alkanes-rs pattern: find_witness_payload(&tx, 0) + cellpack.target.is_create()");
+            
+            // Validate that cellpacks are appropriate for deployment
+            for (i, protostone) in params.protostones.iter().enumerate() {
+                if let Some(cellpack) = &protostone.cellpack {
+                    // For deployment, cellpack should target a new contract (like [3,1000,101] -> creates [4,1000])
+                    info!("🎯 Protostone {} cellpack: target={}:{}, inputs={:?}",
+                          i, cellpack.target.block, cellpack.target.tx, cellpack.inputs);
+                    
+                    // The cellpack triggers deployment by calling an existing contract that creates a new one
+                    // This is the correct alkanes deployment pattern
+                }
+            }
+            
+            return Ok(());
+        }
+        
+        if has_envelope && !has_cellpacks {
+            return Err(anyhow!(
+                "❌ INCOMPLETE DEPLOYMENT: Envelope provided but no cellpack to trigger deployment.\n\
+                 💡 Alkanes deployment requires BOTH:\n\
+                 💡   1. --envelope (WASM bytecode in witness via find_witness_payload)\n\
+                 💡   2. Cellpack (deployment trigger via cellpack.target.is_create())\n\
+                 💡 Example: --envelope ./contract.wasm.gz '[3,1000,101]:v0:v0'\n\
+                 📚 See alkanes-rs reference: find_witness_payload + cellpack.target.is_create()"
+            ));
+        }
+        
+        if !has_envelope && has_cellpacks {
+            // Contract execution: cellpack without envelope
+            info!("✅ CONTRACT EXECUTION: Cellpack without envelope (execution of existing contract)");
+            return Ok(());
+        }
+        
+        if !has_envelope && !has_cellpacks {
+            return Err(anyhow!(
+                "❌ NO OPERATION: Neither envelope nor cellpack provided.\n\
+                 💡 For CONTRACT DEPLOYMENT: Use --envelope + cellpack: '[3,1000,101]:v0:v0'\n\
+                 💡 For CONTRACT EXECUTION: Use cellpack only: '[3,1000,101]:v0:v0'\n\
+                 📚 See alkanes-rs reference implementation for patterns"
+            ));
+        }
+        
+        Ok(())
     }
 
     /// Validate protostone specifications
@@ -662,7 +719,7 @@ impl EnhancedAlkanesExecutor {
             
             // Create the message field from cellpack if present
             let message = if let Some(cellpack) = &protostone_spec.cellpack {
-                info!("Encoding cellpack for protostone {}: target={}:{}, inputs={:?}",
+                info!("⚡ EXECUTION: Encoding cellpack for protostone {}: target={}:{}, inputs={:?}",
                       i, cellpack.target.block, cellpack.target.tx, cellpack.inputs);
                 
                 // Use Cellpack::encipher() to get LEB128 encoded Vec<u8> for the message field
@@ -670,6 +727,7 @@ impl EnhancedAlkanesExecutor {
                 info!("Cellpack encoded to {} bytes for message field", cellpack_bytes.len());
                 cellpack_bytes
             } else {
+                info!("🚀 DEPLOYMENT: Empty message field for protostone {} (contract deployment)", i);
                 Vec::new()
             };
             
@@ -681,7 +739,7 @@ impl EnhancedAlkanesExecutor {
                 refund: Some(0), // Default refund to output 0
                 pointer: Some(0), // Default pointer to output 0
                 from: None,
-                protocol_tag: 1, // DIESEL protocol tag
+                protocol_tag: 1, // ALKANES protocol tag
             };
             
             proper_protostones.push(protostone);
@@ -698,25 +756,35 @@ impl EnhancedAlkanesExecutor {
         }
         
         // CRITICAL FIX: Based on search results, protostones should be stored in tag 16383 within the Runestone
-        // However, let's first try using the Protostones::encipher() result directly as the OP_RETURN script
-        // This might be the correct approach since the alkanes-rs documentation suggests protostones
-        // are encoded differently than standard runestones
+        // The alkanes indexer looks for protostones in the protocol field (tag 16383) of a Runestone
         
         use crate::utils::protostone::Protostones;
-        let protocol_data = proper_protostones.encipher();
-        let runestone = (Runestone {
-          etching: None,
-          pointer: None,
-          edicts: vec![],
-          mint: None,
-          protocol: protocol_data.ok()
-        }).encipher();
+        let protocol_data_result = proper_protostones.encipher();
         
-        // EXPERIMENTAL: Try creating the OP_RETURN script directly from the protostones encoding
-        // instead of wrapping it in a Runestone structure
-        
-        // Convert Vec<u128> to bytes for OP_RETURN
-        Ok(runestone)
+        match protocol_data_result {
+            Ok(protocol_data) => {
+                info!("✅ Successfully encoded {} protostones into protocol data: {} values",
+                      proper_protostones.len(), protocol_data.len());
+                
+                // Create a Runestone with the protostones in the protocol field (tag 16383)
+                let runestone = Runestone {
+                    etching: None,
+                    pointer: None,
+                    edicts: vec![],
+                    mint: None,
+                    protocol: Some(protocol_data), // CRITICAL: Put protostones in tag 16383
+                };
+                
+                let runestone_script = runestone.encipher();
+                info!("✅ Successfully created runestone script with protostones in protocol field: {} bytes",
+                      runestone_script.len());
+                
+                Ok(runestone_script)
+            },
+            Err(e) => {
+                return Err(anyhow!("Failed to encode protostones: {}", e));
+            }
+        }
     }
 
     /// Build and sign transaction

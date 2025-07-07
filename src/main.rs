@@ -240,6 +240,9 @@ enum WalletCommands {
         /// Show raw JSON output
         #[arg(long)]
         raw: bool,
+        /// Specific address to check (supports identifiers like p2tr:0)
+        #[arg(long)]
+        address: Option<String>,
     },
     /// Show transaction details
     TxDetails {
@@ -1258,6 +1261,104 @@ async fn main() -> Result<()> {
                                         println!();
                                     }
                                 }
+                            }
+                        }
+                    }
+                },
+                WalletCommands::History { count, raw, address } => {
+                    if let Some(wm) = &wallet_manager {
+                        // Determine which address to check
+                        let target_address = if let Some(addr) = address {
+                            // Resolve address identifiers (supports p2tr:0, etc.)
+                            resolve_address_identifiers(&addr, Some(wm)).await?
+                        } else {
+                            // Use default wallet address
+                            wm.get_address().await?
+                        };
+                        
+                        // Get transaction history using esplora API
+                        match rpc_client._call("esplora_address::txs", serde_json::json!([target_address])).await {
+                            Ok(result) => {
+                                if let Some(txs_array) = result.as_array() {
+                                    // Limit to requested count
+                                    let limited_txs: Vec<_> = txs_array.iter().take(count as usize).collect();
+                                    
+                                    if raw {
+                                        // Raw JSON output
+                                        println!("{}", serde_json::to_string_pretty(&limited_txs)?);
+                                    } else {
+                                        // Human-readable output
+                                        println!("📜 Transaction History for {}", target_address);
+                                        println!("═══════════════════════════════════════════════");
+                                        
+                                        if limited_txs.is_empty() {
+                                            println!("No transactions found");
+                                        } else {
+                                            println!("📊 Showing {} of {} transactions\n", limited_txs.len(), txs_array.len());
+                                            
+                                            for (i, tx) in limited_txs.iter().enumerate() {
+                                                if let Some(tx_obj) = tx.as_object() {
+                                                    println!("{}. 🔗 TXID: {}", i + 1,
+                                                        tx_obj.get("txid").and_then(|v| v.as_str()).unwrap_or("unknown"));
+                                                    
+                                                    if let Some(status) = tx_obj.get("status").and_then(|v| v.as_object()) {
+                                                        if let Some(confirmed) = status.get("confirmed").and_then(|v| v.as_bool()) {
+                                                            if confirmed {
+                                                                if let Some(block_height) = status.get("block_height").and_then(|v| v.as_u64()) {
+                                                                    println!("   📦 Block: {}", block_height);
+                                                                }
+                                                                if let Some(block_time) = status.get("block_time").and_then(|v| v.as_u64()) {
+                                                                    // Convert timestamp to readable format
+                                                                    if let Some(datetime) = chrono::DateTime::from_timestamp(block_time as i64, 0) {
+                                                                        println!("   🕐 Time: {}", datetime.format("%Y-%m-%d %H:%M:%S UTC"));
+                                                                    }
+                                                                }
+                                                                println!("   ✅ Status: Confirmed");
+                                                            } else {
+                                                                println!("   ⏳ Status: Unconfirmed");
+                                                            }
+                                                        }
+                                                    }
+                                                    
+                                                    // Show fee if available
+                                                    if let Some(fee) = tx_obj.get("fee").and_then(|v| v.as_u64()) {
+                                                        println!("   💰 Fee: {} sats", fee);
+                                                    }
+                                                    
+                                                    // Show input/output counts
+                                                    if let Some(vin) = tx_obj.get("vin").and_then(|v| v.as_array()) {
+                                                        if let Some(vout) = tx_obj.get("vout").and_then(|v| v.as_array()) {
+                                                            println!("   📥 Inputs: {}, 📤 Outputs: {}", vin.len(), vout.len());
+                                                        }
+                                                    }
+                                                    
+                                                    if i < limited_txs.len() - 1 {
+                                                        println!();
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    if raw {
+                                        println!("{}", serde_json::to_string_pretty(&result)?);
+                                    } else {
+                                        println!("❌ Unexpected response format from esplora API");
+                                    }
+                                }
+                            },
+                            Err(e) => {
+                                if raw {
+                                    let error_result = serde_json::json!({
+                                        "error": e.to_string(),
+                                        "address": target_address
+                                    });
+                                    println!("{}", serde_json::to_string_pretty(&error_result)?);
+                                } else {
+                                    println!("❌ Failed to get transaction history for address {}", target_address);
+                                    println!("Error: {}", e);
+                                }
+                                return Err(e);
                             }
                         }
                     }
