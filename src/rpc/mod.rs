@@ -78,9 +78,10 @@ impl RpcClient {
     
     /// Create a new RPC client
     pub fn new(config: RpcConfig) -> Self {
-        // Create HTTP client with appropriate timeouts
+        // Create HTTP client with very long timeouts to prevent timeouts during synchronization waits
+        // Services like Esplora and Metashrew may take time to catch up, so we need generous timeouts
         let client = Client::builder()
-            .timeout(Duration::from_secs(30))
+            .timeout(Duration::from_secs(600)) // 10 minutes - much longer for sync operations
             .build()
             .expect("Failed to create HTTP client");
         
@@ -989,7 +990,7 @@ impl RpcClient {
         
         // Create a client with extended timeout for large UTXO responses
         let extended_client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(120)) // 2 minutes for large UTXO responses
+            .timeout(Duration::from_secs(600)) // 10 minutes for large UTXO responses (matches main client)
             .build()
             .context("Failed to create extended HTTP client")?;
         

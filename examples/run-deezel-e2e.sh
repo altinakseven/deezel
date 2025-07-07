@@ -1,5 +1,5 @@
 #!/bin/bash
-export RUST_LOG=debug
+export RUST_LOG=info
 DEEZEL=/home/ubuntu/deezel/target/release/deezel
 
 PWD=$(pwd)

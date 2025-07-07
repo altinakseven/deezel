@@ -1,6 +1,7 @@
 // Alkanes envelope implementation based on ord protocol
 // Core functionality for creating and managing alkanes envelope transactions
 // Uses ord-style envelope pattern with BIN protocol tag instead of ord tag
+// CRITICAL FIX: Updated to follow ord witness pattern exactly with proper signature handling
 
 use anyhow::{Context, Result};
 use bitcoin::{
@@ -33,60 +34,69 @@ impl AlkanesEnvelope {
         }
     }
 
-    /// Create envelope for alkanes contract deployment
+    /// Create envelope for alkanes contract deployment with BIN protocol data
+    /// This envelope will be used as the first input in the reveal transaction
     pub fn for_contract(contract_data: Vec<u8>) -> Self {
         Self::new(Some("application/wasm".to_string()), Some(contract_data))
     }
 
-    /// Build the reveal script following ord pattern with BIN protocol tag
+    /// Build the reveal script following ord pattern EXACTLY with BIN protocol tag
+    /// CRITICAL FIX: Follow ord envelope pattern exactly but use BIN instead of ord
     pub fn build_reveal_script(&self) -> ScriptBuf {
         let mut builder = ScriptBuilder::new()
-            .push_opcode(opcodes::all::OP_PUSHBYTES_0)
+            .push_opcode(opcodes::OP_FALSE) // OP_FALSE like ord (pushes empty bytes)
             .push_opcode(opcodes::all::OP_IF)
-            .push_slice(&ALKANES_PROTOCOL_ID);
+            .push_slice(&ALKANES_PROTOCOL_ID); // Use BIN instead of ord
 
-        // Add content type if present
+        // Add content type if present (using tag 1 like ord)
         if let Some(content_type) = &self.content_type {
             builder = builder
-                .push_slice(&[1u8]) // Content-Type tag
+                .push_slice(&[1u8]) // Content-Type tag (same as ord)
                 .push_slice::<&bitcoin::script::PushBytes>(content_type.as_slice().try_into().unwrap());
         }
 
-        // Add body if present
+        // Add body if present (using empty BODY_TAG like ord)
         if let Some(body) = &self.body {
+            // Push the BODY_TAG (empty array like ord)
             builder = builder.push_slice(&BODY_TAG);
             
-            // Chunk body data into script-safe pieces
+            // Chunk body data into script-safe pieces (same as ord)
             for chunk in body.chunks(MAX_SCRIPT_ELEMENT_SIZE) {
                 builder = builder.push_slice::<&bitcoin::script::PushBytes>(chunk.try_into().unwrap());
             }
         }
 
+        // End with OP_ENDIF (same as ord)
         builder
             .push_opcode(opcodes::all::OP_ENDIF)
-            .push_opcode(opcodes::all::OP_PUSHNUM_1)
             .into_script()
     }
 
-    /// Create witness for taproot script-path spending
+    /// Create witness for taproot script-path spending following ord pattern EXACTLY
+    /// CRITICAL FIX: This now returns only [script, control_block] like ord
+    /// The signature will be added separately during transaction building
     pub fn create_witness(&self, control_block: ControlBlock) -> Result<Witness> {
         let reveal_script = self.build_reveal_script();
         
         let mut witness = Witness::new();
         
-        // Push the script bytes directly - ensure we're getting the full script
+        // CRITICAL FIX: Follow ord witness pattern exactly
+        // Ord creates witness with [script, control_block] for script-path spending
+        // The signature is added separately during the signing process
+        
+        // Push the script bytes - this contains the BIN protocol envelope data
         let script_bytes = reveal_script.as_bytes();
-        log::info!("Creating witness with script: {} bytes", script_bytes.len());
+        log::info!("Creating ord-style witness with script: {} bytes", script_bytes.len());
         witness.push(script_bytes);
         
         // Push the control block bytes
         let control_block_bytes = control_block.serialize();
-        log::info!("Creating witness with control block: {} bytes", control_block_bytes.len());
+        log::info!("Creating ord-style witness with control block: {} bytes", control_block_bytes.len());
         witness.push(&control_block_bytes);
         
-        // Verify the witness was created correctly
+        // Verify the witness was created correctly - expecting 2 items like ord
         if witness.len() != 2 {
-            return Err(anyhow::anyhow!("Invalid witness length: expected 2 items, got {}", witness.len()));
+            return Err(anyhow::anyhow!("Invalid ord-style witness length: expected 2 items (script + control_block), got {}", witness.len()));
         }
         
         // Verify the script bytes are not empty
@@ -100,9 +110,64 @@ impl AlkanesEnvelope {
         }
         
         // Log final witness details for debugging
-        log::info!("Created witness with {} items:", witness.len());
+        log::info!("Created ord-style witness with {} items:", witness.len());
         for (i, item) in witness.iter().enumerate() {
-            log::info!("  Witness item {}: {} bytes", i, item.len());
+            match i {
+                0 => log::info!("  Witness item {}: {} bytes (script with BIN protocol data)", i, item.len()),
+                1 => log::info!("  Witness item {}: {} bytes (control block)", i, item.len()),
+                _ => log::info!("  Witness item {}: {} bytes", i, item.len()),
+            }
+        }
+        
+        Ok(witness)
+    }
+
+    /// Create complete witness for taproot script-path spending with signature
+    /// CRITICAL FIX: This creates the complete 3-element witness: [signature, script, control_block]
+    /// This is what should be used for the final transaction
+    pub fn create_complete_witness(&self, signature: &[u8], control_block: ControlBlock) -> Result<Witness> {
+        let reveal_script = self.build_reveal_script();
+        
+        let mut witness = Witness::new();
+        
+        // CRITICAL FIX: Create complete P2TR script-path witness structure
+        // For P2TR script-path spending: [signature, script, control_block]
+        
+        // 1. Push the signature as the FIRST element
+        log::info!("Adding signature as first witness element: {} bytes", signature.len());
+        witness.push(signature);
+        
+        // 2. Push the script bytes - this contains the BIN protocol envelope data
+        let script_bytes = reveal_script.as_bytes();
+        log::info!("Adding script as second witness element: {} bytes", script_bytes.len());
+        witness.push(script_bytes);
+        
+        // 3. Push the control block bytes
+        let control_block_bytes = control_block.serialize();
+        log::info!("Adding control block as third witness element: {} bytes", control_block_bytes.len());
+        witness.push(&control_block_bytes);
+        
+        // Verify the witness was created correctly - expecting 3 items for complete P2TR
+        if witness.len() != 3 {
+            return Err(anyhow::anyhow!("Invalid complete witness length: expected 3 items (signature + script + control_block), got {}", witness.len()));
+        }
+        
+        // Verify all elements are non-empty
+        for (i, item) in witness.iter().enumerate() {
+            if item.is_empty() {
+                return Err(anyhow::anyhow!("Witness item {} is empty", i));
+            }
+        }
+        
+        // Log final witness details for debugging
+        log::info!("Created complete P2TR witness with {} items:", witness.len());
+        for (i, item) in witness.iter().enumerate() {
+            match i {
+                0 => log::info!("  Witness item {}: {} bytes (schnorr signature)", i, item.len()),
+                1 => log::info!("  Witness item {}: {} bytes (script with BIN protocol data)", i, item.len()),
+                2 => log::info!("  Witness item {}: {} bytes (control block)", i, item.len()),
+                _ => log::info!("  Witness item {}: {} bytes", i, item.len()),
+            }
         }
         
         Ok(witness)
@@ -129,9 +194,11 @@ fn unversioned_leaf_script_from_witness(witness: &Witness) -> Option<&bitcoin::S
 fn parse_alkanes_script(script: &bitcoin::Script) -> Option<AlkanesEnvelope> {
     let mut instructions = script.instructions().peekable();
     
-    // Expect OP_FALSE OP_IF pattern
-    if !matches!(instructions.next()?, Ok(bitcoin::script::Instruction::Op(opcodes::all::OP_PUSHBYTES_0))) {
-        return None;
+    // Expect OP_FALSE OP_IF pattern (OP_FALSE pushes empty bytes)
+    match instructions.next()? {
+        Ok(bitcoin::script::Instruction::PushBytes(bytes)) if bytes.is_empty() => {},
+        Ok(bitcoin::script::Instruction::Op(opcodes::all::OP_PUSHBYTES_0)) => {},
+        _ => return None,
     }
     
     if !matches!(instructions.next()?, Ok(bitcoin::script::Instruction::Op(opcodes::all::OP_IF))) {
@@ -150,7 +217,7 @@ fn parse_alkanes_script(script: &bitcoin::Script) -> Option<AlkanesEnvelope> {
     
     let mut content_type = None;
     let mut body_parts = Vec::new();
-    let mut in_body = false;
+    let mut expecting_content_type = false;
     
     // Parse fields and body
     while let Some(instruction) = instructions.next() {
@@ -159,16 +226,15 @@ fn parse_alkanes_script(script: &bitcoin::Script) -> Option<AlkanesEnvelope> {
             Ok(bitcoin::script::Instruction::PushBytes(bytes)) => {
                 let bytes = bytes.as_bytes();
                 
-                if !in_body && bytes == &[1u8] {
-                    // Content-Type tag
-                    if let Some(Ok(bitcoin::script::Instruction::PushBytes(ct_bytes))) = instructions.next() {
-                        content_type = Some(ct_bytes.as_bytes().to_vec());
-                    }
-                } else if bytes == &BODY_TAG {
-                    // Body separator
-                    in_body = true;
-                } else if in_body {
-                    // Body data
+                if expecting_content_type {
+                    // This is the content-type value following the tag
+                    content_type = Some(bytes.to_vec());
+                    expecting_content_type = false;
+                } else if bytes == &[1u8] {
+                    // Content-Type tag - next instruction will be the content-type value
+                    expecting_content_type = true;
+                } else {
+                    // This is body data (any push bytes that's not a content-type tag or value)
                     body_parts.push(bytes.to_vec());
                 }
             }
@@ -201,7 +267,7 @@ mod tests {
         
         // Verify script structure
         let instructions: Vec<_> = script.instructions().collect();
-        assert!(instructions.len() >= 6); // OP_FALSE, OP_IF, protocol, content-type tag, content-type, body tag, body, OP_ENDIF
+        assert!(instructions.len() >= 6); // OP_FALSE, OP_IF, protocol, content-type tag, content-type, body, OP_ENDIF
         
         // Parse back the envelope
         let parsed = parse_alkanes_script(&script).unwrap();
@@ -237,5 +303,35 @@ mod tests {
         
         let parsed = parse_alkanes_script(&script).unwrap();
         assert_eq!(parsed.body, Some(large_data));
+    }
+
+    #[test]
+    fn test_ord_style_witness_creation() {
+        let envelope = AlkanesEnvelope::new(
+            Some("application/wasm".to_string()),
+            Some(b"test contract data".to_vec()),
+        );
+        
+        // Create a dummy control block for testing
+        let secp = Secp256k1::new();
+        let internal_key = XOnlyPublicKey::from_slice(&[1u8; 32]).unwrap();
+        let script = envelope.build_reveal_script();
+        
+        use bitcoin::taproot::{TaprootBuilder, LeafVersion};
+        let taproot_builder = TaprootBuilder::new()
+            .add_leaf(0, script.clone()).unwrap();
+        let taproot_spend_info = taproot_builder
+            .finalize(&secp, internal_key).unwrap();
+        let control_block = taproot_spend_info
+            .control_block(&(script, LeafVersion::TapScript)).unwrap();
+        
+        // Test ord-style witness (2 elements)
+        let witness = envelope.create_witness(control_block.clone()).unwrap();
+        assert_eq!(witness.len(), 2);
+        
+        // Test complete witness (3 elements)
+        let dummy_signature = vec![0u8; 64]; // 64-byte Schnorr signature
+        let complete_witness = envelope.create_complete_witness(&dummy_signature, control_block).unwrap();
+        assert_eq!(complete_witness.len(), 3);
     }
 }

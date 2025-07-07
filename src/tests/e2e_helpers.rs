@@ -192,12 +192,14 @@ impl E2ETestEnv {
         Err(anyhow!("Could not find deezel binary. Make sure it's built with 'cargo build'"))
     }
     
-    /// Wait for metashrew server to be ready
+    /// Wait for metashrew server to be ready (polls indefinitely)
     pub async fn wait_for_metashrew_ready(&self) -> Result<()> {
         let client = reqwest::Client::new();
         let url = format!("http://localhost:{}", self.config.rpc_port);
         
-        for attempt in 1..=10 {
+        let mut attempt = 0;
+        loop {
+            attempt += 1;
             debug!("Checking if metashrew server is ready (attempt {})", attempt);
             
             let request = serde_json::json!({
@@ -214,7 +216,7 @@ impl E2ETestEnv {
                 .await
             {
                 Ok(response) if response.status().is_success() => {
-                    info!("Metashrew server is ready");
+                    info!("Metashrew server is ready after {} attempts", attempt);
                     return Ok(());
                 }
                 Ok(_) => {
@@ -225,10 +227,13 @@ impl E2ETestEnv {
                 }
             }
             
+            // Log progress every 20 attempts (10 seconds)
+            if attempt % 20 == 0 {
+                info!("Still waiting for metashrew server to be ready (attempt {})...", attempt);
+            }
+            
             sleep(Duration::from_millis(500)).await;
         }
-        
-        Err(anyhow!("Metashrew server did not become ready within timeout"))
     }
 }
 
