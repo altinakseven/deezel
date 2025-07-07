@@ -993,7 +993,7 @@ impl BitcoinWallet {
     }
     
     /// Get UTXOs for a specific address with proper confirmation calculation (LEGACY METHOD)
-    async fn get_utxos_for_address_legacy(&self, address: &str, current_height: u64) -> Result<Vec<UtxoInfo>> {
+    async fn _get_utxos_for_address_legacy(&self, address: &str, current_height: u64) -> Result<Vec<UtxoInfo>> {
         let frozen_utxos = self.frozen_utxos.lock().await;
         let mut utxo_infos = Vec::new();
         

@@ -602,7 +602,7 @@ enum EsploraCommands {
 /// Block tag for monitoring
 #[derive(Debug, Clone)]
 enum BlockTag {
-    Height(u64),
+    Height(()),
     Latest,
 }
 
@@ -613,9 +613,9 @@ impl FromStr for BlockTag {
         match s {
             "latest" => Ok(BlockTag::Latest),
             _ => {
-                let height = s.parse::<u64>()
+                let _height = s.parse::<u64>()
                     .context("Invalid block height")?;
-                Ok(BlockTag::Height(height))
+                Ok(BlockTag::Height(()))
             }
         }
     }
@@ -656,7 +656,7 @@ fn parse_simulation_params(_params: &str) -> Result<(String, String, Vec<String>
 }
 
 /// Parse address ranges for monitoring
-fn parse_address_ranges(ranges_str: &str) -> Result<Vec<(String, Vec<u32>)>> {
+fn _parse_address_ranges(ranges_str: &str) -> Result<Vec<(String, Vec<u32>)>> {
     let mut ranges = Vec::new();
     
     for range_str in ranges_str.split(',') {
@@ -690,13 +690,13 @@ fn parse_address_ranges(ranges_str: &str) -> Result<Vec<(String, Vec<u32>)>> {
 }
 
 /// Check if a string is a raw Bitcoin address (not an identifier)
-fn is_raw_bitcoin_address(addr: &str) -> bool {
+fn _is_raw_bitcoin_address(addr: &str) -> bool {
     // Simple heuristic: if it doesn't contain '[' or ':', it's probably a raw address
     !addr.contains('[') && !addr.contains(':')
 }
 
 /// Get derivation path for address type
-fn get_derivation_path(address_type: &str, network: bitcoin::Network, index: u32) -> String {
+fn _get_derivation_path(address_type: &str, network: bitcoin::Network, index: u32) -> String {
     match address_type.to_lowercase().as_str() {
         "p2pkh" => format!("m/44'/{}'/{}'/{}/{}", 
                           if network == bitcoin::Network::Bitcoin { 0 } else { 1 }, 
@@ -717,13 +717,13 @@ fn get_derivation_path(address_type: &str, network: bitcoin::Network, index: u32
 }
 
 /// Address information for display
-struct AddressInfo {
+struct _AddressInfo {
     address: String,
     script_type: String,
 }
 
 /// Extract address from script pubkey
-fn extract_address_from_script(script: &bitcoin::ScriptBuf) -> Option<AddressInfo> {
+fn _extract_address_from_script(script: &bitcoin::ScriptBuf) -> Option<_AddressInfo> {
     use bitcoin::Address;
     use bitcoin::Network;
     
@@ -741,7 +741,7 @@ fn extract_address_from_script(script: &bitcoin::ScriptBuf) -> Option<AddressInf
             "Unknown".to_string()
         };
         
-        Some(AddressInfo {
+        Some(_AddressInfo {
             address: address.to_string(),
             script_type,
         })
@@ -1576,7 +1576,7 @@ async fn main() -> Result<()> {
                 AlkanesCommands::Simulate { contract_id, params, raw } => {
                     // Simulate contract execution (no wallet needed)
                     let (block, tx) = parse_contract_id(&contract_id)?;
-                    let simulation_params = if let Some(p) = params {
+                    let _simulation_params = if let Some(p) = params {
                         parse_simulation_params(&p)?
                     } else {
                         ("default_method".to_string(), "default_input".to_string(), vec!["default_arg".to_string()])

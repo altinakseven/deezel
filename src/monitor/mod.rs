@@ -63,11 +63,11 @@ pub struct BlockMonitor {
     /// Monitor configuration
     config: BlockMonitorConfig,
     /// Current block height
-    current_height: Mutex<u64>,
+    _current_height: Mutex<u64>,
     /// Event sender
     event_sender: mpsc::Sender<BlockEvent>,
     /// Event receiver
-    event_receiver: Mutex<mpsc::Receiver<BlockEvent>>,
+    _event_receiver: Mutex<mpsc::Receiver<BlockEvent>>,
     /// Running flag
     running: Mutex<bool>,
 }
@@ -80,9 +80,9 @@ impl BlockMonitor {
         Self {
             rpc_client,
             config,
-            current_height: Mutex::new(0),
+            _current_height: Mutex::new(0),
             event_sender: tx,
-            event_receiver: Mutex::new(rx),
+            _event_receiver: Mutex::new(rx),
             running: Mutex::new(false),
         }
     }

@@ -530,7 +530,7 @@ impl EnhancedAlkanesExecutor {
     }
 
     /// Select UTXOs for reveal transaction, allowing commit UTXO even if frozen
-    async fn select_utxos_for_reveal(&self, requirements: &[InputRequirement], commit_outpoint: bitcoin::OutPoint) -> Result<Vec<bitcoin::OutPoint>> {
+    async fn _select_utxos_for_reveal(&self, requirements: &[InputRequirement], commit_outpoint: bitcoin::OutPoint) -> Result<Vec<bitcoin::OutPoint>> {
         info!("Selecting UTXOs for reveal transaction (allowing commit UTXO even if frozen)");
         
         // Get all wallet UTXOs including frozen ones
@@ -703,7 +703,7 @@ impl EnhancedAlkanesExecutor {
     }
 
     /// Construct runestone with protostones using proper alkanes-rs ordinals crate
-    fn construct_runestone(&self, protostones: &[ProtostoneSpec], num_outputs: usize) -> Result<bitcoin::ScriptBuf> {
+    fn construct_runestone(&self, protostones: &[ProtostoneSpec], _num_outputs: usize) -> Result<bitcoin::ScriptBuf> {
         info!("Constructing runestone with {} protostones using alkanes-rs ordinals crate", protostones.len());
         
         use protorune_support::protostone::Protostone;
@@ -881,7 +881,7 @@ impl EnhancedAlkanesExecutor {
 
 
     /// Build and sign transaction with envelope reveal support
-    async fn build_transaction_with_envelope(
+    async fn _build_transaction_with_envelope(
         &self,
         utxos: Vec<bitcoin::OutPoint>,
         mut outputs: Vec<bitcoin::TxOut>,
@@ -936,7 +936,7 @@ impl EnhancedAlkanesExecutor {
                 
                 // For envelope transactions, we need script-path spending to match the commit address
                 // Create taproot spend info using the envelope script
-                let reveal_script = envelope.build_reveal_script();
+                let _reveal_script = envelope.build_reveal_script();
                 let (taproot_spend_info, control_block) = self.create_taproot_spend_info_for_envelope(envelope, internal_key).await?;
                 
                 // Set the internal key for taproot
@@ -1586,7 +1586,7 @@ impl EnhancedAlkanesExecutor {
     }
 
     /// Create and broadcast reveal transaction
-    async fn create_and_broadcast_reveal_transaction(
+    async fn _create_and_broadcast_reveal_transaction(
         &self,
         params: &EnhancedExecuteParams,
         envelope: &AlkanesEnvelope,
@@ -1599,7 +1599,7 @@ impl EnhancedAlkanesExecutor {
         
         // Step 2: Find additional UTXOs that meet input requirements (excluding commit)
         // For reveal transactions, we need to allow the commit UTXO even if it's normally frozen
-        let mut selected_utxos = self.select_utxos_for_reveal(&params.input_requirements, commit_outpoint).await?;
+        let mut selected_utxos = self._select_utxos_for_reveal(&params.input_requirements, commit_outpoint).await?;
         
         // Step 3: Insert commit outpoint as the FIRST input - this contains the envelope with BIN data
         selected_utxos.insert(0, commit_outpoint);
@@ -1622,7 +1622,7 @@ impl EnhancedAlkanesExecutor {
         // Clone selected_utxos for fee validation since build_transaction_with_envelope takes ownership
         let _selected_utxos_for_validation = selected_utxos.clone();
         
-        let (signed_tx, final_fee) = self.build_transaction_with_envelope(
+        let (signed_tx, final_fee) = self._build_transaction_with_envelope(
             selected_utxos,
             outputs,
             runestone_script,
@@ -1849,7 +1849,7 @@ impl EnhancedAlkanesExecutor {
         let tx_hex = self.rpc_client.get_transaction_hex(txid).await?;
         
         // Debug: Log the raw hex string returned from RPC (truncated for readability)
-        let truncated_raw_hex = if tx_hex.len() > 128 {
+        let _truncated_raw_hex = if tx_hex.len() > 128 {
             format!("{}...{} (truncated)", &tx_hex[..64], &tx_hex[tx_hex.len()-64..])
         } else {
             tx_hex.clone()
@@ -2023,7 +2023,7 @@ impl EnhancedAlkanesExecutor {
                         if !params.raw_output {
                             println!("📦 New block mined (height: {}), checking transaction status...", current_block_count);
                         }
-                        last_block_count = current_block_count;
+                        let _ = current_block_count; // Acknowledge the value is read for logging
                     }
                     
                     // For simplicity, assume transaction is mined if we can retrieve it
@@ -2140,7 +2140,7 @@ impl EnhancedAlkanesExecutor {
     }
     
     /// Reverse TXID bytes for trace calls
-    fn reverse_txid_bytes(&self, txid: &str) -> Result<String> {
+    fn _reverse_txid_bytes(&self, txid: &str) -> Result<String> {
         // Remove any 0x prefix if present
         let clean_txid = txid.trim_start_matches("0x");
         
@@ -2160,7 +2160,7 @@ impl EnhancedAlkanesExecutor {
     }
 
     /// Wait for metashrew to synchronize with Bitcoin Core (polls indefinitely)
-    async fn wait_for_metashrew_sync(&self) -> Result<()> {
+    async fn _wait_for_metashrew_sync(&self) -> Result<()> {
         info!("Waiting for metashrew to synchronize (will poll indefinitely)...");
         
         let mut attempts = 0;
@@ -2412,7 +2412,7 @@ impl EnhancedAlkanesExecutor {
         info!("🎯 SINGLE INPUT OPTIMIZATION: Using only commit input for reveal transaction");
         info!("🎯 This matches the working transaction pattern with 1 input");
         
-        let additional_count = 0; // No additional inputs needed
+        let _additional_count = 0; // No additional inputs needed
         
         // Step 4: Create transaction with outputs for each address
         let outputs = self.create_outputs(&params.to_addresses, &params.change_address).await?;
@@ -2488,7 +2488,7 @@ impl EnhancedAlkanesExecutor {
     /// Create single consolidated transaction with envelope witness data
     /// CRITICAL FIX: First create commit transaction, then spend from it with envelope witness
     /// This ensures we spend from a UTXO that has the envelope script in its taproot tree
-    async fn create_single_consolidated_transaction(
+    async fn _create_single_consolidated_transaction(
         &self,
         params: &EnhancedExecuteParams,
         envelope: &AlkanesEnvelope
@@ -2518,7 +2518,7 @@ impl EnhancedAlkanesExecutor {
         // Step 3: Create reveal transaction spending the commit output
         info!("🔧 Creating reveal transaction spending commit output with envelope witness");
         
-        let (reveal_txid, reveal_fee) = self.create_and_broadcast_reveal_transaction(
+        let (reveal_txid, reveal_fee) = self._create_and_broadcast_reveal_transaction(
             params,
             envelope,
             commit_outpoint
@@ -2554,7 +2554,7 @@ impl EnhancedAlkanesExecutor {
         info!("🎯 Total inputs: {} (first is commit with script-path spending)", all_inputs.len());
         info!("🎯 Using script-path spending with BIN envelope in witness");
         
-        let commit_outpoint = all_inputs[0]; // First input is always the commit
+        let _commit_outpoint = all_inputs[0]; // First input is always the commit
         
         use bitcoin::{psbt::Psbt, TxOut, ScriptBuf};
         
@@ -2611,7 +2611,7 @@ impl EnhancedAlkanesExecutor {
                 });
                 
                 // Set up script-path spending configuration
-                let reveal_script = envelope.build_reveal_script();
+                let _reveal_script = envelope.build_reveal_script();
                 let (taproot_spend_info, control_block) = self.create_taproot_spend_info_for_envelope(envelope, internal_key).await?;
                 
                 // Set the internal key for taproot
@@ -2962,7 +2962,7 @@ fn parse_edict(edict_str: &str) -> Result<ProtostoneEdict> {
 }
 
 /// Parse complex edict specification (handles formats like "2:1000:0:v1")
-fn parse_complex_edict(edict_str: &str) -> Result<ProtostoneEdict> {
+fn _parse_complex_edict(edict_str: &str) -> Result<ProtostoneEdict> {
     // Handle formats like "2:1000:0:v1" or "2:1:0:v0"
     let parts: Vec<&str> = edict_str.split(':').collect();
     if parts.len() < 4 {

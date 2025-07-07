@@ -11,7 +11,7 @@ use super::types::*;
 /// Token operations manager
 pub struct TokenManager {
     rpc_client: Arc<RpcClient>,
-    wallet_manager: Arc<WalletManager>,
+    _wallet_manager: Arc<WalletManager>,
 }
 
 impl TokenManager {
@@ -19,7 +19,7 @@ impl TokenManager {
     pub fn new(rpc_client: Arc<RpcClient>, wallet_manager: Arc<WalletManager>) -> Self {
         Self {
             rpc_client,
-            wallet_manager,
+            _wallet_manager: wallet_manager,
         }
     }
 

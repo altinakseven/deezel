@@ -224,7 +224,7 @@ impl MockMetashrewServer {
     }
 
     /// Handle protorunes by outpoint
-    async fn handle_protorunes_by_outpoint(params: &Value, state: Arc<Mutex<TestState>>) -> Result<Value> {
+    async fn handle_protorunes_by_outpoint(params: &Value, _state: Arc<Mutex<TestState>>) -> Result<Value> {
         let params_array = params.as_array()
             .ok_or_else(|| anyhow!("alkanes_protorunesbyoutpoint params must be an array"))?;
 
@@ -243,7 +243,7 @@ impl MockMetashrewServer {
     }
 
     /// Handle trace method
-    async fn handle_trace(params: &Value, state: Arc<Mutex<TestState>>) -> Result<Value> {
+    async fn handle_trace(params: &Value, _state: Arc<Mutex<TestState>>) -> Result<Value> {
         let params_array = params.as_array()
             .ok_or_else(|| anyhow!("alkanes_trace params must be an array"))?;
 

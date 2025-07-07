@@ -56,7 +56,7 @@ pub struct TransactionConstructor {
     /// RPC client
     rpc_client: Arc<RpcClient>,
     /// Transaction configuration
-    config: TransactionConfig,
+    _config: TransactionConfig,
 }
 
 impl TransactionConstructor {
@@ -69,7 +69,7 @@ impl TransactionConstructor {
         Self {
             wallet_manager,
             rpc_client,
-            config,
+            _config: config,
         }
     }
     
@@ -183,7 +183,7 @@ impl TransactionConstructor {
     }
     
     /// Create a Runestone with Protostone
-    fn create_runestone(&self) -> Result<bitcoin::ScriptBuf> {
+    fn _create_runestone(&self) -> Result<bitcoin::ScriptBuf> {
         // TODO: Implement actual Runestone creation
         // This is a placeholder implementation
         

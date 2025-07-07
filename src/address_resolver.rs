@@ -112,7 +112,6 @@ impl AddressResolver {
 
         // Parse the remaining parts to determine network, type, and index
         let mut network = None;
-        let mut address_type = None;
         let mut index = None;
 
         // Check different patterns:
@@ -136,7 +135,7 @@ impl AddressResolver {
             return Err(anyhow!("Missing address type in identifier"));
         }
 
-        address_type = Some(AddressType::from_str(remaining_parts[0])?);
+        let address_type = Some(AddressType::from_str(remaining_parts[0])?);
         remaining_parts = &remaining_parts[1..];
 
         // Check if there's an index

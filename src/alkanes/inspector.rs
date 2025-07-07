@@ -151,7 +151,7 @@ pub struct SimulationContext {
 pub struct AlkaneInspector {
     rpc_client: Arc<RpcClient>,
     deezel_dir: PathBuf,
-    vendor_dir: PathBuf,
+    _vendor_dir: PathBuf,
 }
 
 impl AlkaneInspector {
@@ -170,7 +170,7 @@ impl AlkaneInspector {
         Ok(Self {
             rpc_client,
             deezel_dir,
-            vendor_dir,
+            _vendor_dir: vendor_dir,
         })
     }
 
@@ -525,7 +525,7 @@ impl AlkaneInspector {
         }).unwrap();
 
         // __call - matches alkanes-rs signature
-        linker.func_wrap("env", "__call", |mut caller: Caller<'_, AlkanesState>, cellpack_ptr: i32, incoming_alkanes_ptr: i32, checkpoint_ptr: i32, start_fuel: u64| -> i32 {
+        linker.func_wrap("env", "__call", |mut caller: Caller<'_, AlkanesState>, cellpack_ptr: i32, _incoming_alkanes_ptr: i32, _checkpoint_ptr: i32, start_fuel: u64| -> i32 {
             let start_time = std::time::Instant::now();
             
             // Try to decode the cellpack to see what alkane is being called
@@ -550,7 +550,7 @@ impl AlkaneInspector {
         }).unwrap();
 
         // __delegatecall - matches alkanes-rs signature
-        linker.func_wrap("env", "__delegatecall", |mut caller: Caller<'_, AlkanesState>, cellpack_ptr: i32, incoming_alkanes_ptr: i32, checkpoint_ptr: i32, start_fuel: u64| -> i32 {
+        linker.func_wrap("env", "__delegatecall", |mut caller: Caller<'_, AlkanesState>, cellpack_ptr: i32, _incoming_alkanes_ptr: i32, _checkpoint_ptr: i32, start_fuel: u64| -> i32 {
             let start_time = std::time::Instant::now();
             
             let call_info = Self::decode_cellpack_info(&mut caller, cellpack_ptr);
@@ -573,7 +573,7 @@ impl AlkaneInspector {
         }).unwrap();
 
         // __staticcall - matches alkanes-rs signature
-        linker.func_wrap("env", "__staticcall", |mut caller: Caller<'_, AlkanesState>, cellpack_ptr: i32, incoming_alkanes_ptr: i32, checkpoint_ptr: i32, start_fuel: u64| -> i32 {
+        linker.func_wrap("env", "__staticcall", |mut caller: Caller<'_, AlkanesState>, cellpack_ptr: i32, _incoming_alkanes_ptr: i32, _checkpoint_ptr: i32, start_fuel: u64| -> i32 {
             let start_time = std::time::Instant::now();
             
             let call_info = Self::decode_cellpack_info(&mut caller, cellpack_ptr);
@@ -678,7 +678,7 @@ impl AlkaneInspector {
     }
 
     /// Execute the __execute export with opcode testing
-    async fn execute_opcode(&self, bytecode: &[u8], opcode: u128) -> Result<ExecutionResult> {
+    async fn _execute_opcode(&self, bytecode: &[u8], opcode: u128) -> Result<ExecutionResult> {
         let engine = self.create_engine();
         
         // Create context with opcode in cellpack
@@ -1270,23 +1270,23 @@ impl AlkaneInspector {
     }
 
     /// Setup fuzzing environment with alkanes-rs and metashrew-runtime
-    async fn setup_fuzzing_environment(&self) -> Result<()> {
+    async fn _setup_fuzzing_environment(&self) -> Result<()> {
         info!("Setting up fuzzing environment");
         
         // Check if Rust is installed
-        self.ensure_rust_installed().await?;
+        self._ensure_rust_installed().await?;
         
         // Clone or update alkanes-rs
-        self.setup_alkanes_rs().await?;
+        self._setup_alkanes_rs().await?;
         
         // Build alkanes-rs
-        self.build_alkanes_rs().await?;
+        self._build_alkanes_rs().await?;
         
         Ok(())
     }
 
     /// Ensure Rust is installed via rustup
-    async fn ensure_rust_installed(&self) -> Result<()> {
+    async fn _ensure_rust_installed(&self) -> Result<()> {
         // Check if cargo is available
         if Command::new("cargo").arg("--version").output().is_ok() {
             info!("Rust toolchain already installed");
@@ -1306,8 +1306,8 @@ impl AlkaneInspector {
     }
 
     /// Clone or update alkanes-rs repository
-    async fn setup_alkanes_rs(&self) -> Result<()> {
-        let alkanes_rs_dir = self.vendor_dir.join("alkanes-rs");
+    async fn _setup_alkanes_rs(&self) -> Result<()> {
+        let alkanes_rs_dir = self._vendor_dir.join("alkanes-rs");
         
         if alkanes_rs_dir.exists() {
             info!("Updating alkanes-rs repository");
@@ -1341,8 +1341,8 @@ impl AlkaneInspector {
     }
 
     /// Build alkanes-rs with cargo
-    async fn build_alkanes_rs(&self) -> Result<()> {
-        let alkanes_rs_dir = self.vendor_dir.join("alkanes-rs");
+    async fn _build_alkanes_rs(&self) -> Result<()> {
+        let alkanes_rs_dir = self._vendor_dir.join("alkanes-rs");
         
         info!("Building alkanes-rs with cargo build --release");
         println!("Building alkanes-rs... This may take several minutes.");
