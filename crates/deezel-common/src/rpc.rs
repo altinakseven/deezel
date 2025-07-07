@@ -278,6 +278,7 @@ mod tests {
     use async_trait::async_trait;
     
     // Mock provider for testing
+    #[allow(dead_code)]
     struct MockProvider;
     
     #[async_trait]
