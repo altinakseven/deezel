@@ -1,12 +1,20 @@
-[package]
-name = "deezel"
-version = "0.1.0"
-edition = "2021"
-description = "A Bitcoin wallet CLI tool for automated DIESEL token minting and management"
-authors = ["Deezel Team"]
+# Deezel Monorepo Workspace
+# 
+# This workspace contains:
+# - deezel: CLI binary crate with system calls and argument parsing
+# - deezel-common: Core library with all business logic for WASM compatibility
+#
+# The deezel-common crate contains all the actual logic and can be compiled to WASM,
+# while the deezel crate provides the CLI interface and system-specific implementations.
 
-[dependencies]
-# Core Bitcoin functionality - using rust-bitcoin directly
+[workspace]
+members = [
+  "crates/*"
+]
+resolver = "2"
+
+[workspace.dependencies]
+# Core Bitcoin functionality
 bitcoin = "0.32.6"
 ordinals = { git = "https://github.com/kungfuflex/alkanes-rs" }
 protorune-support = { git = "https://github.com/kungfuflex/alkanes-rs" }
@@ -19,9 +27,6 @@ aes-gcm = "0.10"
 rand = "0.8"
 sha2 = "0.10"
 
-# GPG functionality (optional)
-gpgme = { version = "0.11", optional = true }
-
 # Async runtime
 tokio = { version = "1.28", features = ["full"] }
 futures = "0.3"
@@ -33,21 +38,16 @@ reqwest = { version = "0.11", features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
-# Command-line argument parsing
-clap = { version = "4.3", features = ["derive"] }
-
 # Error handling
 anyhow = "1.0"
 thiserror = "1.0"
 
 # Logging
 log = "0.4"
-env_logger = "0.10"
 
 # Utilities
 hex = "0.4"
 async-trait = "0.1"
-dirs = "5.0"
 base64 = "0.22"
 regex = "1.10"
 flate2 = "1.0"
@@ -65,9 +65,14 @@ wasmprinter = "0.2"
 wat = "1.0"
 sha3 = "0.10"
 
-# Test dependencies
-[dev-dependencies]
+# CLI-specific dependencies (only used by deezel crate)
+clap = { version = "4.3", features = ["derive"] }
+env_logger = "0.10"
+dirs = "5.0"
 
-[features]
-default = ["gpg"]
-gpg = ["gpgme"]
+# GPG functionality (only used by deezel crate)
+gpgme = "0.11"
+
+[workspace.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

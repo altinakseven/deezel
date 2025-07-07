@@ -1,0 +1,737 @@
+//! Address resolution system for handling address identifiers
+//!
+//! This module provides functionality to resolve address identifiers like:
+//! - [self:p2tr:0] - Full format with wallet reference
+//! - p2tr:0 - Shorthand format
+//! - [external:bc1q...] - External address reference
+//! - Raw Bitcoin addresses
+
+use crate::{Result, DeezelError};
+use crate::traits::*;
+use crate::wallet::AddressType;
+use bitcoin::Network;
+use regex::Regex;
+use std::collections::HashMap;
+use std::str::FromStr;
+
+/// Address identifier types
+#[derive(Debug, Clone, PartialEq)]
+pub enum AddressIdentifier {
+    /// Self-wallet address with type and index
+    SelfWallet { address_type: AddressType, index: u32 },
+    /// External address reference
+    External { address: String },
+    /// Raw Bitcoin address (no identifier)
+    Raw { address: String },
+}
+
+/// Address resolver that works with any provider
+pub struct AddressResolver<P: DeezelProvider> {
+    provider: P,
+    cache: HashMap<String, String>,
+}
+
+impl<P: DeezelProvider> AddressResolver<P> {
+    /// Create a new address resolver
+    pub fn new(provider: P) -> Self {
+        Self {
+            provider,
+            cache: HashMap::new(),
+        }
+    }
+    
+    /// Check if string contains identifiers
+    pub fn contains_identifiers(&self, input: &str) -> bool {
+        self.find_identifiers(input).len() > 0
+    }
+    
+    /// Find all identifiers in a string
+    pub fn find_identifiers(&self, input: &str) -> Vec<String> {
+        let mut identifiers = Vec::new();
+        
+        // Pattern for full identifiers: [self:p2tr:0], [external:bc1q...]
+        let full_pattern = Regex::new(r"\[([^]]+)\]").unwrap();
+        for cap in full_pattern.captures_iter(input) {
+            if let Some(identifier) = cap.get(1) {
+                identifiers.push(format!("[{}]", identifier.as_str()));
+            }
+        }
+        
+        // Pattern for shorthand identifiers: p2tr:0, p2wpkh:5, etc.
+        if identifiers.is_empty() {
+            if self.is_shorthand_identifier(input) {
+                identifiers.push(input.to_string());
+            }
+        }
+        
+        identifiers
+    }
+    
+    /// Check if string is a shorthand identifier
+    pub fn is_shorthand_identifier(&self, input: &str) -> bool {
+        let parts: Vec<&str> = input.split(':').collect();
+        
+        if parts.is_empty() || parts.len() > 2 {
+            return false;
+        }
+        
+        // Check if first part is a valid address type
+        let address_type = parts[0].to_lowercase();
+        let valid_types = ["p2tr", "p2pkh", "p2sh", "p2wpkh", "p2wsh"];
+        
+        if !valid_types.contains(&address_type.as_str()) {
+            return false;
+        }
+        
+        // If there's a second part, it should be a valid index
+        if parts.len() == 2 {
+            if parts[1].parse::<u32>().is_err() {
+                return false;
+            }
+        }
+        
+        true
+    }
+    
+    /// Parse an identifier string
+    pub fn parse_identifier(&self, identifier: &str) -> Result<AddressIdentifier> {
+        // Remove brackets if present
+        let clean_identifier = identifier.trim_start_matches('[').trim_end_matches(']');
+        
+        let parts: Vec<&str> = clean_identifier.split(':').collect();
+        
+        match parts.len() {
+            1 => {
+                // Could be just an address type (p2tr) or a raw address
+                if self.is_valid_address_type(parts[0]) {
+                    let address_type = AddressType::from_str(parts[0])?;
+                    Ok(AddressIdentifier::SelfWallet { address_type, index: 0 })
+                } else {
+                    // Assume it's a raw address
+                    Ok(AddressIdentifier::Raw { address: parts[0].to_string() })
+                }
+            },
+            2 => {
+                if parts[0] == "self" {
+                    // [self:p2tr] format
+                    let address_type = AddressType::from_str(parts[1])?;
+                    Ok(AddressIdentifier::SelfWallet { address_type, index: 0 })
+                } else if parts[0] == "external" {
+                    // [external:address] format
+                    Ok(AddressIdentifier::External { address: parts[1].to_string() })
+                } else if self.is_valid_address_type(parts[0]) {
+                    // p2tr:0 format
+                    let address_type = AddressType::from_str(parts[0])?;
+                    let index = parts[1].parse::<u32>()
+                        .map_err(|_| DeezelError::Parse("Invalid address index".to_string()))?;
+                    Ok(AddressIdentifier::SelfWallet { address_type, index })
+                } else {
+                    Err(DeezelError::Parse(format!("Unknown identifier format: {}", identifier)))
+                }
+            },
+            3 => {
+                if parts[0] == "self" && self.is_valid_address_type(parts[1]) {
+                    // [self:p2tr:0] format
+                    let address_type = AddressType::from_str(parts[1])?;
+                    let index = parts[2].parse::<u32>()
+                        .map_err(|_| DeezelError::Parse("Invalid address index".to_string()))?;
+                    Ok(AddressIdentifier::SelfWallet { address_type, index })
+                } else {
+                    Err(DeezelError::Parse(format!("Unknown identifier format: {}", identifier)))
+                }
+            },
+            _ => Err(DeezelError::Parse(format!("Invalid identifier format: {}", identifier))),
+        }
+    }
+    
+    /// Check if string is a valid address type
+    fn is_valid_address_type(&self, s: &str) -> bool {
+        matches!(s.to_lowercase().as_str(), "p2tr" | "p2pkh" | "p2sh" | "p2wpkh" | "p2wsh")
+    }
+    
+    /// Resolve a single identifier to an address
+    pub async fn resolve_identifier(&mut self, identifier: &str) -> Result<String> {
+        // Check cache first
+        if let Some(cached) = self.cache.get(identifier) {
+            return Ok(cached.clone());
+        }
+        
+        let parsed = self.parse_identifier(identifier)?;
+        
+        let address = match parsed {
+            AddressIdentifier::SelfWallet { address_type, index } => {
+                crate::traits::AddressResolver::get_address(&self.provider, &address_type.as_str(), index).await?
+            },
+            AddressIdentifier::External { address } => address,
+            AddressIdentifier::Raw { address } => {
+                // Validate that it's a proper Bitcoin address
+                self.validate_bitcoin_address(&address)?;
+                address
+            },
+        };
+        
+        // Cache the result
+        self.cache.insert(identifier.to_string(), address.clone());
+        
+        Ok(address)
+    }
+    
+    /// Resolve all identifiers in a string
+    pub async fn resolve_all_identifiers(&mut self, input: &str) -> Result<String> {
+        let identifiers = self.find_identifiers(input);
+        
+        if identifiers.is_empty() {
+            return Ok(input.to_string());
+        }
+        
+        let mut result = input.to_string();
+        
+        for identifier in identifiers {
+            let address = self.resolve_identifier(&identifier).await?;
+            result = result.replace(&identifier, &address);
+        }
+        
+        Ok(result)
+    }
+    
+    /// Get address for specific type and index
+    pub async fn get_address(&self, address_type: &str, index: u32) -> Result<String> {
+        crate::traits::AddressResolver::get_address(&self.provider, address_type, index).await
+    }
+    
+    /// List available address identifiers
+    pub async fn list_identifiers(&self) -> Result<Vec<String>> {
+        self.provider.list_identifiers().await
+    }
+    
+    /// Validate Bitcoin address
+    fn validate_bitcoin_address(&self, address: &str) -> Result<()> {
+        // Try to parse as Bitcoin address using FromStr trait
+        match bitcoin::Address::from_str(address) {
+            Ok(_) => Ok(()),
+            Err(_) => {
+                // Check if it looks like a Bitcoin address pattern
+                if address.len() < 26 || address.len() > 62 {
+                    return Err(DeezelError::AddressResolution(
+                        format!("Invalid Bitcoin address length: {}", address)
+                    ));
+                }
+                
+                // Check for valid Bitcoin address prefixes
+                if !address.starts_with('1') && 
+                   !address.starts_with('3') && 
+                   !address.starts_with("bc1") && 
+                   !address.starts_with("tb1") && 
+                   !address.starts_with("bcrt1") {
+                    return Err(DeezelError::AddressResolution(
+                        format!("Invalid Bitcoin address format: {}", address)
+                    ));
+                }
+                
+                Ok(())
+            }
+        }
+    }
+    
+    /// Clear the address cache
+    pub fn clear_cache(&mut self) {
+        self.cache.clear();
+    }
+    
+    /// Get cache statistics
+    pub fn cache_stats(&self) -> (usize, usize) {
+        (self.cache.len(), self.cache.capacity())
+    }
+}
+
+/// Standalone address resolver for environments without full provider
+pub struct StandaloneAddressResolver {
+    addresses: HashMap<String, String>,
+    network: Network,
+}
+
+impl StandaloneAddressResolver {
+    /// Create a new standalone address resolver
+    pub fn new(network: Network) -> Self {
+        Self {
+            addresses: HashMap::new(),
+            network,
+        }
+    }
+    
+    /// Add an address mapping
+    pub fn add_address(&mut self, identifier: &str, address: &str) {
+        self.addresses.insert(identifier.to_string(), address.to_string());
+    }
+    
+    /// Resolve identifier using local mappings
+    pub fn resolve(&self, identifier: &str) -> Result<String> {
+        self.addresses.get(identifier)
+            .cloned()
+            .ok_or_else(|| DeezelError::AddressResolution(
+                format!("Unknown address identifier: {}", identifier)
+            ))
+    }
+    
+    /// Check if identifier exists
+    pub fn contains(&self, identifier: &str) -> bool {
+        self.addresses.contains_key(identifier)
+    }
+}
+
+/// Utility functions for address operations
+pub mod utils {
+    use super::*;
+    
+    /// Extract address from script
+    pub fn extract_address_from_script(script: &bitcoin::ScriptBuf, network: Network) -> Option<String> {
+        bitcoin::Address::from_script(script, network)
+            .ok()
+            .map(|addr| addr.to_string())
+    }
+    
+    /// Get script type description
+    pub fn get_script_type_description(script: &bitcoin::ScriptBuf) -> String {
+        if script.is_p2pkh() {
+            "P2PKH (Legacy)".to_string()
+        } else if script.is_p2sh() {
+            "P2SH (Script Hash)".to_string()
+        } else if script.is_p2tr() {
+            "P2TR (Taproot)".to_string()
+        } else if script.is_witness_program() {
+            "Witness Program (SegWit)".to_string()
+        } else {
+            "Unknown".to_string()
+        }
+    }
+    
+    /// Check if address is a raw Bitcoin address (not an identifier)
+    pub fn is_raw_bitcoin_address(addr: &str) -> bool {
+        !addr.contains('[') && !addr.contains(':') && (
+            addr.starts_with('1') || 
+            addr.starts_with('3') || 
+            addr.starts_with("bc1") || 
+            addr.starts_with("tb1") || 
+            addr.starts_with("bcrt1")
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[test]
+    fn test_is_shorthand_identifier() {
+        let resolver = StandaloneAddressResolver::new(Network::Regtest);
+        let resolver = AddressResolver::new(resolver);
+        
+        assert!(resolver.is_shorthand_identifier("p2tr:0"));
+        assert!(resolver.is_shorthand_identifier("p2wpkh:5"));
+        assert!(resolver.is_shorthand_identifier("p2tr"));
+        assert!(!resolver.is_shorthand_identifier("invalid:0"));
+        assert!(!resolver.is_shorthand_identifier("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"));
+    }
+    
+    #[test]
+    fn test_find_identifiers() {
+        let resolver = StandaloneAddressResolver::new(Network::Regtest);
+        let resolver = AddressResolver::new(resolver);
+        
+        let identifiers = resolver.find_identifiers("Send to [self:p2tr:0] and [external:bc1q...]");
+        assert_eq!(identifiers.len(), 2);
+        assert!(identifiers.contains(&"[self:p2tr:0]".to_string()));
+        assert!(identifiers.contains(&"[external:bc1q...]".to_string()));
+        
+        let identifiers = resolver.find_identifiers("p2tr:0");
+        assert_eq!(identifiers.len(), 1);
+        assert!(identifiers.contains(&"p2tr:0".to_string()));
+    }
+    
+    #[test]
+    fn test_utils() {
+        assert!(utils::is_raw_bitcoin_address("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"));
+        assert!(utils::is_raw_bitcoin_address("1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"));
+        assert!(!utils::is_raw_bitcoin_address("p2tr:0"));
+        assert!(!utils::is_raw_bitcoin_address("[self:p2tr:0]"));
+    }
+    
+    #[test]
+    fn test_standalone_resolver() {
+        let mut resolver = StandaloneAddressResolver::new(Network::Regtest);
+        resolver.add_address("p2tr:0", "bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kyxztk9");
+        
+        assert!(resolver.contains("p2tr:0"));
+        assert_eq!(resolver.resolve("p2tr:0").unwrap(), "bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kyxztk9");
+        assert!(resolver.resolve("unknown").is_err());
+    }
+}
+// Implement basic DeezelProvider for StandaloneAddressResolver for testing
+#[async_trait::async_trait]
+impl JsonRpcProvider for StandaloneAddressResolver {
+    async fn call(&self, _url: &str, _method: &str, _params: serde_json::Value, _id: u64) -> Result<serde_json::Value> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support RPC calls".to_string()))
+    }
+    async fn get_bytecode(&self, _block: &str, _tx: &str) -> Result<String> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support bytecode retrieval".to_string()))
+    }
+}
+
+#[async_trait::async_trait]
+impl StorageProvider for StandaloneAddressResolver {
+    async fn read(&self, _key: &str) -> Result<Vec<u8>> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support storage".to_string()))
+    }
+    async fn write(&self, _key: &str, _data: &[u8]) -> Result<()> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support storage".to_string()))
+    }
+    async fn exists(&self, _key: &str) -> Result<bool> { Ok(false) }
+    async fn delete(&self, _key: &str) -> Result<()> { Ok(()) }
+    async fn list_keys(&self, _prefix: &str) -> Result<Vec<String>> { Ok(vec![]) }
+    fn storage_type(&self) -> &'static str { "none" }
+}
+
+#[async_trait::async_trait]
+impl NetworkProvider for StandaloneAddressResolver {
+    async fn get(&self, _url: &str) -> Result<Vec<u8>> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support network operations".to_string()))
+    }
+    async fn post(&self, _url: &str, _body: &[u8], _content_type: &str) -> Result<Vec<u8>> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support network operations".to_string()))
+    }
+    async fn is_reachable(&self, _url: &str) -> bool { false }
+}
+
+#[async_trait::async_trait]
+impl CryptoProvider for StandaloneAddressResolver {
+    fn random_bytes(&self, _len: usize) -> Result<Vec<u8>> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support crypto operations".to_string()))
+    }
+    fn sha256(&self, _data: &[u8]) -> Result<[u8; 32]> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support crypto operations".to_string()))
+    }
+    fn sha3_256(&self, _data: &[u8]) -> Result<[u8; 32]> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support crypto operations".to_string()))
+    }
+    async fn encrypt_aes_gcm(&self, _data: &[u8], _key: &[u8], _nonce: &[u8]) -> Result<Vec<u8>> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support crypto operations".to_string()))
+    }
+    async fn decrypt_aes_gcm(&self, _data: &[u8], _key: &[u8], _nonce: &[u8]) -> Result<Vec<u8>> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support crypto operations".to_string()))
+    }
+    async fn pbkdf2_derive(&self, _password: &[u8], _salt: &[u8], _iterations: u32, _key_len: usize) -> Result<Vec<u8>> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support crypto operations".to_string()))
+    }
+}
+
+impl TimeProvider for StandaloneAddressResolver {
+    fn now_secs(&self) -> u64 { 0 }
+    fn now_millis(&self) -> u64 { 0 }
+    async fn sleep_ms(&self, _ms: u64) {}
+}
+
+impl LogProvider for StandaloneAddressResolver {
+    fn debug(&self, _message: &str) {}
+    fn info(&self, _message: &str) {}
+    fn warn(&self, _message: &str) {}
+    fn error(&self, _message: &str) {}
+}
+
+#[async_trait::async_trait]
+impl WalletProvider for StandaloneAddressResolver {
+    async fn create_wallet(&self, _config: WalletConfig, _mnemonic: Option<String>, _passphrase: Option<String>) -> Result<WalletInfo> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support wallet operations".to_string()))
+    }
+    async fn load_wallet(&self, _config: WalletConfig, _passphrase: Option<String>) -> Result<WalletInfo> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support wallet operations".to_string()))
+    }
+    async fn get_balance(&self) -> Result<WalletBalance> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support wallet operations".to_string()))
+    }
+    async fn get_address(&self) -> Result<String> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support wallet operations".to_string()))
+    }
+    async fn get_addresses(&self, _count: u32) -> Result<Vec<AddressInfo>> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support wallet operations".to_string()))
+    }
+    async fn send(&self, _params: SendParams) -> Result<String> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support wallet operations".to_string()))
+    }
+    async fn get_utxos(&self, _include_frozen: bool, _addresses: Option<Vec<String>>) -> Result<Vec<UtxoInfo>> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support wallet operations".to_string()))
+    }
+    async fn get_history(&self, _count: u32, _address: Option<String>) -> Result<Vec<TransactionInfo>> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support wallet operations".to_string()))
+    }
+    async fn freeze_utxo(&self, _utxo: String, _reason: Option<String>) -> Result<()> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support wallet operations".to_string()))
+    }
+    async fn unfreeze_utxo(&self, _utxo: String) -> Result<()> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support wallet operations".to_string()))
+    }
+    async fn create_transaction(&self, _params: SendParams) -> Result<String> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support wallet operations".to_string()))
+    }
+    async fn sign_transaction(&self, _tx_hex: String) -> Result<String> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support wallet operations".to_string()))
+    }
+    async fn broadcast_transaction(&self, _tx_hex: String) -> Result<String> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support wallet operations".to_string()))
+    }
+    async fn estimate_fee(&self, _target: u32) -> Result<FeeEstimate> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support wallet operations".to_string()))
+    }
+    async fn get_fee_rates(&self) -> Result<FeeRates> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support wallet operations".to_string()))
+    }
+    async fn sync(&self) -> Result<()> { Ok(()) }
+    async fn backup(&self) -> Result<String> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support wallet operations".to_string()))
+    }
+    async fn get_mnemonic(&self) -> Result<Option<String>> { Ok(None) }
+    fn get_network(&self) -> Network { self.network }
+    
+    async fn get_internal_key(&self) -> Result<bitcoin::XOnlyPublicKey> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support wallet operations".to_string()))
+    }
+    
+    async fn sign_psbt(&self, _psbt: &bitcoin::psbt::Psbt) -> Result<bitcoin::psbt::Psbt> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support wallet operations".to_string()))
+    }
+    
+    async fn get_keypair(&self) -> Result<bitcoin::secp256k1::Keypair> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support wallet operations".to_string()))
+    }
+}
+
+#[async_trait::async_trait]
+impl crate::traits::AddressResolver for StandaloneAddressResolver {
+    async fn resolve_all_identifiers(&self, input: &str) -> Result<String> {
+        Ok(input.to_string()) // No-op for standalone
+    }
+    fn contains_identifiers(&self, _input: &str) -> bool { false }
+    async fn get_address(&self, _address_type: &str, _index: u32) -> Result<String> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support address generation".to_string()))
+    }
+    async fn list_identifiers(&self) -> Result<Vec<String>> {
+        Ok(self.addresses.keys().cloned().collect())
+    }
+}
+
+#[async_trait::async_trait]
+impl BitcoinRpcProvider for StandaloneAddressResolver {
+    async fn get_block_count(&self) -> Result<u64> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoin RPC".to_string()))
+    }
+    async fn generate_to_address(&self, _nblocks: u32, _address: &str) -> Result<serde_json::Value> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoin RPC".to_string()))
+    }
+    async fn get_transaction_hex(&self, _txid: &str) -> Result<String> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoin RPC".to_string()))
+    }
+    async fn get_block(&self, _hash: &str) -> Result<serde_json::Value> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoin RPC".to_string()))
+    }
+    async fn get_block_hash(&self, _height: u64) -> Result<String> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoin RPC".to_string()))
+    }
+    async fn send_raw_transaction(&self, _tx_hex: &str) -> Result<String> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoin RPC".to_string()))
+    }
+    async fn get_mempool_info(&self) -> Result<serde_json::Value> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoin RPC".to_string()))
+    }
+    async fn estimate_smart_fee(&self, _target: u32) -> Result<serde_json::Value> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoin RPC".to_string()))
+    }
+    
+    async fn get_esplora_blocks_tip_height(&self) -> Result<u64> {
+        Err(DeezelError::NotImplemented("get_esplora_blocks_tip_height not implemented for StandaloneAddressResolver".to_string()))
+    }
+    
+    async fn trace_transaction(&self, _txid: &str, _vout: u32, _block: Option<&str>, _tx: Option<&str>) -> Result<serde_json::Value> {
+        Err(DeezelError::NotImplemented("trace_transaction not implemented for StandaloneAddressResolver".to_string()))
+    }
+}
+
+#[async_trait::async_trait]
+impl MetashrewRpcProvider for StandaloneAddressResolver {
+    async fn get_metashrew_height(&self) -> Result<u64> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Metashrew RPC".to_string()))
+    }
+    async fn get_contract_meta(&self, _block: &str, _tx: &str) -> Result<serde_json::Value> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Metashrew RPC".to_string()))
+    }
+    async fn trace_outpoint(&self, _txid: &str, _vout: u32) -> Result<serde_json::Value> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Metashrew RPC".to_string()))
+    }
+    async fn get_spendables_by_address(&self, _address: &str) -> Result<serde_json::Value> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Metashrew RPC".to_string()))
+    }
+    async fn get_protorunes_by_address(&self, _address: &str) -> Result<serde_json::Value> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Metashrew RPC".to_string()))
+    }
+    async fn get_protorunes_by_outpoint(&self, _txid: &str, _vout: u32) -> Result<serde_json::Value> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Metashrew RPC".to_string()))
+    }
+}
+
+#[async_trait::async_trait]
+impl EsploraProvider for StandaloneAddressResolver {
+    async fn get_blocks_tip_hash(&self) -> Result<String> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Esplora API".to_string()))
+    }
+    async fn get_blocks_tip_height(&self) -> Result<u64> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Esplora API".to_string()))
+    }
+    async fn get_blocks(&self, _start_height: Option<u64>) -> Result<serde_json::Value> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Esplora API".to_string()))
+    }
+    async fn get_block_by_height(&self, _height: u64) -> Result<String> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Esplora API".to_string()))
+    }
+    async fn get_block(&self, _hash: &str) -> Result<serde_json::Value> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Esplora API".to_string()))
+    }
+    async fn get_block_status(&self, _hash: &str) -> Result<serde_json::Value> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Esplora API".to_string()))
+    }
+    async fn get_block_txids(&self, _hash: &str) -> Result<serde_json::Value> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Esplora API".to_string()))
+    }
+    async fn get_block_header(&self, _hash: &str) -> Result<String> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Esplora API".to_string()))
+    }
+    async fn get_block_raw(&self, _hash: &str) -> Result<String> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Esplora API".to_string()))
+    }
+    async fn get_block_txid(&self, _hash: &str, _index: u32) -> Result<String> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Esplora API".to_string()))
+    }
+    async fn get_block_txs(&self, _hash: &str, _start_index: Option<u32>) -> Result<serde_json::Value> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Esplora API".to_string()))
+    }
+    async fn get_address(&self, _address: &str) -> Result<serde_json::Value> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Esplora API".to_string()))
+    }
+    async fn get_address_txs(&self, _address: &str) -> Result<serde_json::Value> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Esplora API".to_string()))
+    }
+    async fn get_address_txs_chain(&self, _address: &str, _last_seen_txid: Option<&str>) -> Result<serde_json::Value> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Esplora API".to_string()))
+    }
+    async fn get_address_txs_mempool(&self, _address: &str) -> Result<serde_json::Value> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Esplora API".to_string()))
+    }
+    async fn get_address_utxo(&self, _address: &str) -> Result<serde_json::Value> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Esplora API".to_string()))
+    }
+    async fn get_address_prefix(&self, _prefix: &str) -> Result<serde_json::Value> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Esplora API".to_string()))
+    }
+    async fn get_tx(&self, _txid: &str) -> Result<serde_json::Value> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Esplora API".to_string()))
+    }
+    async fn get_tx_hex(&self, _txid: &str) -> Result<String> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Esplora API".to_string()))
+    }
+    async fn get_tx_raw(&self, _txid: &str) -> Result<String> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Esplora API".to_string()))
+    }
+    async fn get_tx_status(&self, _txid: &str) -> Result<serde_json::Value> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Esplora API".to_string()))
+    }
+    async fn get_tx_merkle_proof(&self, _txid: &str) -> Result<serde_json::Value> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Esplora API".to_string()))
+    }
+    async fn get_tx_merkleblock_proof(&self, _txid: &str) -> Result<String> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Esplora API".to_string()))
+    }
+    async fn get_tx_outspend(&self, _txid: &str, _index: u32) -> Result<serde_json::Value> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Esplora API".to_string()))
+    }
+    async fn get_tx_outspends(&self, _txid: &str) -> Result<serde_json::Value> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Esplora API".to_string()))
+    }
+    async fn broadcast(&self, _tx_hex: &str) -> Result<String> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Esplora API".to_string()))
+    }
+    async fn get_mempool(&self) -> Result<serde_json::Value> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Esplora API".to_string()))
+    }
+    async fn get_mempool_txids(&self) -> Result<serde_json::Value> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Esplora API".to_string()))
+    }
+    async fn get_mempool_recent(&self) -> Result<serde_json::Value> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Esplora API".to_string()))
+    }
+    async fn get_fee_estimates(&self) -> Result<serde_json::Value> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Esplora API".to_string()))
+    }
+}
+
+#[async_trait::async_trait]
+impl RunestoneProvider for StandaloneAddressResolver {
+    async fn decode_runestone(&self, _tx: &bitcoin::Transaction) -> Result<serde_json::Value> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support runestone operations".to_string()))
+    }
+    async fn format_runestone_with_decoded_messages(&self, _tx: &bitcoin::Transaction) -> Result<serde_json::Value> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support runestone operations".to_string()))
+    }
+    async fn analyze_runestone(&self, _txid: &str) -> Result<serde_json::Value> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support runestone operations".to_string()))
+    }
+}
+
+#[async_trait::async_trait]
+impl AlkanesProvider for StandaloneAddressResolver {
+    async fn execute(&self, _params: AlkanesExecuteParams) -> Result<AlkanesExecuteResult> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
+    }
+    async fn get_balance(&self, _address: Option<&str>) -> Result<Vec<AlkanesBalance>> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
+    }
+    async fn get_token_info(&self, _alkane_id: &str) -> Result<serde_json::Value> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
+    }
+    async fn trace(&self, _outpoint: &str) -> Result<serde_json::Value> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
+    }
+    async fn inspect(&self, _target: &str, _config: AlkanesInspectConfig) -> Result<AlkanesInspectResult> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
+    }
+    async fn get_bytecode(&self, _alkane_id: &str) -> Result<String> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
+    }
+    async fn simulate(&self, _contract_id: &str, _params: Option<&str>) -> Result<serde_json::Value> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
+    }
+}
+
+#[async_trait::async_trait]
+impl MonitorProvider for StandaloneAddressResolver {
+    async fn monitor_blocks(&self, _start: Option<u64>) -> Result<()> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support monitoring".to_string()))
+    }
+    async fn get_block_events(&self, _height: u64) -> Result<Vec<BlockEvent>> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support monitoring".to_string()))
+    }
+}
+
+impl Clone for StandaloneAddressResolver {
+    fn clone(&self) -> Self {
+        Self {
+            addresses: self.addresses.clone(),
+            network: self.network,
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl DeezelProvider for StandaloneAddressResolver {
+    fn provider_name(&self) -> &str {
+        "StandaloneAddressResolver"
+    }
+    async fn initialize(&self) -> Result<()> { Ok(()) }
+    async fn shutdown(&self) -> Result<()> { Ok(()) }
+}

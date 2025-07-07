@@ -1,0 +1,31 @@
+[package]
+name = "deezel"
+version = "0.1.0"
+edition = "2021"
+authors = ["Deezel Team"]
+description = "Bitcoin alkanes inspector and wallet CLI"
+license = "MIT"
+
+[[bin]]
+name = "deezel"
+path = "src/main.rs"
+
+[dependencies]
+deezel-common = { path = "../deezel-common" }
+tokio = { version = "1.0", features = ["full"] }
+clap = { version = "4.0", features = ["derive"] }
+anyhow = "1.0"
+serde_json = "1.0"
+bitcoin = "0.32"
+async-trait = "0.1"
+reqwest = { version = "0.12", features = ["json"] }
+dirs = "5.0"
+log = "0.4"
+env_logger = "0.11"
+rand = "0.8"
+sha2 = "0.10"
+sha3 = "0.10"
+hex = "0.4"
+
+[dev-dependencies]
+tempfile = "3.0"
