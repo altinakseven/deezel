@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Analyze deezel-v5-tx.hex and compare it with working-tx.hex and previous versions
+Analyze deezel v2-v6 transactions and compare with working-tx.hex
 """
 
 import sys
@@ -250,9 +250,12 @@ def main():
     tx_files = [
         ('examples/working-tx.hex', 'working'),
         ('examples/deezel-v2-tx.hex', 'deezel-v2'),
-        ('examples/deezel-v3-tex.hex', 'deezel-v3'),
+        ('examples/deezel-v3-tx.hex', 'deezel-v3'),
         ('examples/deezel-v4-tx.hex', 'deezel-v4'),
         ('examples/deezel-v5-tx.hex', 'deezel-v5'),
+        ('examples/deezel-v6-tx.hex', 'deezel-v6'),
+        ('examples/deezel-v7-tx.hex', 'deezel-v7'),
+        ('examples/deezel-v8-tx.hex', 'deezel-v8'),
     ]
     
     analyzed_transactions = []
@@ -275,48 +278,72 @@ def main():
     if analyzed_transactions:
         compare_transactions(analyzed_transactions)
         
-        # Special focus on v5
-        v5_tx = next((tx for tx in analyzed_transactions if tx['name'] == 'deezel-v5'), None)
-        if v5_tx:
+        # Special focus on latest version
+        latest_tx = None
+        for version in ['deezel-v8', 'deezel-v7', 'deezel-v6', 'deezel-v5', 'deezel-v4', 'deezel-v3', 'deezel-v2']:
+            latest_tx = next((tx for tx in analyzed_transactions if tx['name'] == version), None)
+            if latest_tx:
+                break
+        
+        if latest_tx:
             print(f"\n{'='*80}")
-            print("DEEZEL V5 SPECIFIC ANALYSIS")
+            print(f"{latest_tx['name'].upper()} SPECIFIC ANALYSIS")
             print(f"{'='*80}")
             
             working_tx = next((tx for tx in analyzed_transactions if 'working' in tx['name']), None)
             if working_tx:
-                print(f"\n🎯 V5 vs WORKING TRANSACTION:")
-                print(f"Size difference: {v5_tx['size_bytes'] - working_tx['size_bytes']:,} bytes")
-                print(f"VSize difference: {v5_tx['vsize'] - working_tx['vsize']:,} vbytes")
-                print(f"Input difference: {v5_tx['input_count'] - working_tx['input_count']} inputs")
-                print(f"Output difference: {v5_tx['output_count'] - working_tx['output_count']} outputs")
+                print(f"\n🎯 {latest_tx['name'].upper()} vs WORKING TRANSACTION:")
+                print(f"Size difference: {latest_tx['size_bytes'] - working_tx['size_bytes']:,} bytes")
+                print(f"VSize difference: {latest_tx['vsize'] - working_tx['vsize']:,} vbytes")
+                print(f"Input difference: {latest_tx['input_count'] - working_tx['input_count']} inputs")
+                print(f"Output difference: {latest_tx['output_count'] - working_tx['output_count']} outputs")
                 
                 # Witness structure analysis
-                if v5_tx['has_witness'] and working_tx['has_witness']:
+                if latest_tx['has_witness'] and working_tx['has_witness']:
                     print(f"\n🔍 WITNESS STRUCTURE ANALYSIS:")
                     print(f"Working transaction witness pattern:")
                     for i, witness in enumerate(working_tx['witness_data']):
-                        pattern = [f"{item['type']}({item['size']})" for item in witness]
-                        print(f"  Input {i}: {pattern}")
+                        pattern = [f"'{item['type']}({item['size']})'" for item in witness]
+                        print(f"  Input {i}: [{', '.join(pattern)}]")
                     
-                    print(f"V5 transaction witness pattern:")
-                    for i, witness in enumerate(v5_tx['witness_data']):
-                        pattern = [f"{item['type']}({item['size']})" for item in witness]
-                        print(f"  Input {i}: {pattern}")
+                    print(f"{latest_tx['name']} transaction witness pattern:")
+                    for i, witness in enumerate(latest_tx['witness_data']):
+                        pattern = [f"'{item['type']}({item['size']})'" for item in witness]
+                        print(f"  Input {i}: [{', '.join(pattern)}]")
                     
-                    # Check if V5 matches working pattern
-                    if (len(v5_tx['witness_data']) == 1 and len(working_tx['witness_data']) == 1 and
-                        len(v5_tx['witness_data'][0]) == 3 and len(working_tx['witness_data'][0]) == 3):
-                        v5_pattern = [item['type'] for item in v5_tx['witness_data'][0]]
-                        working_pattern = [item['type'] for item in working_tx['witness_data'][0]]
-                        
-                        if v5_pattern == working_pattern:
-                            print(f"✅ V5 witness pattern MATCHES working transaction!")
-                        else:
-                            print(f"❌ V5 witness pattern differs from working transaction")
-                            print(f"   Working: {working_pattern}")
-                            print(f"   V5: {v5_pattern}")
+                    # Check if latest matches working pattern
+                    working_pattern = []
+                    for witness in working_tx['witness_data']:
+                        working_pattern.append([item['type'] for item in witness])
+                    
+                    latest_pattern = []
+                    for witness in latest_tx['witness_data']:
+                        latest_pattern.append([item['type'] for item in witness])
+                    
+                    if working_pattern == latest_pattern:
+                        print(f"✅ {latest_tx['name']} has same witness structure as working transaction")
                     else:
-                        print(f"❌ V5 has different witness structure than working transaction")
+                        print(f"❌ {latest_tx['name']} has different witness structure than working transaction")
+                        
+                        # Detailed analysis of differences
+                        print()
+                        print("🔍 DETAILED WITNESS DIFFERENCES:")
+                        
+                        # Check if working has 1 input vs latest having multiple
+                        if len(working_tx['witness_data']) == 1 and len(latest_tx['witness_data']) > 1:
+                            print(f"❌ Working transaction has 1 input, {latest_tx['name']} has {len(latest_tx['witness_data'])} inputs")
+                            print("💡 SOLUTION: Need to optimize to single input like working transaction")
+                            
+                            # Check if first input matches working pattern
+                            if len(latest_tx['witness_data']) > 0:
+                                first_input_pattern = [item['type'] for item in latest_tx['witness_data'][0]]
+                                working_input_pattern = [item['type'] for item in working_tx['witness_data'][0]]
+                                
+                                if first_input_pattern == working_input_pattern:
+                                    print("✅ First input witness pattern matches working transaction")
+                                    print("💡 Additional inputs are causing the difference")
+                                else:
+                                    print("❌ Even first input witness pattern differs from working transaction")
 
 if __name__ == "__main__":
     main()
