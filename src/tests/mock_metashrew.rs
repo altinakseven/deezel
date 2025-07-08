@@ -132,7 +132,7 @@ impl MockMetashrewServer {
 
     /// Handle metashrew_height method
     async fn handle_metashrew_height(state: Arc<Mutex<TestState>>) -> Result<Value> {
-        let state_guard = state.lock().unwrap();
+        let state_guard = state.lock().expect("Failed to lock state");
         Ok(json!(state_guard.height))
     }
 
@@ -179,7 +179,7 @@ impl MockMetashrewServer {
         let address = params_array[0].as_str()
             .ok_or_else(|| anyhow!("Address must be a string"))?;
 
-        let state_guard = state.lock().unwrap();
+        let state_guard = state.lock().expect("Failed to lock state");
         let utxos = state_guard.utxos.get(address).cloned().unwrap_or_default();
 
         // Convert UTXOs to the expected format
@@ -208,7 +208,7 @@ impl MockMetashrewServer {
         let address = params_array[0].as_str()
             .ok_or_else(|| anyhow!("Address must be a string"))?;
 
-        let state_guard = state.lock().unwrap();
+        let state_guard = state.lock().expect("Failed to lock state");
         let balances = state_guard.alkanes_balances.get(address).cloned().unwrap_or_default();
 
         // Convert to expected protorune format
@@ -333,7 +333,7 @@ impl MockMetashrewServer {
             .map_err(|e| anyhow!("Failed to decode hex input: {}", e))?;
 
         // For now, return a mock block response
-        let state_guard = state.lock().unwrap();
+        let state_guard = state.lock().expect("Failed to lock state");
         let _current_height = state_guard.height;
 
         // Create a mock block response
@@ -429,7 +429,7 @@ impl MockMetashrewServer {
 /// Add mock UTXOs for an address
 pub fn add_mock_utxos(address: &str, utxos: Vec<MockUtxo>) -> Result<()> {
     let state = get_test_state()?;
-    let mut state_guard = state.lock().unwrap();
+    let mut state_guard = state.lock().expect("Failed to lock state");
     state_guard.utxos.insert(address.to_string(), utxos);
     Ok(())
 }
@@ -437,7 +437,7 @@ pub fn add_mock_utxos(address: &str, utxos: Vec<MockUtxo>) -> Result<()> {
 /// Add mock protorune balance for an address
 pub fn add_mock_protorune_balance(address: &str, rune_id: &str, amount: u64) -> Result<()> {
     let state = get_test_state()?;
-    let mut state_guard = state.lock().unwrap();
+    let mut state_guard = state.lock().expect("Failed to lock state");
     
     let balances = state_guard.alkanes_balances
         .entry(address.to_string())
@@ -450,7 +450,7 @@ pub fn add_mock_protorune_balance(address: &str, rune_id: &str, amount: u64) -> 
 /// Set mock block height
 pub fn set_mock_height(height: u32) -> Result<()> {
     let state = get_test_state()?;
-    let mut state_guard = state.lock().unwrap();
+    let mut state_guard = state.lock().expect("Failed to lock state");
     state_guard.height = height;
     Ok(())
 }
