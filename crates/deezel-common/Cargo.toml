@@ -85,7 +85,7 @@ native-deps = ["dirs", "tempfile", "tokio", "reqwest"]
 web-compat = []
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["full", "test-util"] }
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "time", "sync", "fs", "io-util", "signal", "process", "test-util"] }
 env_logger = "0.10"
 
 # WASM-specific configuration
