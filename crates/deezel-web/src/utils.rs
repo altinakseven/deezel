@@ -82,21 +82,21 @@ impl WebUtils {
         }
     }
 
-    /// Convert JavaScript Uint8Array to Rust Vec<u8>
+    /// Convert JavaScript Uint8Array to Rust `Vec<u8>`
     pub fn uint8_array_to_vec(array: &Uint8Array) -> Vec<u8> {
         let mut vec = vec![0u8; array.length() as usize];
         array.copy_to(&mut vec);
         vec
     }
 
-    /// Convert Rust Vec<u8> to JavaScript Uint8Array
+    /// Convert Rust `Vec<u8>` to JavaScript Uint8Array
     pub fn vec_to_uint8_array(vec: &[u8]) -> Uint8Array {
         let array = Uint8Array::new_with_length(vec.len() as u32);
         array.copy_from(vec);
         array
     }
 
-    /// Convert JavaScript Array to Rust Vec<String>
+    /// Convert JavaScript Array to Rust `Vec<String>`
     pub fn js_array_to_string_vec(array: &Array) -> Vec<String> {
         let mut vec = Vec::new();
         for i in 0..array.length() {
@@ -107,7 +107,7 @@ impl WebUtils {
         vec
     }
 
-    /// Convert Rust Vec<String> to JavaScript Array
+    /// Convert Rust `Vec<String>` to JavaScript Array
     pub fn string_vec_to_js_array(vec: &[String]) -> Array {
         let array = Array::new();
         for item in vec {

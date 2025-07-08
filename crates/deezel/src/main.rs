@@ -669,7 +669,7 @@ fn is_shorthand_address_identifier(input: &str) -> bool {
 }
 
 /// Resolve address identifiers in a string using the provided provider
-/// Supports both full format [self:p2tr:0] and shorthand format p2tr:0
+/// Supports both full format \[self:p2tr:0\] and shorthand format p2tr:0
 async fn resolve_address_identifiers(input: &str, provider: &ConcreteProvider) -> Result<String> {
     // Check if input contains full identifiers like [self:p2tr:0]
     if provider.contains_identifiers(input) {

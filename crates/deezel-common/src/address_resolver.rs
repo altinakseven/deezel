@@ -1,7 +1,7 @@
 //! Address resolution system for handling address identifiers
 //!
 //! This module provides functionality to resolve address identifiers like:
-//! - [self:p2tr:0] - Full format with wallet reference
+//! - \[self:p2tr:0\] - Full format with wallet reference
 //! - p2tr:0 - Shorthand format
 //! - [external:bc1q...] - External address reference
 //! - Raw Bitcoin addresses
