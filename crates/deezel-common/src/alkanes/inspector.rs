@@ -51,6 +51,21 @@ use std::sync::{Arc, Mutex};
 use alloc::sync::Arc;
 #[cfg(target_arch = "wasm32")]
 use spin::Mutex;
+
+// Helper macro to handle mutex locking across different mutex types
+#[cfg(not(target_arch = "wasm32"))]
+macro_rules! lock_mutex {
+    ($mutex:expr) => {
+        $mutex.lock().unwrap()
+    };
+}
+
+#[cfg(target_arch = "wasm32")]
+macro_rules! lock_mutex {
+    ($mutex:expr) => {
+        $mutex.lock()
+    };
+}
 use serde::{Serialize, Deserialize};
 #[cfg(feature = "wasm-inspection")]
 use wasmi::{*, StoreLimits, StoreLimitsBuilder};
@@ -477,7 +492,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
         for &opcode in opcodes {
             // Update the context inputs for this opcode
             {
-                let mut context_guard = store.data().context.lock().unwrap();
+                let mut context_guard = lock_mutex!(store.data().context);
                 context_guard.inputs[0] = opcode; // First input is the opcode
                 // Keep the rest as zeros
                 for i in 1..16 {
@@ -489,7 +504,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
             
             // Clear host calls from previous execution
             {
-                let mut calls_guard = store.data().host_calls.lock().unwrap();
+                let mut calls_guard = lock_mutex!(store.data().host_calls);
                 calls_guard.clear();
             }
             
@@ -503,7 +518,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
             
             // Capture host calls for this execution
             let host_calls = {
-                let calls_guard = store.data().host_calls.lock().unwrap();
+                let calls_guard = lock_mutex!(store.data().host_calls);
                 calls_guard.clone()
             };
 
@@ -722,7 +737,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
 
         // __request_context - matches alkanes-rs signature
         linker.func_wrap("env", "__request_context", |caller: Caller<'_, AlkanesState>| -> i32 {
-            let context_guard = caller.data().context.lock().unwrap();
+            let context_guard = lock_mutex!(caller.data().context);
             let serialized = context_guard.serialize();
             serialized.len() as i32
         }).unwrap();
@@ -730,7 +745,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
         // __load_context - matches alkanes-rs signature
         linker.func_wrap("env", "__load_context", |mut caller: Caller<'_, AlkanesState>, output: i32| -> i32 {
             let serialized = {
-                let context_guard = caller.data().context.lock().unwrap();
+                let context_guard = lock_mutex!(caller.data().context);
                 context_guard.serialize()
             };
             
@@ -787,7 +802,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
             };
             
             {
-                let mut calls = caller.data().host_calls.lock().unwrap();
+                let mut calls = lock_mutex!(caller.data().host_calls);
                 calls.push(host_call);
             }
             
@@ -883,7 +898,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
             };
             
             {
-                let mut calls = caller.data().host_calls.lock().unwrap();
+                let mut calls = lock_mutex!(caller.data().host_calls);
                 calls.push(host_call);
             }
             
@@ -973,7 +988,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
         // __returndatacopy - matches alkanes-rs signature
         linker.func_wrap("env", "__returndatacopy", |mut caller: Caller<'_, AlkanesState>, output: i32| {
             let returndata = {
-                let context_guard = caller.data().context.lock().unwrap();
+                let context_guard = lock_mutex!(caller.data().context);
                 context_guard.returndata.clone()
             };
             if let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory()) {
@@ -1025,7 +1040,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
             };
             
             {
-                let mut calls = caller.data().host_calls.lock().unwrap();
+                let mut calls = lock_mutex!(caller.data().host_calls);
                 calls.push(host_call);
             }
             
@@ -1049,7 +1064,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
             };
             
             {
-                let mut calls = caller.data().host_calls.lock().unwrap();
+                let mut calls = lock_mutex!(caller.data().host_calls);
                 calls.push(host_call);
             }
             
@@ -1073,7 +1088,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
             };
             
             {
-                let mut calls = caller.data().host_calls.lock().unwrap();
+                let mut calls = lock_mutex!(caller.data().host_calls);
                 calls.push(host_call);
             }
             
@@ -1121,7 +1136,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
 
     /// Decode ExtendedCallResponse structure from WASM memory
     fn decode_extended_call_response(&self, store: &Store<AlkanesState>, memory: Memory, ptr: usize) -> Result<(Vec<u8>, Option<String>)> {
-        let memory_size = memory.size(store) as usize;
+        let memory_size = (u32::from(memory.current_pages(store)) * 65536) as usize;
         
         if ptr < 4 || ptr >= memory_size {
             return Err(anyhow::anyhow!("Response pointer 0x{:x} is invalid (memory size: {})", ptr, memory_size));
@@ -1214,7 +1229,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
     /// Read metadata from WASM memory
     fn read_metadata_from_memory(&self, store: &Store<AlkanesState>, memory: Memory, ptr: usize) -> Result<AlkaneMetadata> {
         // Get memory size for bounds checking
-        let memory_size = memory.size(store) as usize;
+        let memory_size = (u32::from(memory.current_pages(store)) * 65536) as usize;
         
         if ptr < 4 || ptr >= memory_size {
             return Err(anyhow::anyhow!("Pointer 0x{:x} is invalid (memory size: {})", ptr, memory_size));

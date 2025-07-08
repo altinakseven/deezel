@@ -101,8 +101,7 @@ use crate::logging::WebLogger;
 /// ```
 #[derive(Clone)]
 pub struct WebProvider {
-    bitcoin_rpc_url: String,
-    metashrew_rpc_url: String,
+    sandshrew_rpc_url: String,
     network: Network,
     storage: WebStorage,
     network_client: WebNetwork,
@@ -147,8 +146,6 @@ impl WebProvider {
     /// }
     /// ```
     pub async fn new(
-        bitcoin_rpc_url: String,
-        metashrew_rpc_url: String,
         network_str: String,
     ) -> Result<Self> {
         let network = match network_str.as_str() {
@@ -159,9 +156,16 @@ impl WebProvider {
             _ => return Err(DeezelError::Configuration(format!("Invalid network: {}", network_str))),
         };
 
+        let sandshrew_rpc_url = match network {
+            Network::Bitcoin => "https://mainnet.sandshrew.io/v4/wrlckwrld".to_string(),
+            Network::Testnet => "https://signet.sandshrew.io/v4/wrlckwrld".to_string(),
+            Network::Signet => "https://signet.sandshrew.io/v4/wrlckwrld".to_string(),
+            Network::Regtest => "http://localhost:18888".to_string(),
+            _ => return Err(DeezelError::Configuration(format!("Unsupported network: {}", network_str))),
+        };
+
         Ok(Self {
-            bitcoin_rpc_url,
-            metashrew_rpc_url,
+            sandshrew_rpc_url,
             network,
             storage: WebStorage::new(),
             network_client: WebNetwork::new(),
@@ -196,8 +200,8 @@ impl WebProvider {
         WalletConfig {
             wallet_path: "web-wallet".to_string(),
             network: self.network,
-            bitcoin_rpc_url: self.bitcoin_rpc_url.clone(),
-            metashrew_rpc_url: self.metashrew_rpc_url.clone(),
+            bitcoin_rpc_url: self.sandshrew_rpc_url.clone(),
+            metashrew_rpc_url: self.sandshrew_rpc_url.clone(),
             network_params: None,
         }
     }
@@ -207,14 +211,9 @@ impl WebProvider {
         self.network
     }
 
-    /// Get the Bitcoin RPC URL
-    pub fn bitcoin_rpc_url(&self) -> &str {
-        &self.bitcoin_rpc_url
-    }
-
-    /// Get the Metashrew RPC URL
-    pub fn metashrew_rpc_url(&self) -> &str {
-        &self.metashrew_rpc_url
+    /// Get the Sandshrew RPC URL
+    pub fn sandshrew_rpc_url(&self) -> &str {
+        &self.sandshrew_rpc_url
     }
 
     /// Make a fetch request using web-sys
@@ -343,7 +342,7 @@ impl WebProvider {
 
 #[async_trait(?Send)]
 impl JsonRpcProvider for WebProvider {
-    async fn call(&self, url: &str, method: &str, params: JsonValue, id: u64) -> Result<JsonValue> {
+    async fn call(&self, _url: &str, method: &str, params: JsonValue, id: u64) -> Result<JsonValue> {
         let request_body = serde_json::json!({
             "jsonrpc": "2.0",
             "method": method,
@@ -357,7 +356,7 @@ impl JsonRpcProvider for WebProvider {
             .map_err(|e| DeezelError::Network(format!("Failed to set header: {:?}", e)))?;
 
         let response = self.fetch_request(
-            url,
+            self.sandshrew_rpc_url(),
             "POST",
             Some(&request_body.to_string()),
             Some(&headers),
@@ -385,7 +384,7 @@ impl JsonRpcProvider for WebProvider {
 
     async fn get_bytecode(&self, block: &str, tx: &str) -> Result<String> {
         let params = serde_json::json!([block, tx]);
-        let result = self.call(&self.metashrew_rpc_url, "get_bytecode", params, 1).await?;
+        let result = self.call(self.sandshrew_rpc_url(), "get_bytecode", params, 1).await?;
         Ok(result.as_str().unwrap_or("").to_string())
     }
 }

@@ -89,10 +89,13 @@ impl WalletProvider for WebProvider {
     }
 
     async fn get_balance(&self) -> Result<WalletBalance> {
-        // In a real implementation, this would query the blockchain
+        let address = WalletProvider::get_address(self).await?;
+        let utxos = WalletProvider::get_utxos(self, true, Some(vec![address])).await?;
+        let confirmed = utxos.iter().filter(|u| u.confirmations > 0).map(|u| u.amount).sum();
+        let unconfirmed = utxos.iter().filter(|u| u.confirmations == 0).map(|u| u.amount).sum();
         Ok(WalletBalance {
-            confirmed: 100000000, // 1 BTC in satoshis
-            trusted_pending: 0,
+            confirmed,
+            trusted_pending: unconfirmed,
             untrusted_pending: 0,
         })
     }
@@ -128,23 +131,50 @@ impl WalletProvider for WebProvider {
         Ok("web_mock_txid_".to_string() + &hex::encode(self.random_bytes(16)?))
     }
 
-    async fn get_utxos(&self, _include_frozen: bool, _addresses: Option<Vec<String>>) -> Result<Vec<UtxoInfo>> {
-        // Mock UTXO data
-        Ok(vec![UtxoInfo {
-            txid: "web_mock_utxo_txid".to_string(),
-            vout: 0,
-            amount: 100000000,
-            address: WalletProvider::get_address(self).await?,
-            script_pubkey: Some(bitcoin::ScriptBuf::new()),
-            confirmations: 6,
-            frozen: false,
-            freeze_reason: None,
-            block_height: Some(800000),
-            has_inscriptions: false,
-            has_runes: false,
-            has_alkanes: false,
-            is_coinbase: false,
-        }])
+    async fn get_utxos(&self, include_frozen: bool, addresses: Option<Vec<String>>) -> Result<Vec<UtxoInfo>> {
+        let addresses = if let Some(addresses) = addresses {
+            addresses
+        } else {
+            vec![WalletProvider::get_address(self).await?]
+        };
+        let mut utxos = vec![];
+        for address in addresses {
+            let result = EsploraProvider::get_address_utxo(self, &address).await?;
+            if let Some(utxo_array) = result.as_array() {
+                for utxo in utxo_array {
+                    let status = utxo.get("status");
+                    let confirmations = if let Some(s) = status {
+                        if s.get("confirmed").and_then(|c| c.as_bool()).unwrap_or(false) {
+                            s.get("block_height").and_then(|h| h.as_u64()).unwrap_or(1) as u32
+                        } else {
+                            0
+                        }
+                    } else {
+                        0
+                    };
+
+                    let utxo_info = UtxoInfo {
+                        txid: utxo["txid"].as_str().unwrap_or_default().to_string(),
+                        vout: utxo["vout"].as_u64().unwrap_or_default() as u32,
+                        amount: utxo["value"].as_u64().unwrap_or_default(),
+                        address: address.clone(),
+                        script_pubkey: None,
+                        confirmations,
+                        frozen: false,
+                        freeze_reason: None,
+                        block_height: status.and_then(|s| s.get("block_height").and_then(|h| h.as_u64())),
+                        has_inscriptions: false,
+                        has_runes: false,
+                        has_alkanes: false,
+                        is_coinbase: false,
+                    };
+                    if include_frozen || !utxo_info.frozen {
+                        utxos.push(utxo_info);
+                    }
+                }
+            }
+        }
+        Ok(utxos)
     }
 
     async fn get_history(&self, _count: u32, _address: Option<String>) -> Result<Vec<TransactionInfo>> {
@@ -283,50 +313,49 @@ impl AddressResolver for WebProvider {
 #[async_trait(?Send)]
 impl BitcoinRpcProvider for WebProvider {
     async fn get_block_count(&self) -> Result<u64> {
-        let result = self.call(self.bitcoin_rpc_url(), "getblockcount", serde_json::json!([]), 1).await?;
+        let result = self.call(self.sandshrew_rpc_url(), "btc_getblockcount", serde_json::json!([]), 1).await?;
         Ok(result.as_u64().unwrap_or(800000))
     }
 
     async fn generate_to_address(&self, nblocks: u32, address: &str) -> Result<JsonValue> {
         let params = serde_json::json!([nblocks, address]);
-        self.call(self.bitcoin_rpc_url(), "generatetoaddress", params, 1).await
+        self.call(self.sandshrew_rpc_url(), "generatetoaddress", params, 1).await
     }
 
     async fn get_transaction_hex(&self, txid: &str) -> Result<String> {
         let params = serde_json::json!([txid]);
-        let result = self.call(self.bitcoin_rpc_url(), "getrawtransaction", params, 1).await?;
+        let result = self.call(self.sandshrew_rpc_url(), "getrawtransaction", params, 1).await?;
         Ok(result.as_str().unwrap_or("").to_string())
     }
 
     async fn get_block(&self, hash: &str) -> Result<JsonValue> {
         let params = serde_json::json!([hash]);
-        self.call(self.bitcoin_rpc_url(), "getblock", params, 1).await
+        self.call(self.sandshrew_rpc_url(), "getblock", params, 1).await
     }
 
     async fn get_block_hash(&self, height: u64) -> Result<String> {
         let params = serde_json::json!([height]);
-        let result = self.call(self.bitcoin_rpc_url(), "getblockhash", params, 1).await?;
+        let result = self.call(self.sandshrew_rpc_url(), "getblockhash", params, 1).await?;
         Ok(result.as_str().unwrap_or("").to_string())
     }
 
     async fn send_raw_transaction(&self, tx_hex: &str) -> Result<String> {
         let params = serde_json::json!([tx_hex]);
-        let result = self.call(self.bitcoin_rpc_url(), "sendrawtransaction", params, 1).await?;
+        let result = self.call(self.sandshrew_rpc_url(), "sendrawtransaction", params, 1).await?;
         Ok(result.as_str().unwrap_or("").to_string())
     }
 
     async fn get_mempool_info(&self) -> Result<JsonValue> {
-        self.call(self.bitcoin_rpc_url(), "getmempoolinfo", serde_json::json!([]), 1).await
+        self.call(self.sandshrew_rpc_url(), "getmempoolinfo", serde_json::json!([]), 1).await
     }
 
     async fn estimate_smart_fee(&self, target: u32) -> Result<JsonValue> {
         let params = serde_json::json!([target]);
-        self.call(self.bitcoin_rpc_url(), "estimatesmartfee", params, 1).await
+        self.call(self.sandshrew_rpc_url(), "estimatesmartfee", params, 1).await
     }
 
     async fn get_esplora_blocks_tip_height(&self) -> Result<u64> {
-        // Mock implementation
-        Ok(800000)
+        EsploraProvider::get_blocks_tip_height(self).await
     }
 
     async fn trace_transaction(&self, _txid: &str, _vout: u32, _block: Option<&str>, _tx: Option<&str>) -> Result<JsonValue> {
@@ -338,33 +367,33 @@ impl BitcoinRpcProvider for WebProvider {
 #[async_trait(?Send)]
 impl MetashrewRpcProvider for WebProvider {
     async fn get_metashrew_height(&self) -> Result<u64> {
-        let result = self.call(self.metashrew_rpc_url(), "metashrew_height", serde_json::json!([]), 1).await?;
+        let result = self.call(self.sandshrew_rpc_url(), "metashrew_height", serde_json::json!([]), 1).await?;
         Ok(result.as_u64().unwrap_or(800001))
     }
 
     async fn get_contract_meta(&self, block: &str, tx: &str) -> Result<JsonValue> {
         let params = serde_json::json!([block, tx]);
-        self.call(self.metashrew_rpc_url(), "metashrew_view", params, 1).await
+        self.call(self.sandshrew_rpc_url(), "metashrew_view", params, 1).await
     }
 
     async fn trace_outpoint(&self, txid: &str, vout: u32) -> Result<JsonValue> {
         let params = serde_json::json!([txid, vout]);
-        self.call(self.metashrew_rpc_url(), "trace_outpoint", params, 1).await
+        self.call(self.sandshrew_rpc_url(), "trace_outpoint", params, 1).await
     }
 
     async fn get_spendables_by_address(&self, address: &str) -> Result<JsonValue> {
         let params = serde_json::json!([address]);
-        self.call(self.metashrew_rpc_url(), "spendablesbyaddress", params, 1).await
+        self.call(self.sandshrew_rpc_url(), "spendablesbyaddress", params, 1).await
     }
 
     async fn get_protorunes_by_address(&self, address: &str) -> Result<JsonValue> {
         let params = serde_json::json!([address]);
-        self.call(self.metashrew_rpc_url(), "protorunesbyaddress", params, 1).await
+        self.call(self.sandshrew_rpc_url(), "protorunesbyaddress", params, 1).await
     }
 
     async fn get_protorunes_by_outpoint(&self, txid: &str, vout: u32) -> Result<JsonValue> {
         let params = serde_json::json!([txid, vout]);
-        self.call(self.metashrew_rpc_url(), "protorunesbyoutpoint", params, 1).await
+        self.call(self.sandshrew_rpc_url(), "protorunesbyoutpoint", params, 1).await
     }
 }
 

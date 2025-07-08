@@ -1874,7 +1874,7 @@ pub trait AlkanesProvider {
 }
 
 /// Alkanes execute parameters
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AlkanesExecuteParams {
     pub inputs: String,
     pub to: String,
@@ -1889,7 +1889,7 @@ pub struct AlkanesExecuteParams {
 }
 
 /// Alkanes execute result
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AlkanesExecuteResult {
     pub commit_txid: Option<String>,
     pub reveal_txid: String,
@@ -2060,7 +2060,7 @@ pub enum ProtostoneEncoding {
 }
 
 /// Alkanes balance
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AlkanesBalance {
     pub name: String,
     pub symbol: String,
@@ -2069,14 +2069,14 @@ pub struct AlkanesBalance {
 }
 
 /// Alkane ID
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AlkaneId {
     pub block: u64,
     pub tx: u64,
 }
 
 /// Alkanes inspect configuration
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AlkanesInspectConfig {
     pub disasm: bool,
     pub fuzz: bool,
@@ -2086,7 +2086,7 @@ pub struct AlkanesInspectConfig {
 }
 
 /// Alkanes inspect result
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AlkanesInspectResult {
     pub alkane_id: AlkaneId,
     pub bytecode_length: usize,
@@ -2170,7 +2170,7 @@ pub trait MonitorProvider {
 }
 
 /// Block event
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct BlockEvent {
     pub event_type: String,
     pub block_height: u64,

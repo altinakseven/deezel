@@ -616,12 +616,10 @@ impl BrowserWalletProvider {
     /// Connect to a browser wallet
     pub async fn connect(
         wallet_info: WalletInfo,
-        bitcoin_rpc_url: String,
-        metashrew_rpc_url: String,
         network_str: String,
     ) -> Result<Self> {
         // Create the underlying web provider for blockchain operations
-        let web_provider = WebProvider::new(bitcoin_rpc_url, metashrew_rpc_url, network_str).await?;
+        let web_provider = WebProvider::new(network_str).await?;
         
         // Create the wallet connector and injected wallet
         let connector = WalletConnector::new();
