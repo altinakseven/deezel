@@ -66,7 +66,7 @@ metashrew-support = { workspace = true }
 protobuf = { workspace = true }
 
 # WASM runtime for alkane inspection
-wasmtime = { workspace = true, optional = true }
+wasmi = { workspace = true, optional = true }
 wasmprinter = { workspace = true, optional = true }
 wat = { workspace = true, optional = true }
 sha3 = { workspace = true }
@@ -80,7 +80,7 @@ reqwest = { workspace = true, features = ["json"], optional = true }
 
 [features]
 default = ["wasm-inspection", "native-deps"]
-wasm-inspection = ["wasmtime", "wasmprinter", "wat"]
+wasm-inspection = ["wasmi", "wasmprinter", "wat"]
 native-deps = ["dirs", "tempfile", "tokio", "reqwest"]
 web-compat = []
 

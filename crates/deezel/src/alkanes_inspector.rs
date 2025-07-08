@@ -14,7 +14,7 @@ use serde_json;
 
 use crate::rpc::RpcClient;
 use deezel_common::alkanes::types::AlkaneId;
-use wasmtime::*;
+use wasmi::*;
 use alkanes_support::{
     id::AlkaneId as AlkanesAlkaneId,
     parcel::AlkaneTransferParcel,

@@ -13,7 +13,7 @@ use std::time::Instant;
 use std::sync::{Arc, Mutex};
 use serde::{Serialize, Deserialize};
 #[cfg(feature = "wasm-inspection")]
-use wasmtime::*;
+use wasmi::*;
 #[cfg(feature = "wasm-inspection")]
 use anyhow::{Context, Result};
 #[cfg(feature = "wasm-inspection")]
@@ -97,6 +97,7 @@ pub struct AlkanesState {
     pub had_failure: bool,
     pub context: Arc<Mutex<AlkanesRuntimeContext>>,
     pub host_calls: Arc<Mutex<Vec<HostCall>>>,
+    pub limiter: StoreLimits,
 }
 
 /// Configuration for alkanes inspection
@@ -279,22 +280,22 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
         let linker = Self::create_host_functions(store.engine());
         
         // Compile and instantiate the module
-        let module = Module::new(store.engine(), wasm_bytes)
+        let module = Module::new(store.engine(), &mut &wasm_bytes[..])
             .context("Failed to compile WASM module")?;
         
         let instance = linker.instantiate(&mut store, &module)
-            .context("Failed to instantiate WASM module")?;
+            .context("Failed to instantiate WASM module")?
+            .ensure_no_start(&mut store)
+            .context("Failed to ensure no start function")?;
         
         // Get memory export
-        let memory = instance.get_export(&mut store, "memory")
-            .and_then(|export| export.into_memory())
+        let memory = instance.get_memory(&mut store, "memory")
             .ok_or_else(|| anyhow::anyhow!("No memory export found"))?;
         
         // Get __meta export
-        let meta_func = instance.get_export(&mut store, "__meta")
-            .and_then(|export| export.into_func())
+        let meta_func = instance.get_func(&mut store, "__meta")
             .ok_or_else(|| anyhow::anyhow!("No __meta export found"))?
-            .typed::<(), i32>(&mut store)
+            .typed::<(), i32>(&store)
             .context("Failed to get typed __meta function")?;
         
         // Execute __meta
@@ -401,21 +402,21 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
         let linker = Self::create_host_functions(store.engine());
         
         // Compile and instantiate the module once
-        let module = Module::new(store.engine(), wasm_bytes)
+        let module = Module::new(store.engine(), &mut &wasm_bytes[..])
             .context("Failed to compile WASM module")?;
         
         let instance = linker.instantiate(&mut store, &module)
-            .context("Failed to instantiate WASM module")?;
+            .context("Failed to instantiate WASM module")?
+            .ensure_no_start(&mut store)
+            .context("Failed to ensure no start function")?;
         
         // Get memory and function exports once
-        let memory = instance.get_export(&mut store, "memory")
-            .and_then(|export| export.into_memory())
+        let memory = instance.get_memory(&mut store, "memory")
             .ok_or_else(|| anyhow::anyhow!("No memory export found"))?;
         
-        let execute_func = instance.get_export(&mut store, "__execute")
-            .and_then(|export| export.into_func())
+        let execute_func = instance.get_func(&mut store, "__execute")
             .ok_or_else(|| anyhow::anyhow!("No __execute export found"))?
-            .typed::<(), i32>(&mut store)
+            .typed::<(), i32>(&store)
             .context("Failed to get typed __execute function")?;
         
         let mut results = Vec::new();
@@ -635,26 +636,23 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
         }
     }
 
-    /// Create a wasmtime engine with host functions
+    /// Create a wasmi engine with host functions
     fn create_engine(&self) -> Engine {
-        let mut config = Config::new();
-        config.wasm_memory64(false);
-        config.wasm_multi_memory(false);
-        config.wasm_bulk_memory(true);
-        config.wasm_reference_types(true);
-        config.wasm_simd(true);  // Enable SIMD to avoid conflicts
+        let mut config = Config::default();
         config.consume_fuel(true);
-        Engine::new(&config).unwrap()
+        Engine::new(&config)
     }
 
-    /// Create a wasmtime store with runtime state
+    /// Create a wasmi store with runtime state
     fn create_store(&self, engine: &Engine, context: AlkanesRuntimeContext) -> Store<AlkanesState> {
         let state = AlkanesState {
             had_failure: false,
             context: Arc::new(Mutex::new(context)),
             host_calls: Arc::new(Mutex::new(Vec::new())),
+            limiter: StoreLimitsBuilder::new().memory_size(16 * 1024 * 1024).build(), // 16MB memory limit
         };
         let mut store = Store::new(engine, state);
+        store.limiter(|state| &mut state.limiter);
         store.set_fuel(1_000_000).unwrap(); // Set fuel for execution
         store
     }
@@ -682,40 +680,34 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
                 context_guard.serialize()
             };
             
-            if let Some(memory) = caller.get_export("memory") {
-                if let Some(memory) = memory.into_memory() {
-                    let memory_data = memory.data_mut(&mut caller);
-                    let output_addr = output as usize;
-                    
-                    // Write the serialized context directly (no length prefix)
-                    if output_addr + serialized.len() <= memory_data.len() {
-                        memory_data[output_addr..output_addr + serialized.len()].copy_from_slice(&serialized);
-                        return serialized.len() as i32;
-                    }
+            if let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory()) {
+                let output_addr = output as usize;
+                
+                // Write the serialized context directly (no length prefix)
+                if let Ok(_) = memory.write(&mut caller, output_addr, &serialized) {
+                    return serialized.len() as i32;
                 }
             }
             -1
         }).unwrap();
 
         // __request_storage - matches alkanes-rs signature
-        linker.func_wrap("env", "__request_storage", |mut caller: Caller<'_, AlkanesState>, k: i32| -> i32 {
+        linker.func_wrap("env", "__request_storage", |caller: Caller<'_, AlkanesState>, k: i32| -> i32 {
             let start_time = std::time::Instant::now();
             
             // Read the storage key from memory
-            let key_str = if let Some(memory) = caller.get_export("memory") {
-                if let Some(memory) = memory.into_memory() {
-                    let memory_data = memory.data(&caller);
-                    let k_addr = k as usize;
-                    
-                    // Read length from ptr - 4 (4 bytes before the pointer)
-                    if k_addr >= 4 && k_addr - 4 + 4 <= memory_data.len() {
-                        let len_bytes = &memory_data[k_addr - 4..k_addr];
-                        let len = u32::from_le_bytes([len_bytes[0], len_bytes[1], len_bytes[2], len_bytes[3]]) as usize;
+            let key_str = if let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory()) {
+                let k_addr = k as usize;
+                
+                // Read length from ptr - 4 (4 bytes before the pointer)
+                if k_addr >= 4 {
+                    let mut len_bytes = [0u8; 4];
+                    if memory.read(&caller, k_addr - 4, &mut len_bytes).is_ok() {
+                        let len = u32::from_le_bytes(len_bytes) as usize;
                         
-                        if k_addr + len <= memory_data.len() {
-                            // Read key starting from ptr
-                            let key_bytes = &memory_data[k_addr..k_addr + len];
-                            String::from_utf8_lossy(key_bytes).to_string()
+                        let mut key_bytes = vec![0u8; len];
+                        if memory.read(&caller, k_addr, &mut key_bytes).is_ok() {
+                            String::from_utf8_lossy(&key_bytes).to_string()
                         } else {
                             format!("invalid_key_bounds_ptr_{}_len_{}", k, len)
                         }
@@ -723,7 +715,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
                         format!("invalid_key_ptr_{}", k)
                     }
                 } else {
-                    format!("no_memory_key_{}", k)
+                    format!("invalid_key_ptr_{}", k)
                 }
             } else {
                 format!("no_memory_export_key_{}", k)
@@ -752,20 +744,18 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
             let start_time = std::time::Instant::now();
             
             // Read the storage key from memory
-            let key_str = if let Some(memory) = caller.get_export("memory") {
-                if let Some(memory) = memory.into_memory() {
-                    let memory_data = memory.data(&caller);
-                    let k_addr = k as usize;
-                    
-                    // Read length from ptr - 4 (4 bytes before the pointer)
-                    if k_addr >= 4 && k_addr - 4 + 4 <= memory_data.len() {
-                        let len_bytes = &memory_data[k_addr - 4..k_addr];
-                        let len = u32::from_le_bytes([len_bytes[0], len_bytes[1], len_bytes[2], len_bytes[3]]) as usize;
+            let key_str = if let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory()) {
+                let k_addr = k as usize;
+                
+                // Read length from ptr - 4 (4 bytes before the pointer)
+                if k_addr >= 4 {
+                    let mut len_bytes = [0u8; 4];
+                    if memory.read(&caller, k_addr - 4, &mut len_bytes).is_ok() {
+                        let len = u32::from_le_bytes(len_bytes) as usize;
                         
-                        if k_addr + len <= memory_data.len() {
-                            // Read key starting from ptr
-                            let key_bytes = &memory_data[k_addr..k_addr + len];
-                            String::from_utf8_lossy(key_bytes).to_string()
+                        let mut key_bytes = vec![0u8; len];
+                        if memory.read(&caller, k_addr, &mut key_bytes).is_ok() {
+                            String::from_utf8_lossy(&key_bytes).to_string()
                         } else {
                             format!("invalid_key_bounds_ptr_{}_len_{}", k, len)
                         }
@@ -773,7 +763,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
                         format!("invalid_key_ptr_{}", k)
                     }
                 } else {
-                    format!("no_memory_key_{}", k)
+                    format!("invalid_key_ptr_{}", k)
                 }
             } else {
                 format!("no_memory_export_key_{}", k)
@@ -810,17 +800,14 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
             };
             
             // Write the storage value to memory
-            let bytes_written = if let Some(memory) = caller.get_export("memory") {
-                if let Some(memory) = memory.into_memory() {
-                    let memory_data = memory.data_mut(&mut caller);
-                    let v_addr = v as usize;
-                    
-                    if v_addr + 4 + storage_value.len() <= memory_data.len() {
-                        // Write length first
-                        let len_bytes = (storage_value.len() as u32).to_le_bytes();
-                        memory_data[v_addr..v_addr + 4].copy_from_slice(&len_bytes);
-                        // Write storage value
-                        memory_data[v_addr + 4..v_addr + 4 + storage_value.len()].copy_from_slice(&storage_value);
+            let bytes_written = if let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory()) {
+                let v_addr = v as usize;
+                
+                // Write length first
+                let len_bytes = (storage_value.len() as u32).to_le_bytes();
+                if memory.write(&mut caller, v_addr, &len_bytes).is_ok() {
+                    // Write storage value
+                    if memory.write(&mut caller, v_addr + 4, &storage_value).is_ok() {
                         storage_value.len() as i32
                     } else {
                         0
@@ -850,39 +837,33 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
         // __height - matches alkanes-rs signature
         linker.func_wrap("env", "__height", |mut caller: Caller<'_, AlkanesState>, output: i32| {
             let height: u64 = 800000; // Placeholder height
-            if let Some(memory) = caller.get_export("memory") {
-                if let Some(memory) = memory.into_memory() {
-                    let memory_data = memory.data_mut(&mut caller);
-                    let output_addr = output as usize;
-                    let height_bytes = height.to_le_bytes();
-                    
-                    if output_addr + 4 + height_bytes.len() <= memory_data.len() {
-                        // Write length first
-                        let len_bytes = (height_bytes.len() as u32).to_le_bytes();
-                        memory_data[output_addr..output_addr + 4].copy_from_slice(&len_bytes);
-                        // Write height data
-                        memory_data[output_addr + 4..output_addr + 4 + height_bytes.len()].copy_from_slice(&height_bytes);
-                    }
+            if let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory()) {
+                let output_addr = output as usize;
+                let height_bytes = height.to_le_bytes();
+                
+                // Write length first
+                let len_bytes = (height_bytes.len() as u32).to_le_bytes();
+                if memory.write(&mut caller, output_addr, &len_bytes).is_ok() {
+                    // Write height data
+                    let _ = memory.write(&mut caller, output_addr + 4, &height_bytes);
                 }
             }
         }).unwrap();
 
         // __log - matches alkanes-rs signature
-        linker.func_wrap("env", "__log", |mut caller: Caller<'_, AlkanesState>, v: i32| {
-            if let Some(memory) = caller.get_export("memory") {
-                if let Some(memory) = memory.into_memory() {
-                    let memory_data = memory.data(&caller);
-                    let v_addr = v as usize;
-                    
-                    // Read length from ptr - 4 (4 bytes before the pointer)
-                    if v_addr >= 4 && v_addr - 4 + 4 <= memory_data.len() {
-                        let len_bytes = &memory_data[v_addr - 4..v_addr];
-                        let len = u32::from_le_bytes([len_bytes[0], len_bytes[1], len_bytes[2], len_bytes[3]]) as usize;
+        linker.func_wrap("env", "__log", |caller: Caller<'_, AlkanesState>, v: i32| {
+            if let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory()) {
+                let v_addr = v as usize;
+                
+                // Read length from ptr - 4 (4 bytes before the pointer)
+                if v_addr >= 4 {
+                    let mut len_bytes = [0u8; 4];
+                    if memory.read(&caller, v_addr - 4, &mut len_bytes).is_ok() {
+                        let len = u32::from_le_bytes(len_bytes) as usize;
                         
-                        if v_addr + len <= memory_data.len() {
-                            // Read message starting from ptr
-                            let message_bytes = &memory_data[v_addr..v_addr + len];
-                            if let Ok(message) = String::from_utf8(message_bytes.to_vec()) {
+                        let mut message_bytes = vec![0u8; len];
+                        if memory.read(&caller, v_addr, &mut message_bytes).is_ok() {
+                            if let Ok(message) = String::from_utf8(message_bytes) {
                                 print!("{}", message);
                             }
                         }
@@ -894,17 +875,13 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
         // __balance - matches alkanes-rs signature
         linker.func_wrap("env", "__balance", |mut caller: Caller<'_, AlkanesState>, _who: i32, _what: i32, output: i32| {
             // Return zero balance
-            if let Some(memory) = caller.get_export("memory") {
-                if let Some(memory) = memory.into_memory() {
-                    let memory_data = memory.data_mut(&mut caller);
-                    let output_addr = output as usize;
-                    let zero_balance = 0u128.to_le_bytes();
-                    
-                    if output_addr + 4 + zero_balance.len() <= memory_data.len() {
-                        let len_bytes = (zero_balance.len() as u32).to_le_bytes();
-                        memory_data[output_addr..output_addr + 4].copy_from_slice(&len_bytes);
-                        memory_data[output_addr + 4..output_addr + 4 + zero_balance.len()].copy_from_slice(&zero_balance);
-                    }
+            if let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory()) {
+                let output_addr = output as usize;
+                let zero_balance = 0u128.to_le_bytes();
+                
+                let len_bytes = (zero_balance.len() as u32).to_le_bytes();
+                if memory.write(&mut caller, output_addr, &len_bytes).is_ok() {
+                    let _ = memory.write(&mut caller, output_addr + 4, &zero_balance);
                 }
             }
         }).unwrap();
@@ -912,17 +889,13 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
         // __sequence - matches alkanes-rs signature
         linker.func_wrap("env", "__sequence", |mut caller: Caller<'_, AlkanesState>, output: i32| {
             let sequence: u128 = 0; // Placeholder sequence
-            if let Some(memory) = caller.get_export("memory") {
-                if let Some(memory) = memory.into_memory() {
-                    let memory_data = memory.data_mut(&mut caller);
-                    let output_addr = output as usize;
-                    let seq_bytes = sequence.to_le_bytes();
-                    
-                    if output_addr + 4 + seq_bytes.len() <= memory_data.len() {
-                        let len_bytes = (seq_bytes.len() as u32).to_le_bytes();
-                        memory_data[output_addr..output_addr + 4].copy_from_slice(&len_bytes);
-                        memory_data[output_addr + 4..output_addr + 4 + seq_bytes.len()].copy_from_slice(&seq_bytes);
-                    }
+            if let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory()) {
+                let output_addr = output as usize;
+                let seq_bytes = sequence.to_le_bytes();
+                
+                let len_bytes = (seq_bytes.len() as u32).to_le_bytes();
+                if memory.write(&mut caller, output_addr, &len_bytes).is_ok() {
+                    let _ = memory.write(&mut caller, output_addr + 4, &seq_bytes);
                 }
             }
         }).unwrap();
@@ -930,17 +903,13 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
         // __fuel - matches alkanes-rs signature
         linker.func_wrap("env", "__fuel", |mut caller: Caller<'_, AlkanesState>, output: i32| {
             let fuel: u64 = 1000000; // Placeholder fuel
-            if let Some(memory) = caller.get_export("memory") {
-                if let Some(memory) = memory.into_memory() {
-                    let memory_data = memory.data_mut(&mut caller);
-                    let output_addr = output as usize;
-                    let fuel_bytes = fuel.to_le_bytes();
-                    
-                    if output_addr + 4 + fuel_bytes.len() <= memory_data.len() {
-                        let len_bytes = (fuel_bytes.len() as u32).to_le_bytes();
-                        memory_data[output_addr..output_addr + 4].copy_from_slice(&len_bytes);
-                        memory_data[output_addr + 4..output_addr + 4 + fuel_bytes.len()].copy_from_slice(&fuel_bytes);
-                    }
+            if let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory()) {
+                let output_addr = output as usize;
+                let fuel_bytes = fuel.to_le_bytes();
+                
+                let len_bytes = (fuel_bytes.len() as u32).to_le_bytes();
+                if memory.write(&mut caller, output_addr, &len_bytes).is_ok() {
+                    let _ = memory.write(&mut caller, output_addr + 4, &fuel_bytes);
                 }
             }
         }).unwrap();
@@ -951,16 +920,12 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
                 let context_guard = caller.data().context.lock().unwrap();
                 context_guard.returndata.clone()
             };
-            if let Some(memory) = caller.get_export("memory") {
-                if let Some(memory) = memory.into_memory() {
-                    let memory_data = memory.data_mut(&mut caller);
-                    let output_addr = output as usize;
-                    
-                    if output_addr + 4 + returndata.len() <= memory_data.len() {
-                        let len_bytes = (returndata.len() as u32).to_le_bytes();
-                        memory_data[output_addr..output_addr + 4].copy_from_slice(&len_bytes);
-                        memory_data[output_addr + 4..output_addr + 4 + returndata.len()].copy_from_slice(&returndata);
-                    }
+            if let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory()) {
+                let output_addr = output as usize;
+                
+                let len_bytes = (returndata.len() as u32).to_le_bytes();
+                if memory.write(&mut caller, output_addr, &len_bytes).is_ok() {
+                    let _ = memory.write(&mut caller, output_addr + 4, &returndata);
                 }
             }
         }).unwrap();
@@ -1061,32 +1026,33 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
 
     /// Helper function to decode cellpack information from memory
     fn decode_cellpack_info(caller: &mut Caller<'_, AlkanesState>, cellpack_ptr: i32) -> String {
-        if let Some(memory) = caller.get_export("memory") {
-            if let Some(memory) = memory.into_memory() {
-                let memory_data = memory.data(caller);
-                let ptr_addr = cellpack_ptr as usize;
-                
-                // Read length from ptr - 4 (4 bytes before the pointer)
-                if ptr_addr >= 4 && ptr_addr - 4 + 4 <= memory_data.len() {
-                    let len_bytes = &memory_data[ptr_addr - 4..ptr_addr];
-                    let len = u32::from_le_bytes([len_bytes[0], len_bytes[1], len_bytes[2], len_bytes[3]]) as usize;
+        if let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory()) {
+            let ptr_addr = cellpack_ptr as usize;
+            
+            // Read length from ptr - 4 (4 bytes before the pointer)
+            if ptr_addr >= 4 {
+                let mut len_bytes = [0u8; 4];
+                if memory.read(&mut *caller, ptr_addr - 4, &mut len_bytes).is_ok() {
+                    let len = u32::from_le_bytes(len_bytes) as usize;
                     
-                    if ptr_addr + len <= memory_data.len() && len >= 32 {
+                    if len >= 32 {
                         // Try to read target AlkaneId (first 32 bytes starting from ptr)
-                        let target_bytes = &memory_data[ptr_addr..ptr_addr + 32];
-                        let block = u128::from_le_bytes(target_bytes[0..16].try_into().unwrap_or([0; 16]));
-                        let tx = u128::from_le_bytes(target_bytes[16..32].try_into().unwrap_or([0; 16]));
-                        
-                        // Try to read inputs if available
-                        let inputs_info = if len > 32 {
-                            let remaining_len = len - 32;
-                            let inputs_count = remaining_len / 16; // Each u128 input is 16 bytes
-                            format!(" with {} inputs", inputs_count)
-                        } else {
-                            String::new()
-                        };
-                        
-                        return format!("AlkaneId{{block: {}, tx: {}}}{}", block, tx, inputs_info);
+                        let mut target_bytes = [0u8; 32];
+                        if memory.read(&mut *caller, ptr_addr, &mut target_bytes).is_ok() {
+                            let block = u128::from_le_bytes(target_bytes[0..16].try_into().unwrap_or([0; 16]));
+                            let tx = u128::from_le_bytes(target_bytes[16..32].try_into().unwrap_or([0; 16]));
+                            
+                            // Try to read inputs if available
+                            let inputs_info = if len > 32 {
+                                let remaining_len = len - 32;
+                                let inputs_count = remaining_len / 16; // Each u128 input is 16 bytes
+                                format!(" with {} inputs", inputs_count)
+                            } else {
+                                String::new()
+                            };
+                            
+                            return format!("AlkaneId{{block: {}, tx: {}}}{}", block, tx, inputs_info);
+                        }
                     }
                 }
             }
@@ -1096,7 +1062,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
 
     /// Decode ExtendedCallResponse structure from WASM memory
     fn decode_extended_call_response(&self, store: &Store<AlkanesState>, memory: Memory, ptr: usize) -> Result<(Vec<u8>, Option<String>)> {
-        let memory_size = memory.data_size(store);
+        let memory_size = memory.size(store) as usize;
         
         if ptr < 4 || ptr >= memory_size {
             return Err(anyhow::anyhow!("Response pointer 0x{:x} is invalid (memory size: {})", ptr, memory_size));
@@ -1189,7 +1155,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
     /// Read metadata from WASM memory
     fn read_metadata_from_memory(&self, store: &Store<AlkanesState>, memory: Memory, ptr: usize) -> Result<AlkaneMetadata> {
         // Get memory size for bounds checking
-        let memory_size = memory.data_size(store);
+        let memory_size = memory.size(store) as usize;
         
         if ptr < 4 || ptr >= memory_size {
             return Err(anyhow::anyhow!("Pointer 0x{:x} is invalid (memory size: {})", ptr, memory_size));
