@@ -8,7 +8,7 @@ use deezel_web::{web_info, web_error, web_log};
 use wasm_bindgen::prelude::*;
 
 // This is the main entry point for the WASM module
-#[wasm_bindgen(start)]
+#[wasm_bindgen]
 pub fn main() {
     wasm_bindgen_futures::spawn_local(async_main());
 }

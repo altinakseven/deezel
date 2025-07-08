@@ -86,7 +86,7 @@ pub use deezel_common::*;
 /// Initialize the web library
 ///
 /// This sets up panic hooks and other WASM-specific initialization
-#[wasm_bindgen(start)]
+#[wasm_bindgen]
 pub fn init() {
     // Set up better panic messages in debug mode
     #[cfg(feature = "console_error_panic_hook")]
