@@ -593,7 +593,6 @@ name = "deezel-web"
 version = "0.1.0"
 dependencies = [
  "aes-gcm",
- "alkanes-support",
  "anyhow",
  "async-trait",
  "base64",
@@ -608,11 +607,9 @@ dependencies = [
  "hex",
  "js-sys",
  "log",
- "metashrew-support",
  "ordinals",
  "pbkdf2",
  "protobuf 3.7.1",
- "protorune-support",
  "rand",
  "regex",
  "secp256k1",
