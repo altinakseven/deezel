@@ -75,7 +75,7 @@ sha3 = { workspace = true }
 dirs = { workspace = true, optional = true }
 tempfile = { workspace = true, optional = true }
 flate2 = { workspace = true }
-tokio = { workspace = true, features = ["time"], optional = true }
+tokio = { workspace = true, features = ["sync", "time"], optional = true }
 reqwest = { workspace = true, features = ["json"], optional = true }
 
 [features]
@@ -85,14 +85,17 @@ native-deps = ["dirs", "tempfile", "tokio", "reqwest"]
 web-compat = []
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "time", "sync", "fs", "io-util", "signal", "process", "test-util"] }
+tokio = { workspace = true, features = ["macros", "rt", "time", "sync", "test-util"] }
 env_logger = "0.10"
 
 # WASM-specific configuration
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
 web-sys = "0.3"
+spin = "0.9"
+serde-wasm-bindgen = "0.6"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies.getrandom]
 version = "0.2"

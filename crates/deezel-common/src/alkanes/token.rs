@@ -3,7 +3,23 @@
 use crate::Result;
 use anyhow::Context;
 use log::{debug, info};
+
+#[cfg(not(target_arch = "wasm32"))]
 use std::sync::Arc;
+#[cfg(target_arch = "wasm32")]
+use alloc::sync::Arc;
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::str::FromStr;
+#[cfg(target_arch = "wasm32")]
+use alloc::str::FromStr;
+
+use crate::{ToString, format};
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::{vec, vec::Vec, string::String};
+#[cfg(target_arch = "wasm32")]
+use alloc::{vec, vec::Vec, string::String};
 
 use crate::rpc::RpcClient;
 use crate::wallet::WalletManager;

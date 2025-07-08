@@ -54,6 +54,20 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{Request, RequestInit, RequestMode, Response, window, Headers};
 
+#[cfg(target_arch = "wasm32")]
+use alloc::{
+    string::{String, ToString},
+    vec::Vec,
+    format,
+};
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::{
+    string::{String, ToString},
+    vec::Vec,
+    format,
+};
+
 /// Web network implementation using browser fetch API
 ///
 /// This struct provides a web-compatible network backend that implements the

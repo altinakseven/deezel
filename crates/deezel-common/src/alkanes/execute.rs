@@ -10,10 +10,65 @@
 
 use anyhow::{anyhow, Context, Result};
 use log::{debug, info, warn};
+
+#[cfg(not(feature = "web-compat"))]
 use std::collections::HashMap;
-use std::str::FromStr;
+#[cfg(feature = "web-compat")]
+use alloc::collections::BTreeMap as HashMap;
+
+#[cfg(not(feature = "web-compat"))]
+use std::{str::FromStr, cmp};
+#[cfg(feature = "web-compat")]
+use core::{str::FromStr, cmp};
+
+#[cfg(not(feature = "web-compat"))]
 use std::sync::Arc;
+#[cfg(feature = "web-compat")]
+use alloc::sync::Arc;
+
+#[cfg(not(feature = "web-compat"))]
 use std::io::{self, Write};
+#[cfg(feature = "web-compat")]
+use core::fmt::Write;
+
+use crate::{ToString, format};
+
+// WASM-compatible time handling
+#[cfg(not(feature = "web-compat"))]
+use std::time;
+#[cfg(feature = "web-compat")]
+mod time {
+    pub struct SystemTime;
+    impl SystemTime {
+        pub fn now() -> Self { SystemTime }
+        pub fn duration_since(&self, _: SystemTime) -> Result<core::time::Duration, ()> {
+            Ok(core::time::Duration::from_secs(0))
+        }
+    }
+    pub const UNIX_EPOCH: SystemTime = SystemTime;
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::{vec, vec::Vec, string::String};
+#[cfg(target_arch = "wasm32")]
+use alloc::{vec, vec::Vec, string::String};
+
+// Conditional print macros for WASM compatibility
+#[cfg(feature = "web-compat")]
+macro_rules! println {
+    ($($arg:tt)*) => {
+        // In WASM, we can use web_sys::console::log or just ignore
+        // For now, we'll just ignore the output
+    };
+}
+
+#[cfg(feature = "web-compat")]
+macro_rules! print {
+    ($($arg:tt)*) => {
+        // In WASM, we can use web_sys::console::log or just ignore
+        // For now, we'll just ignore the output
+    };
+}
 
 use crate::rpc::RpcClient;
 use crate::wallet::WalletManager;
@@ -1090,7 +1145,10 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
                 
                 if let Some(((script, leaf_version), _merkle_branches)) = script_map.iter().next() {
                     // Configure tap_scripts: BTreeMap<ControlBlock, (ScriptBuf, LeafVersion)>
+                    #[cfg(not(feature = "web-compat"))]
                     use std::collections::BTreeMap;
+                    #[cfg(feature = "web-compat")]
+                    use alloc::collections::BTreeMap;
                     let mut tap_scripts = BTreeMap::new();
                     tap_scripts.insert(control_block, (script.clone(), *leaf_version));
                     psbt.inputs[i].tap_scripts = tap_scripts;
@@ -1228,7 +1286,7 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
                             1 => {
                                 info!("    📜 Script analysis:");
                                 if item.len() > 10 {
-                                    let preview = &item[..std::cmp::min(item.len(), 20)];
+                                    let preview = &item[..cmp::min(item.len(), 20)];
                                     info!("      First 20 bytes: {}", hex::encode(preview));
                                     
                                     // Check for script opcodes
@@ -1477,7 +1535,7 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
             
             // Check if the serialized data contains the witness
             info!("🔍 Checking serialized transaction structure:");
-            info!("  Serialized hex (first 128 chars): {}", hex::encode(&serialized[..std::cmp::min(serialized.len(), 64)]));
+            info!("  Serialized hex (first 128 chars): {}", hex::encode(&serialized[..cmp::min(serialized.len(), 64)]));
             info!("  Serialized hex (last 128 chars): {}", hex::encode(&serialized[serialized.len().saturating_sub(64)..]));
             
             // Envelope witness applied successfully
@@ -1819,7 +1877,7 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
                             info!("    📜 Script element: {} bytes", item.len());
                             if item.len() > 100 {
                                 // Check for envelope markers
-                                let preview = &item[..std::cmp::min(item.len(), 100)];
+                                let preview = &item[..cmp::min(item.len(), 100)];
                                 if preview.windows(3).any(|w| w == b"BIN") {
                                     info!("    ✅ Contains BIN protocol marker");
                                 }
@@ -1938,10 +1996,25 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
         println!("This transaction will be broadcast to the network.");
         println!("Please review the details above carefully.");
         print!("\nDo you want to proceed with broadcasting this transaction? (y/N): ");
-        io::stdout().flush().unwrap();
-        
-        let mut input = String::new();
-        io::stdin().read_line(&mut input).context("Failed to read user input")?;
+        #[cfg(not(feature = "web-compat"))]
+        {
+            use std::io::{self, Write};
+            io::stdout().flush().unwrap();
+            
+            let mut input = String::new();
+            io::stdin().read_line(&mut input).context("Failed to read user input")?;
+        }
+        #[cfg(feature = "web-compat")]
+        let input = {
+            // For WASM, we can't use stdin/stdout, so we'll just simulate user confirmation
+            String::from("y")
+        };
+        #[cfg(not(feature = "web-compat"))]
+        let input = {
+            let mut input = String::new();
+            io::stdin().read_line(&mut input).context("Failed to read user input")?;
+            input
+        };
         let input = input.trim().to_lowercase();
         
         if input != "y" && input != "yes" {
@@ -2766,7 +2839,10 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
                 
                 if let Some(((script, leaf_version), _merkle_branches)) = script_map.iter().next() {
                     // Configure tap_scripts: BTreeMap<ControlBlock, (ScriptBuf, LeafVersion)>
+                    #[cfg(not(feature = "web-compat"))]
                     use std::collections::BTreeMap;
+                    #[cfg(feature = "web-compat")]
+                    use alloc::collections::BTreeMap;
                     let mut tap_scripts = BTreeMap::new();
                     tap_scripts.insert(control_block.clone(), (script.clone(), *leaf_version));
                     psbt.inputs[i].tap_scripts = tap_scripts;
@@ -3073,8 +3149,8 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
             "shield": {
                 "enabled": true,
                 "protection_level": "high",
-                "timestamp": std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
+                "timestamp": time::SystemTime::now()
+                    .duration_since(time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs()
             }

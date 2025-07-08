@@ -27,6 +27,24 @@
 
 extern crate alloc;
 
+#[cfg(target_arch = "wasm32")]
+use alloc::{
+    string::{String, ToString},
+    vec::Vec,
+    boxed::Box,
+    collections::BTreeMap,
+    format,
+};
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::{
+    string::{String, ToString},
+    vec::Vec,
+    boxed::Box,
+    collections::HashMap,
+    format,
+};
+
 // Core modules
 pub mod traits;
 pub mod network;
@@ -45,6 +63,8 @@ pub use traits::*;
 pub use network::NetworkParams;
 pub use rpc::{RpcClient, RpcConfig, RpcRequest, RpcResponse};
 
+// Re-export common types for WASM compatibility - already imported above
+
 // Re-export external types for convenience
 pub use bitcoin::{Network, Transaction, Address, ScriptBuf};
 pub use ordinals::Runestone;
@@ -52,58 +72,59 @@ pub use protorune_support::protostone::Protostone;
 pub use serde_json::Value as JsonValue;
 
 /// Error types for the deezel-common library
-#[derive(thiserror::Error, Debug)]
+#[derive(Debug)]
 pub enum DeezelError {
-    #[error("JSON-RPC error: {0}")]
     JsonRpc(String),
-    
-    #[error("RPC error: {0}")]
     RpcError(String),
-    
-    #[error("Storage error: {0}")]
     Storage(String),
-    
-    #[error("Network error: {0}")]
     Network(String),
-    
-    #[error("Wallet error: {0}")]
     Wallet(String),
-    
-    #[error("Alkanes error: {0}")]
     Alkanes(String),
-    
-    #[error("Serialization error: {0}")]
     Serialization(String),
-    
-    #[error("Validation error: {0}")]
     Validation(String),
-    
-    #[error("Configuration error: {0}")]
     Configuration(String),
-    
-    #[error("Address resolution error: {0}")]
     AddressResolution(String),
-    
-    #[error("Transaction error: {0}")]
     Transaction(String),
-    
-    #[error("Monitoring error: {0}")]
     Monitor(String),
-    
-    #[error("WASM execution error: {0}")]
     WasmExecution(String),
-    
-    #[error("Cryptography error: {0}")]
     Crypto(String),
-    
-    #[error("I/O error: {0}")]
     Io(String),
-    
-    #[error("Parse error: {0}")]
     Parse(String),
-    
-    #[error("Not implemented: {0}")]
     NotImplemented(String),
+}
+
+impl core::fmt::Display for DeezelError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            DeezelError::JsonRpc(msg) => write!(f, "JSON-RPC error: {}", msg),
+            DeezelError::RpcError(msg) => write!(f, "RPC error: {}", msg),
+            DeezelError::Storage(msg) => write!(f, "Storage error: {}", msg),
+            DeezelError::Network(msg) => write!(f, "Network error: {}", msg),
+            DeezelError::Wallet(msg) => write!(f, "Wallet error: {}", msg),
+            DeezelError::Alkanes(msg) => write!(f, "Alkanes error: {}", msg),
+            DeezelError::Serialization(msg) => write!(f, "Serialization error: {}", msg),
+            DeezelError::Validation(msg) => write!(f, "Validation error: {}", msg),
+            DeezelError::Configuration(msg) => write!(f, "Configuration error: {}", msg),
+            DeezelError::AddressResolution(msg) => write!(f, "Address resolution error: {}", msg),
+            DeezelError::Transaction(msg) => write!(f, "Transaction error: {}", msg),
+            DeezelError::Monitor(msg) => write!(f, "Monitoring error: {}", msg),
+            DeezelError::WasmExecution(msg) => write!(f, "WASM execution error: {}", msg),
+            DeezelError::Crypto(msg) => write!(f, "Cryptography error: {}", msg),
+            DeezelError::Io(msg) => write!(f, "I/O error: {}", msg),
+            DeezelError::Parse(msg) => write!(f, "Parse error: {}", msg),
+            DeezelError::NotImplemented(msg) => write!(f, "Not implemented: {}", msg),
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl std::error::Error for DeezelError {}
+
+// For anyhow compatibility, we need to implement conversion from DeezelError to anyhow::Error
+impl From<DeezelError> for anyhow::Error {
+    fn from(err: DeezelError) -> Self {
+        anyhow::anyhow!("{}", err)
+    }
 }
 
 /// Result type for deezel-common operations

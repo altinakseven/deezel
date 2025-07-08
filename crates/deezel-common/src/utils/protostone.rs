@@ -2,8 +2,13 @@
 //!
 //! This module provides utilities for working with protostones in alkanes transactions.
 
-use crate::{Result, DeezelError};
+use crate::{Result, DeezelError, ToString, format};
 use serde::{Deserialize, Serialize};
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::{vec::Vec, string::String};
+#[cfg(target_arch = "wasm32")]
+use alloc::{vec::Vec, string::String};
 
 /// Protostone structure for alkanes
 #[derive(Debug, Clone, Serialize, Deserialize)]

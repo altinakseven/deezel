@@ -40,6 +40,29 @@
 
 extern crate alloc;
 
+#[cfg(target_arch = "wasm32")]
+use alloc::{
+    vec::Vec,
+    boxed::Box,
+    string::String,
+    collections::BTreeMap,
+    format,
+    vec,
+};
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::{
+    vec::Vec,
+    boxed::Box,
+    string::String,
+    collections::HashMap as BTreeMap,
+    format,
+    vec,
+};
+
+// Re-export common types for WASM compatibility
+pub use alloc::string::ToString;
+
 use wasm_bindgen::prelude::*;
 
 // When the `wee_alloc` feature is enabled, use `wee_alloc` as the global allocator

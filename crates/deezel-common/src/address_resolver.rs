@@ -11,8 +11,22 @@ use crate::traits::*;
 use crate::wallet::AddressType;
 use bitcoin::Network;
 use regex::Regex;
+#[cfg(not(target_arch = "wasm32"))]
 use std::collections::HashMap;
+#[cfg(target_arch = "wasm32")]
+use alloc::collections::BTreeMap as HashMap;
+
+#[cfg(not(target_arch = "wasm32"))]
 use std::str::FromStr;
+#[cfg(target_arch = "wasm32")]
+use alloc::str::FromStr;
+
+use crate::{ToString, format};
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::{vec, vec::Vec, string::String};
+#[cfg(target_arch = "wasm32")]
+use alloc::{vec, vec::Vec, string::String};
 
 /// Address identifier types
 #[derive(Debug, Clone, PartialEq)]
@@ -240,7 +254,15 @@ impl<P: DeezelProvider> AddressResolver<P> {
     
     /// Get cache statistics
     pub fn cache_stats(&self) -> (usize, usize) {
-        (self.cache.len(), self.cache.capacity())
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            (self.cache.len(), self.cache.capacity())
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            // BTreeMap doesn't have capacity, so just return length twice
+            (self.cache.len(), self.cache.len())
+        }
     }
 }
 

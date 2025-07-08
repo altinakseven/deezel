@@ -8,12 +8,41 @@
 //! including host call interception, detailed error information, and comprehensive
 //! execution context management.
 
+#[cfg(not(feature = "web-compat"))]
 use std::collections::HashMap;
-use std::time::Instant;
+#[cfg(feature = "web-compat")]
+use alloc::collections::BTreeMap as HashMap;
+
+#[cfg(not(feature = "web-compat"))]
+use std::time::{Instant, Duration};
+#[cfg(feature = "web-compat")]
+use core::time::Duration;
+
+#[cfg(feature = "web-compat")]
+struct Instant;
+
+#[cfg(feature = "web-compat")]
+impl Instant {
+    fn now() -> Self { Instant }
+    fn elapsed(&self) -> Duration { Duration::from_micros(0) }
+}
+
+use crate::{ToString, format};
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::{vec, vec::Vec, boxed::Box, string::String};
+#[cfg(target_arch = "wasm32")]
+use alloc::{vec, vec::Vec, boxed::Box, string::String};
+
+#[cfg(not(feature = "web-compat"))]
 use std::sync::{Arc, Mutex};
+#[cfg(feature = "web-compat")]
+use alloc::sync::Arc;
+#[cfg(feature = "web-compat")]
+use spin::Mutex;
 use serde::{Serialize, Deserialize};
 #[cfg(feature = "wasm-inspection")]
-use wasmi::*;
+use wasmi::{*, StoreLimits, StoreLimitsBuilder};
 #[cfg(feature = "wasm-inspection")]
 use anyhow::{Context, Result};
 #[cfg(feature = "wasm-inspection")]
@@ -97,6 +126,7 @@ pub struct AlkanesState {
     pub had_failure: bool,
     pub context: Arc<Mutex<AlkanesRuntimeContext>>,
     pub host_calls: Arc<Mutex<Vec<HostCall>>>,
+    #[cfg(feature = "wasm-inspection")]
     pub limiter: StoreLimits,
 }
 
@@ -173,12 +203,23 @@ pub struct HostCall {
 }
 
 impl HostCall {
+    #[cfg(not(feature = "web-compat"))]
     pub fn new(function_name: String, parameters: Vec<String>, result: String, timestamp: Instant) -> Self {
         Self {
             function_name,
             parameters,
             result,
             timestamp_micros: timestamp.elapsed().as_micros() as u64,
+        }
+    }
+    
+    #[cfg(feature = "web-compat")]
+    pub fn new(function_name: String, parameters: Vec<String>, result: String, _timestamp: u64) -> Self {
+        Self {
+            function_name,
+            parameters,
+            result,
+            timestamp_micros: 0, // WASM doesn't have precise timing
         }
     }
 }
@@ -649,9 +690,11 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
             had_failure: false,
             context: Arc::new(Mutex::new(context)),
             host_calls: Arc::new(Mutex::new(Vec::new())),
+            #[cfg(feature = "wasm-inspection")]
             limiter: StoreLimitsBuilder::new().memory_size(16 * 1024 * 1024).build(), // 16MB memory limit
         };
         let mut store = Store::new(engine, state);
+        #[cfg(feature = "wasm-inspection")]
         store.limiter(|state| &mut state.limiter);
         store.set_fuel(1_000_000).unwrap(); // Set fuel for execution
         store
@@ -693,7 +736,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
 
         // __request_storage - matches alkanes-rs signature
         linker.func_wrap("env", "__request_storage", |caller: Caller<'_, AlkanesState>, k: i32| -> i32 {
-            let start_time = std::time::Instant::now();
+            let start_time = Instant::now();
             
             // Read the storage key from memory
             let key_str = if let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory()) {
@@ -741,7 +784,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
 
         // __load_storage - matches alkanes-rs signature
         linker.func_wrap("env", "__load_storage", |mut caller: Caller<'_, AlkanesState>, k: i32, v: i32| -> i32 {
-            let start_time = std::time::Instant::now();
+            let start_time = Instant::now();
             
             // Read the storage key from memory
             let key_str = if let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory()) {
@@ -952,7 +995,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
 
         // __call - matches alkanes-rs signature
         linker.func_wrap("env", "__call", |mut caller: Caller<'_, AlkanesState>, cellpack_ptr: i32, _incoming_alkanes_ptr: i32, _checkpoint_ptr: i32, start_fuel: u64| -> i32 {
-            let start_time = std::time::Instant::now();
+            let start_time = Instant::now();
             
             // Try to decode the cellpack to see what alkane is being called
             let call_info = Self::decode_cellpack_info(&mut caller, cellpack_ptr);
@@ -977,7 +1020,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
 
         // __delegatecall - matches alkanes-rs signature
         linker.func_wrap("env", "__delegatecall", |mut caller: Caller<'_, AlkanesState>, cellpack_ptr: i32, _incoming_alkanes_ptr: i32, _checkpoint_ptr: i32, start_fuel: u64| -> i32 {
-            let start_time = std::time::Instant::now();
+            let start_time = Instant::now();
             
             let call_info = Self::decode_cellpack_info(&mut caller, cellpack_ptr);
             
@@ -1000,7 +1043,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
 
         // __staticcall - matches alkanes-rs signature
         linker.func_wrap("env", "__staticcall", |mut caller: Caller<'_, AlkanesState>, cellpack_ptr: i32, _incoming_alkanes_ptr: i32, _checkpoint_ptr: i32, start_fuel: u64| -> i32 {
-            let start_time = std::time::Instant::now();
+            let start_time = Instant::now();
             
             let call_info = Self::decode_cellpack_info(&mut caller, cellpack_ptr);
             

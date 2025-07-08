@@ -2,6 +2,11 @@
 
 use serde::{Deserialize, Serialize};
 
+#[cfg(not(target_arch = "wasm32"))]
+use std::{string::String, vec::Vec};
+#[cfg(target_arch = "wasm32")]
+use alloc::{string::String, vec::Vec};
+
 /// Alkane ID representing a smart contract or token
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AlkaneId {

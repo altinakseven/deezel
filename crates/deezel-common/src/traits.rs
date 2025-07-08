@@ -16,10 +16,17 @@
 //! - Address resolution
 //! - Network abstraction
 
-use crate::Result;
+use crate::{Result, ToString, format};
 use async_trait::async_trait;
 use serde_json::Value as JsonValue;
 use bitcoin::{Network, Transaction, ScriptBuf};
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::{vec, vec::Vec, boxed::Box, string::String, future::Future};
+#[cfg(target_arch = "wasm32")]
+use alloc::{vec, vec::Vec, boxed::Box, string::String};
+#[cfg(target_arch = "wasm32")]
+use core::future::Future;
 
 /// Trait for making JSON-RPC calls
 ///
@@ -764,7 +771,7 @@ pub trait TimeProvider {
     fn now_millis(&self) -> u64;
     
     /// Sleep for the specified duration (in milliseconds)
-    fn sleep_ms(&self, ms: u64) -> impl std::future::Future<Output = ()>;
+    fn sleep_ms(&self, ms: u64) -> impl Future<Output = ()>;
 }
 
 /// Trait for logging operations
@@ -2113,37 +2120,6 @@ pub struct FuzzingResults {
     pub opcode_results: Vec<ExecutionResult>,
 }
 
-/// Combined provider trait that includes all functionality (WASM version without Send + Sync)
-///
-/// This is the main trait that implementations should provide for WASM targets
-#[async_trait(?Send)]
-#[cfg(target_arch = "wasm32")]
-pub trait DeezelProvider:
-    JsonRpcProvider +
-    StorageProvider +
-    NetworkProvider +
-    CryptoProvider +
-    TimeProvider +
-    LogProvider +
-    WalletProvider +
-    AddressResolver +
-    BitcoinRpcProvider +
-    MetashrewRpcProvider +
-    EsploraProvider +
-    RunestoneProvider +
-    AlkanesProvider +
-    MonitorProvider +
-    Clone
-{
-    /// Get provider name/type
-    fn provider_name(&self) -> &str;
-    
-    /// Initialize the provider
-    async fn initialize(&self) -> Result<()>;
-    
-    /// Shutdown the provider
-    async fn shutdown(&self) -> Result<()>;
-}
 
 /// Execution result
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

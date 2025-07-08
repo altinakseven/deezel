@@ -8,6 +8,24 @@ use bitcoin::Network;
 use deezel_common::*;
 use serde_json::Value as JsonValue;
 
+#[cfg(target_arch = "wasm32")]
+use alloc::{
+    vec::Vec,
+    boxed::Box,
+    string::String,
+    format,
+    vec,
+};
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::{
+    vec::Vec,
+    boxed::Box,
+    string::String,
+    format,
+    vec,
+};
+
 use crate::provider::WebProvider;
 
 // WalletProvider implementation

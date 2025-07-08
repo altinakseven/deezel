@@ -13,7 +13,18 @@
 
 use crate::Result;
 use log::{debug, info};
-use std::sync::Arc;
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::{sync::Arc, vec::Vec};
+#[cfg(target_arch = "wasm32")]
+use alloc::{sync::Arc, vec::Vec};
+
+use crate::{ToString, format};
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::vec;
+#[cfg(target_arch = "wasm32")]
+use alloc::vec;
 
 // Use specific imports to avoid conflicts
 use super::types::{PoolCreateParams, LiquidityAddParams, LiquidityRemoveParams, SwapParams, TokenAmount, LiquidityRemovalPreview};

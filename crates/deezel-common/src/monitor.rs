@@ -6,12 +6,65 @@
 //! - Address monitoring
 //! - Runestone and alkanes event detection
 
-use crate::Result;
+use crate::{Result, ToString, format};
 use crate::traits::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use std::collections::HashMap;
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::{collections::HashMap, vec::Vec, string::String};
+#[cfg(target_arch = "wasm32")]
+use alloc::{collections::BTreeMap as HashMap, vec::Vec, string::String};
+
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, SystemTime};
+#[cfg(target_arch = "wasm32")]
+use core::time::Duration;
+
+// WASM-compatible time type
+#[cfg(target_arch = "wasm32")]
+#[derive(Debug, Clone, Copy)]
+pub struct SystemTime(f64);
+
+#[cfg(target_arch = "wasm32")]
+impl SystemTime {
+    pub fn now() -> Self {
+        SystemTime(js_sys::Date::now())
+    }
+    
+    pub fn duration_since(&self, earlier: SystemTime) -> core::result::Result<Duration, ()> {
+        let diff = self.0 - earlier.0;
+        if diff >= 0.0 {
+            Ok(Duration::from_millis(diff as u64))
+        } else {
+            Err(())
+        }
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl Serialize for SystemTime {
+    fn serialize<S>(&self, serializer: S) -> core::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_f64(self.0)
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl<'de> Deserialize<'de> for SystemTime {
+    fn deserialize<D>(deserializer: D) -> core::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let timestamp = f64::deserialize(deserializer)?;
+        Ok(SystemTime(timestamp))
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub use std::time::SystemTime;
 
 /// Block monitor that works with any provider
 pub struct BlockMonitor<P: DeezelProvider> {

@@ -572,13 +572,16 @@ dependencies = [
  "reqwest",
  "secp256k1",
  "serde",
+ "serde-wasm-bindgen",
  "serde_json",
  "sha2",
  "sha3",
+ "spin",
  "tempfile",
  "thiserror",
  "tokio",
  "wasm-bindgen",
+ "wasm-bindgen-futures",
  "wasmi",
  "wasmprinter",
  "wat",
@@ -2281,6 +2284,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde-wasm-bindgen"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8302e169f0eddcc139c70f139d19d6467353af16f9fce27e8c30158036a1e16b"
+dependencies = [
+ "js-sys",
+ "serde",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "serde_derive"
 version = "1.0.219"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2411,6 +2425,9 @@ name = "spin"
 version = "0.9.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
+dependencies = [
+ "lock_api",
+]
 
 [[package]]
 name = "stable_deref_trait"

@@ -9,11 +9,16 @@
 //! - Transaction history
 //! - Fee estimation
 
-use crate::{Result, DeezelError};
+use crate::{Result, DeezelError, ToString, format};
 use crate::traits::*;
 use crate::network::NetworkParams;
 use bitcoin::Network;
 use serde::{Deserialize, Serialize};
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::{vec, vec::Vec, string::String};
+#[cfg(target_arch = "wasm32")]
+use alloc::{vec, vec::Vec, string::String};
 
 /// Wallet configuration
 #[derive(Debug, Clone)]

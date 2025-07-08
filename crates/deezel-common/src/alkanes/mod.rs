@@ -8,8 +8,13 @@
 //! - Metadata extraction
 //! - Balance management
 
-use crate::{Result, DeezelError};
+use crate::{Result, DeezelError, ToString, format};
 use crate::traits::*;
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::{vec, vec::Vec, string::String};
+#[cfg(target_arch = "wasm32")]
+use alloc::{vec, vec::Vec, string::String};
 
 // Re-export all alkanes modules
 pub mod inspector;

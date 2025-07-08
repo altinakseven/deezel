@@ -7,6 +7,30 @@ use anyhow::{anyhow, Result};
 use bitcoin::Transaction;
 use log::{info, warn};
 
+use crate::{ToString, format};
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::{vec, vec::Vec, string::String};
+#[cfg(target_arch = "wasm32")]
+use alloc::{vec, vec::Vec, string::String};
+
+// Conditional print macros for WASM compatibility
+#[cfg(target_arch = "wasm32")]
+macro_rules! eprintln {
+    ($($arg:tt)*) => {
+        // In WASM, we can use web_sys::console::log or just ignore
+        // For now, we'll just ignore the output
+    };
+}
+
+#[cfg(target_arch = "wasm32")]
+macro_rules! eprint {
+    ($($arg:tt)*) => {
+        // In WASM, we can use web_sys::console::log or just ignore
+        // For now, we'll just ignore the output
+    };
+}
+
 /// Maximum allowed fee rate in sat/vB (1000 sat/vB = ~$40 at $40k BTC)
 const MAX_FEE_RATE_SAT_VB: f64 = 1000.0;
 

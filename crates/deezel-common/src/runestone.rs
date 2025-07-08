@@ -11,7 +11,23 @@ use crate::{Result, DeezelError};
 use crate::traits::*;
 use bitcoin::{Network, Transaction};
 use serde::{Deserialize, Serialize, Serializer, Deserializer};
+
+#[cfg(not(target_arch = "wasm32"))]
 use std::collections::HashMap;
+#[cfg(target_arch = "wasm32")]
+use alloc::collections::BTreeMap as HashMap;
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::str::FromStr;
+#[cfg(target_arch = "wasm32")]
+use alloc::str::FromStr;
+
+use crate::{ToString, format};
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::{vec, vec::Vec, string::String};
+#[cfg(target_arch = "wasm32")]
+use alloc::{vec, vec::Vec, string::String};
 
 /// Runestone manager that works with any provider
 pub struct RunestoneManager<P: DeezelProvider> {
@@ -74,7 +90,7 @@ impl<P: DeezelProvider> RunestoneManager<P> {
         };
         
         // Extract metadata from the result
-        let mut metadata = std::collections::HashMap::new();
+        let mut metadata = HashMap::new();
         if let Some(meta) = _result.get("metadata").and_then(|v| v.as_object()) {
             for (key, value) in meta {
                 if let Some(val_str) = value.as_str() {
@@ -100,8 +116,8 @@ impl<P: DeezelProvider> RunestoneManager<P> {
         Ok(ProtostoneAnalysis {
             format,
             decoded: data.into_bytes(),
-            fields: std::collections::HashMap::new(),
-            metadata: std::collections::HashMap::new(),
+            fields: HashMap::new(),
+            metadata: HashMap::new(),
         })
     }
     
@@ -449,7 +465,7 @@ pub struct ProtostoneAnalysis {
 pub struct NetworkWrapper(pub Network);
 
 impl Serialize for NetworkWrapper {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    fn serialize<S>(&self, serializer: S) -> core::result::Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -465,7 +481,7 @@ impl Serialize for NetworkWrapper {
 }
 
 impl<'de> Deserialize<'de> for NetworkWrapper {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    fn deserialize<D>(deserializer: D) -> core::result::Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -495,7 +511,7 @@ mod network_serde {
     use super::*;
     use serde::{Deserialize, Deserializer, Serializer};
 
-    pub fn serialize<S>(network: &Network, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    pub fn serialize<S>(network: &Network, serializer: S) -> core::result::Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -509,7 +525,7 @@ mod network_serde {
         serializer.serialize_str(network_str)
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> std::result::Result<Network, D::Error>
+    pub fn deserialize<'de, D>(deserializer: D) -> core::result::Result<Network, D::Error>
     where
         D: Deserializer<'de>,
     {

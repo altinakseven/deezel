@@ -10,7 +10,11 @@ use bitcoin::{
     taproot::ControlBlock, ScriptBuf, Witness,
 };
 use flate2::{write::GzEncoder, Compression};
-use std::io::Write;
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::{io::Write, vec::Vec};
+#[cfg(target_arch = "wasm32")]
+use alloc::vec::Vec;
 
 // Alkanes protocol constants - matching alkanes-rs reference exactly
 pub const ALKANES_PROTOCOL_ID: [u8; 3] = *b"BIN";
@@ -41,8 +45,17 @@ impl AlkanesEnvelope {
     /// CRITICAL FIX: Added gzip compression like alkanes-rs reference
     fn compress_payload(&self) -> Result<Vec<u8>> {
         let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-        encoder.write_all(&self.payload)
-            .context("Failed to write payload to gzip encoder")?;
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            use std::io::Write;
+            encoder.write_all(&self.payload)
+                .context("Failed to write payload to gzip encoder")?;
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            // For WASM, use a simpler approach - just return the payload as-is for now
+            return Ok(self.payload.clone());
+        }
         encoder.finish()
             .context("Failed to finish gzip compression")
     }

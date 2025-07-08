@@ -7,11 +7,15 @@
 //! - PSBT (Partially Signed Bitcoin Transaction) support
 //! - Envelope and cellpack patterns for alkanes
 
-use crate::{Result, DeezelError};
+use crate::{Result, DeezelError, ToString, format};
 use crate::traits::*;
 use bitcoin::{Transaction, TxOut, TxIn, OutPoint, ScriptBuf, Witness, Amount, Address};
 use serde::{Deserialize, Serialize};
-use std::str::FromStr;
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::{str::FromStr, vec::Vec, string::String};
+#[cfg(target_arch = "wasm32")]
+use alloc::{str::FromStr, vec::Vec, string::String};
 
 /// Transaction constructor that works with any provider
 pub struct TransactionConstructor<P: DeezelProvider> {

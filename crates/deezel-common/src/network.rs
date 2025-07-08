@@ -3,10 +3,19 @@
 //! This module provides network configuration for different Bitcoin networks
 //! including mainnet, testnet, signet, regtest, and custom networks.
 
-use crate::{Result, DeezelError};
+use crate::{Result, DeezelError, ToString, format};
 use bitcoin::Network;
 use serde::{Deserialize, Serialize, Serializer, Deserializer};
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::{vec, string::String};
+#[cfg(target_arch = "wasm32")]
+use alloc::{vec, string::String};
+
+#[cfg(not(feature = "web-compat"))]
 use std::collections::HashMap;
+#[cfg(feature = "web-compat")]
+use alloc::collections::BTreeMap as HashMap;
 
 #[derive(Debug, Clone)]
 pub struct NetworkParams {
@@ -27,7 +36,7 @@ mod network_serde {
     use serde::{Deserialize, Deserializer, Serializer};
 
     #[allow(dead_code)]
-    pub fn serialize<S>(network: &Network, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    pub fn serialize<S>(network: &Network, serializer: S) -> core::result::Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -42,7 +51,7 @@ mod network_serde {
     }
 
     #[allow(dead_code)]
-    pub fn deserialize<'de, D>(deserializer: D) -> std::result::Result<Network, D::Error>
+    pub fn deserialize<'de, D>(deserializer: D) -> core::result::Result<Network, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -58,7 +67,7 @@ mod network_serde {
 }
 
 impl Serialize for NetworkParams {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    fn serialize<S>(&self, serializer: S) -> core::result::Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -86,7 +95,7 @@ impl Serialize for NetworkParams {
 }
 
 impl<'de> Deserialize<'de> for NetworkParams {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    fn deserialize<D>(deserializer: D) -> core::result::Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -109,11 +118,11 @@ impl<'de> Deserialize<'de> for NetworkParams {
         impl<'de> serde::de::Visitor<'de> for NetworkParamsVisitor {
             type Value = NetworkParams;
 
-            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            fn expecting(&self, formatter: &mut core::fmt::Formatter) -> core::fmt::Result {
                 formatter.write_str("struct NetworkParams")
             }
 
-            fn visit_map<V>(self, mut map: V) -> std::result::Result<NetworkParams, V::Error>
+            fn visit_map<V>(self, mut map: V) -> core::result::Result<NetworkParams, V::Error>
             where
                 V: serde::de::MapAccess<'de>,
             {

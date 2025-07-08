@@ -3,10 +3,18 @@
 //! This module provides trait-based RPC client functionality that can work
 //! across different environments using the provider system.
 
-use crate::{Result, DeezelError};
+use crate::{Result, DeezelError, ToString, format};
 use crate::traits::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::{vec, string::String, sync::atomic::AtomicU64};
+#[cfg(target_arch = "wasm32")]
+use alloc::{vec, string::String};
+
+#[cfg(target_arch = "wasm32")]
+use spin::Mutex;
 
 /// RPC configuration
 #[derive(Debug, Clone)]
@@ -68,7 +76,10 @@ pub struct RpcError {
 pub struct RpcClient<P: DeezelProvider> {
     provider: P,
     config: RpcConfig,
+    #[cfg(not(target_arch = "wasm32"))]
     request_id: std::sync::atomic::AtomicU64,
+    #[cfg(target_arch = "wasm32")]
+    request_id: Mutex<u64>,
 }
 
 impl<P: DeezelProvider> RpcClient<P> {
@@ -77,7 +88,10 @@ impl<P: DeezelProvider> RpcClient<P> {
         Self {
             provider,
             config: RpcConfig::default(),
+            #[cfg(not(target_arch = "wasm32"))]
             request_id: std::sync::atomic::AtomicU64::new(1),
+            #[cfg(target_arch = "wasm32")]
+            request_id: Mutex::new(1),
         }
     }
     
@@ -86,13 +100,25 @@ impl<P: DeezelProvider> RpcClient<P> {
         Self {
             provider,
             config,
+            #[cfg(not(target_arch = "wasm32"))]
             request_id: std::sync::atomic::AtomicU64::new(1),
+            #[cfg(target_arch = "wasm32")]
+            request_id: Mutex::new(1),
         }
     }
     
     /// Get next request ID
     fn next_id(&self) -> u64 {
-        self.request_id.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.request_id.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            let mut id = self.request_id.lock();
+            *id += 1;
+            *id
+        }
     }
     
     /// Make a generic RPC call
@@ -217,7 +243,11 @@ pub struct StandaloneRpcClient {
     #[allow(dead_code)]
     config: RpcConfig,
     #[allow(dead_code)]
+    #[cfg(not(target_arch = "wasm32"))]
     request_id: std::sync::atomic::AtomicU64,
+    #[allow(dead_code)]
+    #[cfg(target_arch = "wasm32")]
+    request_id: Mutex<u64>,
 }
 
 impl StandaloneRpcClient {
@@ -225,14 +255,26 @@ impl StandaloneRpcClient {
     pub fn new(config: RpcConfig) -> Self {
         Self {
             config,
+            #[cfg(not(target_arch = "wasm32"))]
             request_id: std::sync::atomic::AtomicU64::new(1),
+            #[cfg(target_arch = "wasm32")]
+            request_id: Mutex::new(1),
         }
     }
     
     /// Get next request ID
     #[allow(dead_code)]
     fn next_id(&self) -> u64 {
-        self.request_id.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.request_id.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            let mut id = self.request_id.lock();
+            *id += 1;
+            *id
+        }
     }
     
     /// Make an HTTP JSON-RPC call (requires implementation by platform)

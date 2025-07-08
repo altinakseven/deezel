@@ -3,7 +3,23 @@
 use crate::Result;
 use anyhow::Context;
 use log::{debug, info};
+
+#[cfg(not(target_arch = "wasm32"))]
 use std::sync::Arc;
+#[cfg(target_arch = "wasm32")]
+use alloc::sync::Arc;
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::str::FromStr;
+#[cfg(target_arch = "wasm32")]
+use alloc::str::FromStr;
+
+use crate::{ToString, format};
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::{vec, vec::Vec, string::String};
+#[cfg(target_arch = "wasm32")]
+use alloc::{vec, vec::Vec, string::String};
 
 use crate::rpc::RpcClient;
 use crate::wallet::WalletManager;
@@ -29,8 +45,14 @@ impl<P: crate::traits::DeezelProvider> ContractManager<P> {
         info!("Deploying contract from WASM file: {}", params.wasm_file);
         
         // Read WASM file
-        let wasm_bytes = std::fs::read(&params.wasm_file)
+        #[cfg(not(target_arch = "wasm32"))]
+        let wasm_bytes: Vec<u8> = std::fs::read(&params.wasm_file)
             .with_context(|| format!("Failed to read WASM file: {}", params.wasm_file))?;
+        
+        #[cfg(target_arch = "wasm32")]
+        let wasm_bytes: Vec<u8> = {
+            return Err(crate::DeezelError::Validation("File system operations not supported in WASM environment".to_string()));
+        };
         
         debug!("WASM file size: {} bytes", wasm_bytes.len());
         
