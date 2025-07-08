@@ -92,11 +92,11 @@ pub fn init() {
     #[cfg(feature = "console_error_panic_hook")]
     console_error_panic_hook::set_once();
 
-    // Initialize logging
+    // Initialize logging (ignore if already initialized)
     #[cfg(target_arch = "wasm32")]
     {
         use log::Level;
-        console_log::init_with_level(Level::Info).expect("Failed to initialize logger");
+        let _ = console_log::init_with_level(Level::Info);
     }
 }
 
