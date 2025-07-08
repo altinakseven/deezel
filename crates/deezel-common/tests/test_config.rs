@@ -93,6 +93,7 @@ pub mod test_utils {
             trace: false,
             mine: false,
             auto_confirm: false,
+            rebar: false,
         }
     }
     

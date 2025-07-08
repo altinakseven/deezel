@@ -646,6 +646,7 @@ async fn test_alkanes_execute_integration() -> deezel_common::Result<()> {
         trace: false,
         mine: false,
         auto_confirm: true,
+        rebar: false,
     };
     
     let result = alkanes_manager.execute(params).await?;

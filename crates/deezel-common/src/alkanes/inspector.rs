@@ -14,6 +14,7 @@ use std::time::Instant;
 use std::sync::{Arc, Mutex};
 use sha3::{Digest, Keccak256};
 use serde::{Serialize, Deserialize};
+#[cfg(feature = "wasm-inspection")]
 use wasmtime::*;
 
 use crate::traits::JsonRpcProvider;
@@ -180,10 +181,12 @@ impl HostCall {
 }
 
 /// Core alkanes inspector that works with trait abstractions
+#[cfg(feature = "wasm-inspection")]
 pub struct AlkaneInspector<P: JsonRpcProvider> {
     rpc_provider: P,
 }
 
+#[cfg(feature = "wasm-inspection")]
 impl<P: JsonRpcProvider> AlkaneInspector<P> {
     /// Create a new alkane inspector
     pub fn new(rpc_provider: P) -> Self {
@@ -304,9 +307,17 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
 
     /// Disassemble WASM to WAT format
     fn disassemble_wasm(&self, wasm_bytes: &[u8]) -> Result<Option<String>> {
-        match wasmprinter::print_bytes(wasm_bytes) {
-            Ok(wat_content) => Ok(Some(wat_content)),
-            Err(_) => Ok(None), // Return None if disassembly fails
+        #[cfg(feature = "wasm-inspection")]
+        {
+            match wasmprinter::print_bytes(wasm_bytes) {
+                Ok(wat_content) => Ok(Some(wat_content)),
+                Err(_) => Ok(None), // Return None if disassembly fails
+            }
+        }
+        #[cfg(not(feature = "wasm-inspection"))]
+        {
+            let _ = wasm_bytes; // Suppress unused variable warning
+            Ok(None)
         }
     }
 

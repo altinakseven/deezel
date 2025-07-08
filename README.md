@@ -40,13 +40,84 @@ Deezel is a comprehensive command-line interface and tooling suite for interacti
 
 ## Architecture
 
-The project is organized into several core modules:
+Deezel is organized as a Rust workspace monorepo with three main crates providing different levels of functionality and platform support:
 
+### 📦 Monorepo Structure
+
+#### **`deezel`** - Main CLI Application
+The primary command-line interface and desktop application providing full Bitcoin and Alkanes functionality.
+
+**Key Features:**
+- Complete Bitcoin wallet management with BDK integration
+- Full Alkanes metaprotocol support (contracts, tokens, AMM)
+- Advanced blockchain analysis and debugging tools
+- RPC client implementations for Bitcoin Core and Metashrew
+- Transaction construction with preview capabilities
+- Comprehensive CLI interface with 50+ commands
+
+**Core Modules:**
 - **`wallet/`**: Bitcoin wallet functionality using BDK with custom blockchain backends
 - **`alkanes/`**: Alkanes metaprotocol integration including contracts, tokens, AMM, and envelope support
 - **`rpc/`**: RPC client implementations for Bitcoin Core and Metashrew
 - **`monitor/`**: Blockchain monitoring and event handling
 - **`transaction/`**: Transaction construction and management with preview capabilities
+
+#### **`deezel-common`** - Shared Core Library
+Cross-platform abstractions and shared functionality used by both CLI and web implementations.
+
+**Key Features:**
+- **Provider Traits**: Abstract interfaces for network, storage, crypto, time, and logging
+- **Cross-Platform Compatibility**: Works in both native and WASM environments
+- **Bitcoin Integration**: Network configuration, RPC clients, and blockchain utilities
+- **Alkanes Support**: Core alkanes types, operations, and protocol implementations
+- **Error Handling**: Comprehensive error types with detailed context
+- **Feature Flags**: Conditional compilation for different environments (`web-compat`, `native-crypto`)
+
+**Core Traits:**
+- [`NetworkProvider`](crates/deezel-common/src/traits.rs): HTTP requests and network operations
+- [`StorageProvider`](crates/deezel-common/src/traits.rs): Persistent data storage
+- [`CryptoProvider`](crates/deezel-common/src/traits.rs): Cryptographic operations
+- [`TimeProvider`](crates/deezel-common/src/traits.rs): Time and sleep functionality
+- [`LogProvider`](crates/deezel-common/src/traits.rs): Logging and debugging
+
+#### **`deezel-web`** - Web/WASM Library
+Browser-compatible implementation providing Deezel functionality for web applications.
+
+**Key Features:**
+- **WASM Compatibility**: Compiled to WebAssembly for browser environments
+- **Web APIs Integration**: Uses fetch, localStorage, Web Crypto, console, and Performance APIs
+- **Provider Implementations**: Web-specific implementations of all deezel-common traits
+- **Privacy Features**: Rebar Labs Shield integration for private transaction broadcasting
+- **Async/Await Support**: Fully async API compatible with JavaScript promises
+- **TypeScript Bindings**: Generated TypeScript definitions for web integration
+
+**Web Providers:**
+- [`WebProvider`](crates/deezel-web/src/provider.rs): Main web provider implementing all traits
+- [`WebNetwork`](crates/deezel-web/src/network.rs): Fetch API-based networking
+- [`WebStorage`](crates/deezel-web/src/storage.rs): localStorage-based persistence
+- [`WebCrypto`](crates/deezel-web/src/crypto.rs): Web Crypto API integration
+- [`WebTime`](crates/deezel-web/src/time.rs): Performance API timing
+- [`WebLogger`](crates/deezel-web/src/logging.rs): Console API logging
+
+### 🏗️ Cross-Platform Design
+
+The monorepo uses a layered architecture that enables code sharing across platforms:
+
+```
+┌─────────────────┬─────────────────┐
+│   deezel CLI    │   deezel-web    │
+│   (Native)      │   (WASM/Web)    │
+├─────────────────┼─────────────────┤
+│        deezel-common (Shared)     │
+│     Traits + Core Functionality   │
+└───────────────────────────────────┘
+```
+
+**Benefits:**
+- **Code Reuse**: Core Bitcoin and Alkanes logic shared across platforms
+- **Consistent APIs**: Same interfaces work in both native and web environments
+- **Maintainability**: Single source of truth for protocol implementations
+- **Testing**: Comprehensive test coverage across all platforms
 
 ## Getting Started
 
@@ -591,47 +662,187 @@ deezel --bitcoin-rpc-url "http://user:pass@localhost:8332" \
 
 ## Development
 
+## Web/WASM Integration
+
+The `deezel-web` crate provides full Bitcoin and Alkanes functionality in web browsers through WebAssembly (WASM). This enables building decentralized web applications with the same powerful features as the CLI.
+
+### 🌐 Web Capabilities
+
+#### **Browser APIs Integration**
+- **Fetch API**: HTTP requests for RPC calls and data fetching
+- **localStorage**: Persistent storage for wallet data and configuration
+- **Web Crypto API**: Hardware-accelerated cryptographic operations
+- **Performance API**: High-resolution timing and benchmarking
+- **Console API**: Structured logging with timestamps and levels
+
+#### **Privacy Features**
+- **Rebar Labs Shield**: Private transaction broadcasting through Tor-like network
+- **Client-Side Operations**: All sensitive operations performed locally in browser
+- **No Server Dependencies**: Direct communication with Bitcoin and Alkanes networks
+
+#### **Developer Experience**
+- **TypeScript Support**: Generated TypeScript definitions for type safety
+- **Async/Await**: Modern JavaScript async patterns
+- **Error Handling**: Comprehensive error types with detailed messages
+- **Documentation**: Full rustdoc documentation with examples
+
+### 📱 Web Application Examples
+
+```javascript
+import { WebProvider } from 'deezel-web';
+
+// Initialize web provider
+const provider = new WebProvider();
+
+// Check Bitcoin network status
+const height = await provider.get_block_height();
+console.log(`Current block height: ${height}`);
+
+// Query Alkanes token balance
+const balance = await provider.get_alkanes_balance(address, token_id);
+console.log(`Token balance: ${balance}`);
+
+// Create and broadcast transaction
+const tx = await provider.create_transaction(outputs, fee_rate);
+const txid = await provider.broadcast_transaction(tx);
+console.log(`Transaction broadcast: ${txid}`);
+```
+
+### 🔧 Build for Web
+
+```bash
+# Install wasm-pack
+curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+# Build for web
+cd crates/deezel-web
+wasm-pack build --target web --out-dir pkg
+
+# Use in web application
+npm install ./crates/deezel-web/pkg
+```
+
 ### Project Structure
 
 ```
-deezel/
-├── src/
-│   ├── main.rs              # Legacy main application
-│   ├── bin/
-│   │   └── deezel.rs        # Primary CLI application
-│   ├── alkanes/             # Alkanes metaprotocol functionality
-│   │   ├── contract.rs      # Smart contract operations
-│   │   ├── token.rs         # Token operations
-│   │   ├── amm.rs           # AMM/DEX functionality
-│   │   ├── execute.rs       # Execute command with protostone parsing
-│   │   ├── envelope.rs      # Envelope support for commit-reveal transactions
-│   │   ├── simulation.rs    # Contract simulation
-│   │   ├── inspector.rs     # Contract analysis tools
-│   │   └── types.rs         # Common types and structures
-│   ├── wallet/              # Bitcoin wallet functionality
-│   │   ├── bitcoin_wallet.rs    # Core wallet implementation
-│   │   ├── crypto.rs            # Cryptographic utilities
-│   │   ├── esplora_backend.rs   # Custom blockchain backend
-│   │   └── sandshrew_blockchain.rs  # Sandshrew integration
-│   ├── address_resolver.rs  # Address identifier resolution system
-│   ├── runestone_enhanced.rs    # Runestone decoding with preview
-│   ├── rpc/                 # RPC client implementations
-│   ├── monitor/             # Blockchain monitoring
-│   ├── transaction/         # Transaction construction with preview
-│   └── tests/               # Test suites
-├── memory-bank/             # Project documentation
-├── Cargo.toml               # Project configuration
-└── README.md                # This file
+deezel/                      # Workspace root
+├── crates/
+│   ├── deezel/              # Main CLI application
+│   │   ├── src/
+│   │   │   ├── main.rs              # Legacy main application
+│   │   │   ├── bin/
+│   │   │   │   └── deezel.rs        # Primary CLI application
+│   │   │   ├── alkanes/             # Alkanes metaprotocol functionality
+│   │   │   │   ├── contract.rs      # Smart contract operations
+│   │   │   │   ├── token.rs         # Token operations
+│   │   │   │   ├── amm.rs           # AMM/DEX functionality
+│   │   │   │   ├── execute.rs       # Execute command with protostone parsing
+│   │   │   │   ├── envelope.rs      # Envelope support for commit-reveal transactions
+│   │   │   │   ├── simulation.rs    # Contract simulation
+│   │   │   │   ├── inspector.rs     # Contract analysis tools
+│   │   │   │   └── types.rs         # Common types and structures
+│   │   │   ├── wallet/              # Bitcoin wallet functionality
+│   │   │   │   ├── bitcoin_wallet.rs    # Core wallet implementation
+│   │   │   │   ├── crypto.rs            # Cryptographic utilities
+│   │   │   │   ├── esplora_backend.rs   # Custom blockchain backend
+│   │   │   │   └── sandshrew_blockchain.rs  # Sandshrew integration
+│   │   │   ├── address_resolver.rs  # Address identifier resolution system
+│   │   │   ├── runestone_enhanced.rs    # Runestone decoding with preview
+│   │   │   ├── rpc/                 # RPC client implementations
+│   │   │   ├── monitor/             # Blockchain monitoring
+│   │   │   ├── transaction/         # Transaction construction with preview
+│   │   │   └── tests/               # Test suites
+│   │   └── Cargo.toml               # CLI crate configuration
+│   ├── deezel-common/           # Shared core library
+│   │   ├── src/
+│   │   │   ├── lib.rs               # Library entry point
+│   │   │   ├── traits.rs            # Provider trait definitions
+│   │   │   ├── error.rs             # Error types and handling
+│   │   │   ├── bitcoin/             # Bitcoin network utilities
+│   │   │   ├── alkanes/             # Alkanes protocol implementations
+│   │   │   ├── rpc.rs               # RPC client abstractions
+│   │   │   └── utils.rs             # Common utilities
+│   │   └── Cargo.toml               # Common crate configuration
+│   └── deezel-web/              # Web/WASM library
+│       ├── src/
+│       │   ├── lib.rs               # WASM library entry point
+│       │   ├── provider.rs          # Main web provider implementation
+│       │   ├── network.rs           # Fetch API networking
+│       │   ├── storage.rs           # localStorage integration
+│       │   ├── crypto.rs            # Web Crypto API
+│       │   ├── time.rs              # Performance API timing
+│       │   ├── logging.rs           # Console API logging
+│       │   └── utils.rs             # Web-specific utilities
+│       ├── examples/                # Web usage examples
+│       ├── tests/                   # WASM-compatible tests
+│       └── Cargo.toml               # Web crate configuration
+├── memory-bank/                 # Project documentation
+├── examples/                    # CLI usage examples
+├── Cargo.toml                   # Workspace configuration
+└── README.md                    # This file
 ```
+
+## API Documentation
+
+Comprehensive API documentation is available for all crates using `cargo doc`:
+
+### 📚 Generate Documentation
+
+```bash
+# Generate documentation for all crates
+cargo doc --workspace --no-deps
+
+# Generate documentation with private items
+cargo doc --workspace --no-deps --document-private-items
+
+# Open documentation in browser
+cargo doc --workspace --no-deps --open
+```
+
+### 📖 Documentation Links
+
+- **Main CLI**: [`target/doc/deezel/index.html`](target/doc/deezel/index.html)
+- **Common Library**: [`target/doc/deezel_common/index.html`](target/doc/deezel_common/index.html)
+- **Web Library**: [`target/doc/deezel_web/index.html`](target/doc/deezel_web/index.html)
+
+### 🔍 Key Documentation Sections
+
+#### **deezel-common**
+- [Provider Traits](target/doc/deezel_common/traits/index.html) - Core abstractions for cross-platform functionality
+- [Bitcoin Integration](target/doc/deezel_common/bitcoin/index.html) - Network configuration and utilities
+- [Alkanes Support](target/doc/deezel_common/alkanes/index.html) - Protocol implementations and types
+- [Error Handling](target/doc/deezel_common/error/index.html) - Comprehensive error types
+
+#### **deezel-web**
+- [WebProvider](target/doc/deezel_web/provider/struct.WebProvider.html) - Main web provider implementation
+- [Network Module](target/doc/deezel_web/network/index.html) - Fetch API integration
+- [Storage Module](target/doc/deezel_web/storage/index.html) - localStorage persistence
+- [Crypto Module](target/doc/deezel_web/crypto/index.html) - Web Crypto API integration
 
 ### Building and Testing
 
 ```bash
-# Build the project
-cargo build
+# Build all crates
+cargo build --workspace
 
-# Run tests
-cargo test
+# Build specific crates
+cargo build -p deezel
+cargo build -p deezel-common
+cargo build -p deezel-web
+
+# Build for release
+cargo build --workspace --release
+
+# Run all tests
+cargo test --workspace
+
+# Run tests for specific crates
+cargo test -p deezel-common
+cargo test -p deezel-web
+
+# Run web tests in browser (requires wasm-pack)
+cd crates/deezel-web
+wasm-pack test --headless --firefox
 
 # Run with debug logging
 RUST_LOG=debug ./target/debug/deezel wallet info
@@ -639,6 +850,47 @@ RUST_LOG=debug ./target/debug/deezel wallet info
 # Run end-to-end tests
 ./run_e2e_tests.sh
 ```
+
+### 🌐 Web Development
+
+```bash
+# Install wasm-pack for web builds
+curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+# Build web library
+cd crates/deezel-web
+wasm-pack build --target web --out-dir pkg
+
+# Run web tests
+wasm-pack test --headless --firefox
+
+# Generate TypeScript bindings
+wasm-pack build --target bundler --out-dir pkg-bundler
+```
+
+### 🧪 Testing Strategy
+
+The project uses comprehensive testing across all platforms:
+
+#### **Unit Tests**
+- Pure Rust unit tests for core functionality
+- Mock implementations for external dependencies
+- Property-based testing for critical algorithms
+
+#### **Integration Tests**
+- Cross-crate integration testing
+- RPC client testing with mock servers
+- Wallet functionality testing
+
+#### **Web Tests**
+- WASM-compatible tests using `wasm-bindgen-test`
+- Browser API integration testing
+- Cross-browser compatibility testing
+
+#### **End-to-End Tests**
+- Full CLI workflow testing
+- Real network integration testing
+- Performance and stress testing
 
 ### Debug Logging
 

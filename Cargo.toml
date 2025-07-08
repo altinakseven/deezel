@@ -32,7 +32,7 @@ tokio = { version = "1.28", features = ["full"] }
 futures = "0.3"
 
 # HTTP client
-reqwest = { version = "0.11", features = ["json"] }
+reqwest = { version = "0.12", features = ["json"] }
 
 # Serialization/Deserialization
 serde = { version = "1.0", features = ["derive"] }
@@ -64,6 +64,17 @@ wasmtime = "25.0"
 wasmprinter = "0.2"
 wat = "1.0"
 sha3 = "0.10"
+
+# Web-sys for WASM compatibility
+web-sys = { version = "0.3.70", features = [
+  "ReadableStream",
+  "Crypto",
+  "SubtleCrypto",
+  "CryptoKey",
+  "Performance",
+  "Location",
+  "Navigator"
+] }
 
 # CLI-specific dependencies (only used by deezel crate)
 clap = { version = "4.3", features = ["derive"] }

@@ -233,7 +233,7 @@ impl StandaloneRpcClient {
     }
     
     /// Make an HTTP JSON-RPC call (requires implementation by platform)
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native-deps"))]
     pub async fn http_call(&self, url: &str, method: &str, params: JsonValue) -> Result<JsonValue> {
         use reqwest;
         

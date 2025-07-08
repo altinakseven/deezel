@@ -245,11 +245,13 @@ impl<P: DeezelProvider> AddressResolver<P> {
 }
 
 /// Standalone address resolver for environments without full provider
+#[cfg(not(feature = "web-compat"))]
 pub struct StandaloneAddressResolver {
     addresses: HashMap<String, String>,
     network: Network,
 }
 
+#[cfg(not(feature = "web-compat"))]
 impl StandaloneAddressResolver {
     /// Create a new standalone address resolver
     pub fn new(network: Network) -> Self {
@@ -366,7 +368,9 @@ mod tests {
         assert!(resolver.resolve("unknown").is_err());
     }
 }
-// Implement basic DeezelProvider for StandaloneAddressResolver for testing
+
+// Trait implementations for StandaloneAddressResolver (only when not web-compat)
+#[cfg(not(feature = "web-compat"))]
 #[async_trait::async_trait]
 impl JsonRpcProvider for StandaloneAddressResolver {
     async fn call(&self, _url: &str, _method: &str, _params: serde_json::Value, _id: u64) -> Result<serde_json::Value> {
@@ -377,6 +381,7 @@ impl JsonRpcProvider for StandaloneAddressResolver {
     }
 }
 
+#[cfg(not(feature = "web-compat"))]
 #[async_trait::async_trait]
 impl StorageProvider for StandaloneAddressResolver {
     async fn read(&self, _key: &str) -> Result<Vec<u8>> {
@@ -391,6 +396,7 @@ impl StorageProvider for StandaloneAddressResolver {
     fn storage_type(&self) -> &'static str { "none" }
 }
 
+#[cfg(not(feature = "web-compat"))]
 #[async_trait::async_trait]
 impl NetworkProvider for StandaloneAddressResolver {
     async fn get(&self, _url: &str) -> Result<Vec<u8>> {
@@ -402,6 +408,7 @@ impl NetworkProvider for StandaloneAddressResolver {
     async fn is_reachable(&self, _url: &str) -> bool { false }
 }
 
+#[cfg(not(feature = "web-compat"))]
 #[async_trait::async_trait]
 impl CryptoProvider for StandaloneAddressResolver {
     fn random_bytes(&self, _len: usize) -> Result<Vec<u8>> {
@@ -424,12 +431,16 @@ impl CryptoProvider for StandaloneAddressResolver {
     }
 }
 
+#[cfg(not(feature = "web-compat"))]
 impl TimeProvider for StandaloneAddressResolver {
     fn now_secs(&self) -> u64 { 0 }
     fn now_millis(&self) -> u64 { 0 }
-    async fn sleep_ms(&self, _ms: u64) {}
+    fn sleep_ms(&self, _ms: u64) -> impl std::future::Future<Output = ()> + Send {
+        async move {}
+    }
 }
 
+#[cfg(not(feature = "web-compat"))]
 impl LogProvider for StandaloneAddressResolver {
     fn debug(&self, _message: &str) {}
     fn info(&self, _message: &str) {}
@@ -437,6 +448,7 @@ impl LogProvider for StandaloneAddressResolver {
     fn error(&self, _message: &str) {}
 }
 
+#[cfg(not(feature = "web-compat"))]
 #[async_trait::async_trait]
 impl WalletProvider for StandaloneAddressResolver {
     async fn create_wallet(&self, _config: WalletConfig, _mnemonic: Option<String>, _passphrase: Option<String>) -> Result<WalletInfo> {
@@ -504,6 +516,7 @@ impl WalletProvider for StandaloneAddressResolver {
     }
 }
 
+#[cfg(not(feature = "web-compat"))]
 #[async_trait::async_trait]
 impl crate::traits::AddressResolver for StandaloneAddressResolver {
     async fn resolve_all_identifiers(&self, input: &str) -> Result<String> {
@@ -518,6 +531,7 @@ impl crate::traits::AddressResolver for StandaloneAddressResolver {
     }
 }
 
+#[cfg(not(feature = "web-compat"))]
 #[async_trait::async_trait]
 impl BitcoinRpcProvider for StandaloneAddressResolver {
     async fn get_block_count(&self) -> Result<u64> {
@@ -554,6 +568,7 @@ impl BitcoinRpcProvider for StandaloneAddressResolver {
     }
 }
 
+#[cfg(not(feature = "web-compat"))]
 #[async_trait::async_trait]
 impl MetashrewRpcProvider for StandaloneAddressResolver {
     async fn get_metashrew_height(&self) -> Result<u64> {
@@ -576,6 +591,7 @@ impl MetashrewRpcProvider for StandaloneAddressResolver {
     }
 }
 
+#[cfg(not(feature = "web-compat"))]
 #[async_trait::async_trait]
 impl EsploraProvider for StandaloneAddressResolver {
     async fn get_blocks_tip_hash(&self) -> Result<String> {
@@ -670,6 +686,7 @@ impl EsploraProvider for StandaloneAddressResolver {
     }
 }
 
+#[cfg(not(feature = "web-compat"))]
 #[async_trait::async_trait]
 impl RunestoneProvider for StandaloneAddressResolver {
     async fn decode_runestone(&self, _tx: &bitcoin::Transaction) -> Result<serde_json::Value> {
@@ -683,6 +700,7 @@ impl RunestoneProvider for StandaloneAddressResolver {
     }
 }
 
+#[cfg(not(feature = "web-compat"))]
 #[async_trait::async_trait]
 impl AlkanesProvider for StandaloneAddressResolver {
     async fn execute(&self, _params: AlkanesExecuteParams) -> Result<AlkanesExecuteResult> {
@@ -708,6 +726,7 @@ impl AlkanesProvider for StandaloneAddressResolver {
     }
 }
 
+#[cfg(not(feature = "web-compat"))]
 #[async_trait::async_trait]
 impl MonitorProvider for StandaloneAddressResolver {
     async fn monitor_blocks(&self, _start: Option<u64>) -> Result<()> {
@@ -718,6 +737,7 @@ impl MonitorProvider for StandaloneAddressResolver {
     }
 }
 
+#[cfg(not(feature = "web-compat"))]
 impl Clone for StandaloneAddressResolver {
     fn clone(&self) -> Self {
         Self {
@@ -727,6 +747,7 @@ impl Clone for StandaloneAddressResolver {
     }
 }
 
+#[cfg(not(feature = "web-compat"))]
 #[async_trait::async_trait]
 impl DeezelProvider for StandaloneAddressResolver {
     fn provider_name(&self) -> &str {

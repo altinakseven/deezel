@@ -72,15 +72,17 @@ wat = { workspace = true, optional = true }
 sha3 = { workspace = true }
 
 # Additional dependencies for comprehensive functionality
-dirs = { workspace = true }
-tempfile = { workspace = true }
+dirs = { workspace = true, optional = true }
+tempfile = { workspace = true, optional = true }
 flate2 = { workspace = true }
-tokio = { workspace = true, features = ["time"] }
-reqwest = { workspace = true, features = ["json"] }
+tokio = { workspace = true, features = ["time"], optional = true }
+reqwest = { workspace = true, features = ["json"], optional = true }
 
 [features]
-default = ["wasm-inspection"]
+default = ["wasm-inspection", "native-deps"]
 wasm-inspection = ["wasmtime", "wasmprinter", "wat"]
+native-deps = ["dirs", "tempfile", "tokio", "reqwest"]
+web-compat = []
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }

@@ -322,6 +322,9 @@ enum AlkanesCommands {
         /// Auto-confirm without user prompt
         #[arg(short = 'y', long)]
         yes: bool,
+        /// Use Rebar Labs Shield for private transaction relay (mainnet only)
+        #[arg(long)]
+        rebar: bool,
     },
     /// Get alkanes balance for an address
     Balance {
@@ -1303,8 +1306,17 @@ async fn execute_alkanes_command(provider: &ConcreteProvider, command: AlkanesCo
     let alkanes = alkanes::AlkanesManager::new(provider.clone());
     
     match command {
-        AlkanesCommands::Execute { inputs, to, change, fee_rate, envelope, protostones, raw, trace, mine, yes } => {
+        AlkanesCommands::Execute { inputs, to, change, fee_rate, envelope, protostones, raw, trace, mine, yes, rebar } => {
             info!("🚀 Starting alkanes execute command");
+            
+            // Validate rebar flag usage
+            if rebar {
+                let network = provider.get_network();
+                if network != bitcoin::Network::Bitcoin {
+                    return Err(anyhow!("❌ Rebar Labs Shield is only available on mainnet. Current network: {:?}", network));
+                }
+                info!("🛡️  Rebar Labs Shield enabled for private transaction relay");
+            }
             
             // Resolve addresses in the 'to' field
             let resolved_to = resolve_address_identifiers(&to, provider).await?;
@@ -1338,6 +1350,7 @@ async fn execute_alkanes_command(provider: &ConcreteProvider, command: AlkanesCo
                 trace,
                 mine,
                 auto_confirm: yes,
+                rebar,
             };
             
             // Execute the alkanes transaction

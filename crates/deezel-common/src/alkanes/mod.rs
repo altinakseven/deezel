@@ -24,6 +24,7 @@ pub mod fee_validation;
 
 // Re-export key types
 pub use types::*;
+#[cfg(feature = "wasm-inspection")]
 pub use inspector::{AlkaneInspector, InspectionConfig, InspectionResult};
 
 /// Alkanes manager that works with any provider
@@ -79,6 +80,7 @@ impl<P: DeezelProvider> AlkanesManager<P> {
     }
     
     /// Create alkanes inspector
+    #[cfg(feature = "wasm-inspection")]
     pub fn create_inspector(&self) -> AlkaneInspector<P> {
         AlkaneInspector::new(self.provider.clone())
     }
@@ -115,6 +117,7 @@ impl<P: DeezelProvider> EnhancedAlkanesExecutor<P> {
             trace: params.trace_enabled,
             mine: params.mine_enabled,
             auto_confirm: params.auto_confirm,
+            rebar: params.rebar,
         };
         
         let result = self.provider.execute(basic_params).await?;
@@ -144,6 +147,7 @@ pub struct EnhancedExecuteParams {
     pub trace_enabled: bool,
     pub mine_enabled: bool,
     pub auto_confirm: bool,
+    pub rebar: bool,
 }
 
 /// Enhanced execute result
