@@ -213,10 +213,42 @@ impl<P: DeezelProvider> BlockMonitor<P> {
     
     /// Check if transaction involves monitored addresses
     async fn transaction_involves_addresses(&self, txid: &str, addresses: &[String]) -> Result<bool> {
-        // This would check if the transaction inputs or outputs involve any of the monitored addresses
-        // For now, return false as a placeholder
-        let _ = (txid, addresses);
-        Ok(false)
+        // Get transaction details
+        match self.provider.get_transaction_hex(txid).await {
+            Ok(tx_hex) => {
+                // Parse transaction from hex
+                let tx_bytes = hex::decode(&tx_hex)
+                    .map_err(|e| crate::DeezelError::Parse(format!("Invalid hex: {}", e)))?;
+                let tx: bitcoin::Transaction = bitcoin::consensus::deserialize(&tx_bytes)
+                    .map_err(|e| crate::DeezelError::Parse(format!("Invalid transaction: {}", e)))?;
+                
+                // Check inputs and outputs for monitored addresses
+                for input in &tx.input {
+                    // For inputs, we'd need to look up the previous output to get the address
+                    // This is a simplified check - in practice you'd need to resolve the input addresses
+                    let prev_txid = input.previous_output.txid.to_string();
+                    if addresses.iter().any(|addr| prev_txid.contains(addr)) {
+                        return Ok(true);
+                    }
+                }
+                
+                for output in &tx.output {
+                    // Extract address from script_pubkey
+                    if let Ok(address) = bitcoin::Address::from_script(&output.script_pubkey, bitcoin::Network::Bitcoin) {
+                        let addr_str = address.to_string();
+                        if addresses.contains(&addr_str) {
+                            return Ok(true);
+                        }
+                    }
+                }
+                
+                Ok(false)
+            }
+            Err(_) => {
+                // If we can't get the transaction, assume it doesn't involve monitored addresses
+                Ok(false)
+            }
+        }
     }
     
     /// Get monitoring statistics

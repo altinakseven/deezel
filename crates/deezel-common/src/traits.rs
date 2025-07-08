@@ -474,6 +474,7 @@ pub struct AddressInfo {
     pub script_type: String,
     pub derivation_path: String,
     pub index: u32,
+    pub used: bool,
 }
 
 /// Send transaction parameters
@@ -495,6 +496,7 @@ pub struct UtxoInfo {
     pub vout: u32,
     pub amount: u64,
     pub address: String,
+    pub script_pubkey: Option<ScriptBuf>,
     pub confirmations: u32,
     pub frozen: bool,
     pub freeze_reason: Option<String>,
@@ -1006,6 +1008,165 @@ pub struct AlkanesExecuteResult {
     pub inputs_used: Vec<String>,
     pub outputs_created: Vec<String>,
     pub traces: Option<Vec<String>>,
+}
+
+/// Enhanced alkanes execute parameters with protostones encoding and Rebar support
+#[derive(Debug, Clone)]
+pub struct EnhancedExecuteParams {
+    pub fee_rate: Option<f32>,
+    pub to_addresses: Vec<String>,
+    pub change_address: Option<String>,
+    pub input_requirements: Vec<InputRequirement>,
+    pub protostones: Vec<ProtostoneSpec>,
+    pub envelope_data: Option<Vec<u8>>,
+    pub raw_output: bool,
+    pub trace_enabled: bool,
+    pub mine_enabled: bool,
+    pub auto_confirm: bool,
+    pub rebar_enabled: bool,
+}
+
+/// Enhanced alkanes execute result with pretty printing capabilities
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct EnhancedExecuteResult {
+    pub commit_txid: Option<String>,
+    pub reveal_txid: Option<String>,
+    pub commit_fee: Option<u64>,
+    pub reveal_fee: Option<u64>,
+    pub total_fee: Option<u64>,
+    pub commit_tx_hex: Option<String>,
+    pub reveal_tx_hex: Option<String>,
+    pub inputs_used: Vec<String>,
+    pub outputs_created: Vec<String>,
+    pub traces: Option<Vec<String>>,
+    pub rebar_used: bool,
+    pub execution_time_ms: Option<u64>,
+    pub protostones_encoded: bool,
+}
+
+impl EnhancedExecuteResult {
+    /// Pretty print the result for CLI usage
+    pub fn pretty_print(&self) -> String {
+        let mut output = String::new();
+        
+        output.push_str("🎉 Enhanced Alkanes Execution Completed\n");
+        output.push_str("═══════════════════════════════════════\n");
+        
+        if self.is_commit_reveal() {
+            output.push_str("📋 Transaction Pattern: Commit/Reveal\n");
+            if let Some(commit_txid) = &self.commit_txid {
+                output.push_str(&format!("🔗 Commit TXID: {}\n", commit_txid));
+            }
+            if let Some(reveal_txid) = &self.reveal_txid {
+                output.push_str(&format!("🔗 Reveal TXID: {}\n", reveal_txid));
+            }
+        } else {
+            output.push_str("📋 Transaction Pattern: Single Transaction\n");
+            if let Some(reveal_txid) = &self.reveal_txid {
+                output.push_str(&format!("🔗 Transaction ID: {}\n", reveal_txid));
+            }
+        }
+        
+        // Fee information
+        if let Some(total) = self.total_fee() {
+            output.push_str(&format!("💰 Total Fee: {} sats\n", total));
+            if let Some(commit_fee) = self.commit_fee {
+                output.push_str(&format!("   📤 Commit Fee: {} sats\n", commit_fee));
+            }
+            if let Some(reveal_fee) = self.reveal_fee {
+                output.push_str(&format!("   📥 Reveal Fee: {} sats\n", reveal_fee));
+            }
+        }
+        
+        // Protostones encoding status
+        if self.protostones_encoded {
+            output.push_str("🔮 Protostones: Properly encoded in runestone\n");
+        }
+        
+        // Rebar usage
+        if self.rebar_used {
+            output.push_str("🛡️  Rebar Labs Shield: Used for private relay\n");
+        }
+        
+        // Execution time
+        if let Some(time_ms) = self.execution_time_ms {
+            output.push_str(&format!("⏱️  Execution Time: {}ms\n", time_ms));
+        }
+        
+        // Input/output summary
+        if !self.inputs_used.is_empty() {
+            output.push_str(&format!("📥 Inputs Used: {}\n", self.inputs_used.len()));
+        }
+        if !self.outputs_created.is_empty() {
+            output.push_str(&format!("📤 Outputs Created: {}\n", self.outputs_created.len()));
+        }
+        
+        // Traces if available
+        if let Some(traces) = &self.traces {
+            if !traces.is_empty() {
+                output.push_str(&format!("🔍 Traces Available: {} entries\n", traces.len()));
+            }
+        }
+        
+        output
+    }
+    
+    /// Get a summary of the execution
+    pub fn summary(&self) -> String {
+        if self.is_commit_reveal() {
+            format!("Commit/Reveal execution completed with {} total fee",
+                   self.total_fee().map_or("unknown".to_string(), |f| format!("{} sats", f)))
+        } else {
+            format!("Single transaction execution completed with {} fee",
+                   self.reveal_fee.map_or("unknown".to_string(), |f| format!("{} sats", f)))
+        }
+    }
+    
+    /// Check if this is a commit/reveal pattern
+    pub fn is_commit_reveal(&self) -> bool {
+        self.commit_txid.is_some()
+    }
+    
+    /// Calculate total fee
+    pub fn total_fee(&self) -> Option<u64> {
+        match (self.commit_fee, self.reveal_fee) {
+            (Some(commit), Some(reveal)) => Some(commit + reveal),
+            (None, Some(reveal)) => Some(reveal),
+            (Some(commit), None) => Some(commit),
+            (None, None) => None,
+        }
+    }
+}
+
+/// Input requirement specification
+#[derive(Debug, Clone)]
+pub struct InputRequirement {
+    pub requirement_type: InputRequirementType,
+    pub amount: u64,
+    pub alkane_id: Option<AlkaneId>,
+}
+
+/// Input requirement type
+#[derive(Debug, Clone)]
+pub enum InputRequirementType {
+    Bitcoin,
+    Alkanes,
+}
+
+/// Protostone specification
+#[derive(Debug, Clone)]
+pub struct ProtostoneSpec {
+    pub name: String,
+    pub data: Vec<u8>,
+    pub encoding: ProtostoneEncoding,
+}
+
+/// Protostone encoding type
+#[derive(Debug, Clone)]
+pub enum ProtostoneEncoding {
+    Raw,
+    Hex,
+    Base64,
 }
 
 /// Alkanes balance

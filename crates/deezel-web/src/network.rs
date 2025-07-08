@@ -139,7 +139,7 @@ impl WebNetwork {
     ) -> Result<Response> {
         let window = window().ok_or_else(|| DeezelError::Network("No window object available".to_string()))?;
 
-        let mut opts = RequestInit::new();
+        let opts = RequestInit::new();
         opts.set_method(method);
         opts.set_mode(RequestMode::Cors);
 

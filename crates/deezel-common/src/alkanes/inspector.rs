@@ -8,15 +8,17 @@
 //! including host call interception, detailed error information, and comprehensive
 //! execution context management.
 
-use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::time::Instant;
 use std::sync::{Arc, Mutex};
-use sha3::{Digest, Keccak256};
 use serde::{Serialize, Deserialize};
 #[cfg(feature = "wasm-inspection")]
 use wasmtime::*;
-
+#[cfg(feature = "wasm-inspection")]
+use anyhow::{Context, Result};
+#[cfg(feature = "wasm-inspection")]
+use sha3::{Digest, Keccak256};
+#[cfg(feature = "wasm-inspection")]
 use crate::traits::JsonRpcProvider;
 use super::types::AlkaneId;
 

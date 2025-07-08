@@ -35,14 +35,17 @@ pub struct TokenInfo {
 pub struct ContractDeployParams {
     pub wasm_file: String,
     pub calldata: Vec<String>,
+    pub tokens: Vec<TokenAmount>,
     pub fee_rate: Option<f32>,
 }
 
 /// Contract execution parameters
 #[derive(Debug, Clone)]
 pub struct ContractExecuteParams {
+    pub target: AlkaneId,
     pub calldata: Vec<String>,
-    pub edicts: Option<Vec<Edict>>,
+    pub edicts: Vec<Edict>,
+    pub tokens: Vec<TokenAmount>,
     pub fee_rate: Option<f32>,
 }
 
@@ -65,6 +68,7 @@ pub struct TokenSendParams {
     pub token: AlkaneId,
     pub amount: u64,
     pub to: String,
+    pub from: Option<String>,
     pub fee_rate: Option<f32>,
 }
 
@@ -79,6 +83,7 @@ pub struct PoolCreateParams {
 /// Liquidity addition parameters
 #[derive(Debug, Clone)]
 pub struct LiquidityAddParams {
+    pub pool: AlkaneId,
     pub calldata: Vec<String>,
     pub tokens: Vec<TokenAmount>,
     pub fee_rate: Option<f32>,
@@ -96,6 +101,7 @@ pub struct LiquidityRemoveParams {
 /// Swap parameters
 #[derive(Debug, Clone)]
 pub struct SwapParams {
+    pub pool: AlkaneId,
     pub calldata: Vec<String>,
     pub token: AlkaneId,
     pub amount: u64,

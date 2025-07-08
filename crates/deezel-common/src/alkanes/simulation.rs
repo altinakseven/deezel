@@ -163,11 +163,24 @@ impl<P: crate::traits::DeezelProvider> SimulationManager<P> {
         let result = self.simulate_contract_execution(contract_id, calldata).await?;
         
         // Extract gas usage from simulation result
-        // This is a placeholder implementation
         if let Some(gas) = result.get("gas_used").and_then(|v| v.as_u64()) {
             Ok(gas)
+        } else if let Some(trace) = result.get("trace") {
+            // Calculate gas from trace events
+            let mut total_gas = 0u64;
+            if let Some(events) = trace.get("events").and_then(|v| v.as_array()) {
+                for event in events {
+                    if let Some(fuel_used) = event.get("fuel_used").and_then(|v| v.as_u64()) {
+                        total_gas += fuel_used;
+                    }
+                }
+            }
+            Ok(if total_gas > 0 { total_gas } else { 21000 })
         } else {
-            Ok(21000) // Default gas estimate
+            // Estimate based on calldata size and complexity
+            let base_gas = 21000u64;
+            let calldata_gas = calldata.len() as u64 * 16; // 16 gas per byte
+            Ok(base_gas + calldata_gas)
         }
     }
 

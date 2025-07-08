@@ -99,6 +99,7 @@ impl WalletProvider for WebProvider {
                 script_type: "p2wpkh".to_string(),
                 derivation_path: format!("m/84'/0'/0'/0/{}", i),
                 index: i,
+                used: false,
             });
         }
         Ok(addresses)
@@ -116,6 +117,7 @@ impl WalletProvider for WebProvider {
             vout: 0,
             amount: 100000000,
             address: WalletProvider::get_address(self).await?,
+            script_pubkey: Some(bitcoin::ScriptBuf::new()),
             confirmations: 6,
             frozen: false,
             freeze_reason: None,

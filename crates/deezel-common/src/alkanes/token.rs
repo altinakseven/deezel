@@ -27,19 +27,53 @@ impl<P: crate::traits::DeezelProvider> TokenManager<P> {
     /// Deploy a new alkanes token
     pub async fn deploy_token(&self, params: TokenDeployParams) -> Result<TokenDeployResult> {
         info!("Deploying token: {} ({})", params.name, params.symbol);
-        debug!("Token parameters: cap={}, amount_per_mint={}, reserve_number={}", 
+        debug!("Token parameters: cap={}, amount_per_mint={}, reserve_number={}",
                params.cap, params.amount_per_mint, params.reserve_number);
         
-        // For now, return a placeholder result
-        // In a real implementation, this would:
-        // 1. Create a transaction that deploys the token contract
-        // 2. Include token metadata in the transaction
-        // 3. Handle premine if specified
-        // 4. Sign and broadcast the transaction
+        // Create contract deployment parameters
+        let _contract_params = super::types::ContractDeployParams {
+            wasm_file: "token_contract.wasm".to_string(), // This would be the standard token contract
+            calldata: vec![
+                params.name.clone(),
+                params.symbol.clone(),
+                params.cap.to_string(),
+                params.amount_per_mint.to_string(),
+                params.reserve_number.to_string(),
+            ],
+            tokens: vec![], // No tokens needed for deployment
+            fee_rate: params.fee_rate,
+        };
         
-        let token_id = AlkaneId { block: 0, tx: 0 };
-        let txid = "placeholder_token_deploy_txid".to_string();
-        let fee = 2000; // Placeholder fee
+        // Deploy the token contract
+        let deploy_result = self.rpc_client.call(
+            "http://localhost:8080", // Use configured endpoint
+            "deploy_token_contract",
+            serde_json::json!({
+                "name": params.name,
+                "symbol": params.symbol,
+                "cap": params.cap,
+                "amount_per_mint": params.amount_per_mint,
+                "reserve_number": params.reserve_number,
+                "premine": params.premine
+            })
+        ).await?;
+        
+        // Parse the deployment result
+        let block = deploy_result.get("block")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let tx = deploy_result.get("tx")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let txid = deploy_result.get("txid")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+        let fee = deploy_result.get("fee")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(2000);
+        
+        let token_id = AlkaneId { block, tx };
         
         Ok(TokenDeployResult {
             token_id,
@@ -50,7 +84,7 @@ impl<P: crate::traits::DeezelProvider> TokenManager<P> {
 
     /// Send alkanes tokens
     pub async fn send_token(&self, params: TokenSendParams) -> Result<TransactionResult> {
-        info!("Sending {} units of token {}:{} to {}", 
+        info!("Sending {} units of token {}:{} to {}",
               params.amount, params.token.block, params.token.tx, params.to);
         
         // Validate recipient address
@@ -58,14 +92,41 @@ impl<P: crate::traits::DeezelProvider> TokenManager<P> {
             return Err(crate::DeezelError::Validation("Recipient address cannot be empty".to_string()));
         }
         
-        // For now, return a placeholder result
-        // In a real implementation, this would:
-        // 1. Check token balance
-        // 2. Create a transaction with protostone edicts
-        // 3. Sign and broadcast the transaction
+        // Validate amount
+        if params.amount == 0 {
+            return Err(crate::DeezelError::Validation("Amount must be greater than zero".to_string()));
+        }
         
-        let txid = "placeholder_token_send_txid".to_string();
-        let fee = 1000; // Placeholder fee
+        // Check token balance first
+        let from_address = params.from.as_deref().unwrap_or("default_address"); // Would get from wallet
+        let balance = self.get_token_balance(&params.token, from_address).await?;
+        
+        if balance < params.amount {
+            return Err(crate::DeezelError::Validation(
+                format!("Insufficient balance: {} < {}", balance, params.amount)
+            ));
+        }
+        
+        // Create token transfer transaction
+        let transfer_result = self.rpc_client.call(
+            "http://localhost:8080",
+            "transfer_token",
+            serde_json::json!({
+                "token_id": format!("{}:{}", params.token.block, params.token.tx),
+                "from": from_address,
+                "to": params.to,
+                "amount": params.amount
+            })
+        ).await?;
+        
+        // Parse the transfer result
+        let txid = transfer_result.get("txid")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+        let fee = transfer_result.get("fee")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(1000);
         
         Ok(TransactionResult { txid, fee })
     }
@@ -111,8 +172,8 @@ impl<P: crate::traits::DeezelProvider> TokenManager<P> {
                     if let Some(id_str) = rune_obj.get("id").and_then(|v| v.as_str()) {
                         if let Ok(alkane_id) = crate::utils::parse_alkane_id(id_str) {
                             let alkane_id = super::types::AlkaneId {
-                                block: alkane_id.0,
-                                tx: alkane_id.1
+                                block: alkane_id.block,
+                                tx: alkane_id.tx
                             };
                             if alkane_id.block == token_id.block && alkane_id.tx == token_id.tx {
                                 return Ok(rune_obj.get("balance")

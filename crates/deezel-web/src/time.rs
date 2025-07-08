@@ -53,6 +53,7 @@ use std::task::{Context, Poll};
 /// Web time implementation using Performance API
 #[derive(Clone)]
 pub struct WebTime {
+    #[allow(dead_code)]
     performance: Option<Performance>,
 }
 
@@ -66,6 +67,7 @@ impl WebTime {
     }
 
     /// Get high-resolution time from Performance API if available
+    #[allow(dead_code)]
     fn get_performance_now(&self) -> Option<f64> {
         self.performance.as_ref().map(|p| p.now())
     }

@@ -476,6 +476,7 @@ mod tests {
                 vout: 0,
                 amount: 101000,
                 address: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4".to_string(),
+                script_pubkey: Some(ScriptBuf::new()),
                 confirmations: 6,
                 frozen: false,
                 freeze_reason: None,

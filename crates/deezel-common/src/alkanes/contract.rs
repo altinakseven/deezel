@@ -34,16 +34,37 @@ impl<P: crate::traits::DeezelProvider> ContractManager<P> {
         
         debug!("WASM file size: {} bytes", wasm_bytes.len());
         
-        // For now, return a placeholder result
-        // In a real implementation, this would:
-        // 1. Create a transaction with the WASM bytecode
-        // 2. Add the calldata as OP_RETURN or script data
-        // 3. Sign and broadcast the transaction
-        // 4. Parse the resulting contract ID from the transaction
+        // Encode WASM bytes as hex for transmission
+        let wasm_hex = hex::encode(&wasm_bytes);
         
-        let contract_id = AlkaneId { block: 0, tx: 0 };
-        let txid = "placeholder_txid".to_string();
-        let fee = 1000; // Placeholder fee
+        // Create deployment transaction
+        let deploy_result = self.rpc_client.call(
+            "http://localhost:8080",
+            "deploy_contract",
+            serde_json::json!({
+                "wasm_bytecode": wasm_hex,
+                "calldata": params.calldata
+            })
+        ).await?;
+        
+        // Parse the deployment result
+        let block = deploy_result.get("block")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let tx = deploy_result.get("tx")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let txid = deploy_result.get("txid")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+        let fee = deploy_result.get("fee")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(1000);
+        
+        let contract_id = AlkaneId { block, tx };
+        
+        info!("Contract deployed successfully: {}:{}", contract_id.block, contract_id.tx);
         
         Ok(ContractDeployResult {
             contract_id,
@@ -56,14 +77,44 @@ impl<P: crate::traits::DeezelProvider> ContractManager<P> {
     pub async fn execute_contract(&self, params: ContractExecuteParams) -> Result<TransactionResult> {
         info!("Executing contract with calldata: {:?}", params.calldata);
         
-        // For now, return a placeholder result
-        // In a real implementation, this would:
-        // 1. Create a transaction with the calldata
-        // 2. Add any edicts for protostone operations
-        // 3. Sign and broadcast the transaction
+        // Validate that we have a target contract
+        if params.target.block == 0 && params.target.tx == 0 {
+            return Err(crate::DeezelError::Validation("Invalid contract target".to_string()));
+        }
         
-        let txid = "placeholder_execution_txid".to_string();
-        let fee = 500; // Placeholder fee
+        // Create execution transaction
+        let execute_result = self.rpc_client.call(
+            "http://localhost:8080",
+            "execute_contract",
+            serde_json::json!({
+                "target": format!("{}:{}", params.target.block, params.target.tx),
+                "calldata": params.calldata,
+                "edicts": params.edicts.iter().map(|e| {
+                    serde_json::json!({
+                        "alkane_id": format!("{}:{}", e.alkane_id.block, e.alkane_id.tx),
+                        "amount": e.amount,
+                        "output": e.output
+                    })
+                }).collect::<Vec<_>>(),
+                "tokens": params.tokens.iter().map(|t| {
+                    serde_json::json!({
+                        "alkane_id": format!("{}:{}", t.alkane_id.block, t.alkane_id.tx),
+                        "amount": t.amount
+                    })
+                }).collect::<Vec<_>>()
+            })
+        ).await?;
+        
+        // Parse the execution result
+        let txid = execute_result.get("txid")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+        let fee = execute_result.get("fee")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(500);
+        
+        info!("Contract execution completed: {}", txid);
         
         Ok(TransactionResult { txid, fee })
     }

@@ -37,11 +37,26 @@ impl<P: DeezelProvider> RunestoneManager<P> {
         let _result = self.provider.decode_runestone(&tx).await?;
         
         // Convert JsonValue result to RunestoneDecodeResult
+        // Parse the JsonValue result to extract runestone information
+        let runestone = if let Some(runestone_data) = _result.get("runestone") {
+            Some(self.parse_runestone_from_json(runestone_data)?)
+        } else {
+            None
+        };
+        
+        let raw_data = _result.get("raw_data")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        
+        let error = _result.get("error")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        
         Ok(RunestoneDecodeResult {
             txid,
-            runestone: None, // TODO: Parse from JsonValue
-            raw_data: None,
-            error: None,
+            runestone,
+            raw_data,
+            error,
         })
     }
     
@@ -51,11 +66,28 @@ impl<P: DeezelProvider> RunestoneManager<P> {
         let _result = self.provider.analyze_runestone(&message).await?;
         
         // Convert JsonValue result to MessageAnalysis
+        // Parse the JsonValue result to extract runestone information
+        let runestone = if let Some(runestone_data) = _result.get("runestone") {
+            Some(self.parse_runestone_from_json(runestone_data)?)
+        } else {
+            None
+        };
+        
+        // Extract metadata from the result
+        let mut metadata = std::collections::HashMap::new();
+        if let Some(meta) = _result.get("metadata").and_then(|v| v.as_object()) {
+            for (key, value) in meta {
+                if let Some(val_str) = value.as_str() {
+                    metadata.insert(key.clone(), val_str.to_string());
+                }
+            }
+        }
+        
         Ok(MessageAnalysis {
             format,
             decoded: message,
-            runestone: None, // TODO: Parse from JsonValue
-            metadata: std::collections::HashMap::new(),
+            runestone,
+            metadata,
         })
     }
     
@@ -84,8 +116,13 @@ impl<P: DeezelProvider> RunestoneManager<P> {
         // Use decode_runestone trait method
         let _result = self.provider.decode_runestone(&tx).await?;
         
-        // TODO: Parse JsonValue result to extract RunestoneInfo
-        Ok(None)
+        // Parse JsonValue result to extract RunestoneInfo
+        if let Some(runestone_data) = _result.get("runestone") {
+            let runestone = self.parse_runestone_from_json(runestone_data)?;
+            Ok(Some(runestone))
+        } else {
+            Ok(None)
+        }
     }
     
     /// Get runestone from raw transaction
@@ -245,6 +282,84 @@ impl<P: DeezelProvider> RunestoneManager<P> {
         }
         
         output
+    }
+    
+    /// Parse runestone information from JSON value
+    fn parse_runestone_from_json(&self, json: &serde_json::Value) -> Result<RunestoneInfo> {
+        let etching = json.get("etching").and_then(|e| {
+            Some(Etching {
+                rune: e.get("rune").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                divisibility: e.get("divisibility").and_then(|v| v.as_u64()).map(|v| v as u8),
+                premine: e.get("premine").and_then(|v| v.as_str()).and_then(|s| s.parse().ok()),
+                spacers: e.get("spacers").and_then(|v| v.as_u64()).map(|v| v as u32),
+                symbol: e.get("symbol").and_then(|v| v.as_str()).and_then(|s| s.chars().next()),
+                terms: e.get("terms").and_then(|t| {
+                    Some(Terms {
+                        amount: t.get("amount").and_then(|v| v.as_str()).and_then(|s| s.parse().ok()),
+                        cap: t.get("cap").and_then(|v| v.as_str()).and_then(|s| s.parse().ok()),
+                        height: t.get("height").and_then(|h| {
+                            if let Some(arr) = h.as_array() {
+                                if arr.len() >= 2 {
+                                    Some((
+                                        arr[0].as_u64(),
+                                        arr[1].as_u64()
+                                    ))
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        }),
+                        offset: t.get("offset").and_then(|o| {
+                            if let Some(arr) = o.as_array() {
+                                if arr.len() >= 2 {
+                                    Some((
+                                        arr[0].as_u64(),
+                                        arr[1].as_u64()
+                                    ))
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        }),
+                    })
+                }),
+            })
+        });
+        
+        let edicts = json.get("edicts")
+            .and_then(|e| e.as_array())
+            .map(|arr| {
+                arr.iter().filter_map(|edict| {
+                    Some(Edict {
+                        id: edict.get("id").and_then(|v| v.as_str()).unwrap_or("0:0").to_string(),
+                        amount: edict.get("amount").and_then(|v| v.as_str()).and_then(|s| s.parse().ok()).unwrap_or(0),
+                        output: edict.get("output").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+                    })
+                }).collect()
+            })
+            .unwrap_or_default();
+        
+        let mint = json.get("mint").and_then(|v| v.as_str()).map(|s| s.to_string());
+        let pointer = json.get("pointer").and_then(|v| v.as_u64()).map(|v| v as u32);
+        
+        let cenotaph = json.get("cenotaph")
+            .and_then(|c| c.as_array())
+            .map(|arr| {
+                arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()
+            })
+            .unwrap_or_default();
+        
+        Ok(RunestoneInfo {
+            etching,
+            edicts,
+            mint,
+            pointer,
+            cenotaph,
+        })
     }
 }
 

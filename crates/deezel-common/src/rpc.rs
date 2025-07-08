@@ -214,7 +214,9 @@ impl<P: DeezelProvider> RpcClient<P> {
 
 /// Standalone RPC client for environments without full provider
 pub struct StandaloneRpcClient {
+    #[allow(dead_code)]
     config: RpcConfig,
+    #[allow(dead_code)]
     request_id: std::sync::atomic::AtomicU64,
 }
 
@@ -228,6 +230,7 @@ impl StandaloneRpcClient {
     }
     
     /// Get next request ID
+    #[allow(dead_code)]
     fn next_id(&self) -> u64 {
         self.request_id.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
     }
@@ -266,9 +269,54 @@ impl StandaloneRpcClient {
     
     /// WASM implementation would use fetch API
     #[cfg(target_arch = "wasm32")]
-    pub async fn http_call(&self, _url: &str, _method: &str, _params: JsonValue) -> Result<JsonValue> {
-        // TODO: Implement using web_sys fetch API
-        Err(DeezelError::Network("WASM RPC not implemented yet".to_string()))
+    pub async fn http_call(&self, url: &str, method: &str, params: JsonValue) -> Result<JsonValue> {
+        use wasm_bindgen::prelude::*;
+        use wasm_bindgen_futures::JsFuture;
+        use web_sys::{Request, RequestInit, RequestMode, Response};
+        
+        let request = RpcRequest::new(method, params, self.next_id());
+        let body = serde_json::to_string(&request)
+            .map_err(|e| DeezelError::Network(e.to_string()))?;
+        
+        let mut opts = RequestInit::new();
+        opts.method("POST");
+        opts.body(Some(&JsValue::from_str(&body)));
+        opts.mode(RequestMode::Cors);
+        
+        let request = Request::new_with_str_and_init(url, &opts)
+            .map_err(|e| DeezelError::Network(format!("Failed to create request: {:?}", e)))?;
+        
+        request.headers().set("Content-Type", "application/json")
+            .map_err(|e| DeezelError::Network(format!("Failed to set headers: {:?}", e)))?;
+        
+        let window = web_sys::window()
+            .ok_or_else(|| DeezelError::Network("No window object".to_string()))?;
+        
+        let resp_value = JsFuture::from(window.fetch_with_request(&request))
+            .await
+            .map_err(|e| DeezelError::Network(format!("Fetch failed: {:?}", e)))?;
+        
+        let resp: Response = resp_value.dyn_into()
+            .map_err(|e| DeezelError::Network(format!("Response cast failed: {:?}", e)))?;
+        
+        if !resp.ok() {
+            return Err(DeezelError::Network(format!("HTTP error: {}", resp.status())));
+        }
+        
+        let json = JsFuture::from(resp.json()
+            .map_err(|e| DeezelError::Network(format!("JSON parse failed: {:?}", e)))?)
+            .await
+            .map_err(|e| DeezelError::Network(format!("JSON future failed: {:?}", e)))?;
+        
+        let rpc_response: RpcResponse = serde_wasm_bindgen::from_value(json)
+            .map_err(|e| DeezelError::Network(e.to_string()))?;
+        
+        if let Some(error) = rpc_response.error {
+            return Err(DeezelError::RpcError(format!("{}: {}", error.code, error.message)));
+        }
+        
+        rpc_response.result
+            .ok_or_else(|| DeezelError::RpcError("No result in RPC response".to_string()))
     }
 }
 

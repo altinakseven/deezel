@@ -55,13 +55,15 @@ pub mod crypto;
 pub mod time;
 pub mod logging;
 pub mod utils;
+pub mod wallet_provider;
 
 // Provider trait implementations (included in provider module)
 mod provider_traits;
 mod provider_traits_extended;
 
-// Re-export the main provider
+// Re-export the main providers
 pub use provider::WebProvider;
+pub use wallet_provider::{BrowserWalletProvider, WalletConnector, WalletInfo, WalletBackend, InjectedWallet};
 
 
 // Re-export deezel-common for convenience

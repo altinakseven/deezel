@@ -195,6 +195,7 @@ impl traits::WalletProvider for MockAlkanesProvider {
                 script_type: "p2tr".to_string(),
                 derivation_path: format!("m/86'/0'/0'/0/{}", i),
                 index: i,
+                used: false,
             });
         }
         Ok(addresses)
@@ -211,6 +212,7 @@ impl traits::WalletProvider for MockAlkanesProvider {
                 vout: 0,
                 amount: 50000000, // 0.5 BTC
                 address: "bc1p5d7rjq7g6rdk2yhzks9smlaqtedr4dekq08ge8ztwac72sfr9rusxg3297".to_string(),
+                script_pubkey: Some(bitcoin::ScriptBuf::new()),
                 confirmations: 6,
                 frozen: false,
                 freeze_reason: None,

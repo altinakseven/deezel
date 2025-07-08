@@ -158,9 +158,9 @@ impl<P: DeezelProvider> WalletManager<P> {
     pub async fn get_addresses(&self, count: u32) -> Result<Vec<AddressInfo>> {
         let trait_addresses = self.provider.get_addresses(count).await?;
         Ok(trait_addresses.into_iter().map(|addr| AddressInfo {
-            address: addr.address,
+            address: addr.address.clone(),
             index: addr.index,
-            used: false, // TODO: Get actual used status from trait
+            used: addr.used,
         }).collect())
     }
     
@@ -185,8 +185,8 @@ impl<P: DeezelProvider> WalletManager<P> {
             txid: utxo.txid,
             vout: utxo.vout,
             amount: utxo.amount,
-            address: utxo.address,
-            script_pubkey: bitcoin::ScriptBuf::new(), // TODO: Get actual script_pubkey from trait
+            address: utxo.address.clone(),
+            script_pubkey: utxo.script_pubkey.unwrap_or_else(|| bitcoin::ScriptBuf::new()),
             confirmations: utxo.confirmations,
             frozen: utxo.frozen,
         }).collect();
@@ -205,7 +205,7 @@ impl<P: DeezelProvider> WalletManager<P> {
                     vout: utxo.vout,
                     amount: utxo.amount,
                     address: utxo.address.clone(),
-                    script_pubkey: bitcoin::ScriptBuf::new(), // TODO: Get actual script_pubkey from trait
+                    script_pubkey: utxo.script_pubkey.clone().unwrap_or_else(|| bitcoin::ScriptBuf::new()),
                     confirmations: utxo.confirmations,
                     frozen: utxo.frozen,
                 },
@@ -233,7 +233,7 @@ impl<P: DeezelProvider> WalletManager<P> {
                     vout: utxo.vout,
                     amount: utxo.amount,
                     address: utxo.address.clone(),
-                    script_pubkey: bitcoin::ScriptBuf::new(), // TODO: Get actual script_pubkey from trait
+                    script_pubkey: utxo.script_pubkey.clone().unwrap_or_else(|| bitcoin::ScriptBuf::new()),
                     confirmations: utxo.confirmations,
                     frozen: utxo.frozen,
                 },
@@ -258,8 +258,17 @@ impl<P: DeezelProvider> WalletManager<P> {
             block_time: tx.block_time,
             confirmed: tx.confirmed,
             fee: tx.fee,
-            inputs: vec![], // TODO: Convert from trait inputs
-            outputs: vec![], // TODO: Convert from trait outputs
+            inputs: tx.inputs.into_iter().map(|input| TransactionInput {
+                txid: input.txid,
+                vout: input.vout,
+                address: input.address,
+                amount: input.amount,
+            }).collect(),
+            outputs: tx.outputs.into_iter().map(|output| TransactionOutput {
+                address: output.address,
+                amount: output.amount,
+                script_hex: hex::encode(output.script.as_bytes()),
+            }).collect(),
         }).collect())
     }
     
