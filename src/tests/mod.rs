@@ -93,7 +93,7 @@ pub fn init_test_state(config: TestConfig) -> Result<Arc<Mutex<TestState>>> {
         ..Default::default()
     }));
     
-    let mut global_state = TEST_STATE.lock().unwrap();
+    let mut global_state = TEST_STATE.lock().expect("Failed to lock TEST_STATE");
     *global_state = Some(state.clone());
     
     Ok(state)
@@ -101,7 +101,7 @@ pub fn init_test_state(config: TestConfig) -> Result<Arc<Mutex<TestState>>> {
 
 /// Get the global test state
 pub fn get_test_state() -> Result<Arc<Mutex<TestState>>> {
-    let global_state = TEST_STATE.lock().unwrap();
+    let global_state = TEST_STATE.lock().expect("Failed to lock TEST_STATE");
     global_state.as_ref()
         .ok_or_else(|| anyhow::anyhow!("Test state not initialized"))
         .map(|s| s.clone())
@@ -109,7 +109,7 @@ pub fn get_test_state() -> Result<Arc<Mutex<TestState>>> {
 
 /// Clear the global test state
 pub fn clear_test_state() {
-    let mut global_state = TEST_STATE.lock().unwrap();
+    let mut global_state = TEST_STATE.lock().expect("Failed to lock TEST_STATE");
     *global_state = None;
 }
 
@@ -175,7 +175,7 @@ mod tests {
         let config = TestConfig::default();
         let state = init_test_state(config).unwrap();
         
-        let state_lock = state.lock().unwrap();
+        let state_lock = state.lock().expect("Failed to lock state");
         assert_eq!(state_lock.height, 840000);
         assert!(state_lock.blocks.is_empty());
         assert!(state_lock.utxos.is_empty());

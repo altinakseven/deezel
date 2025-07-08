@@ -477,7 +477,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
         for &opcode in opcodes {
             // Update the context inputs for this opcode
             {
-                let mut context_guard = store.data().context.lock().unwrap();
+                let mut context_guard = store.data().context.lock();
                 context_guard.inputs[0] = opcode; // First input is the opcode
                 // Keep the rest as zeros
                 for i in 1..16 {
@@ -489,7 +489,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
             
             // Clear host calls from previous execution
             {
-                let mut calls_guard = store.data().host_calls.lock().unwrap();
+                let mut calls_guard = store.data().host_calls.lock();
                 calls_guard.clear();
             }
             
@@ -503,7 +503,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
             
             // Capture host calls for this execution
             let host_calls = {
-                let calls_guard = store.data().host_calls.lock().unwrap();
+                let calls_guard = store.data().host_calls.lock();
                 calls_guard.clone()
             };
 
@@ -722,7 +722,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
 
         // __request_context - matches alkanes-rs signature
         linker.func_wrap("env", "__request_context", |caller: Caller<'_, AlkanesState>| -> i32 {
-            let context_guard = caller.data().context.lock().unwrap();
+            let context_guard = caller.data().context.lock();
             let serialized = context_guard.serialize();
             serialized.len() as i32
         }).unwrap();
@@ -730,7 +730,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
         // __load_context - matches alkanes-rs signature
         linker.func_wrap("env", "__load_context", |mut caller: Caller<'_, AlkanesState>, output: i32| -> i32 {
             let serialized = {
-                let context_guard = caller.data().context.lock().unwrap();
+                let context_guard = caller.data().context.lock();
                 context_guard.serialize()
             };
             
@@ -787,7 +787,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
             };
             
             {
-                let mut calls = caller.data().host_calls.lock().unwrap();
+                let mut calls = caller.data().host_calls.lock();
                 calls.push(host_call);
             }
             
@@ -883,7 +883,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
             };
             
             {
-                let mut calls = caller.data().host_calls.lock().unwrap();
+                let mut calls = caller.data().host_calls.lock();
                 calls.push(host_call);
             }
             
@@ -973,7 +973,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
         // __returndatacopy - matches alkanes-rs signature
         linker.func_wrap("env", "__returndatacopy", |mut caller: Caller<'_, AlkanesState>, output: i32| {
             let returndata = {
-                let context_guard = caller.data().context.lock().unwrap();
+                let context_guard = caller.data().context.lock();
                 context_guard.returndata.clone()
             };
             if let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory()) {
@@ -1025,7 +1025,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
             };
             
             {
-                let mut calls = caller.data().host_calls.lock().unwrap();
+                let mut calls = caller.data().host_calls.lock();
                 calls.push(host_call);
             }
             
@@ -1049,7 +1049,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
             };
             
             {
-                let mut calls = caller.data().host_calls.lock().unwrap();
+                let mut calls = caller.data().host_calls.lock();
                 calls.push(host_call);
             }
             
@@ -1073,7 +1073,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
             };
             
             {
-                let mut calls = caller.data().host_calls.lock().unwrap();
+                let mut calls = caller.data().host_calls.lock();
                 calls.push(host_call);
             }
             
