@@ -8,20 +8,31 @@
 //! including host call interception, detailed error information, and comprehensive
 //! execution context management.
 
-#[cfg(not(feature = "web-compat"))]
+#[cfg(not(target_arch = "wasm32"))]
 use std::collections::HashMap;
-#[cfg(feature = "web-compat")]
+#[cfg(target_arch = "wasm32")]
 use alloc::collections::BTreeMap as HashMap;
 
-#[cfg(not(feature = "web-compat"))]
-use std::time::{Instant, Duration};
-#[cfg(feature = "web-compat")]
-use core::time::Duration;
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant;
+#[cfg(target_arch = "wasm32")]
+use ::core::time::Duration;
 
-#[cfg(feature = "web-compat")]
+// WASM-compatible print macros
+#[cfg(target_arch = "wasm32")]
+macro_rules! println {
+    ($($arg:tt)*) => {{}};
+}
+
+#[cfg(target_arch = "wasm32")]
+macro_rules! print {
+    ($($arg:tt)*) => {{}};
+}
+
+#[cfg(target_arch = "wasm32")]
 struct Instant;
 
-#[cfg(feature = "web-compat")]
+#[cfg(target_arch = "wasm32")]
 impl Instant {
     fn now() -> Self { Instant }
     fn elapsed(&self) -> Duration { Duration::from_micros(0) }
@@ -34,11 +45,11 @@ use std::{vec, vec::Vec, boxed::Box, string::String};
 #[cfg(target_arch = "wasm32")]
 use alloc::{vec, vec::Vec, boxed::Box, string::String};
 
-#[cfg(not(feature = "web-compat"))]
+#[cfg(not(target_arch = "wasm32"))]
 use std::sync::{Arc, Mutex};
-#[cfg(feature = "web-compat")]
+#[cfg(target_arch = "wasm32")]
 use alloc::sync::Arc;
-#[cfg(feature = "web-compat")]
+#[cfg(target_arch = "wasm32")]
 use spin::Mutex;
 use serde::{Serialize, Deserialize};
 #[cfg(feature = "wasm-inspection")]
@@ -203,7 +214,7 @@ pub struct HostCall {
 }
 
 impl HostCall {
-    #[cfg(not(feature = "web-compat"))]
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn new(function_name: String, parameters: Vec<String>, result: String, timestamp: Instant) -> Self {
         Self {
             function_name,
@@ -213,7 +224,7 @@ impl HostCall {
         }
     }
     
-    #[cfg(feature = "web-compat")]
+    #[cfg(target_arch = "wasm32")]
     pub fn new(function_name: String, parameters: Vec<String>, result: String, _timestamp: u64) -> Self {
         Self {
             function_name,
@@ -466,7 +477,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
         for &opcode in opcodes {
             // Update the context inputs for this opcode
             {
-                let mut context_guard = store.data().context.lock().unwrap();
+                let mut context_guard = store.data().context.lock();
                 context_guard.inputs[0] = opcode; // First input is the opcode
                 // Keep the rest as zeros
                 for i in 1..16 {
@@ -478,7 +489,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
             
             // Clear host calls from previous execution
             {
-                let mut calls_guard = store.data().host_calls.lock().unwrap();
+                let mut calls_guard = store.data().host_calls.lock();
                 calls_guard.clear();
             }
             
@@ -492,7 +503,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
             
             // Capture host calls for this execution
             let host_calls = {
-                let calls_guard = store.data().host_calls.lock().unwrap();
+                let calls_guard = store.data().host_calls.lock();
                 calls_guard.clone()
             };
 
@@ -711,7 +722,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
 
         // __request_context - matches alkanes-rs signature
         linker.func_wrap("env", "__request_context", |caller: Caller<'_, AlkanesState>| -> i32 {
-            let context_guard = caller.data().context.lock().unwrap();
+            let context_guard = caller.data().context.lock();
             let serialized = context_guard.serialize();
             serialized.len() as i32
         }).unwrap();
@@ -719,7 +730,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
         // __load_context - matches alkanes-rs signature
         linker.func_wrap("env", "__load_context", |mut caller: Caller<'_, AlkanesState>, output: i32| -> i32 {
             let serialized = {
-                let context_guard = caller.data().context.lock().unwrap();
+                let context_guard = caller.data().context.lock();
                 context_guard.serialize()
             };
             
@@ -775,7 +786,8 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
                 timestamp_micros: start_time.elapsed().as_micros() as u64,
             };
             
-            if let Ok(mut calls) = caller.data().host_calls.lock() {
+            {
+                let mut calls = caller.data().host_calls.lock();
                 calls.push(host_call);
             }
             
@@ -870,7 +882,8 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
                 timestamp_micros: start_time.elapsed().as_micros() as u64,
             };
             
-            if let Ok(mut calls) = caller.data().host_calls.lock() {
+            {
+                let mut calls = caller.data().host_calls.lock();
                 calls.push(host_call);
             }
             
@@ -960,7 +973,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
         // __returndatacopy - matches alkanes-rs signature
         linker.func_wrap("env", "__returndatacopy", |mut caller: Caller<'_, AlkanesState>, output: i32| {
             let returndata = {
-                let context_guard = caller.data().context.lock().unwrap();
+                let context_guard = caller.data().context.lock();
                 context_guard.returndata.clone()
             };
             if let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory()) {
@@ -1011,7 +1024,8 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
                 timestamp_micros: start_time.elapsed().as_micros() as u64,
             };
             
-            if let Ok(mut calls) = caller.data().host_calls.lock() {
+            {
+                let mut calls = caller.data().host_calls.lock();
                 calls.push(host_call);
             }
             
@@ -1034,7 +1048,8 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
                 timestamp_micros: start_time.elapsed().as_micros() as u64,
             };
             
-            if let Ok(mut calls) = caller.data().host_calls.lock() {
+            {
+                let mut calls = caller.data().host_calls.lock();
                 calls.push(host_call);
             }
             
@@ -1057,7 +1072,8 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
                 timestamp_micros: start_time.elapsed().as_micros() as u64,
             };
             
-            if let Ok(mut calls) = caller.data().host_calls.lock() {
+            {
+                let mut calls = caller.data().host_calls.lock();
                 calls.push(host_call);
             }
             

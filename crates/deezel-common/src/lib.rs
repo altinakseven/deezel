@@ -39,9 +39,6 @@ use alloc::{
 #[cfg(not(target_arch = "wasm32"))]
 use std::{
     string::{String, ToString},
-    vec::Vec,
-    boxed::Box,
-    collections::HashMap,
     format,
 };
 
@@ -117,39 +114,73 @@ impl core::fmt::Display for DeezelError {
     }
 }
 
+// WASM-compatible error trait implementation
+#[cfg(target_arch = "wasm32")]
+impl DeezelError {
+    /// Get the error source (WASM-compatible alternative to std::error::Error::source)
+    pub fn source(&self) -> Option<&dyn core::fmt::Display> {
+        None // For now, we don't chain errors in WASM
+    }
+}
+
+// Implement error trait for both WASM and non-WASM targets
+// This is needed for anyhow compatibility
 #[cfg(not(target_arch = "wasm32"))]
 impl std::error::Error for DeezelError {}
 
+#[cfg(target_arch = "wasm32")]
+impl core::error::Error for DeezelError {}
+
 // For anyhow compatibility, we need to implement conversion from DeezelError to anyhow::Error
-impl From<DeezelError> for anyhow::Error {
-    fn from(err: DeezelError) -> Self {
-        anyhow::anyhow!("{}", err)
-    }
-}
+// This is needed for the ? operator to work with anyhow::Result
 
 /// Result type for deezel-common operations
 pub type Result<T> = core::result::Result<T, DeezelError>;
 
 /// Convert anyhow::Error to DeezelError
+#[cfg(not(target_arch = "wasm32"))]
 impl From<anyhow::Error> for DeezelError {
     fn from(err: anyhow::Error) -> Self {
         DeezelError::Wallet(err.to_string())
     }
 }
 
+/// Convert anyhow::Error to DeezelError (WASM version)
+#[cfg(target_arch = "wasm32")]
+impl From<anyhow::Error> for DeezelError {
+    fn from(err: anyhow::Error) -> Self {
+        DeezelError::Wallet(alloc::format!("{}", err))
+    }
+}
+
 /// Convert serde_json::Error to DeezelError
 impl From<serde_json::Error> for DeezelError {
     fn from(err: serde_json::Error) -> Self {
-        DeezelError::Serialization(err.to_string())
+        #[cfg(target_arch = "wasm32")]
+        {
+            DeezelError::Serialization(alloc::format!("{}", err))
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            DeezelError::Serialization(err.to_string())
+        }
     }
 }
 
 /// Convert bitcoin::consensus::encode::Error to DeezelError
 impl From<bitcoin::consensus::encode::Error> for DeezelError {
     fn from(err: bitcoin::consensus::encode::Error) -> Self {
-        DeezelError::Transaction(err.to_string())
+        #[cfg(target_arch = "wasm32")]
+        {
+            DeezelError::Transaction(alloc::format!("{}", err))
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            DeezelError::Transaction(err.to_string())
+        }
     }
 }
+
 
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

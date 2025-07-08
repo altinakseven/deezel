@@ -63,6 +63,15 @@
 //! # }
 //! ```
 
+#[cfg(target_arch = "wasm32")]
+use alloc::{
+    vec::Vec,
+    boxed::Box,
+    string::{String, ToString},
+    format,
+    vec,
+};
+
 use async_trait::async_trait;
 use deezel_common::{DeezelError, Result};
 use js_sys::{Array, Object, Uint8Array};

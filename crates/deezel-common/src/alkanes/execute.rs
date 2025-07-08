@@ -11,32 +11,27 @@
 use anyhow::{anyhow, Context, Result};
 use log::{debug, info, warn};
 
-#[cfg(not(feature = "web-compat"))]
-use std::collections::HashMap;
-#[cfg(feature = "web-compat")]
-use alloc::collections::BTreeMap as HashMap;
+#[cfg(not(target_arch = "wasm32"))]
+use std::collections::{HashMap, BTreeMap};
+#[cfg(target_arch = "wasm32")]
+use alloc::collections::{BTreeMap as HashMap, BTreeMap};
 
-#[cfg(not(feature = "web-compat"))]
+#[cfg(not(target_arch = "wasm32"))]
 use std::{str::FromStr, cmp};
-#[cfg(feature = "web-compat")]
-use core::{str::FromStr, cmp};
+#[cfg(target_arch = "wasm32")]
+use core::{str::FromStr, cmp, fmt::Write};
 
-#[cfg(not(feature = "web-compat"))]
+#[cfg(not(target_arch = "wasm32"))]
 use std::sync::Arc;
-#[cfg(feature = "web-compat")]
+#[cfg(target_arch = "wasm32")]
 use alloc::sync::Arc;
-
-#[cfg(not(feature = "web-compat"))]
-use std::io::{self, Write};
-#[cfg(feature = "web-compat")]
-use core::fmt::Write;
 
 use crate::{ToString, format};
 
 // WASM-compatible time handling
-#[cfg(not(feature = "web-compat"))]
+#[cfg(not(target_arch = "wasm32"))]
 use std::time;
-#[cfg(feature = "web-compat")]
+#[cfg(target_arch = "wasm32")]
 mod time {
     pub struct SystemTime;
     impl SystemTime {
@@ -54,7 +49,7 @@ use std::{vec, vec::Vec, string::String};
 use alloc::{vec, vec::Vec, string::String};
 
 // Conditional print macros for WASM compatibility
-#[cfg(feature = "web-compat")]
+#[cfg(target_arch = "wasm32")]
 macro_rules! println {
     ($($arg:tt)*) => {
         // In WASM, we can use web_sys::console::log or just ignore
@@ -62,7 +57,7 @@ macro_rules! println {
     };
 }
 
-#[cfg(feature = "web-compat")]
+#[cfg(target_arch = "wasm32")]
 macro_rules! print {
     ($($arg:tt)*) => {
         // In WASM, we can use web_sys::console::log or just ignore
@@ -1145,10 +1140,6 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
                 
                 if let Some(((script, leaf_version), _merkle_branches)) = script_map.iter().next() {
                     // Configure tap_scripts: BTreeMap<ControlBlock, (ScriptBuf, LeafVersion)>
-                    #[cfg(not(feature = "web-compat"))]
-                    use std::collections::BTreeMap;
-                    #[cfg(feature = "web-compat")]
-                    use alloc::collections::BTreeMap;
                     let mut tap_scripts = BTreeMap::new();
                     tap_scripts.insert(control_block, (script.clone(), *leaf_version));
                     psbt.inputs[i].tap_scripts = tap_scripts;
@@ -1996,24 +1987,19 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
         println!("This transaction will be broadcast to the network.");
         println!("Please review the details above carefully.");
         print!("\nDo you want to proceed with broadcasting this transaction? (y/N): ");
-        #[cfg(not(feature = "web-compat"))]
-        {
+        #[cfg(not(target_arch = "wasm32"))]
+        let input = {
             use std::io::{self, Write};
             io::stdout().flush().unwrap();
             
             let mut input = String::new();
             io::stdin().read_line(&mut input).context("Failed to read user input")?;
-        }
-        #[cfg(feature = "web-compat")]
+            input
+        };
+        #[cfg(target_arch = "wasm32")]
         let input = {
             // For WASM, we can't use stdin/stdout, so we'll just simulate user confirmation
             String::from("y")
-        };
-        #[cfg(not(feature = "web-compat"))]
-        let input = {
-            let mut input = String::new();
-            io::stdin().read_line(&mut input).context("Failed to read user input")?;
-            input
         };
         let input = input.trim().to_lowercase();
         
@@ -2839,10 +2825,6 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
                 
                 if let Some(((script, leaf_version), _merkle_branches)) = script_map.iter().next() {
                     // Configure tap_scripts: BTreeMap<ControlBlock, (ScriptBuf, LeafVersion)>
-                    #[cfg(not(feature = "web-compat"))]
-                    use std::collections::BTreeMap;
-                    #[cfg(feature = "web-compat")]
-                    use alloc::collections::BTreeMap;
                     let mut tap_scripts = BTreeMap::new();
                     tap_scripts.insert(control_block.clone(), (script.clone(), *leaf_version));
                     psbt.inputs[i].tap_scripts = tap_scripts;

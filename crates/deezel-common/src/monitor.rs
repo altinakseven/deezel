@@ -64,8 +64,6 @@ impl<'de> Deserialize<'de> for SystemTime {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub use std::time::SystemTime;
-
 /// Block monitor that works with any provider
 pub struct BlockMonitor<P: DeezelProvider> {
     provider: P,
@@ -73,6 +71,7 @@ pub struct BlockMonitor<P: DeezelProvider> {
     state: MonitorState,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl<P: DeezelProvider> BlockMonitor<P> {
     /// Create a new block monitor
     pub fn new(provider: P) -> Self {

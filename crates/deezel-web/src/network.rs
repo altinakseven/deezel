@@ -56,9 +56,11 @@ use web_sys::{Request, RequestInit, RequestMode, Response, window, Headers};
 
 #[cfg(target_arch = "wasm32")]
 use alloc::{
-    string::{String, ToString},
-    vec::Vec,
+    boxed::Box,
     format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
 };
 
 #[cfg(not(target_arch = "wasm32"))]

@@ -46,9 +46,11 @@ use js_sys::{Date, Promise};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{window, Performance};
-use std::future::Future;
-use std::pin::Pin;
-use std::task::{Context, Poll};
+use core::future::Future;
+use core::pin::Pin;
+use core::task::{Context, Poll};
+#[cfg(target_arch = "wasm32")]
+use alloc::string::ToString;
 
 /// Web time implementation using Performance API
 #[derive(Clone)]

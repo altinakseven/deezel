@@ -47,6 +47,15 @@
 //! }
 //! ```
 
+#[cfg(target_arch = "wasm32")]
+use alloc::{
+    vec,
+    vec::Vec,
+    boxed::Box,
+    string::{String, ToString},
+    format,
+};
+
 use async_trait::async_trait;
 use bitcoin::{Network, Transaction, psbt::Psbt, secp256k1::Keypair, XOnlyPublicKey};
 use deezel_common::*;
@@ -776,7 +785,7 @@ impl TimeProvider for BrowserWalletProvider {
         self.web_provider.now_millis()
     }
     
-    fn sleep_ms(&self, ms: u64) -> impl std::future::Future<Output = ()> {
+    fn sleep_ms(&self, ms: u64) -> impl core::future::Future<Output = ()> {
         self.web_provider.sleep_ms(ms)
     }
 }

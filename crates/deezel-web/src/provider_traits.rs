@@ -12,7 +12,7 @@ use serde_json::Value as JsonValue;
 use alloc::{
     vec::Vec,
     boxed::Box,
-    string::String,
+    string::{String, ToString},
     format,
     vec,
 };

@@ -55,6 +55,13 @@ use async_trait::async_trait;
 use deezel_common::{DeezelError, Result};
 use web_sys::{window, Storage};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+#[cfg(target_arch = "wasm32")]
+use alloc::{
+    boxed::Box,
+    format,
+    string::{String, ToString},
+    vec::Vec,
+};
 
 /// Web storage implementation using browser localStorage
 ///

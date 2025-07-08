@@ -54,6 +54,14 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{Request, RequestInit, RequestMode, Response, window};
 
+#[cfg(target_arch = "wasm32")]
+use alloc::{
+    boxed::Box,
+    format,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use crate::storage::WebStorage;
 use crate::network::WebNetwork;
 use crate::crypto::WebCrypto;
@@ -460,7 +468,7 @@ impl TimeProvider for WebProvider {
         self.time.now_millis()
     }
 
-    fn sleep_ms(&self, ms: u64) -> impl std::future::Future<Output = ()> {
+    fn sleep_ms(&self, ms: u64) -> impl core::future::Future<Output = ()> {
         self.time.sleep_ms(ms)
     }
 }

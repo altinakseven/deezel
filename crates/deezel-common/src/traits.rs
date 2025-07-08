@@ -22,7 +22,7 @@ use serde_json::Value as JsonValue;
 use bitcoin::{Network, Transaction, ScriptBuf};
 
 #[cfg(not(target_arch = "wasm32"))]
-use std::{vec, vec::Vec, boxed::Box, string::String, future::Future};
+use std::{vec::Vec, boxed::Box, string::String};
 #[cfg(target_arch = "wasm32")]
 use alloc::{vec, vec::Vec, boxed::Box, string::String};
 #[cfg(target_arch = "wasm32")]
@@ -63,7 +63,7 @@ use core::future::Future;
 /// - Timeout handling is implementation-specific but should respect `timeout_seconds()`
 /// - Error responses should be properly parsed and converted to [`DeezelError::JsonRpc`]
 /// - Large responses should be handled efficiently (streaming when possible)
-#[async_trait]
+#[async_trait(?Send)]
 #[cfg(not(feature = "web-compat"))]
 pub trait JsonRpcProvider: Send + Sync {
     /// Make a JSON-RPC call to the specified URL
@@ -248,7 +248,7 @@ pub trait JsonRpcProvider {
 /// - Implementations should handle concurrent access safely
 /// - Storage may be persistent or ephemeral depending on the backend
 /// - Error handling should distinguish between missing keys and storage failures
-#[async_trait]
+#[async_trait(?Send)]
 #[cfg(not(feature = "web-compat"))]
 pub trait StorageProvider: Send + Sync {
     /// Read data from storage
@@ -497,7 +497,7 @@ pub trait StorageProvider {
 /// - User agent should identify the deezel client appropriately
 /// - Error responses should be properly categorized (network vs. HTTP errors)
 /// - Large downloads should be handled efficiently (streaming when possible)
-#[async_trait]
+#[async_trait(?Send)]
 #[cfg(not(feature = "web-compat"))]
 pub trait NetworkProvider: Send + Sync {
     /// Make an HTTP GET request
@@ -701,7 +701,7 @@ pub trait NetworkProvider {
 /// Trait for cryptographic operations
 ///
 /// This allows different crypto implementations for different environments
-#[async_trait]
+#[async_trait(?Send)]
 #[cfg(not(feature = "web-compat"))]
 pub trait CryptoProvider: Send + Sync {
     /// Generate random bytes
@@ -758,7 +758,10 @@ pub trait TimeProvider: Send + Sync {
     fn now_millis(&self) -> u64;
     
     /// Sleep for the specified duration (in milliseconds)
+    #[cfg(not(target_arch = "wasm32"))]
     fn sleep_ms(&self, ms: u64) -> impl std::future::Future<Output = ()> + Send;
+    #[cfg(target_arch = "wasm32")]
+    fn sleep_ms(&self, ms: u64) -> impl core::future::Future<Output = ()>;
 }
 
 /// Trait for time operations (WASM version without Send + Sync)
@@ -891,7 +894,7 @@ pub trait LogProvider {
 /// - UTXO management includes freezing/unfreezing for advanced coin control
 /// - Transaction creation supports custom fee rates and change addresses
 /// - PSBT support enables integration with hardware wallets and multi-sig setups
-#[async_trait]
+#[async_trait(?Send)]
 #[cfg(not(feature = "web-compat"))]
 pub trait WalletProvider: Send + Sync {
     /// Create a new wallet
@@ -1449,7 +1452,7 @@ pub struct NetworkParams {
 /// Trait for address resolution
 ///
 /// This handles address identifiers like p2tr:0, [self:p2wpkh:1], etc.
-#[async_trait]
+#[async_trait(?Send)]
 #[cfg(not(feature = "web-compat"))]
 pub trait AddressResolver: Send + Sync {
     /// Resolve address identifiers in a string
@@ -1483,7 +1486,7 @@ pub trait AddressResolver {
 }
 
 /// Trait for Bitcoin Core RPC operations
-#[async_trait]
+#[async_trait(?Send)]
 #[cfg(not(feature = "web-compat"))]
 pub trait BitcoinRpcProvider: Send + Sync {
     /// Get current block count
@@ -1553,7 +1556,7 @@ pub trait BitcoinRpcProvider {
 }
 
 /// Trait for Metashrew/Sandshrew RPC operations
-#[async_trait]
+#[async_trait(?Send)]
 #[cfg(not(feature = "web-compat"))]
 pub trait MetashrewRpcProvider: Send + Sync {
     /// Get Metashrew height
@@ -1599,7 +1602,7 @@ pub trait MetashrewRpcProvider {
 }
 
 /// Trait for Esplora API operations
-#[async_trait]
+#[async_trait(?Send)]
 #[cfg(not(feature = "web-compat"))]
 pub trait EsploraProvider: Send + Sync {
     /// Get blocks tip hash
@@ -1789,7 +1792,7 @@ pub trait EsploraProvider {
 }
 
 /// Trait for runestone operations
-#[async_trait]
+#[async_trait(?Send)]
 #[cfg(not(feature = "web-compat"))]
 pub trait RunestoneProvider: Send + Sync {
     /// Decode runestone from transaction
@@ -1817,7 +1820,7 @@ pub trait RunestoneProvider {
 }
 
 /// Trait for alkanes operations
-#[async_trait]
+#[async_trait(?Send)]
 #[cfg(not(feature = "web-compat"))]
 pub trait AlkanesProvider: Send + Sync {
     /// Execute alkanes smart contract
@@ -2143,7 +2146,7 @@ pub struct HostCall {
 }
 
 /// Trait for monitoring operations
-#[async_trait]
+#[async_trait(?Send)]
 #[cfg(not(feature = "web-compat"))]
 pub trait MonitorProvider: Send + Sync {
     /// Monitor blocks for events
@@ -2176,7 +2179,7 @@ pub struct BlockEvent {
 /// Combined provider trait that includes all functionality
 ///
 /// This is the main trait that implementations should provide
-#[async_trait]
+#[async_trait(?Send)]
 #[cfg(not(feature = "web-compat"))]
 pub trait DeezelProvider:
     JsonRpcProvider +

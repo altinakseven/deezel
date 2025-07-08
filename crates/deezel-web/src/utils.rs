@@ -8,6 +8,13 @@ use js_sys::{Array, Object, Uint8Array};
 use wasm_bindgen::prelude::*;
 use web_sys::{window, Document, Location, Navigator, Window};
 
+#[cfg(target_arch = "wasm32")]
+use alloc::{
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
 /// Web environment utilities
 pub struct WebUtils;
 

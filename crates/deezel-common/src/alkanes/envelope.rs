@@ -12,7 +12,7 @@ use bitcoin::{
 use flate2::{write::GzEncoder, Compression};
 
 #[cfg(not(target_arch = "wasm32"))]
-use std::{io::Write, vec::Vec};
+use std::vec::Vec;
 #[cfg(target_arch = "wasm32")]
 use alloc::vec::Vec;
 

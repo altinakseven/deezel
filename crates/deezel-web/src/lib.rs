@@ -50,15 +50,6 @@ use alloc::{
     vec,
 };
 
-#[cfg(not(target_arch = "wasm32"))]
-use std::{
-    vec::Vec,
-    boxed::Box,
-    string::String,
-    collections::HashMap as BTreeMap,
-    format,
-    vec,
-};
 
 // Re-export common types for WASM compatibility
 pub use alloc::string::ToString;

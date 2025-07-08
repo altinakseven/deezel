@@ -53,6 +53,8 @@
 use deezel_common::LogProvider;
 use web_sys::console;
 
+#[cfg(target_arch = "wasm32")]
+use alloc::{format, string::String, vec};
 /// Web logging implementation using console API
 #[derive(Clone)]
 pub struct WebLogger {

@@ -10,7 +10,7 @@ use log::{info, warn};
 use crate::{ToString, format};
 
 #[cfg(not(target_arch = "wasm32"))]
-use std::{vec, vec::Vec, string::String};
+use std::{vec::Vec, string::String};
 #[cfg(target_arch = "wasm32")]
 use alloc::{vec, vec::Vec, string::String};
 

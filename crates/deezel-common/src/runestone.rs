@@ -17,8 +17,6 @@ use std::collections::HashMap;
 #[cfg(target_arch = "wasm32")]
 use alloc::collections::BTreeMap as HashMap;
 
-#[cfg(not(target_arch = "wasm32"))]
-use std::str::FromStr;
 #[cfg(target_arch = "wasm32")]
 use alloc::str::FromStr;
 

@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 #[cfg(not(target_arch = "wasm32"))]
-use std::{vec, string::String, sync::atomic::AtomicU64};
+use std::{vec, string::String};
 #[cfg(target_arch = "wasm32")]
 use alloc::{vec, string::String};
 
@@ -321,9 +321,10 @@ impl StandaloneRpcClient {
             .map_err(|e| DeezelError::Network(e.to_string()))?;
         
         let mut opts = RequestInit::new();
-        opts.method("POST");
-        opts.body(Some(&JsValue::from_str(&body)));
-        opts.mode(RequestMode::Cors);
+        opts.set_method("POST");
+        let js_body = JsValue::from(body);
+        opts.set_body(&js_body);
+        opts.set_mode(RequestMode::Cors);
         
         let request = Request::new_with_str_and_init(url, &opts)
             .map_err(|e| DeezelError::Network(format!("Failed to create request: {:?}", e)))?;

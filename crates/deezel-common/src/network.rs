@@ -8,13 +8,13 @@ use bitcoin::Network;
 use serde::{Deserialize, Serialize, Serializer, Deserializer};
 
 #[cfg(not(target_arch = "wasm32"))]
-use std::{vec, string::String};
+use std::string::String;
 #[cfg(target_arch = "wasm32")]
 use alloc::{vec, string::String};
 
-#[cfg(not(feature = "web-compat"))]
+#[cfg(not(target_arch = "wasm32"))]
 use std::collections::HashMap;
-#[cfg(feature = "web-compat")]
+#[cfg(target_arch = "wasm32")]
 use alloc::collections::BTreeMap as HashMap;
 
 #[derive(Debug, Clone)]

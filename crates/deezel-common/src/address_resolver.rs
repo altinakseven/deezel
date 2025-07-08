@@ -12,21 +12,25 @@ use crate::wallet::AddressType;
 use bitcoin::Network;
 use regex::Regex;
 #[cfg(not(target_arch = "wasm32"))]
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    str::FromStr,
+    vec,
+    vec::Vec,
+    string::String,
+};
 #[cfg(target_arch = "wasm32")]
-use alloc::collections::BTreeMap as HashMap;
-
-#[cfg(not(target_arch = "wasm32"))]
-use std::str::FromStr;
+use alloc::{
+    collections::BTreeMap as HashMap,
+    str::FromStr,
+    vec,
+    vec::Vec,
+    string::{String, ToString},
+    boxed::Box,
+    format,
+};
 #[cfg(target_arch = "wasm32")]
-use alloc::str::FromStr;
-
-use crate::{ToString, format};
-
-#[cfg(not(target_arch = "wasm32"))]
-use std::{vec, vec::Vec, string::String};
-#[cfg(target_arch = "wasm32")]
-use alloc::{vec, vec::Vec, string::String};
+use core::fmt;
 
 /// Address identifier types
 #[derive(Debug, Clone, PartialEq)]
@@ -267,13 +271,13 @@ impl<P: DeezelProvider> AddressResolver<P> {
 }
 
 /// Standalone address resolver for environments without full provider
-#[cfg(not(feature = "web-compat"))]
+#[cfg(not(target_arch = "wasm32"))]
 pub struct StandaloneAddressResolver {
     addresses: HashMap<String, String>,
     network: Network,
 }
 
-#[cfg(not(feature = "web-compat"))]
+#[cfg(not(target_arch = "wasm32"))]
 impl StandaloneAddressResolver {
     /// Create a new standalone address resolver
     pub fn new(network: Network) -> Self {
@@ -392,9 +396,13 @@ mod tests {
 }
 
 // Trait implementations for StandaloneAddressResolver (only when not web-compat)
-#[cfg(not(feature = "web-compat"))]
-#[async_trait::async_trait]
-impl JsonRpcProvider for StandaloneAddressResolver {
+#[cfg(not(target_arch = "wasm32"))]
+mod standalone_impls {
+    use super::*;
+    use async_trait::async_trait;
+
+    #[async_trait(?Send)]
+    impl JsonRpcProvider for StandaloneAddressResolver {
     async fn call(&self, _url: &str, _method: &str, _params: serde_json::Value, _id: u64) -> Result<serde_json::Value> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support RPC calls".to_string()))
     }
@@ -403,8 +411,8 @@ impl JsonRpcProvider for StandaloneAddressResolver {
     }
 }
 
-#[cfg(not(feature = "web-compat"))]
-#[async_trait::async_trait]
+#[cfg(not(target_arch = "wasm32"))]
+#[async_trait(?Send)]
 impl StorageProvider for StandaloneAddressResolver {
     async fn read(&self, _key: &str) -> Result<Vec<u8>> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support storage".to_string()))
@@ -418,8 +426,8 @@ impl StorageProvider for StandaloneAddressResolver {
     fn storage_type(&self) -> &'static str { "none" }
 }
 
-#[cfg(not(feature = "web-compat"))]
-#[async_trait::async_trait]
+#[cfg(not(target_arch = "wasm32"))]
+#[async_trait(?Send)]
 impl NetworkProvider for StandaloneAddressResolver {
     async fn get(&self, _url: &str) -> Result<Vec<u8>> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support network operations".to_string()))
@@ -430,8 +438,8 @@ impl NetworkProvider for StandaloneAddressResolver {
     async fn is_reachable(&self, _url: &str) -> bool { false }
 }
 
-#[cfg(not(feature = "web-compat"))]
-#[async_trait::async_trait]
+#[cfg(not(target_arch = "wasm32"))]
+#[async_trait(?Send)]
 impl CryptoProvider for StandaloneAddressResolver {
     fn random_bytes(&self, _len: usize) -> Result<Vec<u8>> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support crypto operations".to_string()))
@@ -453,7 +461,7 @@ impl CryptoProvider for StandaloneAddressResolver {
     }
 }
 
-#[cfg(not(feature = "web-compat"))]
+#[cfg(not(target_arch = "wasm32"))]
 impl TimeProvider for StandaloneAddressResolver {
     fn now_secs(&self) -> u64 { 0 }
     fn now_millis(&self) -> u64 { 0 }
@@ -462,7 +470,7 @@ impl TimeProvider for StandaloneAddressResolver {
     }
 }
 
-#[cfg(not(feature = "web-compat"))]
+#[cfg(not(target_arch = "wasm32"))]
 impl LogProvider for StandaloneAddressResolver {
     fn debug(&self, _message: &str) {}
     fn info(&self, _message: &str) {}
@@ -470,8 +478,8 @@ impl LogProvider for StandaloneAddressResolver {
     fn error(&self, _message: &str) {}
 }
 
-#[cfg(not(feature = "web-compat"))]
-#[async_trait::async_trait]
+#[cfg(not(target_arch = "wasm32"))]
+#[async_trait(?Send)]
 impl WalletProvider for StandaloneAddressResolver {
     async fn create_wallet(&self, _config: WalletConfig, _mnemonic: Option<String>, _passphrase: Option<String>) -> Result<WalletInfo> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support wallet operations".to_string()))
@@ -538,8 +546,8 @@ impl WalletProvider for StandaloneAddressResolver {
     }
 }
 
-#[cfg(not(feature = "web-compat"))]
-#[async_trait::async_trait]
+#[cfg(not(target_arch = "wasm32"))]
+#[async_trait(?Send)]
 impl crate::traits::AddressResolver for StandaloneAddressResolver {
     async fn resolve_all_identifiers(&self, input: &str) -> Result<String> {
         Ok(input.to_string()) // No-op for standalone
@@ -553,8 +561,8 @@ impl crate::traits::AddressResolver for StandaloneAddressResolver {
     }
 }
 
-#[cfg(not(feature = "web-compat"))]
-#[async_trait::async_trait]
+#[cfg(not(target_arch = "wasm32"))]
+#[async_trait(?Send)]
 impl BitcoinRpcProvider for StandaloneAddressResolver {
     async fn get_block_count(&self) -> Result<u64> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoin RPC".to_string()))
@@ -590,8 +598,8 @@ impl BitcoinRpcProvider for StandaloneAddressResolver {
     }
 }
 
-#[cfg(not(feature = "web-compat"))]
-#[async_trait::async_trait]
+#[cfg(not(target_arch = "wasm32"))]
+#[async_trait(?Send)]
 impl MetashrewRpcProvider for StandaloneAddressResolver {
     async fn get_metashrew_height(&self) -> Result<u64> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Metashrew RPC".to_string()))
@@ -613,8 +621,8 @@ impl MetashrewRpcProvider for StandaloneAddressResolver {
     }
 }
 
-#[cfg(not(feature = "web-compat"))]
-#[async_trait::async_trait]
+#[cfg(not(target_arch = "wasm32"))]
+#[async_trait(?Send)]
 impl EsploraProvider for StandaloneAddressResolver {
     async fn get_blocks_tip_hash(&self) -> Result<String> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Esplora API".to_string()))
@@ -708,8 +716,8 @@ impl EsploraProvider for StandaloneAddressResolver {
     }
 }
 
-#[cfg(not(feature = "web-compat"))]
-#[async_trait::async_trait]
+#[cfg(not(target_arch = "wasm32"))]
+#[async_trait(?Send)]
 impl RunestoneProvider for StandaloneAddressResolver {
     async fn decode_runestone(&self, _tx: &bitcoin::Transaction) -> Result<serde_json::Value> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support runestone operations".to_string()))
@@ -722,8 +730,8 @@ impl RunestoneProvider for StandaloneAddressResolver {
     }
 }
 
-#[cfg(not(feature = "web-compat"))]
-#[async_trait::async_trait]
+#[cfg(not(target_arch = "wasm32"))]
+#[async_trait(?Send)]
 impl AlkanesProvider for StandaloneAddressResolver {
     async fn execute(&self, _params: AlkanesExecuteParams) -> Result<AlkanesExecuteResult> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
@@ -748,8 +756,8 @@ impl AlkanesProvider for StandaloneAddressResolver {
     }
 }
 
-#[cfg(not(feature = "web-compat"))]
-#[async_trait::async_trait]
+#[cfg(not(target_arch = "wasm32"))]
+#[async_trait(?Send)]
 impl MonitorProvider for StandaloneAddressResolver {
     async fn monitor_blocks(&self, _start: Option<u64>) -> Result<()> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support monitoring".to_string()))
@@ -759,7 +767,7 @@ impl MonitorProvider for StandaloneAddressResolver {
     }
 }
 
-#[cfg(not(feature = "web-compat"))]
+#[cfg(not(target_arch = "wasm32"))]
 impl Clone for StandaloneAddressResolver {
     fn clone(&self) -> Self {
         Self {
@@ -769,12 +777,13 @@ impl Clone for StandaloneAddressResolver {
     }
 }
 
-#[cfg(not(feature = "web-compat"))]
-#[async_trait::async_trait]
+#[cfg(not(target_arch = "wasm32"))]
+#[async_trait(?Send)]
 impl DeezelProvider for StandaloneAddressResolver {
     fn provider_name(&self) -> &str {
         "StandaloneAddressResolver"
     }
     async fn initialize(&self) -> Result<()> { Ok(()) }
     async fn shutdown(&self) -> Result<()> { Ok(()) }
+    }
 }
