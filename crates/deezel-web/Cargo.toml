@@ -33,7 +33,7 @@ deezel-common = { path = "../deezel-common", default-features = false, features 
 # Core Bitcoin functionality
 bitcoin = { workspace = true }
 ordinals = { workspace = true }
-protorune-support = { workspace = true }
+# protorune-support = { workspace = true }  # Commented out for WASM compatibility
 
 # Cryptography and wallet functionality
 secp256k1 = { workspace = true }
@@ -65,9 +65,9 @@ base64 = { workspace = true }
 regex = { workspace = true }
 chrono = { workspace = true }
 
-# Alkanes-rs crates
-alkanes-support = { workspace = true }
-metashrew-support = { workspace = true }
+# Alkanes-rs crates - commented out for WASM compatibility
+# alkanes-support = { workspace = true }
+# metashrew-support = { workspace = true }
 protobuf = { workspace = true }
 
 # Web-specific dependencies
