@@ -27,6 +27,8 @@ use std::{vec::Vec, boxed::Box, string::String};
 use alloc::{vec, vec::Vec, boxed::Box, string::String};
 #[cfg(target_arch = "wasm32")]
 use core::future::Future;
+#[cfg(not(target_arch = "wasm32"))]
+use std::future::Future;
 
 /// Trait for making JSON-RPC calls
 ///
