@@ -61,14 +61,14 @@ pub fn validate_transaction_fee_rate(
     // DEBUG: Dump all inputs with their values
     eprintln!("  📥 INPUTS ({}):", tx.input.len());
     for (i, input) in tx.input.iter().enumerate() {
-        let input_value = input_values.get(i).copied().unwrap_or(0);
+        let _input_value = input_values.get(i).copied().unwrap_or(0);
         eprintln!("    Input {}: {}:{} = {} sats", i, input.previous_output.txid, input.previous_output.vout, input_value);
         eprintln!("      Script Sig: {} bytes", input.script_sig.len());
         eprintln!("      Witness: {} items, {} bytes total",
               input.witness.len(),
               input.witness.iter().map(|item| item.len()).sum::<usize>());
         if !input.witness.is_empty() {
-            for (j, witness_item) in input.witness.iter().enumerate() {
+            for (_j, witness_item) in input.witness.iter().enumerate() {
                 eprintln!("        Witness item {}: {} bytes", j, witness_item.len());
                 if witness_item.len() > 1000 {
                     eprintln!("        ⚠️  LARGE WITNESS ITEM DETECTED! This will significantly increase transaction size");
@@ -80,7 +80,7 @@ pub fn validate_transaction_fee_rate(
     
     // DEBUG: Dump all outputs with their values
     eprintln!("  📤 OUTPUTS ({}):", tx.output.len());
-    for (i, output) in tx.output.iter().enumerate() {
+    for (_i, output) in tx.output.iter().enumerate() {
         eprintln!("    Output {}: {} sats", i, output.value.to_sat());
         eprintln!("      Script: {} bytes", output.script_pubkey.len());
         if output.script_pubkey.is_op_return() {

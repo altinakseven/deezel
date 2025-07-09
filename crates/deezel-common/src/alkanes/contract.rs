@@ -42,16 +42,17 @@ impl<P: crate::traits::DeezelProvider> ContractManager<P> {
         
         // Read WASM file
         #[cfg(not(target_arch = "wasm32"))]
-        let wasm_bytes: Vec<u8> = std::fs::read(&params.wasm_file)
-            .with_context(|| format!("Failed to read WASM file: {}", params.wasm_file))?;
-        
-        #[cfg(target_arch = "wasm32")]
-        let _wasm_bytes: Vec<u8> = {
-            return Err(crate::DeezelError::Validation("File system operations not supported in WASM environment".to_string()));
+        let wasm_hex = {
+            let wasm_bytes = std::fs::read(&params.wasm_file)
+                .with_context(|| format!("Failed to read WASM file: {}", params.wasm_file))?;
+            hex::encode(wasm_bytes)
         };
         
-        // Encode WASM bytes as hex for transmission
-        let wasm_hex = hex::encode(&wasm_bytes);
+        #[cfg(target_arch = "wasm32")]
+        let wasm_hex = {
+            let _ = &params;
+            return Err(crate::DeezelError::Validation("File system operations not supported in WASM environment".to_string()));
+        };
         
         // Create deployment transaction
         let deploy_result = self.rpc_client.call(

@@ -44,7 +44,7 @@ impl AlkanesEnvelope {
     /// Compress payload using gzip compression (matching alkanes-rs reference)
     /// CRITICAL FIX: Added gzip compression like alkanes-rs reference
     fn compress_payload(&self) -> Result<Vec<u8>> {
-        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        let _encoder = GzEncoder::new(Vec::new(), Compression::default());
         #[cfg(not(target_arch = "wasm32"))]
         {
             use std::io::Write;
@@ -56,7 +56,7 @@ impl AlkanesEnvelope {
             // For WASM, use a simpler approach - just return the payload as-is for now
             return Ok(self.payload.clone());
         }
-        encoder.finish()
+        _encoder.finish()
             .context("Failed to finish gzip compression")
     }
 

@@ -1917,7 +1917,7 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
     }
 
     /// Show transaction preview
-    fn show_transaction_preview(&self, tx: &bitcoin::Transaction, fee: u64) {
+    fn show_transaction_preview(&self, tx: &bitcoin::Transaction, _fee: u64) {
         println!("\n🔍 Transaction Preview");
         println!("═══════════════════════");
         
@@ -1941,7 +1941,7 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
             println!("💡 The transaction contains OP_RETURN data (likely protostones)");
             
             // Try to show OP_RETURN data for envelope transactions
-            for (i, output) in tx.output.iter().enumerate() {
+            for (_i, output) in tx.output.iter().enumerate() {
                 if output.script_pubkey.is_op_return() {
                     println!("\n📜 OP_RETURN Output {} Analysis:", i);
                     let script_bytes = output.script_pubkey.as_bytes();
@@ -1966,12 +1966,12 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
         
         // Show basic transaction structure as fallback
         println!("\n📥 Inputs ({}):", tx.input.len());
-        for (i, input) in tx.input.iter().enumerate() {
+        for (_i, _input) in tx.input.iter().enumerate() {
             println!("  {}. 🔗 {}:{}", i + 1, input.previous_output.txid, input.previous_output.vout);
         }
         
         println!("\n📤 Outputs ({}):", tx.output.len());
-        for (i, output) in tx.output.iter().enumerate() {
+        for (_i, output) in tx.output.iter().enumerate() {
             if output.script_pubkey.is_op_return() {
                 println!("  {}. 📜 OP_RETURN ({} bytes)", i + 1, output.script_pubkey.len());
             } else {
@@ -2121,17 +2121,17 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
                         } else {
                             // Pretty print the trace
                             match self.rpc_client.trace_outpoint_pretty(txid, trace_vout).await {
-                                Ok(pretty_trace) => {
+                                Ok(_pretty_trace) => {
                                     println!("\n📊 Trace for protostone #{} (vout {}, trace_vout {}):", protostone_count + 1, vout, trace_vout);
                                     println!("{}", pretty_trace);
                                 },
-                                Err(e) => {
+                                Err(_e) => {
                                     println!("❌ Failed to get pretty trace for protostone #{} (vout {}, trace_vout {}): {}", protostone_count + 1, vout, trace_vout, e);
                                 }
                             }
                         }
                     },
-                    Err(e) => {
+                    Err(_e) => {
                         if !params.raw_output {
                             println!("❌ Failed to trace protostone #{} (vout {}, trace_vout {}): {}", protostone_count + 1, vout, trace_vout, e);
                         }
