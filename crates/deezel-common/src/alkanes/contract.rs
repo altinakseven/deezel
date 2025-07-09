@@ -2,22 +2,20 @@
 
 use crate::Result;
 use anyhow::Context;
-use log::{debug, info};
+use log::info;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::sync::Arc;
 #[cfg(target_arch = "wasm32")]
 use alloc::sync::Arc;
 
-#[cfg(target_arch = "wasm32")]
-use alloc::str::FromStr;
 
 use crate::{ToString, format};
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::{vec::Vec, string::String};
 #[cfg(target_arch = "wasm32")]
-use alloc::{vec, vec::Vec, string::String};
+use alloc::{vec::Vec, string::String};
 
 use crate::rpc::RpcClient;
 use crate::wallet::WalletManager;
@@ -48,11 +46,9 @@ impl<P: crate::traits::DeezelProvider> ContractManager<P> {
             .with_context(|| format!("Failed to read WASM file: {}", params.wasm_file))?;
         
         #[cfg(target_arch = "wasm32")]
-        let wasm_bytes: Vec<u8> = {
+        let _wasm_bytes: Vec<u8> = {
             return Err(crate::DeezelError::Validation("File system operations not supported in WASM environment".to_string()));
         };
-        
-        debug!("WASM file size: {} bytes", wasm_bytes.len());
         
         // Encode WASM bytes as hex for transmission
         let wasm_hex = hex::encode(&wasm_bytes);
@@ -200,6 +196,7 @@ pub fn parse_edicts(edicts_str: &str) -> Result<Vec<Edict>> {
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
     use super::*;
 
     #[test]

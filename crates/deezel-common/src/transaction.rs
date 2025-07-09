@@ -458,6 +458,7 @@ pub struct TransactionAnalysis {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
     use bitcoin::{Amount, ScriptBuf};
     
     #[test]

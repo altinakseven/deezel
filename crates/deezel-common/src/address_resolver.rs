@@ -23,14 +23,10 @@ use std::{
 use alloc::{
     collections::BTreeMap as HashMap,
     str::FromStr,
-    vec,
     vec::Vec,
     string::{String, ToString},
-    boxed::Box,
     format,
 };
-#[cfg(target_arch = "wasm32")]
-use core::fmt;
 
 /// Address identifier types
 #[derive(Debug, Clone, PartialEq)]
@@ -60,7 +56,7 @@ impl<P: DeezelProvider> AddressResolver<P> {
     
     /// Check if string contains identifiers
     pub fn contains_identifiers(&self, input: &str) -> bool {
-        self.find_identifiers(input).len() > 0
+        !self.find_identifiers(input).is_empty()
     }
     
     /// Find all identifiers in a string
@@ -76,10 +72,8 @@ impl<P: DeezelProvider> AddressResolver<P> {
         }
         
         // Pattern for shorthand identifiers: p2tr:0, p2wpkh:5, etc.
-        if identifiers.is_empty() {
-            if self.is_shorthand_identifier(input) {
-                identifiers.push(input.to_string());
-            }
+        if identifiers.is_empty() && self.is_shorthand_identifier(input) {
+            identifiers.push(input.to_string());
         }
         
         identifiers
@@ -102,10 +96,8 @@ impl<P: DeezelProvider> AddressResolver<P> {
         }
         
         // If there's a second part, it should be a valid index
-        if parts.len() == 2 {
-            if parts[1].parse::<u32>().is_err() {
-                return false;
-            }
+        if parts.len() == 2 && parts[1].parse::<u32>().is_err() {
+            return false;
         }
         
         true
@@ -178,7 +170,7 @@ impl<P: DeezelProvider> AddressResolver<P> {
         
         let address = match parsed {
             AddressIdentifier::SelfWallet { address_type, index } => {
-                crate::traits::AddressResolver::get_address(&self.provider, &address_type.as_str(), index).await?
+                crate::traits::AddressResolver::get_address(&self.provider, address_type.as_str(), index).await?
             },
             AddressIdentifier::External { address } => address,
             AddressIdentifier::Raw { address } => {
@@ -345,7 +337,7 @@ pub mod utils {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     
@@ -465,9 +457,7 @@ impl CryptoProvider for StandaloneAddressResolver {
 impl TimeProvider for StandaloneAddressResolver {
     fn now_secs(&self) -> u64 { 0 }
     fn now_millis(&self) -> u64 { 0 }
-    fn sleep_ms(&self, _ms: u64) -> impl std::future::Future<Output = ()> + Send {
-        async move {}
-    }
+    async fn sleep_ms(&self, _ms: u64) {}
 }
 
 #[cfg(not(target_arch = "wasm32"))]

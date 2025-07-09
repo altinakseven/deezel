@@ -55,6 +55,7 @@ impl ConcreteProvider {
         let rpc_config = RpcConfig {
             bitcoin_rpc_url,
             metashrew_rpc_url,
+            sandshrew_rpc_url: "http://localhost:18888".to_string(),
             timeout_seconds: 600,
         };
         

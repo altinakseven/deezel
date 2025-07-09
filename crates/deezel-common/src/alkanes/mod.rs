@@ -14,7 +14,7 @@ use crate::traits::*;
 #[cfg(not(target_arch = "wasm32"))]
 use std::{vec::Vec, string::String};
 #[cfg(target_arch = "wasm32")]
-use alloc::{vec, vec::Vec, string::String};
+use alloc::{vec::Vec, string::String};
 
 // Re-export all alkanes modules
 #[cfg(feature = "wasm-inspection")]
@@ -188,9 +188,8 @@ pub fn parse_input_requirements(inputs: &str) -> Result<Vec<InputRequirement>> {
     
     for input in inputs.split(',') {
         let input = input.trim();
-        if input.starts_with("B:") {
+        if let Some(amount_str) = input.strip_prefix("B:") {
             // Bitcoin input: B:amount
-            let amount_str = &input[2..];
             let amount = amount_str.parse::<u64>()
                 .map_err(|_| DeezelError::Parse(format!("Invalid Bitcoin amount: {}", amount_str)))?;
             

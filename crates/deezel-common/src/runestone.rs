@@ -17,8 +17,6 @@ use std::collections::HashMap;
 #[cfg(target_arch = "wasm32")]
 use alloc::collections::BTreeMap as HashMap;
 
-#[cfg(target_arch = "wasm32")]
-use alloc::str::FromStr;
 
 use crate::{ToString, format};
 
@@ -300,15 +298,13 @@ impl<P: DeezelProvider> RunestoneManager<P> {
     
     /// Parse runestone information from JSON value
     fn parse_runestone_from_json(&self, json: &serde_json::Value) -> Result<RunestoneInfo> {
-        let etching = json.get("etching").and_then(|e| {
-            Some(Etching {
+        let etching = json.get("etching").map(|e| Etching {
                 rune: e.get("rune").and_then(|v| v.as_str()).map(|s| s.to_string()),
                 divisibility: e.get("divisibility").and_then(|v| v.as_u64()).map(|v| v as u8),
                 premine: e.get("premine").and_then(|v| v.as_str()).and_then(|s| s.parse().ok()),
                 spacers: e.get("spacers").and_then(|v| v.as_u64()).map(|v| v as u32),
                 symbol: e.get("symbol").and_then(|v| v.as_str()).and_then(|s| s.chars().next()),
-                terms: e.get("terms").and_then(|t| {
-                    Some(Terms {
+                terms: e.get("terms").map(|t| Terms {
                         amount: t.get("amount").and_then(|v| v.as_str()).and_then(|s| s.parse().ok()),
                         cap: t.get("cap").and_then(|v| v.as_str()).and_then(|s| s.parse().ok()),
                         height: t.get("height").and_then(|h| {
@@ -339,20 +335,18 @@ impl<P: DeezelProvider> RunestoneManager<P> {
                                 None
                             }
                         }),
-                    })
-                }),
-            })
-        });
+                    }),
+            });
         
         let edicts = json.get("edicts")
             .and_then(|e| e.as_array())
             .map(|arr| {
-                arr.iter().filter_map(|edict| {
-                    Some(Edict {
+                arr.iter().map(|edict| {
+                    Edict {
                         id: edict.get("id").and_then(|v| v.as_str()).unwrap_or("0:0").to_string(),
                         amount: edict.get("amount").and_then(|v| v.as_str()).and_then(|s| s.parse().ok()).unwrap_or(0),
                         output: edict.get("output").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
-                    })
+                    }
                 }).collect()
             })
             .unwrap_or_default();

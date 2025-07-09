@@ -12,7 +12,7 @@ use crate::{ToString, format};
 #[cfg(not(target_arch = "wasm32"))]
 use std::{vec::Vec, string::String};
 #[cfg(target_arch = "wasm32")]
-use alloc::{vec, vec::Vec, string::String};
+use alloc::{vec::Vec, string::String};
 
 // Conditional print macros for WASM compatibility
 #[cfg(target_arch = "wasm32")]
@@ -23,13 +23,6 @@ macro_rules! eprintln {
     };
 }
 
-#[cfg(target_arch = "wasm32")]
-macro_rules! eprint {
-    ($($arg:tt)*) => {
-        // In WASM, we can use web_sys::console::log or just ignore
-        // For now, we'll just ignore the output
-    };
-}
 
 /// Maximum allowed fee rate in sat/vB (1000 sat/vB = ~$40 at $40k BTC)
 const MAX_FEE_RATE_SAT_VB: f64 = 1000.0;
@@ -74,7 +67,7 @@ pub fn validate_transaction_fee_rate(
         eprintln!("      Witness: {} items, {} bytes total",
               input.witness.len(),
               input.witness.iter().map(|item| item.len()).sum::<usize>());
-        if input.witness.len() > 0 {
+        if !input.witness.is_empty() {
             for (j, witness_item) in input.witness.iter().enumerate() {
                 eprintln!("        Witness item {}: {} bytes", j, witness_item.len());
                 if witness_item.len() > 1000 {
@@ -291,6 +284,7 @@ pub fn create_fee_adjusted_transaction(
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
     use super::*;
     use bitcoin::{Transaction, TxOut, Amount, ScriptBuf};
     

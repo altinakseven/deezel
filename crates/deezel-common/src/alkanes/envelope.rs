@@ -66,10 +66,10 @@ impl AlkanesEnvelope {
         let mut builder = ScriptBuilder::new()
             .push_opcode(opcodes::OP_FALSE) // OP_FALSE (pushes empty bytes)
             .push_opcode(opcodes::all::OP_IF)
-            .push_slice(&ALKANES_PROTOCOL_ID); // BIN protocol ID
+            .push_slice(ALKANES_PROTOCOL_ID); // BIN protocol ID
 
         // CRITICAL FIX: Add empty BODY_TAG before compressed payload (matching alkanes-rs reference)
-        builder = builder.push_slice(&BODY_TAG);
+        builder = builder.push_slice(BODY_TAG);
 
         // CRITICAL FIX: Compress the payload using gzip (matching alkanes-rs reference)
         if let Ok(compressed_payload) = self.compress_payload() {
@@ -119,12 +119,12 @@ impl AlkanesEnvelope {
         }
         
         // Verify the script bytes are not empty
-        if witness.nth(0).map_or(true, |item| item.is_empty()) {
+        if witness.nth(0).is_none_or(|item| item.is_empty()) {
             return Err(anyhow::anyhow!("Script witness item is empty"));
         }
         
         // Verify the control block bytes are not empty
-        if witness.nth(1).map_or(true, |item| item.is_empty()) {
+        if witness.nth(1).is_none_or(|item| item.is_empty()) {
             return Err(anyhow::anyhow!("Control block witness item is empty"));
         }
         
@@ -229,7 +229,7 @@ fn parse_alkanes_script(script: &bitcoin::Script) -> Option<AlkanesEnvelope> {
     // Check for BIN protocol tag
     match instructions.next()? {
         Ok(bitcoin::script::Instruction::PushBytes(bytes)) => {
-            if bytes.as_bytes() != &ALKANES_PROTOCOL_ID {
+            if bytes.as_bytes() != ALKANES_PROTOCOL_ID {
                 return None;
             }
         }
@@ -241,7 +241,7 @@ fn parse_alkanes_script(script: &bitcoin::Script) -> Option<AlkanesEnvelope> {
     let mut payload_parts = Vec::new();
     
     // Parse payload chunks
-    while let Some(instruction) = instructions.next() {
+    for instruction in instructions {
         match instruction {
             Ok(bitcoin::script::Instruction::Op(opcodes::all::OP_ENDIF)) => break,
             Ok(bitcoin::script::Instruction::PushBytes(bytes)) => {
@@ -260,6 +260,7 @@ fn parse_alkanes_script(script: &bitcoin::Script) -> Option<AlkanesEnvelope> {
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
     use super::*;
     use bitcoin::{secp256k1::Secp256k1, XOnlyPublicKey};
 

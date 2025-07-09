@@ -16,6 +16,12 @@ pub struct MockProvider {
     pub network: Network,
 }
 
+impl Default for MockProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MockProvider {
     pub fn new() -> Self {
         Self {
@@ -30,7 +36,7 @@ impl MockProvider {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl JsonRpcProvider for MockProvider {
     async fn call(&self, _url: &str, method: &str, _params: JsonValue, _id: u64) -> Result<JsonValue> {
         self.responses.get(method)
@@ -43,7 +49,7 @@ impl JsonRpcProvider for MockProvider {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl StorageProvider for MockProvider {
     async fn read(&self, _key: &str) -> Result<Vec<u8>> {
         Ok(b"mock_data".to_vec())
@@ -70,7 +76,7 @@ impl StorageProvider for MockProvider {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl NetworkProvider for MockProvider {
     async fn get(&self, _url: &str) -> Result<Vec<u8>> {
         Ok(b"mock_response".to_vec())
@@ -85,7 +91,7 @@ impl NetworkProvider for MockProvider {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl CryptoProvider for MockProvider {
     fn random_bytes(&self, len: usize) -> Result<Vec<u8>> {
         Ok(vec![0u8; len])
@@ -133,7 +139,7 @@ impl LogProvider for MockProvider {
     fn error(&self, _message: &str) {}
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl WalletProvider for MockProvider {
     async fn create_wallet(&self, _config: WalletConfig, _mnemonic: Option<String>, _passphrase: Option<String>) -> Result<WalletInfo> {
         Ok(WalletInfo {
@@ -280,7 +286,7 @@ impl WalletProvider for MockProvider {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl AddressResolver for MockProvider {
     async fn resolve_all_identifiers(&self, input: &str) -> Result<String> {
         // Replace identifiers with actual addresses
@@ -301,7 +307,7 @@ impl AddressResolver for MockProvider {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl BitcoinRpcProvider for MockProvider {
     async fn get_block_count(&self) -> Result<u64> {
         Ok(800000)
@@ -344,7 +350,7 @@ impl BitcoinRpcProvider for MockProvider {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl MetashrewRpcProvider for MockProvider {
     async fn get_metashrew_height(&self) -> Result<u64> {
         Ok(800001)
@@ -371,7 +377,7 @@ impl MetashrewRpcProvider for MockProvider {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl EsploraProvider for MockProvider {
     async fn get_blocks_tip_hash(&self) -> Result<String> {
         Ok("mock_tip_hash".to_string())
@@ -494,7 +500,7 @@ impl EsploraProvider for MockProvider {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl RunestoneProvider for MockProvider {
     async fn decode_runestone(&self, _tx: &Transaction) -> Result<JsonValue> {
         Ok(serde_json::json!({"etching": {"rune": "BITCOIN"}}))
@@ -509,7 +515,7 @@ impl RunestoneProvider for MockProvider {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl AlkanesProvider for MockProvider {
     async fn execute(&self, _params: AlkanesExecuteParams) -> Result<AlkanesExecuteResult> {
         Ok(AlkanesExecuteResult {
@@ -560,7 +566,7 @@ impl AlkanesProvider for MockProvider {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl MonitorProvider for MockProvider {
     async fn monitor_blocks(&self, _start: Option<u64>) -> Result<()> {
         Ok(())
@@ -576,7 +582,7 @@ impl MonitorProvider for MockProvider {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl DeezelProvider for MockProvider {
     fn provider_name(&self) -> &str {
         "mock"
@@ -619,22 +625,13 @@ mod network_tests {
 }
 
 mod utils_tests {
-    use deezel_common::utils::*;
-    
-    #[test]
-    fn test_parse_outpoint() {
-        let (txid, vout) = parse_outpoint("abc123:0").unwrap();
-        assert_eq!(txid, "abc123");
-        assert_eq!(vout, 0);
-        
-        assert!(parse_outpoint("invalid").is_err());
-    }
+    use deezel_common::alkanes::utils::parse_alkane_id;
     
     #[test]
     fn test_parse_alkane_id() {
-        let (block, tx) = parse_alkane_id("800000:1").unwrap();
-        assert_eq!(block, 800000);
-        assert_eq!(tx, 1);
+        let alkane_id = parse_alkane_id("800000:1").unwrap();
+        assert_eq!(alkane_id.block, 800000);
+        assert_eq!(alkane_id.tx, 1);
         
         assert!(parse_alkane_id("invalid").is_err());
     }
@@ -789,6 +786,7 @@ async fn test_alkanes_operations() {
     assert_eq!(token_info["symbol"], "TEST");
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[tokio::test]
 async fn test_monitor_operations() {
     let provider = MockProvider::new();

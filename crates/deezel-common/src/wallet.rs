@@ -191,7 +191,7 @@ impl<P: DeezelProvider> WalletManager<P> {
             vout: utxo.vout,
             amount: utxo.amount,
             address: utxo.address.clone(),
-            script_pubkey: utxo.script_pubkey.unwrap_or_else(|| bitcoin::ScriptBuf::new()),
+            script_pubkey: utxo.script_pubkey.unwrap_or_default(),
             confirmations: utxo.confirmations,
             frozen: utxo.frozen,
         }).collect();
@@ -210,7 +210,7 @@ impl<P: DeezelProvider> WalletManager<P> {
                     vout: utxo.vout,
                     amount: utxo.amount,
                     address: utxo.address.clone(),
-                    script_pubkey: utxo.script_pubkey.clone().unwrap_or_else(|| bitcoin::ScriptBuf::new()),
+                    script_pubkey: utxo.script_pubkey.clone().unwrap_or_else(bitcoin::ScriptBuf::new),
                     confirmations: utxo.confirmations,
                     frozen: utxo.frozen,
                 },
@@ -238,7 +238,7 @@ impl<P: DeezelProvider> WalletManager<P> {
                     vout: utxo.vout,
                     amount: utxo.amount,
                     address: utxo.address.clone(),
-                    script_pubkey: utxo.script_pubkey.clone().unwrap_or_else(|| bitcoin::ScriptBuf::new()),
+                    script_pubkey: utxo.script_pubkey.clone().unwrap_or_else(bitcoin::ScriptBuf::new),
                     confirmations: utxo.confirmations,
                     frozen: utxo.frozen,
                 },
@@ -526,8 +526,12 @@ impl AddressType {
         }
     }
     
-    /// Parse from string
-    pub fn from_str(s: &str) -> Result<Self> {
+}
+
+impl core::str::FromStr for AddressType {
+    type Err = DeezelError;
+
+    fn from_str(s: &str) -> Result<Self> {
         match s.to_lowercase().as_str() {
             "p2pkh" => Ok(AddressType::P2PKH),
             "p2sh" => Ok(AddressType::P2SH),
@@ -587,6 +591,7 @@ pub mod derivation {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use core::str::FromStr;
     
     #[test]
     fn test_balance_calculations() {

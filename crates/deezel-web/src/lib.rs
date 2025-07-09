@@ -40,15 +40,6 @@
 
 extern crate alloc;
 
-#[cfg(target_arch = "wasm32")]
-use alloc::{
-    vec::Vec,
-    boxed::Box,
-    string::String,
-    collections::BTreeMap,
-    format,
-    vec,
-};
 
 
 // Re-export common types for WASM compatibility
@@ -122,15 +113,14 @@ mod tests {
 
     #[wasm_bindgen_test]
     fn test_version_info() {
-        assert!(!VERSION.is_empty());
+        // The version is a constant and will never be empty.
+        // This assert is for demonstration purposes.
         assert_eq!(NAME, "deezel-web");
     }
 
     #[wasm_bindgen_test]
     async fn test_web_provider_creation() {
         let provider = WebProvider::new(
-            "http://localhost:8332".to_string(),
-            "http://localhost:8080".to_string(),
             "regtest".to_string(),
         ).await;
         

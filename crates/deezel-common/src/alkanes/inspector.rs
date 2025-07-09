@@ -128,13 +128,14 @@ impl AlkanesRuntimeContext {
     }
     
     pub fn flatten(&self) -> Vec<u128> {
-        let mut result = Vec::<u128>::new();
-        result.push(self.myself.block);
-        result.push(self.myself.tx);
-        result.push(self.caller.block);
-        result.push(self.caller.tx);
-        result.push(self.message.vout as u128);
-        result.push(self.incoming_alkanes.0.len() as u128);
+        let mut result = vec![
+            self.myself.block,
+            self.myself.tx,
+            self.caller.block,
+            self.caller.tx,
+            self.message.vout as u128,
+            self.incoming_alkanes.0.len() as u128,
+        ];
         for incoming in &self.incoming_alkanes.0 {
             result.push(incoming.id.block);
             result.push(incoming.id.tx);
@@ -273,14 +274,10 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
         let bytecode = self.get_alkane_bytecode(alkane_id).await?;
         
         // Remove 0x prefix if present
-        let hex_string = if bytecode.starts_with("0x") {
-            &bytecode[2..]
-        } else {
-            &bytecode
-        };
+        let hex_string = bytecode.strip_prefix("0x").unwrap_or(&bytecode);
         
         let wasm_bytes = hex::decode(hex_string)
-            .with_context(|| format!("Failed to decode WASM bytecode from hex"))?;
+            .with_context(|| "Failed to decode WASM bytecode from hex".to_string())?;
         
         let mut result = InspectionResult {
             alkane_id: alkane_id.clone(),
@@ -330,7 +327,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
         let mut hasher = Keccak256::new();
         hasher.update(wasm_bytes);
         let hash = hasher.finalize();
-        Ok(hex::encode(&hash))
+        Ok(hex::encode(hash))
     }
 
     /// Extract metadata using WASM runtime
@@ -347,7 +344,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
         let linker = Self::create_host_functions(store.engine());
         
         // Compile and instantiate the module
-        let module = Module::new(store.engine(), &mut &wasm_bytes[..])
+        let module = Module::new(store.engine(), wasm_bytes)
             .context("Failed to compile WASM module")?;
         
         let instance = linker.instantiate(&mut store, &module)
@@ -469,7 +466,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
         let linker = Self::create_host_functions(store.engine());
         
         // Compile and instantiate the module once
-        let module = Module::new(store.engine(), &mut &wasm_bytes[..])
+        let module = Module::new(store.engine(), wasm_bytes)
             .context("Failed to compile WASM module")?;
         
         let instance = linker.instantiate(&mut store, &module)
@@ -611,7 +608,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
         for result in results {
             let pattern_key = self.normalize_response_pattern(result);
             response_patterns.entry(pattern_key)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(result);
         }
         
@@ -753,7 +750,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
                 let output_addr = output as usize;
                 
                 // Write the serialized context directly (no length prefix)
-                if let Ok(_) = memory.write(&mut caller, output_addr, &serialized) {
+                if memory.write(&mut caller, output_addr, &serialized).is_ok() {
                     return serialized.len() as i32;
                 }
             }
@@ -1136,7 +1133,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
 
     /// Decode ExtendedCallResponse structure from WASM memory
     fn decode_extended_call_response(&self, store: &Store<AlkanesState>, memory: Memory, ptr: usize) -> Result<(Vec<u8>, Option<String>)> {
-        let memory_size = (u32::from(memory.current_pages(store)) * 65536) as usize;
+        let memory_size = (memory.size(store) * 65536) as usize;
         
         if ptr < 4 || ptr >= memory_size {
             return Err(anyhow::anyhow!("Response pointer 0x{:x} is invalid (memory size: {})", ptr, memory_size));
@@ -1183,7 +1180,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
                 // Try to extract readable text
                 let mut error_msg = String::new();
                 for &byte in message_bytes {
-                    if byte >= 32 && byte <= 126 { // Printable ASCII
+                    if (32..=126).contains(&byte) { // Printable ASCII
                         error_msg.push(byte as char);
                     } else if byte == 0 {
                         break; // End of string
@@ -1229,7 +1226,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
     /// Read metadata from WASM memory
     fn read_metadata_from_memory(&self, store: &Store<AlkanesState>, memory: Memory, ptr: usize) -> Result<AlkaneMetadata> {
         // Get memory size for bounds checking
-        let memory_size = (u32::from(memory.current_pages(store)) * 65536) as usize;
+        let memory_size = (memory.size(store) * 65536) as usize;
         
         if ptr < 4 || ptr >= memory_size {
             return Err(anyhow::anyhow!("Pointer 0x{:x} is invalid (memory size: {})", ptr, memory_size));
@@ -1334,7 +1331,7 @@ mod tests {
 
     struct MockRpcProvider;
 
-    #[async_trait]
+    #[async_trait(?Send)]
     impl JsonRpcProvider for MockRpcProvider {
         async fn call(
             &self,

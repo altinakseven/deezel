@@ -82,12 +82,10 @@ impl<P: crate::traits::DeezelProvider> SimulationManager<P> {
               amount, token_id.block, token_id.tx, from, to);
         
         // Prepare simulation inputs for token transfer
-        let inputs = vec![
-            "transfer".to_string(),
+        let inputs = ["transfer".to_string(),
             from.to_string(),
             to.to_string(),
-            amount.to_string(),
-        ];
+            amount.to_string()];
         
         let token_id_str = format!("{}:{}", token_id.block, token_id.tx);
         let inputs_str = inputs.join(":");
@@ -106,12 +104,10 @@ impl<P: crate::traits::DeezelProvider> SimulationManager<P> {
               input_amount, input_token.block, input_token.tx, pool_id.block, pool_id.tx);
         
         // Prepare simulation inputs for swap
-        let inputs = vec![
-            "swap".to_string(),
+        let inputs = ["swap".to_string(),
             format!("{}:{}", input_token.block, input_token.tx),
             input_amount.to_string(),
-            min_output.to_string(),
-        ];
+            min_output.to_string()];
         
         let pool_id_str = format!("{}:{}", pool_id.block, pool_id.tx);
         let inputs_str = inputs.join(":");
@@ -151,10 +147,8 @@ impl<P: crate::traits::DeezelProvider> SimulationManager<P> {
         info!("Simulating liquidity removal from pool {}:{}", pool_id.block, pool_id.tx);
         
         // Prepare simulation inputs for liquidity removal
-        let inputs = vec![
-            "remove_liquidity".to_string(),
-            lp_token_amount.to_string(),
-        ];
+        let inputs = ["remove_liquidity".to_string(),
+            lp_token_amount.to_string()];
         
         let pool_id_str = format!("{}:{}", pool_id.block, pool_id.tx);
         let inputs_str = inputs.join(":");

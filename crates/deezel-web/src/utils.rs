@@ -345,7 +345,7 @@ mod tests {
         let has_required = capabilities.has_required_capabilities();
         if !has_required {
             let missing = capabilities.missing_capabilities();
-            println!("Missing capabilities: {:?}", missing);
+            web_sys::console::log_1(&format!("Missing capabilities: {:?}", missing).into());
         }
     }
 }

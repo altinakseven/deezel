@@ -22,12 +22,11 @@
 
 use deezel_web::wallet_provider::*;
 use deezel_web::prelude::*;
-use wasm_bindgen::prelude::*;
 use web_sys::console;
 
 /// Main example function that demonstrates browser wallet integration
 #[wasm_bindgen]
-pub async fn run_browser_wallet_example() -> std::result::Result<(), JsValue> {
+pub async fn run_browser_wallet_example() {
     // Initialize logging
     console::log_1(&"🚀 Starting browser wallet example".into());
     
@@ -35,12 +34,17 @@ pub async fn run_browser_wallet_example() -> std::result::Result<(), JsValue> {
     console::log_1(&"🔍 Detecting available wallets...".into());
     let connector = WalletConnector::new();
     
-    let available_wallets = connector.detect_wallets().await
-        .map_err(|e| JsValue::from_str(&format!("Failed to detect wallets: {}", e)))?;
+    let available_wallets = match connector.detect_wallets().await {
+        Ok(wallets) => wallets,
+        Err(e) => {
+            console::error_1(&format!("Failed to detect wallets: {}", e).into());
+            return;
+        }
+    };
     
     if available_wallets.is_empty() {
         console::log_1(&"❌ No wallets detected. Please install a Bitcoin wallet extension.".into());
-        return Ok(());
+        return;
     }
     
     console::log_1(&format!("✅ Found {} wallet(s):", available_wallets.len()).into());
@@ -52,36 +56,51 @@ pub async fn run_browser_wallet_example() -> std::result::Result<(), JsValue> {
     let wallet_info = available_wallets[0].clone();
     console::log_1(&format!("🔗 Connecting to {}...", wallet_info.name).into());
     
-    let provider = BrowserWalletProvider::connect(
+    let provider = match BrowserWalletProvider::connect(
         wallet_info.clone(),
-        "http://localhost:8332".to_string(),
-        "http://localhost:8080".to_string(),
         "regtest".to_string(), // Use regtest for development
-    ).await
-    .map_err(|e| JsValue::from_str(&format!("Failed to connect to wallet: {}", e)))?;
+    ).await {
+        Ok(p) => p,
+        Err(e) => {
+            console::error_1(&format!("Failed to connect to wallet: {}", e).into());
+            return;
+        }
+    };
     
     console::log_1(&"✅ Wallet connected successfully!".into());
     
     // Step 3: Initialize the provider (this sets up our sandshrew RPC connections)
     console::log_1(&"🔧 Initializing provider...".into());
-    provider.initialize().await
-        .map_err(|e| JsValue::from_str(&format!("Failed to initialize provider: {}", e)))?;
+    if let Err(e) = provider.initialize().await {
+        console::error_1(&format!("Failed to initialize provider: {}", e).into());
+        return;
+    }
     
     console::log_1(&"✅ Provider initialized!".into());
     
     // Step 4: Get wallet information
     console::log_1(&"📋 Getting wallet information...".into());
     
-    let address = WalletProvider::get_address(&provider).await
-        .map_err(|e| JsValue::from_str(&format!("Failed to get address: {}", e)))?;
+    let address = match WalletProvider::get_address(&provider).await {
+        Ok(a) => a,
+        Err(e) => {
+            console::error_1(&format!("Failed to get address: {}", e).into());
+            return;
+        }
+    };
     
     console::log_1(&format!("📍 Wallet address: {}", address).into());
     
     // Step 5: Get balance using our sandshrew RPC (not the wallet's limited API)
     console::log_1(&"💰 Getting balance via sandshrew RPC...".into());
     
-    let balance = WalletProvider::get_balance(&provider).await
-        .map_err(|e| JsValue::from_str(&format!("Failed to get balance: {}", e)))?;
+    let balance = match WalletProvider::get_balance(&provider).await {
+        Ok(b) => b,
+        Err(e) => {
+            console::error_1(&format!("Failed to get balance: {}", e).into());
+            return;
+        }
+    };
     
     console::log_1(&format!("💰 Balance: {} sats confirmed, {} pending", 
                            balance.confirmed, balance.trusted_pending).into());
@@ -89,8 +108,13 @@ pub async fn run_browser_wallet_example() -> std::result::Result<(), JsValue> {
     // Step 6: Get UTXOs using our Esplora provider
     console::log_1(&"🔍 Getting UTXOs via Esplora API...".into());
     
-    let utxos = WalletProvider::get_utxos(&provider, false, None).await
-        .map_err(|e| JsValue::from_str(&format!("Failed to get UTXOs: {}", e)))?;
+    let utxos = match WalletProvider::get_utxos(&provider, false, None).await {
+        Ok(u) => u,
+        Err(e) => {
+            console::error_1(&format!("Failed to get UTXOs: {}", e).into());
+            return;
+        }
+    };
     
     console::log_1(&format!("📦 Found {} UTXOs", utxos.len()).into());
     for (i, utxo) in utxos.iter().enumerate().take(3) {
@@ -101,8 +125,13 @@ pub async fn run_browser_wallet_example() -> std::result::Result<(), JsValue> {
     // Step 7: Demonstrate alkanes functionality
     console::log_1(&"🧪 Testing alkanes functionality...".into());
     
-    let alkanes_balance = AlkanesProvider::get_balance(&provider, Some(&address)).await
-        .map_err(|e| JsValue::from_str(&format!("Failed to get alkanes balance: {}", e)))?;
+    let alkanes_balance = match AlkanesProvider::get_balance(&provider, Some(&address)).await {
+        Ok(b) => b,
+        Err(e) => {
+            console::error_1(&format!("Failed to get alkanes balance: {}", e).into());
+            return;
+        }
+    };
     
     console::log_1(&format!("🪙 Alkanes tokens: {}", alkanes_balance.len()).into());
     for token in &alkanes_balance {
@@ -112,8 +141,13 @@ pub async fn run_browser_wallet_example() -> std::result::Result<(), JsValue> {
     // Step 8: Demonstrate fee estimation using our RPC
     console::log_1(&"💸 Getting fee estimates...".into());
     
-    let fee_rates = WalletProvider::get_fee_rates(&provider).await
-        .map_err(|e| JsValue::from_str(&format!("Failed to get fee rates: {}", e)))?;
+    let fee_rates = match WalletProvider::get_fee_rates(&provider).await {
+        Ok(f) => f,
+        Err(e) => {
+            console::error_1(&format!("Failed to get fee rates: {}", e).into());
+            return;
+        }
+    };
     
     console::log_1(&format!("💸 Fee rates - Fast: {} sat/vB, Medium: {} sat/vB, Slow: {} sat/vB",
                            fee_rates.fast, fee_rates.medium, fee_rates.slow).into());
@@ -163,65 +197,84 @@ pub async fn run_browser_wallet_example() -> std::result::Result<(), JsValue> {
     console::log_1(&"✅ Enhanced privacy with Rebar Labs Shield support".into());
     console::log_1(&"✅ Multi-wallet support (13+ wallets)".into());
     
-    Ok(())
 }
 
 /// Example of wallet switching
 #[wasm_bindgen]
-pub async fn demonstrate_wallet_switching() -> std::result::Result<(), JsValue> {
+pub async fn demonstrate_wallet_switching() {
     console::log_1(&"🔄 Demonstrating wallet switching...".into());
     
     let connector = WalletConnector::new();
-    let available_wallets = connector.detect_wallets().await
-        .map_err(|e| JsValue::from_str(&format!("Failed to detect wallets: {}", e)))?;
+    let available_wallets = match connector.detect_wallets().await {
+        Ok(wallets) => wallets,
+        Err(e) => {
+            console::error_1(&format!("Failed to detect wallets: {}", e).into());
+            return;
+        }
+    };
     
     if available_wallets.len() < 2 {
         console::log_1(&"ℹ️  Need at least 2 wallets for switching demo".into());
-        return Ok(());
+        return;
     }
     
     for (i, wallet_info) in available_wallets.iter().enumerate().take(2) {
         console::log_1(&format!("🔗 Connecting to wallet {}: {}", i + 1, wallet_info.name).into());
         
-        let provider = BrowserWalletProvider::connect(
+        let provider = match BrowserWalletProvider::connect(
             wallet_info.clone(),
-            "http://localhost:8332".to_string(),
-            "http://localhost:8080".to_string(),
             "regtest".to_string(),
-        ).await
-        .map_err(|e| JsValue::from_str(&format!("Failed to connect to {}: {}", wallet_info.name, e)))?;
+        ).await {
+            Ok(p) => p,
+            Err(e) => {
+                console::error_1(&format!("Failed to connect to {}: {}", wallet_info.name, e).into());
+                continue;
+            }
+        };
         
-        let address = WalletProvider::get_address(&provider).await
-            .map_err(|e| JsValue::from_str(&format!("Failed to get address: {}", e)))?;
+        let address = match WalletProvider::get_address(&provider).await {
+            Ok(a) => a,
+            Err(e) => {
+                console::error_1(&format!("Failed to get address: {}", e).into());
+                continue;
+            }
+        };
         
         console::log_1(&format!("📍 {} address: {}", wallet_info.name, address).into());
     }
     
     console::log_1(&"✅ Wallet switching demonstration completed!".into());
-    Ok(())
 }
 
 /// Example of enhanced alkanes execution with browser wallet
 #[wasm_bindgen]
-pub async fn demonstrate_alkanes_execution() -> std::result::Result<(), JsValue> {
+pub async fn demonstrate_alkanes_execution() {
     console::log_1(&"🧪 Demonstrating alkanes execution with browser wallet...".into());
     
     let connector = WalletConnector::new();
-    let available_wallets = connector.detect_wallets().await
-        .map_err(|e| JsValue::from_str(&format!("Failed to detect wallets: {}", e)))?;
+    let available_wallets = match connector.detect_wallets().await {
+        Ok(wallets) => wallets,
+        Err(e) => {
+            console::error_1(&format!("Failed to detect wallets: {}", e).into());
+            return;
+        }
+    };
     
     if available_wallets.is_empty() {
         console::log_1(&"❌ No wallets available for alkanes demo".into());
-        return Ok(());
+        return;
     }
     
-    let provider = BrowserWalletProvider::connect(
+    let provider = match BrowserWalletProvider::connect(
         available_wallets[0].clone(),
-        "http://localhost:8332".to_string(),
-        "http://localhost:8080".to_string(),
         "regtest".to_string(),
-    ).await
-    .map_err(|e| JsValue::from_str(&format!("Failed to connect to wallet: {}", e)))?;
+    ).await {
+        Ok(p) => p,
+        Err(e) => {
+            console::error_1(&format!("Failed to connect to wallet: {}", e).into());
+            return;
+        }
+    };
     
     // Example alkanes execution parameters
     let execute_params = AlkanesExecuteParams {
@@ -253,21 +306,25 @@ pub async fn demonstrate_alkanes_execution() -> std::result::Result<(), JsValue>
         }
     }
     
-    Ok(())
 }
 
 /// Example showing PSBT signing with browser wallet
 #[wasm_bindgen]
-pub async fn demonstrate_psbt_signing() -> std::result::Result<(), JsValue> {
+pub async fn demonstrate_psbt_signing() {
     console::log_1(&"✍️  Demonstrating PSBT signing with browser wallet...".into());
     
     let connector = WalletConnector::new();
-    let available_wallets = connector.detect_wallets().await
-        .map_err(|e| JsValue::from_str(&format!("Failed to detect wallets: {}", e)))?;
+    let available_wallets = match connector.detect_wallets().await {
+        Ok(wallets) => wallets,
+        Err(e) => {
+            console::error_1(&format!("Failed to detect wallets: {}", e).into());
+            return;
+        }
+    };
     
     if available_wallets.is_empty() {
         console::log_1(&"❌ No wallets available for PSBT demo".into());
-        return Ok(());
+        return;
     }
     
     // Find a wallet that supports PSBT
@@ -278,13 +335,16 @@ pub async fn demonstrate_psbt_signing() -> std::result::Result<(), JsValue> {
     
     console::log_1(&format!("🔗 Using {} for PSBT signing", psbt_wallet.name).into());
     
-    let provider = BrowserWalletProvider::connect(
+    let _provider = match BrowserWalletProvider::connect(
         psbt_wallet,
-        "http://localhost:8332".to_string(),
-        "http://localhost:8080".to_string(),
         "regtest".to_string(),
-    ).await
-    .map_err(|e| JsValue::from_str(&format!("Failed to connect to wallet: {}", e)))?;
+    ).await {
+        Ok(p) => p,
+        Err(e) => {
+            console::error_1(&format!("Failed to connect to wallet: {}", e).into());
+            return;
+        }
+    };
     
     // Create a mock PSBT for demonstration
     console::log_1(&"📝 Creating mock PSBT...".into());
@@ -293,6 +353,10 @@ pub async fn demonstrate_psbt_signing() -> std::result::Result<(), JsValue> {
     // For demo purposes, we'll show the concept
     console::log_1(&"ℹ️  PSBT signing capability confirmed".into());
     console::log_1(&"✅ Browser wallet can sign PSBTs while we handle blockchain operations".into());
-    
-    Ok(())
+}
+
+#[allow(dead_code, clippy::main_recursion)]
+#[wasm_bindgen]
+pub fn main() {
+    wasm_bindgen_futures::spawn_local(run_browser_wallet_example());
 }

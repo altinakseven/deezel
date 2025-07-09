@@ -11,6 +11,7 @@
 members = [
   "crates/*"
 ]
+exclude = ["crates/deezel"]
 resolver = "2"
 
 [workspace.dependencies]

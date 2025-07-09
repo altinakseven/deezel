@@ -256,7 +256,7 @@ pub fn analyze_runestone_detailed(runestone_data: &JsonValue) -> Result<JsonValu
         operation_type = "etching";
     } else if runestone_data.get("mint").is_some() {
         operation_type = "mint";
-    } else if runestone_data.get("edicts").and_then(|v| v.as_array()).map_or(false, |arr| !arr.is_empty()) {
+    } else if runestone_data.get("edicts").and_then(|v| v.as_array()).is_some_and(|arr| !arr.is_empty()) {
         operation_type = "transfer";
     }
     

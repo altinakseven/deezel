@@ -19,7 +19,7 @@ use alloc::collections::{BTreeMap as HashMap, BTreeMap};
 #[cfg(not(target_arch = "wasm32"))]
 use std::{str::FromStr, cmp};
 #[cfg(target_arch = "wasm32")]
-use core::{str::FromStr, cmp, fmt::Write};
+use core::{str::FromStr, cmp};
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::sync::Arc;
@@ -583,7 +583,7 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
         let wallet_utxos: Vec<_> = enriched_utxos.into_iter()
             .filter(|enriched| {
                 let is_frozen_for_coinbase = enriched.freeze_reason.as_ref()
-                    .map_or(false, |reason| reason.contains("immature_coinbase"));
+                    .is_some_and(|reason| reason.contains("immature_coinbase"));
                 
                 if is_frozen_for_coinbase {
                     debug!("Filtering out immature coinbase UTXO: {}:{} (reason: {:?})",
@@ -741,7 +741,7 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
             let is_dust = utxo.amount <= 546;
             let is_unconfirmed = enriched_utxo.utxo.confirmations == 0;
             let is_frozen_for_coinbase = enriched_utxo.freeze_reason.as_ref()
-                .map_or(false, |reason| reason.contains("immature_coinbase"));
+                .is_some_and(|reason| reason.contains("immature_coinbase"));
             
             // Skip coinbase UTXOs that are still immature (these require 100+ confirmations)
             if is_frozen_for_coinbase {
@@ -921,7 +921,7 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
         // Convert our ProtostoneSpec to our internal Protostone format and add to collection
         for protostone in &proper_protostones {
             let internal_protostone = crate::utils::protostone::Protostone::new(
-                protostone.protocol_tag as u128,
+                protostone.protocol_tag,
                 protostone.message.clone()
             );
             protostones_collection.add(internal_protostone);
@@ -968,7 +968,7 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
                 Ok(runestone_script)
             },
             Err(e) => {
-                return Err(anyhow!("Failed to encode protostones: {}", e));
+                Err(anyhow!("Failed to encode protostones: {}", e))
             }
         }
     }
@@ -1200,7 +1200,7 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
             let signature = self.create_taproot_script_signature(
                 &final_tx,
                 0, // input index
-                &envelope.build_reveal_script().as_bytes(),
+                envelope.build_reveal_script().as_bytes(),
                 &control_block.serialize(),
             ).await?;
             
@@ -1281,7 +1281,7 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
                                     info!("      First 20 bytes: {}", hex::encode(preview));
                                     
                                     // Check for script opcodes
-                                    if preview.len() > 0 && preview[0] == 0x00 {
+                                    if !preview.is_empty() && preview[0] == 0x00 {
                                         info!("      ✅ Starts with OP_PUSHBYTES_0 (expected for envelope)");
                                     }
                                     if preview.len() > 1 && preview[1] == 0x63 {
@@ -1518,7 +1518,7 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
                 info!("  Deserialized item {}: {} bytes", i, item.len());
                 if item.len() <= 64 {
                     info!("    Content (hex): {}", hex::encode(item));
-                } else if item.len() > 0 {
+                } else if !item.is_empty() {
                     info!("    Content (first 32 bytes): {}", hex::encode(&item[..32]));
                     info!("    Content (last 32 bytes): {}", hex::encode(&item[item.len()-32..]));
                 }
@@ -1639,7 +1639,7 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
         let funding_utxo = enriched_utxos.iter()
             .find(|enriched| {
                 let is_frozen_for_coinbase = enriched.freeze_reason.as_ref()
-                    .map_or(false, |reason| reason.contains("immature_coinbase"));
+                    .is_some_and(|reason| reason.contains("immature_coinbase"));
                 !is_frozen_for_coinbase && enriched.utxo.amount >= 1000 // Need at least 1000 sats for commit + fees
             })
             .map(|enriched| &enriched.utxo)
@@ -1951,7 +1951,7 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
                         println!("  🔍 Complete hex data: {}", hex::encode(data_bytes));
                         
                         // Check for runestone magic (OP_13 = 0x5d)
-                        if data_bytes.len() > 0 && data_bytes[0] == 0x5d {
+                        if !data_bytes.is_empty() && data_bytes[0] == 0x5d {
                             println!("  🪨 Contains Runestone magic number (OP_13)");
                             if data_bytes.len() > 1 {
                                 println!("  🏷️  Protocol tag candidate: {}", data_bytes[1]);
@@ -2170,7 +2170,7 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
             match self.rpc_client.generate_to_address(blocks_to_mine, &change_address).await {
                 Ok(block_hashes) => {
                     let first_hash = if let Some(array) = block_hashes.as_array() {
-                        array.get(0).and_then(|h| h.as_str()).unwrap_or("none")
+                        array.first().and_then(|h| h.as_str()).unwrap_or("none")
                     } else {
                         "none"
                     };
@@ -2880,7 +2880,7 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
                 let signature = self.create_taproot_script_signature(
                     &tx,
                     i, // input index
-                    &reveal_script.as_bytes(),
+                    reveal_script.as_bytes(),
                     &control_block.serialize(),
                 ).await?;
                 
@@ -2957,7 +2957,7 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
         info!("🛡️  Executing transaction with Rebar Labs Shield");
         
         // Validate that envelope and cellpack usage is correct
-        self.validate_envelope_cellpack_usage(&params)?;
+        self.validate_envelope_cellpack_usage(params)?;
         
         // Build the transaction normally first
         let (tx, fee) = if params.envelope_data.is_some() {
@@ -3161,9 +3161,8 @@ pub fn parse_input_requirements(input_str: &str) -> Result<Vec<InputRequirement>
     for part in input_str.split(',') {
         let trimmed = part.trim();
         
-        if trimmed.starts_with("B:") {
+        if let Some(amount_str) = trimmed.strip_prefix("B:") {
             // Bitcoin requirement: B:amount
-            let amount_str = &trimmed[2..];
             let amount = amount_str.parse::<u64>()
                 .context("Invalid Bitcoin amount in input requirement")?;
             requirements.push(InputRequirement::Bitcoin { amount });
@@ -3392,13 +3391,11 @@ fn parse_output_target(target_str: &str) -> Result<OutputTarget> {
     
     if trimmed == "split" {
         Ok(OutputTarget::Split)
-    } else if trimmed.starts_with('v') {
-        let index_str = &trimmed[1..];
+    } else if let Some(index_str) = trimmed.strip_prefix('v') {
         let index = index_str.parse::<u32>()
             .context("Invalid output index in target")?;
         Ok(OutputTarget::Output(index))
-    } else if trimmed.starts_with('p') {
-        let index_str = &trimmed[1..];
+    } else if let Some(index_str) = trimmed.strip_prefix('p') {
         let index = index_str.parse::<u32>()
             .context("Invalid protostone index in target")?;
         Ok(OutputTarget::Protostone(index))
@@ -3457,9 +3454,9 @@ fn split_complex_protostone(input: &str) -> Result<Vec<String>> {
     let mut parts = Vec::new();
     let mut current = String::new();
     let mut bracket_depth = 0;
-    let mut chars = input.chars().peekable();
+    let chars = input.chars().peekable();
     
-    while let Some(ch) = chars.next() {
+    for ch in chars {
         match ch {
             '[' => {
                 bracket_depth += 1;
@@ -3581,15 +3578,19 @@ mod tests {
     #[test]
     fn test_parse_cellpack_insufficient_values() {
         // Test error case: not enough values for target
-        // The external alkanes-support crate panics on insufficient values
-        // so we need to catch the panic or skip this test
-        let result = std::panic::catch_unwind(|| {
-            parse_cellpack("1")
-        });
-        
-        // Either the function returns an error or panics - both are acceptable
-        // for insufficient input values
-        assert!(result.is_err() || result.unwrap().is_err());
+        // This test is disabled for wasm32 because it relies on std::panic::catch_unwind
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            // The external alkanes-support crate panics on insufficient values
+            // so we need to catch the panic or skip this test
+            let result = std::panic::catch_unwind(|| {
+                parse_cellpack("1")
+            });
+            
+            // Either the function returns an error or panics - both are acceptable
+            // for insufficient input values
+            assert!(result.is_err() || result.unwrap().is_err());
+        }
     }
 
     #[test]

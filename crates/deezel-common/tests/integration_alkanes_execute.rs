@@ -39,13 +39,13 @@ impl MockAlkanesProvider {
         }
     }
     
-    async fn set_rpc_response(&self, method: &str, response: serde_json::Value) {
+    async fn _set_rpc_response(&self, method: &str, response: serde_json::Value) {
         let mut responses = self.rpc_responses.lock().await;
         responses.insert(method.to_string(), response);
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait::async_trait(?Send)]
 impl traits::JsonRpcProvider for MockAlkanesProvider {
     async fn call(&self, _url: &str, method: &str, _params: serde_json::Value, _id: u64) -> deezel_common::Result<serde_json::Value> {
         let responses = self.rpc_responses.lock().await;
@@ -58,7 +58,7 @@ impl traits::JsonRpcProvider for MockAlkanesProvider {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait::async_trait(?Send)]
 impl traits::StorageProvider for MockAlkanesProvider {
     async fn read(&self, key: &str) -> deezel_common::Result<Vec<u8>> {
         let storage = self.storage.lock().await;
@@ -92,7 +92,7 @@ impl traits::StorageProvider for MockAlkanesProvider {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait::async_trait(?Send)]
 impl traits::NetworkProvider for MockAlkanesProvider {
     async fn get(&self, _url: &str) -> deezel_common::Result<Vec<u8>> {
         Ok(b"mock response".to_vec())
@@ -107,7 +107,7 @@ impl traits::NetworkProvider for MockAlkanesProvider {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait::async_trait(?Send)]
 impl traits::CryptoProvider for MockAlkanesProvider {
     fn random_bytes(&self, len: usize) -> deezel_common::Result<Vec<u8>> {
         Ok(vec![0u8; len])
@@ -149,9 +149,7 @@ impl traits::TimeProvider for MockAlkanesProvider {
         1640995200000
     }
     
-    fn sleep_ms(&self, _ms: u64) -> impl std::future::Future<Output = ()> + Send {
-        async {}
-    }
+    async fn sleep_ms(&self, _ms: u64) {}
 }
 
 impl traits::LogProvider for MockAlkanesProvider {
@@ -161,7 +159,7 @@ impl traits::LogProvider for MockAlkanesProvider {
     fn error(&self, _message: &str) {}
 }
 
-#[async_trait::async_trait]
+#[async_trait::async_trait(?Send)]
 impl traits::WalletProvider for MockAlkanesProvider {
     async fn create_wallet(&self, _config: traits::WalletConfig, _mnemonic: Option<String>, _passphrase: Option<String>) -> deezel_common::Result<traits::WalletInfo> {
         Ok(traits::WalletInfo {
@@ -298,7 +296,7 @@ impl traits::WalletProvider for MockAlkanesProvider {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait::async_trait(?Send)]
 impl traits::AddressResolver for MockAlkanesProvider {
     async fn resolve_all_identifiers(&self, input: &str) -> deezel_common::Result<String> {
         Ok(input.to_string()) // Return as-is for mock
@@ -317,7 +315,7 @@ impl traits::AddressResolver for MockAlkanesProvider {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait::async_trait(?Send)]
 impl traits::BitcoinRpcProvider for MockAlkanesProvider {
     async fn get_block_count(&self) -> deezel_common::Result<u64> {
         Ok(800000)
@@ -360,7 +358,7 @@ impl traits::BitcoinRpcProvider for MockAlkanesProvider {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait::async_trait(?Send)]
 impl traits::MetashrewRpcProvider for MockAlkanesProvider {
     async fn get_metashrew_height(&self) -> deezel_common::Result<u64> {
         Ok(800000)
@@ -387,7 +385,7 @@ impl traits::MetashrewRpcProvider for MockAlkanesProvider {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait::async_trait(?Send)]
 impl traits::EsploraProvider for MockAlkanesProvider {
     async fn get_blocks_tip_hash(&self) -> deezel_common::Result<String> {
         Ok("0000000000000000000000000000000000000000000000000000000000000000".to_string())
@@ -510,7 +508,7 @@ impl traits::EsploraProvider for MockAlkanesProvider {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait::async_trait(?Send)]
 impl traits::RunestoneProvider for MockAlkanesProvider {
     async fn decode_runestone(&self, _tx: &bitcoin::Transaction) -> deezel_common::Result<serde_json::Value> {
         Ok(serde_json::json!({}))
@@ -525,7 +523,7 @@ impl traits::RunestoneProvider for MockAlkanesProvider {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait::async_trait(?Send)]
 impl traits::AlkanesProvider for MockAlkanesProvider {
     async fn execute(&self, _params: traits::AlkanesExecuteParams) -> deezel_common::Result<traits::AlkanesExecuteResult> {
         Ok(traits::AlkanesExecuteResult {
@@ -606,7 +604,7 @@ impl traits::AlkanesProvider for MockAlkanesProvider {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait::async_trait(?Send)]
 impl traits::MonitorProvider for MockAlkanesProvider {
     async fn monitor_blocks(&self, _start: Option<u64>) -> deezel_common::Result<()> {
         Ok(())
@@ -617,7 +615,7 @@ impl traits::MonitorProvider for MockAlkanesProvider {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait::async_trait(?Send)]
 impl traits::DeezelProvider for MockAlkanesProvider {
     fn provider_name(&self) -> &str {
         "MockAlkanesProvider"
@@ -654,7 +652,7 @@ async fn test_alkanes_execute_integration() -> deezel_common::Result<()> {
     let result = alkanes_manager.execute(params).await?;
     
     // Verify the result structure
-    assert!(result.reveal_txid.len() > 0);
+    assert!(!result.reveal_txid.is_empty());
     assert!(result.commit_txid.is_some());
     assert!(result.reveal_fee > 0);
     
@@ -691,14 +689,14 @@ async fn test_alkanes_inspector_integration() -> deezel_common::Result<()> {
     if let Some(metadata) = result.metadata {
         assert_eq!(metadata.name, "Test Contract");
         assert_eq!(metadata.version, "1.0.0");
-        assert!(metadata.methods.len() > 0);
+        assert!(!metadata.methods.is_empty());
     }
     
     // Verify fuzzing results
     if let Some(fuzzing) = result.fuzzing_results {
         assert!(fuzzing.total_opcodes_tested > 0);
         assert!(fuzzing.successful_executions > 0);
-        assert!(fuzzing.implemented_opcodes.len() > 0);
+        assert!(!fuzzing.implemented_opcodes.is_empty());
     }
     
     println!("✅ Inspector integration test passed");
@@ -715,7 +713,7 @@ async fn test_alkanes_envelope_integration() -> deezel_common::Result<()> {
     
     // Test envelope script building
     let script = envelope.build_reveal_script();
-    assert!(script.len() > 0);
+    assert!(!script.is_empty());
     
     // Test envelope witness creation
     use bitcoin::secp256k1::Secp256k1;
@@ -753,7 +751,7 @@ async fn test_alkanes_balance_integration() -> deezel_common::Result<()> {
     // Test balance retrieval
     let balances = alkanes_manager.get_balance(None).await?;
     
-    assert!(balances.len() > 0);
+    assert!(!balances.is_empty());
     let balance = &balances[0];
     assert_eq!(balance.name, "Test Token");
     assert_eq!(balance.symbol, "TEST");

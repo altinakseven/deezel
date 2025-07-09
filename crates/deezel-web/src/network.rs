@@ -329,10 +329,7 @@ impl deezel_common::NetworkProvider for WebNetwork {
     /// This method never panics and will return `false` for any error condition,
     /// including network failures, CORS issues, or HTTP error status codes.
     async fn is_reachable(&self, url: &str) -> bool {
-        match self.fetch_request(url, "HEAD", None, None).await {
-            Ok(_) => true,
-            Err(_) => false,
-        }
+        (self.fetch_request(url, "HEAD", None, None).await).is_ok()
     }
 
     /// Get the user agent string

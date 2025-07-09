@@ -12,8 +12,6 @@ use alloc::{
     vec::Vec,
     boxed::Box,
     string::{String, ToString},
-    format,
-    vec,
 };
 
 #[cfg(not(target_arch = "wasm32"))]

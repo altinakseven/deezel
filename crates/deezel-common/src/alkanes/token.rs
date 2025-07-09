@@ -9,15 +9,13 @@ use std::sync::Arc;
 #[cfg(target_arch = "wasm32")]
 use alloc::sync::Arc;
 
-#[cfg(target_arch = "wasm32")]
-use alloc::str::FromStr;
 
 use crate::{ToString, format};
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::{vec, vec::Vec};
 #[cfg(target_arch = "wasm32")]
-use alloc::{vec, vec::Vec, string::String};
+use alloc::{vec, vec::Vec};
 
 use crate::rpc::RpcClient;
 use crate::wallet::WalletManager;

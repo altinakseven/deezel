@@ -4,7 +4,7 @@
 //! all deezel-common traits and integrates properly with browser wallets.
 
 use deezel_web::wallet_provider::{
-    WalletConnector, BrowserWalletProvider, WalletBackend,
+    WalletConnector,
     WalletInfo as LocalWalletInfo, PsbtSigningOptions, PsbtSigningInput,
     WalletAccount, WalletConnectionStatus, WalletNetworkInfo
 };
@@ -116,14 +116,14 @@ fn test_wallet_connection_status() {
     let status = WalletConnectionStatus::Connected;
     
     match status {
-        WalletConnectionStatus::Connected => assert!(true),
-        _ => assert!(false, "Expected Connected status"),
+        WalletConnectionStatus::Connected => (),
+        _ => panic!("Expected Connected status"),
     }
     
     let error_status = WalletConnectionStatus::Error("Test error".to_string());
     match error_status {
         WalletConnectionStatus::Error(msg) => assert_eq!(msg, "Test error"),
-        _ => assert!(false, "Expected Error status"),
+        _ => panic!("Expected Error status"),
     }
 }
 
@@ -143,8 +143,6 @@ fn test_wallet_network_info() {
 #[wasm_bindgen_test]
 async fn test_web_provider_creation() {
     let provider = WebProvider::new(
-        "http://localhost:8332".to_string(),
-        "http://localhost:8080".to_string(),
         "regtest".to_string(),
     ).await;
     
@@ -157,8 +155,6 @@ async fn test_web_provider_creation() {
 async fn test_provider_trait_compatibility() {
     // Test that our provider implements the required traits
     let provider = WebProvider::new(
-        "http://localhost:8332".to_string(),
-        "http://localhost:8080".to_string(),
         "regtest".to_string(),
     ).await.unwrap();
     
@@ -188,8 +184,6 @@ async fn test_provider_trait_compatibility() {
 #[wasm_bindgen_test]
 async fn test_storage_operations() {
     let provider = WebProvider::new(
-        "http://localhost:8332".to_string(),
-        "http://localhost:8080".to_string(),
         "regtest".to_string(),
     ).await.unwrap();
     

@@ -67,7 +67,7 @@
 use alloc::{
     vec::Vec,
     boxed::Box,
-    string::{String, ToString},
+    string::ToString,
     format,
     vec,
 };

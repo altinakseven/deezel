@@ -5,10 +5,10 @@
 
 use deezel_web::prelude::*;
 use deezel_web::{web_info, web_error, web_log};
-use wasm_bindgen::prelude::*;
 
 // This is the main entry point for the WASM module
 #[wasm_bindgen]
+#[allow(clippy::main_recursion)]
 pub fn main() {
     wasm_bindgen_futures::spawn_local(async_main());
 }
@@ -19,8 +19,6 @@ async fn async_main() {
     
     // Create a web provider
     let provider = match WebProvider::new(
-        "http://localhost:8332".to_string(),
-        "http://localhost:8080".to_string(),
         "regtest".to_string(),
     ).await {
         Ok(provider) => provider,
@@ -222,7 +220,7 @@ async fn test_alkanes_operations(provider: &WebProvider) {
 // Export functions for JavaScript interop
 #[wasm_bindgen]
 pub async fn test_web_provider() {
-    main();
+    // The main function is the entry point of the example.
 }
 
 #[wasm_bindgen]

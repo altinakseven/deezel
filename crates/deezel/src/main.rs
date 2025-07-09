@@ -18,7 +18,6 @@ use clap::{Parser, Subcommand};
 use log::info;
 use bitcoin::consensus::deserialize;
 use bitcoin::Transaction;
-use serde_json;
 
 // Import from deezel-common for now (will be updated to match reference implementation)
 use deezel_common::*;
@@ -659,10 +658,8 @@ fn is_shorthand_address_identifier(input: &str) -> bool {
     }
     
     // If there's a second part, it should be a valid index
-    if parts.len() == 2 {
-        if parts[1].parse::<u32>().is_err() {
-            return false;
-        }
+    if parts.len() == 2 && parts[1].parse::<u32>().is_err() {
+        return false;
     }
     
     true
@@ -765,7 +762,7 @@ fn get_rpc_url(provider: &str) -> String {
     }
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
     // Parse command-line arguments
     let args = Args::parse();
@@ -1323,7 +1320,7 @@ async fn execute_alkanes_command(provider: &ConcreteProvider, command: AlkanesCo
             
             // Load envelope data if provided
             let envelope_data = if let Some(ref envelope_file) = envelope {
-                let expanded_path = expand_tilde(&envelope_file)?;
+                let expanded_path = expand_tilde(envelope_file)?;
                 let data = std::fs::read(&expanded_path)
                     .with_context(|| format!("Failed to read envelope file: {}", expanded_path))?;
                 info!("📦 Loaded envelope data: {} bytes", data.len());
@@ -1636,7 +1633,7 @@ async fn execute_protorunes_command(provider: &ConcreteProvider, command: Protor
 async fn execute_monitor_command(provider: &ConcreteProvider, command: MonitorCommands) -> Result<()> {
     match command {
         MonitorCommands::Blocks { start, raw: _ } => {
-            let start_height = start.unwrap_or_else(|| {
+            let start_height = start.unwrap_or({
                 // Get current height as default
                 0 // Placeholder - would need async context
             });

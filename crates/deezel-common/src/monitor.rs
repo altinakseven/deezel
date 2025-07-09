@@ -68,7 +68,7 @@ impl<'de> Deserialize<'de> for SystemTime {
 pub struct BlockMonitor<P: DeezelProvider> {
     provider: P,
     config: MonitorConfig,
-    state: MonitorState,
+    state: MonitorStats,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -78,7 +78,7 @@ impl<P: DeezelProvider> BlockMonitor<P> {
         Self {
             provider,
             config: MonitorConfig::default(),
-            state: MonitorState::default(),
+            state: MonitorStats::default(),
         }
     }
     
@@ -87,13 +87,13 @@ impl<P: DeezelProvider> BlockMonitor<P> {
         Self {
             provider,
             config,
-            state: MonitorState::default(),
+            state: MonitorStats::default(),
         }
     }
     
     /// Start monitoring blocks
     pub async fn start_monitoring(&mut self, start_height: Option<u64>) -> Result<()> {
-        let start_height = start_height.unwrap_or_else(|| {
+        let start_height = start_height.unwrap_or({
             // Get current height as default
             0 // This would be replaced with actual current height
         });
@@ -379,27 +379,7 @@ impl Default for MonitorConfig {
     }
 }
 
-/// Monitor state
-#[derive(Debug, Clone)]
-struct MonitorState {
-    pub is_running: bool,
-    pub current_height: u64,
-    pub blocks_processed: u64,
-    pub events_processed: u64,
-    pub start_time: Option<SystemTime>,
-}
 
-impl Default for MonitorState {
-    fn default() -> Self {
-        Self {
-            is_running: false,
-            current_height: 0,
-            blocks_processed: 0,
-            events_processed: 0,
-            start_time: None,
-        }
-    }
-}
 
 /// Block event
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -411,7 +391,7 @@ pub struct BlockEvent {
 }
 
 /// Monitor statistics
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct MonitorStats {
     pub is_running: bool,
     pub current_height: u64,
@@ -528,6 +508,12 @@ pub struct EventFilter {
     pub max_amount: Option<u64>,
 }
 
+impl Default for EventFilter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EventFilter {
     /// Create a new event filter
     pub fn new() -> Self {
@@ -600,13 +586,6 @@ mod tests {
         assert!(config.monitored_addresses.is_none());
     }
     
-    #[test]
-    fn test_monitor_state() {
-        let state = MonitorState::default();
-        assert!(!state.is_running);
-        assert_eq!(state.current_height, 0);
-        assert_eq!(state.blocks_processed, 0);
-    }
     
     #[test]
     fn test_event_filter() {

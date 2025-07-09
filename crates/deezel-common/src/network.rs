@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize, Serializer, Deserializer};
 #[cfg(not(target_arch = "wasm32"))]
 use std::string::String;
 #[cfg(target_arch = "wasm32")]
-use alloc::{vec, string::String};
+use alloc::string::String;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::collections::HashMap;

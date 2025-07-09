@@ -102,15 +102,19 @@ impl Protostones {
         Ok(Self { protostones })
     }
     
-    /// Convert to string format
-    pub fn to_string(&self) -> String {
-        self.protostones
+}
+
+impl core::fmt::Display for Protostones {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", self.protostones
             .iter()
             .map(|p| format!("{}:{}", p.protocol_tag, String::from_utf8_lossy(&p.message)))
             .collect::<Vec<_>>()
-            .join(",")
+            .join(","))
     }
-    
+}
+
+impl Protostones {
     /// Check if collection is empty
     pub fn is_empty(&self) -> bool {
         self.protostones.is_empty()
@@ -239,6 +243,7 @@ pub fn parse_cellpack(data: &[u8]) -> Result<Protostones> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
     
     #[test]
     fn test_protostone_creation() {

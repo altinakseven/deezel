@@ -12,7 +12,11 @@ path = "src/main.rs"
 
 [dependencies]
 deezel-common = { path = "../deezel-common" }
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { version = "1.0", features = ["full"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+tokio = { version = "1.0", features = ["macros", "rt", "sync"] }
 clap = { version = "4.0", features = ["derive"] }
 anyhow = "1.0"
 serde_json = "1.0"

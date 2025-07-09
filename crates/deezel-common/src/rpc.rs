@@ -21,14 +21,16 @@ use spin::Mutex;
 pub struct RpcConfig {
     pub bitcoin_rpc_url: String,
     pub metashrew_rpc_url: String,
+    pub sandshrew_rpc_url: String,
     pub timeout_seconds: u64,
 }
 
 impl Default for RpcConfig {
     fn default() -> Self {
         Self {
-            bitcoin_rpc_url: "http://bitcoinrpc:bitcoinrpc@localhost:18443".to_string(),
-            metashrew_rpc_url: "http://bitcoinrpc:bitcoinrpc@localhost:18443".to_string(),
+            bitcoin_rpc_url: "http://bitcoinrpc:bitcoinrpc@localhost:8332".to_string(),
+            metashrew_rpc_url: "http://localhost:8080".to_string(),
+            sandshrew_rpc_url: "http://localhost:18888".to_string(),
             timeout_seconds: 600,
         }
     }
@@ -132,6 +134,11 @@ impl<P: DeezelProvider> RpcClient<P> {
         self.call(&self.config.bitcoin_rpc_url, method, params).await
     }
     
+    /// Make a Bitcoin Core RPC call
+    pub async fn sandshrew_call(&self, method: &str, params: JsonValue) -> Result<JsonValue> {
+        self.call(&self.config.sandshrew_rpc_url, method, params).await
+    }
+
     /// Make a Metashrew RPC call
     pub async fn metashrew_call(&self, method: &str, params: JsonValue) -> Result<JsonValue> {
         self.call(&self.config.metashrew_rpc_url, method, params).await
@@ -139,7 +146,7 @@ impl<P: DeezelProvider> RpcClient<P> {
     
     /// Get current block count
     pub async fn get_block_count(&self) -> Result<u64> {
-        let result = self.bitcoin_call("getblockcount", JsonValue::Array(vec![])).await?;
+        let result = self.sandshrew_call("getblockcount", JsonValue::Array(vec![])).await?;
         result.as_u64()
             .ok_or_else(|| DeezelError::RpcError("Invalid block count response".to_string()))
     }
@@ -147,13 +154,13 @@ impl<P: DeezelProvider> RpcClient<P> {
     /// Generate blocks to address (regtest only)
     pub async fn generate_to_address(&self, nblocks: u32, address: &str) -> Result<JsonValue> {
         let params = serde_json::json!([nblocks, address]);
-        self.bitcoin_call("generatetoaddress", params).await
+        self.sandshrew_call("generatetoaddress", params).await
     }
     
     /// Get transaction hex
     pub async fn get_transaction_hex(&self, txid: &str) -> Result<String> {
         let params = serde_json::json!([txid]);
-        let result = self.bitcoin_call("getrawtransaction", params).await?;
+        let result = self.sandshrew_call("getrawtransaction", params).await?;
         result.as_str()
             .ok_or_else(|| DeezelError::RpcError("Invalid transaction hex response".to_string()))
             .map(|s| s.to_string())
@@ -161,7 +168,7 @@ impl<P: DeezelProvider> RpcClient<P> {
     
     /// Get Metashrew height
     pub async fn get_metashrew_height(&self) -> Result<u64> {
-        let result = self.metashrew_call("metashrew_height", JsonValue::Array(vec![])).await?;
+        let result = self.sandshrew_call("metashrew_height", JsonValue::Array(vec![])).await?;
         result.as_u64()
             .ok_or_else(|| DeezelError::RpcError("Invalid metashrew height response".to_string()))
     }
@@ -204,16 +211,16 @@ impl<P: DeezelProvider> RpcClient<P> {
         // Parse method to determine which endpoint to use
         if method.starts_with("esplora_") {
             // Use metashrew endpoint for Esplora calls
-            self.metashrew_call(method, params).await
+            self.sandshrew_call(method, params).await
         } else if method.starts_with("btc_") || method.starts_with("bitcoin_") {
             // Use Bitcoin RPC endpoint
             let bitcoin_method = method.strip_prefix("btc_")
                 .or_else(|| method.strip_prefix("bitcoin_"))
                 .unwrap_or(method);
-            self.bitcoin_call(bitcoin_method, params).await
+            self.sandshrew_call(bitcoin_method, params).await
         } else {
             // Default to metashrew for unknown methods
-            self.metashrew_call(method, params).await
+            self.sandshrew_call(method, params).await
         }
     }
     
@@ -320,7 +327,7 @@ impl StandaloneRpcClient {
         let body = serde_json::to_string(&request)
             .map_err(|e| DeezelError::Network(e.to_string()))?;
         
-        let mut opts = RequestInit::new();
+        let opts = RequestInit::new();
         opts.set_method("POST");
         let js_body = JsValue::from(body);
         opts.set_body(&js_body);
@@ -365,6 +372,7 @@ impl StandaloneRpcClient {
 
 #[cfg(test)]
 mod tests {
+    use alloc::{vec, vec::Vec, boxed::Box};
     use super::*;
     use async_trait::async_trait;
     
@@ -372,7 +380,7 @@ mod tests {
     #[allow(dead_code)]
     struct MockProvider;
     
-    #[async_trait]
+    #[async_trait(?Send)]
     impl JsonRpcProvider for MockProvider {
         async fn call(&self, _url: &str, method: &str, _params: JsonValue, _id: u64) -> Result<JsonValue> {
             match method {
@@ -388,7 +396,7 @@ mod tests {
     }
     
     // Implement other required traits with minimal implementations
-    #[async_trait]
+    #[async_trait(?Send)]
     impl StorageProvider for MockProvider {
         async fn read(&self, _key: &str) -> Result<Vec<u8>> { Ok(vec![]) }
         async fn write(&self, _key: &str, _data: &[u8]) -> Result<()> { Ok(()) }
@@ -398,14 +406,14 @@ mod tests {
         fn storage_type(&self) -> &'static str { "mock" }
     }
     
-    #[async_trait]
+    #[async_trait(?Send)]
     impl NetworkProvider for MockProvider {
         async fn get(&self, _url: &str) -> Result<Vec<u8>> { Ok(vec![]) }
         async fn post(&self, _url: &str, _body: &[u8], _content_type: &str) -> Result<Vec<u8>> { Ok(vec![]) }
         async fn is_reachable(&self, _url: &str) -> bool { true }
     }
     
-    #[async_trait]
+    #[async_trait(?Send)]
     impl CryptoProvider for MockProvider {
         fn random_bytes(&self, len: usize) -> Result<Vec<u8>> { Ok(vec![0; len]) }
         fn sha256(&self, _data: &[u8]) -> Result<[u8; 32]> { Ok([0; 32]) }

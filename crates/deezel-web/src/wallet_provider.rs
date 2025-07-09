@@ -473,6 +473,12 @@ pub struct WalletConnector {
     supported_wallets: Vec<WalletInfo>,
 }
 
+impl Default for WalletConnector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl WalletConnector {
     /// Create a new wallet connector
     pub fn new() -> Self {

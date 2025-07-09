@@ -54,7 +54,7 @@ use deezel_common::LogProvider;
 use web_sys::console;
 
 #[cfg(target_arch = "wasm32")]
-use alloc::{format, string::String, vec};
+use alloc::{format, string::String};
 /// Web logging implementation using console API
 #[derive(Clone)]
 pub struct WebLogger {
@@ -184,6 +184,7 @@ macro_rules! web_error {
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
     use super::*;
     use wasm_bindgen_test::*;
 
@@ -227,7 +228,7 @@ mod tests {
     fn test_logging_macros() {
         web_debug!("Debug message with formatting: {}", 42);
         web_info!("Info message with formatting: {}", "test");
-        web_warn!("Warning message with formatting: {:.2}", 3.14159);
+        web_warn!("Warning message with formatting: {:.2}", core::f32::consts::PI);
         web_error!("Error message with formatting: {:?}", vec![1, 2, 3]);
     }
 
