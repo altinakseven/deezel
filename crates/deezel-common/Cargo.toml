@@ -30,7 +30,8 @@ crate-type = ["cdylib", "rlib"]
 bitcoin = { workspace = true }
 ordinals = { workspace = true }
 protorune-support = { workspace = true }
-
+deezel-rpgp = { path = "../deezel-rpgp" }
+ 
 # Cryptography and wallet functionality
 secp256k1 = { workspace = true }
 bip39 = { workspace = true }
@@ -38,9 +39,9 @@ pbkdf2 = { workspace = true }
 aes-gcm = { workspace = true }
 rand = { workspace = true }
 sha2 = { workspace = true }
-
+ 
 psbt-v2 = "0.1.0"
-
+ 
 # Async runtime (WASM-compatible features only)
 futures = { workspace = true }
 

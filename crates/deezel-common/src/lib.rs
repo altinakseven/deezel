@@ -54,7 +54,8 @@ pub mod runestone_enhanced;
 pub mod transaction;
 pub mod monitor;
 pub mod utils;
-
+pub mod keystore;
+ 
 // Re-export key types and traits for convenience
 pub use traits::*;
 pub use network::NetworkParams;

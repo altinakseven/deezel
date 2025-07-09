@@ -1,0 +1,7 @@
+/target/
+**/*.rs.bk
+ios_simulator_app
+*.h
+pgp-ffi/build-stamp
+/*.asc
+*.profile
