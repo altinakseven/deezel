@@ -27,7 +27,7 @@ async fn main() -> Result<()> {
 }
 
 async fn execute_command(system: &SystemDeezel, args: Args) -> Result<()> {
-    match args.command {
+    let result = match args.command {
         deezel_common::commands::Commands::Wallet { command } => system.execute_wallet_command(command).await,
         deezel_common::commands::Commands::Walletinfo { raw } => system.execute_walletinfo_command(raw).await,
         deezel_common::commands::Commands::Bitcoind { command } => system.execute_bitcoind_command(command).await,
@@ -37,5 +37,7 @@ async fn execute_command(system: &SystemDeezel, args: Args) -> Result<()> {
         deezel_common::commands::Commands::Protorunes { command } => system.execute_protorunes_command(command).await,
         deezel_common::commands::Commands::Monitor { command } => system.execute_monitor_command(command).await,
         deezel_common::commands::Commands::Esplora { command } => system.execute_esplora_command(command).await,
-    }
+    };
+
+    result.map_err(anyhow::Error::from)
 }
