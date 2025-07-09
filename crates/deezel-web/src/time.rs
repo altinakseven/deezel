@@ -51,6 +51,7 @@ use core::pin::Pin;
 use core::task::{Context, Poll};
 #[cfg(target_arch = "wasm32")]
 use alloc::string::ToString;
+use alloc::boxed::Box;
 
 /// Web time implementation using Performance API
 #[derive(Clone)]
