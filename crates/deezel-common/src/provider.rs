@@ -124,8 +124,14 @@ impl TimeProvider for ConcreteProvider {
         unimplemented!()
     }
     
+    #[cfg(not(target_arch = "wasm32"))]
     fn sleep_ms(&self, _ms: u64) -> std::pin::Pin<Box<dyn core::future::Future<Output = ()> + Send>> {
         Box::pin(tokio::time::sleep(std::time::Duration::from_millis(_ms)))
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn sleep_ms(&self, _ms: u64) -> std::pin::Pin<Box<dyn core::future::Future<Output = ()>>> {
+        Box::pin(gloo_timers::future::sleep(std::time::Duration::from_millis(_ms)))
     }
 }
 

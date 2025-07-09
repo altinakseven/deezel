@@ -100,6 +100,7 @@ wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
 web-sys = "0.3"
 serde-wasm-bindgen = "0.6"
+gloo-timers = { version = "0.3.0", features = ["futures"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies.getrandom]
 version = "0.2"

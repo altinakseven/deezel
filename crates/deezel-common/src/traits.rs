@@ -960,7 +960,7 @@ impl<T: DeezelProvider + ?Sized> TimeProvider for Box<T> {
        (**self).sleep_ms(ms)
    }
    #[cfg(target_arch = "wasm32")]
-   fn sleep_ms(&self, ms: u64) -> Box<dyn core::future::Future<Output = ()>> {
+   fn sleep_ms(&self, ms: u64) -> std::pin::Pin<Box<dyn core::future::Future<Output = ()>>> {
        (**self).sleep_ms(ms)
    }
 }
