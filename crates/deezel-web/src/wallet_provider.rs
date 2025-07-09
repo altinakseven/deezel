@@ -789,7 +789,7 @@ impl TimeProvider for BrowserWalletProvider {
         self.web_provider.now_millis()
     }
     
-    fn sleep_ms(&self, ms: u64) -> impl core::future::Future<Output = ()> {
+    fn sleep_ms(&self, ms: u64) -> std::pin::Pin<Box<dyn core::future::Future<Output = ()> + Send>> {
         self.web_provider.sleep_ms(ms)
     }
 }
@@ -1364,6 +1364,10 @@ impl AlkanesProvider for BrowserWalletProvider {
     async fn get_balance(&self, address: Option<&str>) -> Result<Vec<AlkanesBalance>> {
         AlkanesProvider::get_balance(&self.web_provider, address).await
     }
+
+    async fn get_alkanes_balance(&self, address: Option<&str>) -> Result<Vec<AlkanesBalance>> {
+       self.web_provider.get_alkanes_balance(address).await
+   }
     
     async fn get_token_info(&self, alkane_id: &str) -> Result<JsonValue> {
         self.web_provider.get_token_info(alkane_id).await
@@ -1419,5 +1423,9 @@ impl DeezelProvider for BrowserWalletProvider {
     async fn shutdown(&self) -> Result<()> {
         self.info("Shutting down browser wallet provider");
         self.web_provider.shutdown().await
+    }
+
+    fn clone_box(&self) -> Box<dyn DeezelProvider> {
+        Box::new(self.clone())
     }
 }

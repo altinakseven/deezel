@@ -441,7 +441,9 @@ mod tests {
     impl TimeProvider for MockProvider {
         fn now_secs(&self) -> u64 { 1640995200 }
         fn now_millis(&self) -> u64 { 1640995200000 }
-        async fn sleep_ms(&self, _ms: u64) {}
+        fn sleep_ms(&self, _ms: u64) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
+            Box::pin(async {})
+        }
     }
     
     impl LogProvider for MockProvider {

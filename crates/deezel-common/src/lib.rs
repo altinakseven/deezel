@@ -42,6 +42,7 @@ use std::{
 };
 
 // Core modules
+pub mod commands;
 pub mod traits;
 pub mod network;
 pub mod rpc;
@@ -195,6 +196,13 @@ impl From<bitcoin::consensus::encode::Error> for DeezelError {
 impl From<bitcoin::blockdata::transaction::ParseOutPointError> for DeezelError {
     fn from(err: bitcoin::blockdata::transaction::ParseOutPointError) -> Self {
         DeezelError::Transaction(err.to_string())
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl From<std::io::Error> for DeezelError {
+    fn from(err: std::io::Error) -> Self {
+        DeezelError::Io(err.to_string())
     }
 }
 

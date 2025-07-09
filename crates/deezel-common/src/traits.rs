@@ -129,9 +129,9 @@ pub trait TimeProvider {
     
     /// Sleep for the specified duration (in milliseconds)
     #[cfg(not(target_arch = "wasm32"))]
-    fn sleep_ms(&self, ms: u64) -> impl std::future::Future<Output = ()> + Send;
+    fn sleep_ms(&self, ms: u64) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>;
     #[cfg(target_arch = "wasm32")]
-    fn sleep_ms(&self, ms: u64) -> impl core::future::Future<Output = ()>;
+    fn sleep_ms(&self, ms: u64) -> std::pin::Pin<Box<dyn core::future::Future<Output = ()>>>;
 }
 
 /// Trait for logging operations
@@ -344,6 +344,7 @@ pub struct NetworkParams {
     pub bech32_hrp: String,
 }
 
+
 /// Trait for address resolution
 #[async_trait(?Send)]
 pub trait AddressResolver {
@@ -531,6 +532,8 @@ pub trait AlkanesProvider {
     
     /// Get alkanes balance
     async fn get_balance(&self, address: Option<&str>) -> Result<Vec<AlkanesBalance>>;
+
+    async fn get_alkanes_balance(&self, address: Option<&str>) -> Result<Vec<AlkanesBalance>>;
     
     /// Get token information
     async fn get_token_info(&self, alkane_id: &str) -> Result<JsonValue>;
@@ -857,15 +860,500 @@ pub trait DeezelProvider:
     EsploraProvider +
     RunestoneProvider +
     AlkanesProvider +
-    MonitorProvider +
-    Clone
+    MonitorProvider
 {
     /// Get provider name/type
     fn provider_name(&self) -> &str;
+
+    /// Create a boxed, clonable version of the provider
+    fn clone_box(&self) -> Box<dyn DeezelProvider>;
     
     /// Initialize the provider
     async fn initialize(&self) -> Result<()>;
     
     /// Shutdown the provider
     async fn shutdown(&self) -> Result<()>;
+}
+
+impl Clone for Box<dyn DeezelProvider> {
+   fn clone(&self) -> Self {
+       self.clone_box()
+   }
+}
+
+#[async_trait(?Send)]
+impl<T: DeezelProvider + ?Sized> JsonRpcProvider for Box<T> {
+   async fn call(&self, url: &str, method: &str, params: serde_json::Value, id: u64) -> Result<serde_json::Value> {
+       (**self).call(url, method, params, id).await
+   }
+   async fn get_bytecode(&self, block: &str, tx: &str) -> Result<String> {
+       <Self as JsonRpcProvider>::get_bytecode(self, block, tx).await
+   }
+}
+
+#[async_trait(?Send)]
+impl<T: DeezelProvider + ?Sized> StorageProvider for Box<T> {
+   async fn read(&self, key: &str) -> Result<Vec<u8>> {
+       (**self).read(key).await
+   }
+   async fn write(&self, key: &str, data: &[u8]) -> Result<()> {
+       (**self).write(key, data).await
+   }
+   async fn exists(&self, key: &str) -> Result<bool> {
+       (**self).exists(key).await
+   }
+   async fn delete(&self, key: &str) -> Result<()> {
+       (**self).delete(key).await
+   }
+   async fn list_keys(&self, prefix: &str) -> Result<Vec<String>> {
+       (**self).list_keys(prefix).await
+   }
+   fn storage_type(&self) -> &'static str {
+       (**self).storage_type()
+   }
+}
+
+#[async_trait(?Send)]
+impl<T: DeezelProvider + ?Sized> NetworkProvider for Box<T> {
+   async fn get(&self, url: &str) -> Result<Vec<u8>> {
+       (**self).get(url).await
+   }
+   async fn post(&self, url: &str, body: &[u8], content_type: &str) -> Result<Vec<u8>> {
+       (**self).post(url, body, content_type).await
+   }
+   async fn is_reachable(&self, url: &str) -> bool {
+       (**self).is_reachable(url).await
+   }
+}
+
+#[async_trait(?Send)]
+impl<T: DeezelProvider + ?Sized> CryptoProvider for Box<T> {
+   fn random_bytes(&self, len: usize) -> Result<Vec<u8>> {
+       (**self).random_bytes(len)
+   }
+   fn sha256(&self, data: &[u8]) -> Result<[u8; 32]> {
+       (**self).sha256(data)
+   }
+   fn sha3_256(&self, data: &[u8]) -> Result<[u8; 32]> {
+       (**self).sha3_256(data)
+   }
+   async fn encrypt_aes_gcm(&self, data: &[u8], key: &[u8], nonce: &[u8]) -> Result<Vec<u8>> {
+       (**self).encrypt_aes_gcm(data, key, nonce).await
+   }
+   async fn decrypt_aes_gcm(&self, data: &[u8], key: &[u8], nonce: &[u8]) -> Result<Vec<u8>> {
+       (**self).decrypt_aes_gcm(data, key, nonce).await
+   }
+   async fn pbkdf2_derive(&self, password: &[u8], salt: &[u8], iterations: u32, key_len: usize) -> Result<Vec<u8>> {
+       (**self).pbkdf2_derive(password, salt, iterations, key_len).await
+   }
+}
+
+impl<T: DeezelProvider + ?Sized> TimeProvider for Box<T> {
+   fn now_secs(&self) -> u64 {
+       (**self).now_secs()
+   }
+   fn now_millis(&self) -> u64 {
+       (**self).now_millis()
+   }
+   #[cfg(not(target_arch = "wasm32"))]
+   fn sleep_ms(&self, ms: u64) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
+       (**self).sleep_ms(ms)
+   }
+   #[cfg(target_arch = "wasm32")]
+   fn sleep_ms(&self, ms: u64) -> Box<dyn core::future::Future<Output = ()>> {
+       (**self).sleep_ms(ms)
+   }
+}
+
+impl<T: DeezelProvider + ?Sized> LogProvider for Box<T> {
+   fn debug(&self, message: &str) {
+       (**self).debug(message)
+   }
+   fn info(&self, message: &str) {
+       (**self).info(message)
+   }
+   fn warn(&self, message: &str) {
+       (**self).warn(message)
+   }
+   fn error(&self, message: &str) {
+       (**self).error(message)
+   }
+}
+
+#[async_trait(?Send)]
+impl<T: DeezelProvider + ?Sized> WalletProvider for Box<T> {
+   async fn create_wallet(&self, config: WalletConfig, mnemonic: Option<String>, passphrase: Option<String>) -> Result<WalletInfo> {
+       (**self).create_wallet(config, mnemonic, passphrase).await
+   }
+   async fn load_wallet(&self, config: WalletConfig, passphrase: Option<String>) -> Result<WalletInfo> {
+       (**self).load_wallet(config, passphrase).await
+   }
+   async fn get_balance(&self) -> Result<WalletBalance> {
+       <Self as WalletProvider>::get_balance(self).await
+   }
+   async fn get_address(&self) -> Result<String> {
+       <Self as WalletProvider>::get_address(self).await
+   }
+   async fn get_addresses(&self, count: u32) -> Result<Vec<AddressInfo>> {
+       (**self).get_addresses(count).await
+   }
+   async fn send(&self, params: SendParams) -> Result<String> {
+       (**self).send(params).await
+   }
+   async fn get_utxos(&self, include_frozen: bool, addresses: Option<Vec<String>>) -> Result<Vec<UtxoInfo>> {
+       (**self).get_utxos(include_frozen, addresses).await
+   }
+   async fn get_history(&self, count: u32, address: Option<String>) -> Result<Vec<TransactionInfo>> {
+       (**self).get_history(count, address).await
+   }
+   async fn freeze_utxo(&self, utxo: String, reason: Option<String>) -> Result<()> {
+       (**self).freeze_utxo(utxo, reason).await
+   }
+   async fn unfreeze_utxo(&self, utxo: String) -> Result<()> {
+       (**self).unfreeze_utxo(utxo).await
+   }
+   async fn create_transaction(&self, params: SendParams) -> Result<String> {
+       (**self).create_transaction(params).await
+   }
+   async fn sign_transaction(&self, tx_hex: String) -> Result<String> {
+       (**self).sign_transaction(tx_hex).await
+   }
+   async fn broadcast_transaction(&self, tx_hex: String) -> Result<String> {
+       (**self).broadcast_transaction(tx_hex).await
+   }
+   async fn estimate_fee(&self, target: u32) -> Result<FeeEstimate> {
+       (**self).estimate_fee(target).await
+   }
+   async fn get_fee_rates(&self) -> Result<FeeRates> {
+       (**self).get_fee_rates().await
+   }
+   async fn sync(&self) -> Result<()> {
+       (**self).sync().await
+   }
+   async fn backup(&self) -> Result<String> {
+       (**self).backup().await
+   }
+   async fn get_mnemonic(&self) -> Result<Option<String>> {
+       (**self).get_mnemonic().await
+   }
+   fn get_network(&self) -> bitcoin::Network {
+       (**self).get_network()
+   }
+   async fn get_internal_key(&self) -> Result<bitcoin::XOnlyPublicKey> {
+       (**self).get_internal_key().await
+   }
+   async fn sign_psbt(&self, psbt: &bitcoin::psbt::Psbt) -> Result<bitcoin::psbt::Psbt> {
+       (**self).sign_psbt(psbt).await
+   }
+   async fn get_keypair(&self) -> Result<bitcoin::secp256k1::Keypair> {
+       (**self).get_keypair().await
+   }
+}
+
+#[async_trait(?Send)]
+impl<T: DeezelProvider + ?Sized> AddressResolver for Box<T> {
+   async fn resolve_all_identifiers(&self, input: &str) -> Result<String> {
+       (**self).resolve_all_identifiers(input).await
+   }
+   fn contains_identifiers(&self, input: &str) -> bool {
+       (**self).contains_identifiers(input)
+   }
+   async fn get_address(&self, address_type: &str, index: u32) -> Result<String> {
+       <Self as AddressResolver>::get_address(self, address_type, index).await
+   }
+   async fn list_identifiers(&self) -> Result<Vec<String>> {
+       (**self).list_identifiers().await
+   }
+}
+
+#[async_trait(?Send)]
+impl<T: DeezelProvider + ?Sized> BitcoinRpcProvider for Box<T> {
+   async fn get_block_count(&self) -> Result<u64> {
+       (**self).get_block_count().await
+   }
+   async fn generate_to_address(&self, nblocks: u32, address: &str) -> Result<serde_json::Value> {
+       (**self).generate_to_address(nblocks, address).await
+   }
+   async fn get_transaction_hex(&self, txid: &str) -> Result<String> {
+       (**self).get_transaction_hex(txid).await
+   }
+   async fn get_block(&self, hash: &str) -> Result<serde_json::Value> {
+       <Self as BitcoinRpcProvider>::get_block(self, hash).await
+   }
+   async fn get_block_hash(&self, height: u64) -> Result<String> {
+       (**self).get_block_hash(height).await
+   }
+   async fn send_raw_transaction(&self, tx_hex: &str) -> Result<String> {
+       (**self).send_raw_transaction(tx_hex).await
+   }
+   async fn get_mempool_info(&self) -> Result<serde_json::Value> {
+       (**self).get_mempool_info().await
+   }
+   async fn estimate_smart_fee(&self, target: u32) -> Result<serde_json::Value> {
+       (**self).estimate_smart_fee(target).await
+   }
+   async fn get_esplora_blocks_tip_height(&self) -> Result<u64> {
+       (**self).get_esplora_blocks_tip_height().await
+   }
+   async fn trace_transaction(&self, txid: &str, vout: u32, block: Option<&str>, tx: Option<&str>) -> Result<serde_json::Value> {
+       (**self).trace_transaction(txid, vout, block, tx).await
+   }
+}
+
+#[async_trait(?Send)]
+impl<T: DeezelProvider + ?Sized> MetashrewRpcProvider for Box<T> {
+   async fn get_metashrew_height(&self) -> Result<u64> {
+       (**self).get_metashrew_height().await
+   }
+   async fn get_contract_meta(&self, block: &str, tx: &str) -> Result<serde_json::Value> {
+       (**self).get_contract_meta(block, tx).await
+   }
+   async fn trace_outpoint(&self, txid: &str, vout: u32) -> Result<serde_json::Value> {
+       (**self).trace_outpoint(txid, vout).await
+   }
+   async fn get_spendables_by_address(&self, address: &str) -> Result<serde_json::Value> {
+       (**self).get_spendables_by_address(address).await
+   }
+   async fn get_protorunes_by_address(&self, address: &str) -> Result<serde_json::Value> {
+       (**self).get_protorunes_by_address(address).await
+   }
+   async fn get_protorunes_by_outpoint(&self, txid: &str, vout: u32) -> Result<serde_json::Value> {
+       (**self).get_protorunes_by_outpoint(txid, vout).await
+   }
+}
+
+#[async_trait(?Send)]
+impl<T: DeezelProvider + ?Sized> EsploraProvider for Box<T> {
+   async fn get_blocks_tip_hash(&self) -> Result<String> {
+       (**self).get_blocks_tip_hash().await
+   }
+   async fn get_blocks_tip_height(&self) -> Result<u64> {
+       (**self).get_blocks_tip_height().await
+   }
+   async fn get_blocks(&self, start_height: Option<u64>) -> Result<serde_json::Value> {
+       (**self).get_blocks(start_height).await
+   }
+   async fn get_block_by_height(&self, height: u64) -> Result<String> {
+       (**self).get_block_by_height(height).await
+   }
+   async fn get_block(&self, hash: &str) -> Result<serde_json::Value> {
+       <Self as EsploraProvider>::get_block(self, hash).await
+   }
+   async fn get_block_status(&self, hash: &str) -> Result<serde_json::Value> {
+       (**self).get_block_status(hash).await
+   }
+   async fn get_block_txids(&self, hash: &str) -> Result<serde_json::Value> {
+       (**self).get_block_txids(hash).await
+   }
+   async fn get_block_header(&self, hash: &str) -> Result<String> {
+       (**self).get_block_header(hash).await
+   }
+   async fn get_block_raw(&self, hash: &str) -> Result<String> {
+       (**self).get_block_raw(hash).await
+   }
+   async fn get_block_txid(&self, hash: &str, index: u32) -> Result<String> {
+       (**self).get_block_txid(hash, index).await
+   }
+   async fn get_block_txs(&self, hash: &str, start_index: Option<u32>) -> Result<serde_json::Value> {
+       (**self).get_block_txs(hash, start_index).await
+   }
+   async fn get_address(&self, address: &str) -> Result<serde_json::Value> {
+       <Self as EsploraProvider>::get_address(self, address).await
+   }
+   async fn get_address_txs(&self, address: &str) -> Result<serde_json::Value> {
+       (**self).get_address_txs(address).await
+   }
+   async fn get_address_txs_chain(&self, address: &str, last_seen_txid: Option<&str>) -> Result<serde_json::Value> {
+       (**self).get_address_txs_chain(address, last_seen_txid).await
+   }
+   async fn get_address_txs_mempool(&self, address: &str) -> Result<serde_json::Value> {
+       (**self).get_address_txs_mempool(address).await
+   }
+   async fn get_address_utxo(&self, address: &str) -> Result<serde_json::Value> {
+       (**self).get_address_utxo(address).await
+   }
+   async fn get_address_prefix(&self, prefix: &str) -> Result<serde_json::Value> {
+       (**self).get_address_prefix(prefix).await
+   }
+   async fn get_tx(&self, txid: &str) -> Result<serde_json::Value> {
+       (**self).get_tx(txid).await
+   }
+   async fn get_tx_hex(&self, txid: &str) -> Result<String> {
+       (**self).get_tx_hex(txid).await
+   }
+   async fn get_tx_raw(&self, txid: &str) -> Result<String> {
+       (**self).get_tx_raw(txid).await
+   }
+   async fn get_tx_status(&self, txid: &str) -> Result<serde_json::Value> {
+       (**self).get_tx_status(txid).await
+   }
+   async fn get_tx_merkle_proof(&self, txid: &str) -> Result<serde_json::Value> {
+       (**self).get_tx_merkle_proof(txid).await
+   }
+   async fn get_tx_merkleblock_proof(&self, txid: &str) -> Result<String> {
+       (**self).get_tx_merkleblock_proof(txid).await
+   }
+   async fn get_tx_outspend(&self, txid: &str, index: u32) -> Result<serde_json::Value> {
+       (**self).get_tx_outspend(txid, index).await
+   }
+   async fn get_tx_outspends(&self, txid: &str) -> Result<serde_json::Value> {
+       (**self).get_tx_outspends(txid).await
+   }
+   async fn broadcast(&self, tx_hex: &str) -> Result<String> {
+       (**self).broadcast(tx_hex).await
+   }
+   async fn get_mempool(&self) -> Result<serde_json::Value> {
+       (**self).get_mempool().await
+   }
+   async fn get_mempool_txids(&self) -> Result<serde_json::Value> {
+       (**self).get_mempool_txids().await
+   }
+   async fn get_mempool_recent(&self) -> Result<serde_json::Value> {
+       (**self).get_mempool_recent().await
+   }
+   async fn get_fee_estimates(&self) -> Result<serde_json::Value> {
+       (**self).get_fee_estimates().await
+   }
+}
+
+#[async_trait(?Send)]
+impl<T: DeezelProvider + ?Sized> RunestoneProvider for Box<T> {
+   async fn decode_runestone(&self, tx: &bitcoin::Transaction) -> Result<serde_json::Value> {
+       (**self).decode_runestone(tx).await
+   }
+   async fn format_runestone_with_decoded_messages(&self, tx: &bitcoin::Transaction) -> Result<serde_json::Value> {
+       (**self).format_runestone_with_decoded_messages(tx).await
+   }
+   async fn analyze_runestone(&self, txid: &str) -> Result<serde_json::Value> {
+       (**self).analyze_runestone(txid).await
+   }
+}
+
+#[async_trait(?Send)]
+impl<T: DeezelProvider + ?Sized> AlkanesProvider for Box<T> {
+   async fn execute(&self, params: AlkanesExecuteParams) -> Result<AlkanesExecuteResult> {
+       (**self).execute(params).await
+   }
+   async fn get_balance(&self, address: Option<&str>) -> Result<Vec<AlkanesBalance>> {
+       <Self as AlkanesProvider>::get_balance(self, address).await
+   }
+   async fn get_alkanes_balance(&self, address: Option<&str>) -> Result<Vec<AlkanesBalance>> {
+      (**self).get_alkanes_balance(address).await
+  }
+   async fn get_token_info(&self, alkane_id: &str) -> Result<serde_json::Value> {
+       (**self).get_token_info(alkane_id).await
+   }
+   async fn trace(&self, outpoint: &str) -> Result<serde_json::Value> {
+       (**self).trace(outpoint).await
+   }
+   async fn inspect(&self, target: &str, config: AlkanesInspectConfig) -> Result<AlkanesInspectResult> {
+       (**self).inspect(target, config).await
+   }
+   async fn get_bytecode(&self, alkane_id: &str) -> Result<String> {
+       <Self as AlkanesProvider>::get_bytecode(self, alkane_id).await
+   }
+   async fn simulate(&self, contract_id: &str, params: Option<&str>) -> Result<serde_json::Value> {
+       (**self).simulate(contract_id, params).await
+   }
+}
+
+#[async_trait(?Send)]
+impl<T: DeezelProvider + ?Sized> MonitorProvider for Box<T> {
+   async fn monitor_blocks(&self, start: Option<u64>) -> Result<()> {
+       (**self).monitor_blocks(start).await
+   }
+   async fn get_block_events(&self, height: u64) -> Result<Vec<BlockEvent>> {
+       (**self).get_block_events(height).await
+   }
+}
+
+#[async_trait(?Send)]
+impl<T: DeezelProvider + ?Sized> DeezelProvider for Box<T> {
+   fn provider_name(&self) -> &str {
+       (**self).provider_name()
+   }
+   fn clone_box(&self) -> Box<dyn DeezelProvider> {
+       (**self).clone_box()
+   }
+   async fn initialize(&self) -> Result<()> {
+       (**self).initialize().await
+   }
+   async fn shutdown(&self) -> Result<()> {
+       (**self).shutdown().await
+   }
+}
+
+/// Trait for system-level wallet operations, corresponding to CLI commands
+#[async_trait(?Send)]
+pub trait SystemWallet {
+   /// Execute a wallet command
+   async fn execute_wallet_command(&self, command: crate::commands::WalletCommands) -> Result<()>;
+   /// Execute the legacy walletinfo command
+   async fn execute_walletinfo_command(&self, raw: bool) -> Result<()>;
+}
+
+/// Trait for system-level Bitcoin Core RPC operations
+#[async_trait(?Send)]
+pub trait SystemBitcoind {
+   /// Execute a bitcoind command
+   async fn execute_bitcoind_command(&self, command: crate::commands::BitcoindCommands) -> Result<()>;
+}
+
+/// Trait for system-level Metashrew RPC operations
+#[async_trait(?Send)]
+pub trait SystemMetashrew {
+   /// Execute a metashrew command
+   async fn execute_metashrew_command(&self, command: crate::commands::MetashrewCommands) -> Result<()>;
+}
+
+/// Trait for system-level Alkanes operations
+#[async_trait(?Send)]
+pub trait SystemAlkanes {
+   /// Execute an alkanes command
+   async fn execute_alkanes_command(&self, command: crate::commands::AlkanesCommands) -> Result<()>;
+}
+
+/// Trait for system-level Runestone operations
+#[async_trait(?Send)]
+pub trait SystemRunestone {
+   /// Execute a runestone command
+   async fn execute_runestone_command(&self, command: crate::commands::RunestoneCommands) -> Result<()>;
+}
+
+/// Trait for system-level Protorunes operations
+#[async_trait(?Send)]
+pub trait SystemProtorunes {
+   /// Execute a protorunes command
+   async fn execute_protorunes_command(&self, command: crate::commands::ProtorunesCommands) -> Result<()>;
+}
+
+/// Trait for system-level monitoring operations
+#[async_trait(?Send)]
+pub trait SystemMonitor {
+   /// Execute a monitor command
+   async fn execute_monitor_command(&self, command: crate::commands::MonitorCommands) -> Result<()>;
+}
+
+/// Trait for system-level Esplora operations
+#[async_trait(?Send)]
+pub trait SystemEsplora {
+   /// Execute an esplora command
+   async fn execute_esplora_command(&self, command: crate::commands::EsploraCommands) -> Result<()>;
+}
+
+/// Combined system trait that includes all system-level functionality
+#[async_trait(?Send)]
+pub trait System:
+   SystemWallet +
+   SystemBitcoind +
+   SystemMetashrew +
+   SystemAlkanes +
+   SystemRunestone +
+   SystemProtorunes +
+   SystemMonitor +
+   SystemEsplora +
+   Send + Sync
+{
+   /// Get the underlying provider
+   fn provider(&self) -> &dyn DeezelProvider;
 }

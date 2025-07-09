@@ -87,8 +87,8 @@ impl<P: DeezelProvider> AlkanesManager<P> {
     
     /// Create alkanes inspector
     #[cfg(feature = "wasm-inspection")]
-    pub fn create_inspector(&self) -> AlkaneInspector<P> {
-        AlkaneInspector::new(self.provider.clone())
+    pub fn create_inspector(&self) -> AlkaneInspector<Box<dyn DeezelProvider>> {
+        AlkaneInspector::new(self.provider.clone_box())
     }
 }
 

@@ -457,7 +457,9 @@ impl CryptoProvider for StandaloneAddressResolver {
 impl TimeProvider for StandaloneAddressResolver {
     fn now_secs(&self) -> u64 { 0 }
     fn now_millis(&self) -> u64 { 0 }
-    async fn sleep_ms(&self, _ms: u64) {}
+   fn sleep_ms(&self, _ms: u64) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
+       Box::pin(tokio::time::sleep(std::time::Duration::from_millis(_ms)))
+   }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -729,6 +731,9 @@ impl AlkanesProvider for StandaloneAddressResolver {
     async fn get_balance(&self, _address: Option<&str>) -> Result<Vec<AlkanesBalance>> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
     }
+    async fn get_alkanes_balance(&self, _address: Option<&str>) -> Result<Vec<AlkanesBalance>> {
+       Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
+   }
     async fn get_token_info(&self, _alkane_id: &str) -> Result<serde_json::Value> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
     }
@@ -775,5 +780,8 @@ impl DeezelProvider for StandaloneAddressResolver {
     }
     async fn initialize(&self) -> Result<()> { Ok(()) }
     async fn shutdown(&self) -> Result<()> { Ok(()) }
+    fn clone_box(&self) -> Box<dyn DeezelProvider> {
+        Box::new(self.clone())
+    }
     }
 }

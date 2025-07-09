@@ -10,7 +10,7 @@ use bitcoin::Network;
 async fn test_rebar_flag_validation() {
     // Test that rebar flag is only allowed on mainnet
     let params_mainnet = AlkanesExecuteParams {
-        inputs: "B:1000".to_string(),
+        inputs: Some("B:1000".to_string()),
         to: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4".to_string(),
         change: None,
         fee_rate: Some(10.0),
@@ -26,7 +26,7 @@ async fn test_rebar_flag_validation() {
     assert!(params_mainnet.rebar);
 
     let params_testnet = AlkanesExecuteParams {
-        inputs: "B:1000".to_string(),
+        inputs: Some("B:1000".to_string()),
         to: "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx".to_string(),
         change: None,
         fee_rate: Some(10.0),
@@ -46,7 +46,7 @@ async fn test_rebar_flag_validation() {
 async fn test_rebar_params_structure() {
     // Test that AlkanesExecuteParams includes rebar field
     let params = AlkanesExecuteParams {
-        inputs: "B:1000".to_string(),
+        inputs: Some("B:1000".to_string()),
         to: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4".to_string(),
         change: None,
         fee_rate: Some(10.0),

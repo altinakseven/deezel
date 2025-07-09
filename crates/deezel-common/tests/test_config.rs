@@ -84,7 +84,7 @@ pub mod test_utils {
     /// Generate test alkanes execute parameters
     pub fn test_alkanes_params() -> AlkanesExecuteParams {
         AlkanesExecuteParams {
-            inputs: "B:100000".to_string(),
+            inputs: Some("B:100000".to_string()),
             to: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4".to_string(),
             change: None,
             fee_rate: Some(10.0),

@@ -119,7 +119,8 @@ impl<P: DeezelProvider> BlockMonitor<P> {
             }
             
             // Sleep for the configured interval
-            self.provider.sleep_ms(self.config.poll_interval_ms).await;
+            let sleep_fut = self.provider.sleep_ms(self.config.poll_interval_ms);
+            Box::pin(sleep_fut).await;
         }
         
         Ok(())

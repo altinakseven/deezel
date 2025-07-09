@@ -127,8 +127,8 @@ impl TimeProvider for MockProvider {
         1640995200000
     }
     
-    async fn sleep_ms(&self, _ms: u64) {
-        // No-op for tests
+    fn sleep_ms(&self, _ms: u64) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
+        Box::pin(async {})
     }
 }
 
@@ -541,6 +541,15 @@ impl AlkanesProvider for MockProvider {
     async fn get_token_info(&self, _alkane_id: &str) -> Result<JsonValue> {
         Ok(serde_json::json!({"name": "Test Token", "symbol": "TEST"}))
     }
+
+    async fn get_alkanes_balance(&self, _address: Option<&str>) -> Result<Vec<AlkanesBalance>> {
+        Ok(vec![AlkanesBalance {
+            name: "Test Token".to_string(),
+            symbol: "TEST".to_string(),
+            balance: 1000000,
+            alkane_id: AlkaneId { block: 800000, tx: 1 },
+        }])
+    }
     
     async fn trace(&self, _outpoint: &str) -> Result<JsonValue> {
         Ok(serde_json::json!({"trace": "mock_trace"}))
@@ -594,6 +603,10 @@ impl DeezelProvider for MockProvider {
     
     async fn shutdown(&self) -> Result<()> {
         Ok(())
+    }
+
+    fn clone_box(&self) -> Box<dyn DeezelProvider> {
+        Box::new(self.clone())
     }
 }
 

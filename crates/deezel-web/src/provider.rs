@@ -467,7 +467,7 @@ impl TimeProvider for WebProvider {
         self.time.now_millis()
     }
 
-    fn sleep_ms(&self, ms: u64) -> impl core::future::Future<Output = ()> {
+    fn sleep_ms(&self, ms: u64) -> std::pin::Pin<Box<dyn core::future::Future<Output = ()> + Send>> {
         self.time.sleep_ms(ms)
     }
 }

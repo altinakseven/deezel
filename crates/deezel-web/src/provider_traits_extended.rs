@@ -210,6 +210,16 @@ impl AlkanesProvider for WebProvider {
         self.call(self.sandshrew_rpc_url(), "alkanes_token_info", serde_json::json!([alkane_id]), 1).await
     }
 
+    async fn get_alkanes_balance(&self, address: Option<&str>) -> Result<Vec<AlkanesBalance>> {
+       let params = if let Some(addr) = address {
+           serde_json::json!([addr])
+       } else {
+           serde_json::json!([])
+       };
+       let result = self.call(self.sandshrew_rpc_url(), "alkanes_balance", params, 1).await?;
+       serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
+   }
+
     async fn trace(&self, outpoint: &str) -> Result<JsonValue> {
         self.call(self.sandshrew_rpc_url(), "alkanes_trace", serde_json::json!([outpoint]), 1).await
     }
@@ -266,5 +276,9 @@ impl DeezelProvider for WebProvider {
     async fn shutdown(&self) -> Result<()> {
         // No-op for web provider
         Ok(())
+    }
+
+    fn clone_box(&self) -> Box<dyn DeezelProvider> {
+        Box::new(self.clone())
     }
 }
