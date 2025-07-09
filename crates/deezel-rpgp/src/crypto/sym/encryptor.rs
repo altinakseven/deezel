@@ -1,4 +1,6 @@
+extern crate alloc;
 use aes::{Aes128, Aes192, Aes256};
+use alloc::vec;
 use blowfish::Blowfish;
 use bytes::{Buf, Bytes, BytesMut};
 use camellia::{Camellia128, Camellia192, Camellia256};
@@ -22,7 +24,7 @@ use crate::{
 #[allow(clippy::large_enum_variant)]
 pub enum StreamEncryptor<R>
 where
-    R: std::io::Read,
+    R: crate::io::Read,
 {
     Idea(StreamEncryptorInner<Idea, R>),
     TripleDes(StreamEncryptorInner<TdesEde3, R>),
@@ -37,7 +39,7 @@ where
     Camellia256(StreamEncryptorInner<Camellia256, R>),
 }
 
-impl<R: std::io::Read> StreamEncryptor<R> {
+impl<R: crate::io::Read> StreamEncryptor<R> {
     pub fn new<B: Rng + CryptoRng>(
         rng: B,
         alg: SymmetricKeyAlgorithm,
@@ -88,11 +90,11 @@ impl<R: std::io::Read> StreamEncryptor<R> {
     }
 }
 
-impl<R> std::io::Read for StreamEncryptor<R>
+impl<R> crate::io::Read for StreamEncryptor<R>
 where
-    R: std::io::Read,
+    R: crate::io::Read,
 {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+    fn read(&mut self, buf: &mut [u8]) -> crate::io::Result<usize> {
         match self {
             Self::Idea(ref mut i) => i.read(buf),
             Self::TripleDes(ref mut i) => i.read(buf),
@@ -114,7 +116,7 @@ pub enum StreamEncryptorInner<M, R>
 where
     M: BlockDecrypt + BlockEncryptMut + BlockCipher,
     BufEncryptor<M>: KeyIvInit,
-    R: std::io::Read,
+    R: crate::io::Read,
 {
     Prefix {
         // We use regular sha1 for MDC, not sha1_checked. Collisions are not currently a concern with MDC.
@@ -143,7 +145,7 @@ impl<M, R> StreamEncryptorInner<M, R>
 where
     M: BlockDecrypt + BlockEncryptMut + BlockCipher,
     BufEncryptor<M>: KeyIvInit,
-    R: std::io::Read,
+    R: crate::io::Read,
 {
     fn new<RAND>(mut rng: RAND, source: R, key: &[u8]) -> Result<Self>
     where
@@ -187,14 +189,14 @@ where
     }
 }
 
-impl<M, R> std::io::Read for StreamEncryptorInner<M, R>
+impl<M, R> crate::io::Read for StreamEncryptorInner<M, R>
 where
     M: BlockDecrypt + BlockEncryptMut + BlockCipher,
     BufEncryptor<M>: KeyIvInit,
-    R: std::io::Read,
+    R: crate::io::Read,
 {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        match std::mem::replace(self, Self::Unknown) {
+    fn read(&mut self, buf: &mut [u8]) -> crate::io::Result<usize> {
+        match core::mem::replace(self, Self::Unknown) {
             Self::Prefix {
                 mut hasher,
                 mut encryptor,

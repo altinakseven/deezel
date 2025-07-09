@@ -1,6 +1,6 @@
 extern crate alloc;
 use crate::io::{self, BufRead, Read};
-use alloc::vec::Vec;
+use alloc::{vec, vec::Vec};
 use core::mem;
 
 use aes::{Aes128, Aes192, Aes256};

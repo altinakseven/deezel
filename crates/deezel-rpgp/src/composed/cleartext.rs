@@ -2,6 +2,7 @@
 
 use alloc::{
     boxed::Box,
+    format,
     string::{String, ToString},
     vec,
     vec::Vec,
@@ -198,11 +199,11 @@ impl CleartextSignedMessage {
         // Cleartext Body
         let (csf_encoded_text, prefix) = read_cleartext_body(&mut b)?;
         
-        // This needs to be refactored to not use std::io::Cursor
-        // let b = std::io::Cursor::new(prefix).chain(b);
+        // This needs to be refactored to not use crate::io::Cursor
+        // let b = crate::io::Cursor::new(prefix).chain(b);
 
         // Signatures
-        // This needs to be refactored to not use std::io
+        // This needs to be refactored to not use crate::io
         let signatures = Vec::new();
 
         Ok((
@@ -325,7 +326,7 @@ fn dash_unescape_and_trim(text: &str) -> String {
 
 /// Does the remaining buffer contain any non-whitespace characters?
 fn has_rest(mut b: &[u8]) -> Result<bool> {
-    // This function needs to be refactored to not use std::io
+    // This function needs to be refactored to not use crate::io
     Ok(false)
 }
 
@@ -335,7 +336,7 @@ fn read_cleartext_body(b: &mut &[u8]) -> Result<(String, String)> {
     let mut out = String::new();
 
     loop {
-        // This function needs to be refactored to not use std::io
+        // This function needs to be refactored to not use crate::io
         return Ok((out, String::new()));
     }
 }

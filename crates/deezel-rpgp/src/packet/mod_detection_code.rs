@@ -1,4 +1,4 @@
-use std::io::{self, BufRead};
+use crate::io::{BufRead, Write};
 
 use crate::{
     errors::Result,
@@ -40,7 +40,7 @@ impl ModDetectionCode {
 }
 
 impl Serialize for ModDetectionCode {
-    fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
         writer.write_all(&self.hash[..])?;
         Ok(())
     }

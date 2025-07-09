@@ -1,3 +1,5 @@
+extern crate alloc;
+use alloc::{format, vec, vec::Vec};
 pub use dsa::KeySize;
 use dsa::{Components, Signature, SigningKey};
 use num_bigint::BigUint;
@@ -73,7 +75,7 @@ impl SecretKey {
 }
 
 impl Serialize for SecretKey {
-    fn to_writer<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: crate::io::Write>(&self, writer: &mut W) -> Result<()> {
         self.to_mpi().to_writer(writer)?;
 
         Ok(())

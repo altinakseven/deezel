@@ -1,7 +1,16 @@
 //! Parsing functions to parse data using [Buf].
 
+extern crate alloc;
+
+use alloc::{
+    string::{String, ToString},
+    vec::Vec,
+};
 use bytes::{Buf, Bytes};
-use snafu::{Backtrace, Snafu};
+use snafu::Snafu;
+
+#[cfg(feature = "std")]
+use snafu::Backtrace;
 
 /// Parsing errors
 #[derive(Debug, Snafu)]
@@ -10,7 +19,7 @@ pub enum Error {
     TooShort {
         typ: Typ,
         context: &'static str,
-        #[snafu(backtrace)]
+        #[cfg_attr(feature = "std", snafu(backtrace))]
         source: RemainingError,
     },
     #[snafu(display("expected {}, found {}", debug_bytes(expected), debug_bytes(&found[..])))]
@@ -18,13 +27,19 @@ pub enum Error {
         expected: Vec<u8>,
         found: Bytes,
         context: &'static str,
+        #[cfg(feature = "std")]
         backtrace: Option<Backtrace>,
+        #[cfg(not(feature = "std"))]
+        backtrace: (),
     },
     #[snafu(transparent)]
     UnexpectedEof {
-        source: std::io::Error,
+        source: crate::io::Error,
+        #[cfg(feature = "std")]
         #[snafu(backtrace)]
         backtrace: Option<Backtrace>,
+        #[cfg(not(feature = "std"))]
+        backtrace: (),
     },
 }
 
@@ -40,7 +55,7 @@ impl Error {
 }
 
 fn debug_bytes(b: &[u8]) -> String {
-    if let Ok(s) = std::str::from_utf8(b) {
+    if let Ok(s) = core::str::from_utf8(b) {
         return s.to_string();
     }
     hex::encode(b)
@@ -51,7 +66,10 @@ fn debug_bytes(b: &[u8]) -> String {
 pub struct RemainingError {
     pub needed: usize,
     pub remaining: usize,
+    #[cfg(feature = "std")]
     backtrace: Option<Backtrace>,
+    #[cfg(not(feature = "std"))]
+    backtrace: (),
 }
 
 #[derive(Debug)]
@@ -94,7 +112,10 @@ pub trait BufParsing: Buf + Sized {
             return Err(RemainingError {
                 needed: size,
                 remaining: self.remaining(),
+                #[cfg(feature = "std")]
                 backtrace: snafu::GenerateImplicitData::generate(),
+                #[cfg(not(feature = "std"))]
+                backtrace: (),
             });
         }
 

@@ -95,11 +95,11 @@ impl<R: Read> StreamEncryptor<R> {
     }
 
     fn fill_buffer(&mut self) -> Result<(), Error> {
-        // This function needs to be refactored to not use std::io
+        // This function needs to be refactored to not use crate::io
         Ok(())
     }
 }
 
 impl<R: Read> Read for StreamEncryptor<R> {
-    // This function needs to be refactored to not use std::io
+    // This function needs to be refactored to not use crate::io
 }

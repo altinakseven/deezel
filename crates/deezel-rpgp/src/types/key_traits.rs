@@ -31,7 +31,7 @@ pub trait Imprint {
     fn imprint<D: KnownDigest>(&self) -> Result<generic_array::GenericArray<u8, D::OutputSize>>;
 }
 
-pub trait PublicKeyTrait: KeyDetails + std::fmt::Debug {
+pub trait PublicKeyTrait: KeyDetails + core::fmt::Debug {
     fn created_at(&self) -> &chrono::DateTime<chrono::Utc>;
     fn expiration(&self) -> Option<u16>;
 
@@ -139,7 +139,7 @@ impl SecretKeyTrait for Box<&dyn SecretKeyTrait> {
     }
 }
 
-pub trait SecretKeyTrait: KeyDetails + std::fmt::Debug {
+pub trait SecretKeyTrait: KeyDetails + core::fmt::Debug {
     fn create_signature(
         &self,
         key_pw: &Password,

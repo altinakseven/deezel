@@ -1,4 +1,4 @@
-use std::io::BufRead;
+use crate::io::BufRead;
 
 use byteorder::{BigEndian, WriteBytesExt};
 use bytes::Bytes;
@@ -199,7 +199,7 @@ impl SubpacketLength {
 }
 
 impl Serialize for SubpacketLength {
-    fn to_writer<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: crate::io::Write>(&self, writer: &mut W) -> Result<()> {
         match self {
             Self::One(l) => {
                 debug_assert!(*l < 192, "Inconsistent SubpacketLength::One");

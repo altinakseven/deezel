@@ -1,4 +1,4 @@
-use std::io::{self, BufRead};
+use crate::io::{BufRead, Write};
 
 use byteorder::WriteBytesExt;
 use bytes::Bytes;
@@ -72,7 +72,7 @@ pub enum EcdhPublicParams {
 }
 
 impl Serialize for EcdhPublicParams {
-    fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
         let oid = self.curve().oid();
         writer.write_u8(oid.len().try_into()?)?;
         writer.write_all(&oid)?;

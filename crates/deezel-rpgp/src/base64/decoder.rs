@@ -45,7 +45,7 @@ impl<R: Read> Base64Decoder<R> {
 }
 
 impl<R: Read> Read for Base64Decoder<R> {
-    // This function needs to be refactored to not use std::io
+    // This function needs to be refactored to not use crate::io
 }
 
 /// Tries to decode as much of the given slice as possible.

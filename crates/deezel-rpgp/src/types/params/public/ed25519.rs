@@ -1,4 +1,4 @@
-use std::io::{self, BufRead};
+use crate::io::{BufRead, Write};
 
 use crate::{errors::Result, parsing_reader::BufReadParsing, ser::Serialize};
 
@@ -25,7 +25,7 @@ impl Ed25519PublicParams {
 }
 
 impl Serialize for Ed25519PublicParams {
-    fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
         writer.write_all(&self.key.as_bytes()[..])?;
         Ok(())
     }

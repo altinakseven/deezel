@@ -1,5 +1,7 @@
-use std::{io, io::Write};
-
+extern crate alloc;
+use crate::io::{self, Write};
+use alloc::vec;
+use alloc::vec::Vec;
 use byteorder::WriteBytesExt;
 use bytes::{Buf, Bytes, BytesMut};
 use digest::Digest;

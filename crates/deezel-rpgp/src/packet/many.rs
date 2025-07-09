@@ -6,9 +6,7 @@ use crate::{
     packet::{Packet, PacketHeader},
 };
 
-// This will be replaced with a no_std compatible trait
-pub trait BufRead {}
-impl BufRead for &[u8] {}
+use crate::io::BufRead;
 
 pub struct PacketParser<R: BufRead> {
     /// The reader that gets advanced through the original source
@@ -31,7 +29,7 @@ impl<R: BufRead> PacketParser<R> {
 }
 
 impl<'a, R: BufRead> Iterator for PacketParser<R> {
-    type Item = Result<Packet<'a>>;
+    type Item = Result<Packet>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.is_done {
@@ -42,10 +40,9 @@ impl<'a, R: BufRead> Iterator for PacketParser<R> {
             Ok(header) => header,
             Err(err) => {
                 self.is_done = true;
-                // This needs to be refactored to not use std::io::ErrorKind
-                // if err.kind() == std::io::ErrorKind::UnexpectedEof {
-                //     return None;
-                // }
+                if err.kind() == crate::io::ErrorKind::UnexpectedEof {
+                    return None;
+                }
 
                 return Some(Err(err.into()));
             }
@@ -78,10 +75,9 @@ impl<'a, R: BufRead> PacketParser<R> {
         let header = match PacketHeader::try_from_reader(&mut self.reader) {
             Ok(header) => header,
             Err(err) => {
-                // This needs to be refactored to not use std::io::ErrorKind
-                // if err.kind() == std::io::ErrorKind::UnexpectedEof {
-                //     return None;
-                // }
+                if err.kind() == crate::io::ErrorKind::UnexpectedEof {
+                    return None;
+                }
 
                 self.is_done = true;
                 return Some(Err(err.into()));

@@ -1,4 +1,4 @@
-use std::io::{self, BufRead};
+use crate::io::{self, BufRead};
 
 use byteorder::{BigEndian, WriteBytesExt};
 use log::debug;
@@ -26,7 +26,7 @@ impl PacketLength {
         }
     }
 
-    pub fn try_from_reader<R: BufRead>(mut r: R) -> std::io::Result<Self> {
+    pub fn try_from_reader<R: BufRead>(mut r: R) -> crate::io::Result<Self> {
         let olen = r.read_u8()?;
         let len = match olen {
             // One-Octet Lengths
@@ -57,7 +57,7 @@ impl PacketLength {
         }
     }
 
-    pub fn to_writer_new<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
+    pub fn to_writer_new<W: crate::io::Write>(&self, writer: &mut W) -> Result<()> {
         match self {
             PacketLength::Fixed(len) => {
                 if *len < 192 {

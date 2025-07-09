@@ -1,4 +1,4 @@
-use alloc::{boxed::Box, vec::Vec};
+use alloc::{boxed::Box, format, vec::Vec};
 use crate::{
     armor::BlockType,
     composed::{message::Message, shared::is_binary, Edata, Esk},

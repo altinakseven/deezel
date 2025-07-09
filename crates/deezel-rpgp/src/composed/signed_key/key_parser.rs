@@ -1,3 +1,5 @@
+extern crate alloc;
+use alloc::format;
 use log::{debug, warn};
 
 use crate::{
@@ -7,9 +9,11 @@ use crate::{
     types::{KeyDetails, KeyVersion, SignedUser, SignedUserAttribute, Tag},
 };
 
+use alloc::vec::Vec;
+
 #[allow(clippy::complexity)]
 pub fn next<I, IKT>(
-    packets: &mut std::iter::Peekable<I>,
+    packets: &mut core::iter::Peekable<I>,
     key_tag: Tag,
     parse_secrect_subkeys: bool,
 ) -> Option<

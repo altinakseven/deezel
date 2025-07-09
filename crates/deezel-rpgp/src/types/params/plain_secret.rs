@@ -1,7 +1,6 @@
-use std::{
-    hash::Hasher,
-    io::{self, BufRead},
-};
+use crate::io::{self, BufRead, Write};
+use alloc::vec::Vec;
+use core::hash::Hasher;
 
 use byteorder::{BigEndian, ByteOrder};
 use bytes::{BufMut, Bytes, BytesMut};
@@ -668,7 +667,7 @@ impl PlainSecretParams {
         Ok(())
     }
 
-    fn to_writer_raw<W: io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer_raw<W: Write>(&self, writer: &mut W) -> Result<()> {
         match self {
             PlainSecretParams::RSA(key) => {
                 key.to_writer(writer)?;

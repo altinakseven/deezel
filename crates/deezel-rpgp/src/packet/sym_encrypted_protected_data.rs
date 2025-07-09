@@ -1,4 +1,4 @@
-use std::io::{self, BufRead, Read};
+use crate::io::{self, BufRead, Read};
 
 use byteorder::WriteBytesExt;
 use bytes::Bytes;

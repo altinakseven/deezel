@@ -1,4 +1,6 @@
+extern crate alloc;
 use aes_gcm::aead::rand_core::CryptoRng;
+use alloc::{vec, vec::Vec};
 use chrono::SubsecRound;
 use rand::Rng;
 use smallvec::SmallVec;

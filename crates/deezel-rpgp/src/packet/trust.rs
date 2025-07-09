@@ -1,4 +1,4 @@
-use std::io::{self, BufRead};
+use crate::io::{BufRead, Write};
 
 use log::warn;
 
@@ -32,7 +32,7 @@ impl Trust {
 }
 
 impl Serialize for Trust {
-    fn to_writer<W: io::Write>(&self, _writer: &mut W) -> Result<()> {
+    fn to_writer<W: Write>(&self, _writer: &mut W) -> Result<()> {
         Ok(())
     }
 

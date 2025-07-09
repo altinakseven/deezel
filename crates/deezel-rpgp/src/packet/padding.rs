@@ -1,4 +1,4 @@
-use std::io::{self, BufRead};
+use crate::io::{BufRead, Write};
 
 use bytes::Bytes;
 #[cfg(test)]
@@ -57,7 +57,7 @@ impl Padding {
 }
 
 impl Serialize for Padding {
-    fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
         writer.write_all(&self.data)?;
 
         Ok(())
@@ -89,7 +89,7 @@ mod tests {
     #[test]
     fn test_padding_roundtrip() {
         let packet_raw = hex::decode("d50ec5a293072991628147d72c8f86b7").expect("valid hex");
-        let mut to_parse = std::io::Cursor::new(&packet_raw);
+        let mut to_parse = crate::io::Cursor::new(&packet_raw);
         let header = PacketHeader::try_from_reader(&mut to_parse).expect("parse");
 
         let PacketLength::Fixed(_len) = header.packet_length() else {

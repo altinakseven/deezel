@@ -1,4 +1,4 @@
-use std::io::{self, BufRead};
+use crate::io::{BufRead, Write};
 
 use crate::{errors::Result, ser::Serialize, types::Mpi};
 
@@ -37,7 +37,7 @@ impl ElgamalPublicParams {
 }
 
 impl Serialize for ElgamalPublicParams {
-    fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
         self.p.to_writer(writer)?;
         self.g.to_writer(writer)?;
         self.y.to_writer(writer)?;

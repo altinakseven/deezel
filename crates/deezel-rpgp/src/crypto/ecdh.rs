@@ -1,3 +1,5 @@
+extern crate alloc;
+use alloc::{format, vec, vec::Vec};
 use log::debug;
 use rand::{CryptoRng, Rng};
 use x25519_dalek::{PublicKey, StaticSecret};
@@ -236,7 +238,7 @@ impl SecretKey {
 }
 
 impl Serialize for SecretKey {
-    fn to_writer<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: crate::io::Write>(&self, writer: &mut W) -> Result<()> {
         let x = self.to_mpi();
         x.to_writer(writer)
     }

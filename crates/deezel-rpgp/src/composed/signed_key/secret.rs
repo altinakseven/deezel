@@ -410,7 +410,7 @@ impl From<SignedSecretSubKey> for SignedPublicSubKey {
 mod tests {
     #![allow(clippy::unwrap_used)]
 
-    use std::io;
+    use crate::io;
 
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;

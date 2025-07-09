@@ -1,7 +1,8 @@
-use std::{
+use alloc::vec;
+use core::{
     cmp::Ordering,
-    io::{BufRead, Read},
 };
+use crate::io::{BufRead, Read};
 
 use bitfields::bitfield;
 use byteorder::{BigEndian, ByteOrder, WriteBytesExt};
@@ -1251,7 +1252,7 @@ impl KeyFlags {
 }
 
 impl Serialize for KeyFlags {
-    fn to_writer<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: crate::io::Write>(&self, writer: &mut W) -> Result<()> {
         if self.original_len == 0 {
             return Ok(());
         }
@@ -1418,7 +1419,7 @@ impl Features {
 }
 
 impl Serialize for Features {
-    fn to_writer<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: crate::io::Write>(&self, writer: &mut W) -> Result<()> {
         if let Some(k) = self.first {
             writer.write_u8(k.0)?;
             writer.write_all(&self.rest)?;
@@ -1547,7 +1548,7 @@ pub(super) fn serialize_for_hashing<K: KeyDetails + Serialize>(
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
+    use crate::io::Cursor;
 
     use bytes::BytesMut;
 

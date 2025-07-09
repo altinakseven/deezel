@@ -40,7 +40,7 @@ impl From<&SecretKey> for ElgamalPublicParams {
 }
 
 impl Serialize for SecretKey {
-    fn to_writer<W: std::io::Write>(&self, writer: &mut W) -> crate::errors::Result<()> {
+    fn to_writer<W: crate::io::Write>(&self, writer: &mut W) -> crate::errors::Result<()> {
         let x = self.to_mpi();
         x.to_writer(writer)
     }

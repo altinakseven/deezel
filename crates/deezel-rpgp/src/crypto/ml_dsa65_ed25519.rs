@@ -102,7 +102,7 @@ impl Signer for SecretKey {
 }
 
 impl Serialize for SecretKey {
-    fn to_writer<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: crate::io::Write>(&self, writer: &mut W) -> Result<()> {
         let (x, ml) = self.as_bytes();
         writer.write_all(x)?;
         writer.write_all(ml)?;

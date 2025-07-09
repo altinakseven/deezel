@@ -1,5 +1,7 @@
-use core::ops::Deref;
+extern crate alloc;
+use alloc::vec;
 use alloc::vec::Vec;
+use core::ops::Deref;
 
 use rand::{CryptoRng, Rng};
 

@@ -1,4 +1,4 @@
-use std::io::{self, BufRead};
+use crate::io::{self, BufRead};
 
 use bytes::Bytes;
 

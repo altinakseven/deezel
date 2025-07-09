@@ -1,4 +1,4 @@
-use std::io::{self, BufRead};
+use crate::io::{BufRead, Write};
 
 use rsa::traits::PublicKeyParts;
 
@@ -37,7 +37,7 @@ impl From<rsa::RsaPublicKey> for RsaPublicParams {
     }
 }
 impl Serialize for RsaPublicParams {
-    fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
         let n: Mpi = self.key.n().into();
         let e: Mpi = self.key.e().into();
 

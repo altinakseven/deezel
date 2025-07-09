@@ -1,4 +1,4 @@
-use std::io::{self, BufRead};
+use crate::io::{BufRead, Write};
 
 use zeroize::ZeroizeOnDrop;
 
@@ -66,7 +66,7 @@ impl SecretParams {
         }
     }
 
-    pub fn to_writer<W: io::Write>(&self, writer: &mut W, version: KeyVersion) -> Result<()> {
+    pub fn to_writer<W: Write>(&self, writer: &mut W, version: KeyVersion) -> Result<()> {
         match self {
             SecretParams::Plain(k) => {
                 writer.write_all(&[k.string_to_key_id()])?;

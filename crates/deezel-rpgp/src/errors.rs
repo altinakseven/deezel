@@ -1,4 +1,4 @@
-use alloc::{boxed::Box, string::String};
+use alloc::{boxed::Box, format, string::String};
 use core::num::TryFromIntError;
 
 use ed25519_dalek::SignatureError;

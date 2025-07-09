@@ -109,9 +109,9 @@ impl Packet {
             Err(Error::PacketParsing { source }) if source.is_incomplete() => {
                 Err(Error::PacketIncomplete { source })
             }
-            // This needs to be refactored to not use std::io::ErrorKind
+            // This needs to be refactored to not use crate::io::ErrorKind
             // Err(Error::IO { source, backtrace })
-            //     if source.kind() == std::io::ErrorKind::UnexpectedEof =>
+            //     if source.kind() == crate::io::ErrorKind::UnexpectedEof =>
             // {
             //     Err(Error::PacketIncomplete {
             //         source: Box::new(crate::parsing::Error::UnexpectedEof { source, backtrace }),

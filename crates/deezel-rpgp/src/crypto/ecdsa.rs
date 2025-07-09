@@ -1,3 +1,5 @@
+extern crate alloc;
+use alloc::{format, string::ToString, vec, vec::Vec};
 use ecdsa::SigningKey;
 use p521::NistP521;
 use rand::{CryptoRng, Rng};
@@ -47,7 +49,7 @@ pub enum SecretKey {
 impl TryFrom<&SecretKey> for EcdsaPublicParams {
     type Error = Error;
 
-    fn try_from(value: &SecretKey) -> std::result::Result<Self, Self::Error> {
+    fn try_from(value: &SecretKey) -> core::result::Result<Self, Self::Error> {
         match value {
             SecretKey::P256(ref p) => Ok(EcdsaPublicParams::P256 {
                 key: p.public_key(),
@@ -163,7 +165,7 @@ impl SecretKey {
 }
 
 impl Serialize for SecretKey {
-    fn to_writer<W: std::io::Write>(&self, writer: &mut W) -> crate::errors::Result<()> {
+    fn to_writer<W: crate::io::Write>(&self, writer: &mut W) -> crate::errors::Result<()> {
         let x = self.to_mpi();
         x.to_writer(writer)
     }

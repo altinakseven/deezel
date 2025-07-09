@@ -319,7 +319,7 @@ impl ChunkSize {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Read;
+    use crate::io::Read;
 
     use log::info;
     use rand::{Rng, SeedableRng};
@@ -359,7 +359,7 @@ mod tests {
 
                     {
                         info!("encrypt streaming");
-                        let mut input = std::io::Cursor::new(&data);
+                        let mut input = crate::io::Cursor::new(&data);
 
                         let mut encryptor = StreamEncryptor::new(
                             $sym_alg,

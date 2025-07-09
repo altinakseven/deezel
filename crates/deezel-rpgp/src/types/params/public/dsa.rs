@@ -1,4 +1,4 @@
-use std::io::{self, BufRead};
+use crate::io::{BufRead, Write};
 
 use crate::{errors::Result, ser::Serialize, types::Mpi};
 
@@ -32,7 +32,7 @@ impl DsaPublicParams {
 }
 
 impl Serialize for DsaPublicParams {
-    fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
         let c = self.key.components();
         let p: Mpi = c.p().into();
         p.to_writer(writer)?;

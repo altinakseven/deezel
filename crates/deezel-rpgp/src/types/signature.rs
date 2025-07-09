@@ -25,7 +25,7 @@ pub enum SignatureBytes {
 }
 
 impl SignatureBytes {
-    pub(crate) fn to_writer<W: std::io::Write>(&self, writer: &mut W) -> crate::errors::Result<()> {
+    pub(crate) fn to_writer<W: crate::io::Write>(&self, writer: &mut W) -> crate::errors::Result<()> {
         use crate::ser::Serialize;
 
         match &self {
@@ -55,7 +55,7 @@ impl SignatureBytes {
 impl<'a> TryFrom<&'a SignatureBytes> for &'a [Mpi] {
     type Error = crate::errors::Error;
 
-    fn try_from(value: &'a SignatureBytes) -> std::result::Result<Self, Self::Error> {
+    fn try_from(value: &'a SignatureBytes) -> core::result::Result<Self, Self::Error> {
         match value {
             SignatureBytes::Mpis(mpis) => Ok(mpis),
 
@@ -68,7 +68,7 @@ impl<'a> TryFrom<&'a SignatureBytes> for &'a [Mpi] {
 impl<'a> TryFrom<&'a SignatureBytes> for &'a [u8] {
     type Error = crate::errors::Error;
 
-    fn try_from(value: &'a SignatureBytes) -> std::result::Result<Self, Self::Error> {
+    fn try_from(value: &'a SignatureBytes) -> core::result::Result<Self, Self::Error> {
         match value {
             // We reject this operation because it doesn't fit with the intent of the Sig abstraction
             SignatureBytes::Mpis(_) => bail!("Mpi-based Sig can't be transformed into &[u8]"),

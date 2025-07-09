@@ -1,4 +1,4 @@
-use std::io::BufRead;
+use crate::io::{BufRead, Write};
 
 use byteorder::{BigEndian, ByteOrder, WriteBytesExt};
 use chrono::SubsecRound;
@@ -342,7 +342,7 @@ impl PubKeyInner {
         })
     }
 
-    fn to_writer_v2_v3<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer_v2_v3<W: Write>(&self, writer: &mut W) -> Result<()> {
         use crate::ser::Serialize;
 
         writer.write_u32::<BigEndian>(self.created_at.timestamp().try_into()?)?;
@@ -362,7 +362,7 @@ impl PubKeyInner {
         sum
     }
 
-    fn to_writer_v4_v6<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer_v4_v6<W: Write>(&self, writer: &mut W) -> Result<()> {
         use crate::ser::Serialize;
 
         writer.write_u32::<BigEndian>(self.created_at.timestamp().try_into()?)?;
@@ -582,7 +582,7 @@ pub(crate) fn encrypt<R: rand::CryptoRng + rand::Rng, K: PublicKeyTrait>(
 }
 
 impl crate::ser::Serialize for PublicKey {
-    fn to_writer<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
         self.inner.to_writer(writer)
     }
 
@@ -592,7 +592,7 @@ impl crate::ser::Serialize for PublicKey {
 }
 
 impl crate::ser::Serialize for PublicSubkey {
-    fn to_writer<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
         self.inner.to_writer(writer)
     }
 
@@ -602,7 +602,7 @@ impl crate::ser::Serialize for PublicSubkey {
 }
 
 impl crate::ser::Serialize for PubKeyInner {
-    fn to_writer<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
         writer.write_u8(self.version.into())?;
 
         match self.version {

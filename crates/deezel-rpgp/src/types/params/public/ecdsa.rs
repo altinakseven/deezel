@@ -1,4 +1,4 @@
-use std::io::{self, BufRead};
+use crate::io::{BufRead, Write};
 
 use byteorder::WriteBytesExt;
 use bytes::Bytes;
@@ -127,7 +127,7 @@ impl EcdsaPublicParams {
 }
 
 impl Serialize for EcdsaPublicParams {
-    fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
         let oid = match self {
             EcdsaPublicParams::P256 { .. } => ECCCurve::P256.oid(),
             EcdsaPublicParams::P384 { .. } => ECCCurve::P384.oid(),

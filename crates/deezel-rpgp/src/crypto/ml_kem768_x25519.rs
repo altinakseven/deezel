@@ -1,4 +1,4 @@
-use std::cmp::PartialEq;
+use core::cmp::PartialEq;
 
 use log::debug;
 use ml_kem::{
@@ -54,7 +54,7 @@ impl PartialEq for SecretKey {
 impl Eq for SecretKey {}
 
 impl Serialize for SecretKey {
-    fn to_writer<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: crate::io::Write>(&self, writer: &mut W) -> Result<()> {
         let (a, b, c) = self.as_bytes();
 
         writer.write_all(a)?;

@@ -1,5 +1,6 @@
 use alloc::{
     collections::VecDeque,
+    format,
     string::{String, ToString},
     vec,
     vec::Vec,

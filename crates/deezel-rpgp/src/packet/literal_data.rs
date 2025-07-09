@@ -1,4 +1,4 @@
-use std::io::{self, BufRead};
+use crate::io::{self, BufRead};
 
 use byteorder::{BigEndian, WriteBytesExt};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
@@ -184,7 +184,7 @@ impl LiteralData {
     pub fn try_into_string(self) -> Result<String, Bytes> {
         match self.header.mode {
             DataMode::Binary => Err(self.data),
-            _ => match std::str::from_utf8(&self.data) {
+            _ => match core::str::from_utf8(&self.data) {
                 Ok(data) => Ok(data.to_string()),
                 Err(_error) => Err(self.data),
             },
@@ -202,7 +202,7 @@ impl LiteralData {
     pub fn as_str(&self) -> Option<&str> {
         match self.header.mode {
             DataMode::Binary => None,
-            _ => std::str::from_utf8(&self.data).ok(),
+            _ => core::str::from_utf8(&self.data).ok(),
         }
     }
 }
@@ -486,7 +486,7 @@ impl<R: io::Read> io::Read for LiteralDataPartialGenerator<R> {
                 PacketLength::Fixed(len)
             };
 
-            let mut writer = std::mem::take(&mut self.current_packet).writer();
+            let mut writer = core::mem::take(&mut self.current_packet).writer();
             if self.is_first {
                 // only the first packet needs the literal data header
                 let packet_header = PacketHeader::from_parts(
@@ -540,7 +540,7 @@ mod tests {
     fn test_utf8_literal() {
         let slogan = "一门赋予每个人构建可靠且高效软件能力的语言。";
         let literal = LiteralData::from_str("", slogan).unwrap();
-        assert!(std::str::from_utf8(&literal.data).unwrap() == slogan);
+        assert!(core::str::from_utf8(&literal.data).unwrap() == slogan);
     }
 
     impl Arbitrary for LiteralDataHeader {
@@ -579,7 +579,7 @@ mod tests {
                 .unwrap();
 
         let mut generator_out = Vec::new();
-        std::io::copy(&mut generator, &mut generator_out).unwrap();
+        crate::io::copy(&mut generator, &mut generator_out).unwrap();
 
         let mut packet_out = Vec::new();
         packet.to_writer_with_header(&mut packet_out).unwrap();
@@ -614,7 +614,7 @@ mod tests {
                     .unwrap();
 
             let mut out = Vec::new();
-            std::io::copy(&mut generator, &mut out).unwrap();
+            crate::io::copy(&mut generator, &mut out).unwrap();
 
             let packets: Vec<_> = crate::packet::many::PacketParser::new(&out[..]).collect();
             assert_eq!(packets.len(), 1, "{:?}", packets);
@@ -658,7 +658,7 @@ mod tests {
             .unwrap();
 
             let mut out = Vec::new();
-            std::io::copy(&mut generator, &mut out).unwrap();
+            crate::io::copy(&mut generator, &mut out).unwrap();
 
             let packets: Vec<_> = crate::packet::many::PacketParser::new(&out[..]).collect();
             assert_eq!(packets.len(), 1, "{:?}", packets);

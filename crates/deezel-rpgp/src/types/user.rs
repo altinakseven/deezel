@@ -1,4 +1,5 @@
-use std::io;
+use crate::io::Write;
+use alloc::vec::Vec;
 
 use log::{debug, warn};
 
@@ -72,7 +73,7 @@ impl SignedUser {
 }
 
 impl Serialize for SignedUser {
-    fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
         self.id.to_writer_with_header(writer)?;
         for sig in &self.signatures {
             sig.to_writer_with_header(writer)?;
@@ -156,7 +157,7 @@ impl SignedUserAttribute {
 }
 
 impl Serialize for SignedUserAttribute {
-    fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
         self.attr.to_writer_with_header(writer)?;
         for sig in &self.signatures {
             sig.to_writer_with_header(writer)?;

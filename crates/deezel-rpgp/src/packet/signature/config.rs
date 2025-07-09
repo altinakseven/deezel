@@ -1,4 +1,4 @@
-use std::io::Read;
+use crate::io::Read;
 
 use byteorder::{BigEndian, ByteOrder};
 use chrono::{DateTime, Utc};
@@ -194,7 +194,7 @@ impl SignatureConfig {
         R: Read,
     {
         let mut hasher = self.into_hasher()?;
-        std::io::copy(&mut data, &mut hasher)?;
+        crate::io::copy(&mut data, &mut hasher)?;
 
         hasher.sign(key, key_pw)
     }
@@ -549,7 +549,7 @@ impl SignatureConfig {
             SignatureType::Text |
                 // assumes that the passed in text was already valid utf8 and normalized
             SignatureType::Binary => {
-                let written = std::io::copy(&mut data, &mut WriteHasher(hasher))?;
+                let written = crate::io::copy(&mut data, &mut WriteHasher(hasher))?;
                 Ok(written.try_into()?)
             }
             SignatureType::Timestamp |
@@ -752,13 +752,13 @@ impl SignatureHasher {
     }
 }
 
-impl std::io::Write for SignatureHasher {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+impl crate::io::Write for SignatureHasher {
+    fn write(&mut self, buf: &[u8]) -> crate::io::Result<usize> {
         self.norm_hasher.hash_buf(buf); // FIXME: when is this used?
         Ok(buf.len())
     }
 
-    fn flush(&mut self) -> std::io::Result<()> {
+    fn flush(&mut self) -> crate::io::Result<()> {
         Ok(())
     }
 }

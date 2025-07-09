@@ -18,7 +18,7 @@ pub use self::{
 
 #[cfg(test)]
 mod tests {
-    use std::io::{BufReader, Read};
+    use crate::io::{BufReader, Read};
 
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;

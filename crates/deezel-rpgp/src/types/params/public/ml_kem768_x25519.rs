@@ -1,4 +1,4 @@
-use std::io::{self, BufRead};
+use crate::io::{self, BufRead};
 
 use ml_kem::{kem::EncapsulationKey, EncodedSizeUser, MlKem768Params};
 

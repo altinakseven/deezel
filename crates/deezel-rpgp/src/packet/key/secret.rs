@@ -1,4 +1,4 @@
-use std::io::BufRead;
+use crate::io::{BufRead, Write};
 
 use chrono::SubsecRound;
 use generic_array::GenericArray;
@@ -293,7 +293,7 @@ impl SecretKeyTrait for SecretSubkey {
 }
 
 impl crate::ser::Serialize for SecretKey {
-    fn to_writer<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
         // writes version and public part
         crate::ser::Serialize::to_writer(&self.details, writer)?;
         self.secret_params.to_writer(writer, self.version())?;
@@ -309,7 +309,7 @@ impl crate::ser::Serialize for SecretKey {
 }
 
 impl crate::ser::Serialize for SecretSubkey {
-    fn to_writer<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
         // writes version and public part
         crate::ser::Serialize::to_writer(&self.details, writer)?;
         self.secret_params.to_writer(writer, self.version())?;

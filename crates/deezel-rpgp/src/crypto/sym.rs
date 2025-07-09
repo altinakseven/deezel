@@ -1,4 +1,6 @@
+extern crate alloc;
 use aes::{Aes128, Aes192, Aes256};
+use alloc::{format, vec, vec::Vec};
 use blowfish::Blowfish;
 use camellia::{Camellia128, Camellia192, Camellia256};
 use cast5::Cast5;
@@ -511,7 +513,7 @@ impl SymmetricKeyAlgorithm {
     ) -> Result<StreamEncryptor<I>>
     where
         R: Rng + CryptoRng,
-        I: std::io::Read,
+        I: crate::io::Read,
     {
         StreamEncryptor::new(rng, self, key, plaintext)
     }
@@ -523,7 +525,7 @@ impl SymmetricKeyAlgorithm {
         ciphertext: R,
     ) -> Result<StreamDecryptor<R>>
     where
-        R: std::io::BufRead,
+        R: crate::io::BufRead,
     {
         StreamDecryptor::new(self, true, key, ciphertext)
     }
@@ -535,7 +537,7 @@ impl SymmetricKeyAlgorithm {
         ciphertext: R,
     ) -> Result<StreamDecryptor<R>>
     where
-        R: std::io::BufRead,
+        R: crate::io::BufRead,
     {
         StreamDecryptor::new(self, false, key, ciphertext)
     }
@@ -730,7 +732,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::io::Read;
+    use crate::io::Read;
 
     use log::info;
     use rand::{Rng, SeedableRng};
@@ -777,7 +779,7 @@ mod tests {
                     {
                         info!("unprotected decrypt streaming");
                         dbg!(ciphertext.len(), $alg.cfb_prefix_size());
-                        let mut input = std::io::Cursor::new(&ciphertext);
+                        let mut input = crate::io::Cursor::new(&ciphertext);
                         let mut decryptor =
                             $alg.stream_decryptor_unprotected(&key, &mut input).unwrap();
                         let mut plaintext = Vec::new();
@@ -818,7 +820,7 @@ mod tests {
 
                     {
                         info!("encrypt streaming");
-                        let mut input = std::io::Cursor::new(&data);
+                        let mut input = crate::io::Cursor::new(&data);
                         let len = $alg.encrypted_protected_len(data.len());
                         assert_eq!(len, ciphertext.len(), "failed to encrypt");
                         let mut output = Vec::new();
@@ -843,7 +845,7 @@ mod tests {
                     {
                         info!("decrypt streaming");
                         dbg!(ciphertext.len(), $alg.cfb_prefix_size());
-                        let mut input = std::io::Cursor::new(&ciphertext);
+                        let mut input = crate::io::Cursor::new(&ciphertext);
                         let mut decryptor =
                             $alg.stream_decryptor_protected(&key, &mut input).unwrap();
                         let mut plaintext = Vec::new();

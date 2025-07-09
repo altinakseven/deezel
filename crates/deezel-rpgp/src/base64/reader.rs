@@ -36,7 +36,7 @@ impl<R: BufRead> Base64Reader<R> {
 }
 
 impl<R: BufRead> Read for Base64Reader<R> {
-    // This function needs to be refactored to not use std::io
+    // This function needs to be refactored to not use crate::io
 }
 
 #[inline]

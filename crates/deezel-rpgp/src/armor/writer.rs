@@ -45,7 +45,7 @@ pub fn write(
     // write body
     let mut crc_hasher = include_checksum.then(Crc24Hasher::new);
 
-    // This part needs to be refactored to not use std::io::Write
+    // This part needs to be refactored to not use crate::io::Write
     // write_body(writer, source, crc_hasher.as_mut())?;
 
     write_footer(writer, typ, crc_hasher)?;
@@ -86,7 +86,7 @@ fn write_body(
     source: &impl Serialize,
     crc_hasher: Option<&mut Crc24Hasher>,
 ) -> Result<()> {
-    // This function needs a major refactor to work without std::io.
+    // This function needs a major refactor to work without crate::io.
     // For now, it is a no-op.
     Ok(())
 }

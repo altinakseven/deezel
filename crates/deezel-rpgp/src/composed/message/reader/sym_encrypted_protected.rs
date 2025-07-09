@@ -1,4 +1,6 @@
+extern crate alloc;
 use super::PacketBodyReader;
+use alloc::format;
 use crate::{
     composed::{DebugBufRead, PlainSessionKey},
     errors::{bail, ensure_eq, unsupported_err, Result},

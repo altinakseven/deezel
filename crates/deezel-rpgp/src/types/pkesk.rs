@@ -1,4 +1,4 @@
-use std::io::BufRead;
+use crate::io::BufRead;
 
 use byteorder::WriteBytesExt;
 use bytes::Bytes;
@@ -256,7 +256,7 @@ impl PkeskBytes {
 }
 
 impl Serialize for PkeskBytes {
-    fn to_writer<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: crate::io::Write>(&self, writer: &mut W) -> Result<()> {
         match self {
             PkeskBytes::Rsa { mpi } => {
                 mpi.to_writer(writer)?;

@@ -1,4 +1,4 @@
-use std::io::{self, BufRead};
+use crate::io::{BufRead, Write};
 
 use byteorder::WriteBytesExt;
 use bytes::Bytes;
@@ -67,7 +67,7 @@ impl EddsaLegacyPublicParams {
 }
 
 impl Serialize for EddsaLegacyPublicParams {
-    fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
         match self {
             Self::Ed25519 { key } => {
                 let oid = ECCCurve::Ed25519.oid();

@@ -1,4 +1,5 @@
-use alloc::boxed::Box;
+extern crate alloc;
+use alloc::{boxed::Box, format};
 use bytes::{Buf, BytesMut};
 use log::debug;
 

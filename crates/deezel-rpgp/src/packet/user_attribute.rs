@@ -1,4 +1,4 @@
-use std::io::{self, BufRead};
+use crate::io::{BufRead, Write};
 
 use byteorder::{LittleEndian, WriteBytesExt};
 use bytes::Bytes;
@@ -124,7 +124,7 @@ impl ImageHeader {
 }
 
 impl Serialize for ImageHeader {
-    fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
         match self {
             Self::V1(header) => match header {
                 ImageHeaderV1::Jpeg { data } => {
@@ -300,7 +300,7 @@ impl UserAttribute {
 }
 
 impl Serialize for UserAttribute {
-    fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
         match self {
             UserAttribute::Image {
                 ref data,

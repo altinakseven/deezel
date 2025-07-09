@@ -1,7 +1,7 @@
-use std::{
-    cmp,
-    io::{BufRead, Read, Result},
-};
+extern crate alloc;
+use crate::io::{BufRead, Read, Result};
+use alloc::{boxed::Box, format, vec, vec::Vec};
+use core::cmp;
 
 use bytes::{Bytes, BytesMut};
 
@@ -51,8 +51,8 @@ pub trait BufReadParsing: BufRead + Sized {
             self.consume(available);
         }
         if read != arr.len() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::UnexpectedEof,
+            return Err(crate::io::Error::new(
+                crate::io::ErrorKind::UnexpectedEof,
                 "no more data available",
             ));
         }
@@ -77,8 +77,8 @@ pub trait BufReadParsing: BufRead + Sized {
             self.consume(available);
         }
         if read != arr.len() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::UnexpectedEof,
+            return Err(crate::io::Error::new(
+                crate::io::ErrorKind::UnexpectedEof,
                 "no more data available",
             ));
         }
@@ -103,8 +103,8 @@ pub trait BufReadParsing: BufRead + Sized {
         }
 
         if arr.len() != size {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::UnexpectedEof,
+            return Err(crate::io::Error::new(
+                crate::io::ErrorKind::UnexpectedEof,
                 "no more data available",
             ));
         }
@@ -140,8 +140,8 @@ pub trait BufReadParsing: BufRead + Sized {
     fn read_tag<const C: usize>(&mut self, tag: &[u8; C]) -> Result<()> {
         let found_tag = self.read_array::<C>()?;
         if tag != &found_tag {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
+            return Err(crate::io::Error::new(
+                crate::io::ErrorKind::InvalidInput,
                 format!(
                     "expected {}, found {}",
                     hex::encode(tag),

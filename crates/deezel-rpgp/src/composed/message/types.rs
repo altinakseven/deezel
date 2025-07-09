@@ -121,7 +121,7 @@ impl MessageReader<'_> {
 }
 
 impl Read for MessageReader<'_> {
-    // This function needs to be refactored to not use std::io
+    // This function needs to be refactored to not use crate::io
 }
 
 impl BufRead for MessageReader<'_> {
@@ -532,7 +532,7 @@ impl BufRead for Edata<'_> {
 }
 
 impl Read for Edata<'_> {
-    // This function needs to be refactored to not use std::io
+    // This function needs to be refactored to not use crate::io
 }
 
 impl<'a> Edata<'a> {
@@ -1008,7 +1008,7 @@ impl<'a> Message<'a> {
 }
 
 impl Read for Message<'_> {
-    // This function needs to be refactored to not use std::io
+    // This function needs to be refactored to not use crate::io
 }
 
 impl BufRead for Message<'_> {

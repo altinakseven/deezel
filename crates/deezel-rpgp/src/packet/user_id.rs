@@ -1,4 +1,6 @@
-use std::{io, io::BufRead, str};
+use crate::io::{BufRead, Write};
+use alloc::vec;
+use core::str;
 
 use bytes::Bytes;
 use chrono::{SubsecRound, Utc};
@@ -76,7 +78,7 @@ impl UserId {
     /// Convert the id to a UTF-8 string, if possible.
     /// Returns `None` if the data is not valid UTF-8.
     pub fn as_str(&self) -> Option<&str> {
-        std::str::from_utf8(&self.id).ok()
+        core::str::from_utf8(&self.id).ok()
     }
 
     /// Create a self-signature.
@@ -132,7 +134,7 @@ impl UserId {
 }
 
 impl Serialize for UserId {
-    fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
         writer.write_all(&self.id)?;
 
         Ok(())

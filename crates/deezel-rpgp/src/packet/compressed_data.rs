@@ -1,4 +1,4 @@
-use std::io::{self, BufRead, BufReader, Read};
+use crate::io::{self, BufRead, Read};
 
 use byteorder::WriteBytesExt;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
@@ -33,10 +33,10 @@ pub struct CompressedData {
 #[derive(derive_more::Debug)]
 pub enum Decompressor<R> {
     Uncompressed(R),
-    Zip(BufReader<DeflateDecoder<R>>),
-    Zlib(BufReader<ZlibDecoder<R>>),
+    Zip(DeflateDecoder<R>),
+    Zlib(ZlibDecoder<R>),
     #[cfg(feature = "bzip2")]
-    Bzip2(#[debug("BzDecoder")] BufReader<BzDecoder<R>>),
+    Bzip2(#[debug("BzDecoder")] BzDecoder<R>),
 }
 
 impl<R: BufRead> Decompressor<R> {
@@ -50,10 +50,10 @@ impl<R: BufRead> Decompressor<R> {
         debug!("creating decompressor for {:?}", alg);
         match alg {
             CompressionAlgorithm::Uncompressed => Ok(Self::Uncompressed(r)),
-            CompressionAlgorithm::ZIP => Ok(Self::Zip(BufReader::new(DeflateDecoder::new(r)))),
-            CompressionAlgorithm::ZLIB => Ok(Self::Zlib(BufReader::new(ZlibDecoder::new(r)))),
+            CompressionAlgorithm::ZIP => Ok(Self::Zip(DeflateDecoder::new(r))),
+            CompressionAlgorithm::ZLIB => Ok(Self::Zlib(ZlibDecoder::new(r))),
             #[cfg(feature = "bzip2")]
-            CompressionAlgorithm::BZip2 => Ok(Self::Bzip2(BufReader::new(BzDecoder::new(r)))),
+            CompressionAlgorithm::BZip2 => Ok(Self::Bzip2(BzDecoder::new(r))),
             _ => Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 format!("unsupported compression algorithm {:?}", alg),
@@ -64,30 +64,30 @@ impl<R: BufRead> Decompressor<R> {
     pub fn get_ref(&self) -> &R {
         match self {
             Self::Uncompressed(r) => r,
-            Self::Zip(r) => r.get_ref().get_ref(),
-            Self::Zlib(r) => r.get_ref().get_ref(),
+            Self::Zip(r) => r.get_ref(),
+            Self::Zlib(r) => r.get_ref(),
             #[cfg(feature = "bzip2")]
-            Self::Bzip2(r) => r.get_ref().get_ref(),
+            Self::Bzip2(r) => r.get_ref(),
         }
     }
 
     pub fn get_mut(&mut self) -> &mut R {
         match self {
             Self::Uncompressed(r) => r,
-            Self::Zip(r) => r.get_mut().get_mut(),
-            Self::Zlib(r) => r.get_mut().get_mut(),
+            Self::Zip(r) => r.get_mut(),
+            Self::Zlib(r) => r.get_mut(),
             #[cfg(feature = "bzip2")]
-            Self::Bzip2(r) => r.get_mut().get_mut(),
+            Self::Bzip2(r) => r.get_mut(),
         }
     }
 
     pub fn into_inner(self) -> R {
         match self {
             Self::Uncompressed(r) => r,
-            Self::Zip(r) => r.into_inner().into_inner(),
-            Self::Zlib(r) => r.into_inner().into_inner(),
+            Self::Zip(r) => r.into_inner(),
+            Self::Zlib(r) => r.into_inner(),
             #[cfg(feature = "bzip2")]
-            Self::Bzip2(r) => r.into_inner().into_inner(),
+            Self::Bzip2(r) => r.into_inner(),
         }
     }
 }
@@ -407,7 +407,7 @@ impl<R: io::Read> io::Read for CompressedDataPartialGenerator<R> {
                 PacketLength::Fixed(len)
             };
 
-            let mut writer = std::mem::take(&mut self.current_packet).writer();
+            let mut writer = core::mem::take(&mut self.current_packet).writer();
             if self.is_first {
                 // only the first packet needs the literal data header
                 let packet_header = PacketHeader::from_parts(

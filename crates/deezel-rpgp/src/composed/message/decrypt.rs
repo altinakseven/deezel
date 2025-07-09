@@ -1,3 +1,5 @@
+extern crate alloc;
+use alloc::{format, vec::Vec};
 use log::debug;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
