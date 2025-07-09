@@ -22,10 +22,12 @@
 //! - `monitor`: Blockchain monitoring
 //! - `transaction`: Transaction construction and signing
 //! - `utils`: Common utilities
+pub mod provider;
 
-#![cfg_attr(target_arch = "wasm32", no_std)]
+#[cfg_attr(target_arch = "wasm32", no_std)]
 
 extern crate alloc;
+
 
 #[cfg(target_arch = "wasm32")]
 use alloc::{
@@ -164,6 +166,18 @@ impl From<serde_json::Error> for DeezelError {
     }
 }
 
+impl From<bitcoin::address::ParseError> for DeezelError {
+    fn from(err: bitcoin::address::ParseError) -> Self {
+        DeezelError::AddressResolution(err.to_string())
+    }
+}
+
+impl From<bitcoin::sighash::TaprootError> for DeezelError {
+    fn from(err: bitcoin::sighash::TaprootError) -> Self {
+        DeezelError::Transaction(err.to_string())
+    }
+}
+
 /// Convert bitcoin::consensus::encode::Error to DeezelError
 impl From<bitcoin::consensus::encode::Error> for DeezelError {
     fn from(err: bitcoin::consensus::encode::Error) -> Self {
@@ -175,6 +189,12 @@ impl From<bitcoin::consensus::encode::Error> for DeezelError {
         {
             DeezelError::Transaction(err.to_string())
         }
+    }
+}
+
+impl From<bitcoin::blockdata::transaction::ParseOutPointError> for DeezelError {
+    fn from(err: bitcoin::blockdata::transaction::ParseOutPointError) -> Self {
+        DeezelError::Transaction(err.to_string())
     }
 }
 

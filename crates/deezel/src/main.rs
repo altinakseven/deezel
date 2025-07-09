@@ -22,8 +22,7 @@ use bitcoin::Transaction;
 // Import from deezel-common for now (will be updated to match reference implementation)
 use deezel_common::*;
 
-mod providers;
-use providers::ConcreteProvider;
+use deezel_common::provider::ConcreteProvider;
 
 /// Main CLI arguments
 #[derive(Parser)]
@@ -297,7 +296,7 @@ enum AlkanesCommands {
     Execute {
         /// Input requirements (format: "B:amount" for Bitcoin, "block:tx:amount" for alkanes)
         #[arg(long)]
-        inputs: String,
+        inputs: Option<String>,
         /// Recipient addresses or identifiers
         #[arg(long)]
         to: String,
@@ -1330,9 +1329,9 @@ async fn execute_alkanes_command(provider: &ConcreteProvider, command: AlkanesCo
             };
             
             // Parse input requirements and protostones using deezel-common functions
-            let input_requirements = {
+            let input_requirements = if let Some(inputs_str) = &inputs {
                 use deezel_common::alkanes::execute::parse_input_requirements;
-                let parsed = parse_input_requirements(&inputs)
+                let parsed = parse_input_requirements(inputs_str)
                     .map_err(|e| anyhow!("Failed to parse input requirements: {}", e))?;
                 
                 // Convert from alkanes::execute types to traits types
@@ -1354,6 +1353,8 @@ async fn execute_alkanes_command(provider: &ConcreteProvider, command: AlkanesCo
                         },
                     }
                 }).collect()
+            } else {
+                Vec::new()
             };
             
             let protostone_specs = {
@@ -1379,7 +1380,7 @@ async fn execute_alkanes_command(provider: &ConcreteProvider, command: AlkanesCo
                 fee_rate,
                 to_addresses,
                 change_address: resolved_change.clone(),
-                input_requirements,
+                input_requirements: Some(input_requirements),
                 protostones: protostone_specs,
                 envelope_data,
                 raw_output: raw,

@@ -273,7 +273,7 @@ pub struct SendParams {
 }
 
 /// UTXO information
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Deserialize)]
 pub struct UtxoInfo {
     pub txid: String,
     pub vout: u32,
@@ -551,7 +551,7 @@ pub trait AlkanesProvider {
 /// Alkanes execute parameters
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AlkanesExecuteParams {
-    pub inputs: String,
+    pub inputs: Option<String>,
     pub to: String,
     pub change: Option<String>,
     pub fee_rate: Option<f32>,
@@ -581,7 +581,7 @@ pub struct EnhancedExecuteParams {
     pub fee_rate: Option<f32>,
     pub to_addresses: Vec<String>,
     pub change_address: Option<String>,
-    pub input_requirements: Vec<InputRequirement>,
+    pub input_requirements: Option<Vec<InputRequirement>>,
     pub protostones: Vec<ProtostoneSpec>,
     pub envelope_data: Option<Vec<u8>>,
     pub raw_output: bool,

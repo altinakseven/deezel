@@ -16,7 +16,7 @@ resolver = "2"
 
 [workspace.dependencies]
 # Core Bitcoin functionality
-bitcoin = "0.32.6"
+bitcoin = { version = "0.32.6", features = ["serde"] }
 ordinals = { git = "https://github.com/kungfuflex/alkanes-rs" }
 protorune-support = { git = "https://github.com/kungfuflex/alkanes-rs" }
 

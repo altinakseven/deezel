@@ -1,0 +1,21 @@
+[package]
+name = "deezel-sys"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+async-trait = { workspace = true }
+hex = { workspace = true }
+rand = { workspace = true }
+bitcoin = { workspace = true }
+secp256k1 = { workspace = true }
+psbt-v2 = "0.1.0"
+deezel-common = { path = "../deezel-common" }
+url = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }

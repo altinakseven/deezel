@@ -108,10 +108,10 @@ impl<P: DeezelProvider> EnhancedAlkanesExecutor<P> {
         // This would implement the enhanced execution logic from the reference
         // For now, convert to basic params and delegate
         let basic_params = AlkanesExecuteParams {
-            inputs: params.input_requirements.iter()
-                .map(|req| format!("{}:{}", req.requirement_type, req.amount))
-                .collect::<Vec<_>>()
-                .join(","),
+            inputs: Some(params.input_requirements.iter()
+              .map(|req| format!("{}:{}", req.requirement_type, req.amount))
+              .collect::<Vec<_>>()
+              .join(",")),
             to: params.to_addresses.join(","),
             change: params.change_address,
             fee_rate: params.fee_rate,

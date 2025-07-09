@@ -39,6 +39,8 @@ aes-gcm = { workspace = true }
 rand = { workspace = true }
 sha2 = { workspace = true }
 
+psbt-v2 = "0.1.0"
+
 # Async runtime (WASM-compatible features only)
 futures = { workspace = true }
 
@@ -78,11 +80,12 @@ tempfile = { workspace = true, optional = true }
 flate2 = { workspace = true }
 tokio = { workspace = true, features = ["sync", "time"], optional = true }
 reqwest = { workspace = true, features = ["json"], optional = true }
+url = { version = "2.5.0", optional = true }
 
 [features]
 default = ["wasm-inspection", "native-deps"]
 wasm-inspection = ["wasmi", "wasmprinter", "wat", "spin"]
-native-deps = ["dirs", "tempfile", "tokio", "reqwest"]
+native-deps = ["dirs", "tempfile", "tokio", "reqwest", "url"]
 web-compat = ["spin"]
 
 [dev-dependencies]

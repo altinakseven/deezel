@@ -283,22 +283,37 @@ impl StandaloneRpcClient {
             *id
         }
     }
+
+    pub fn config(&self) -> &RpcConfig {
+        &self.config
+    }
     
     /// Make an HTTP JSON-RPC call (requires implementation by platform)
     #[cfg(all(not(target_arch = "wasm32"), feature = "native-deps"))]
     pub async fn http_call(&self, url: &str, method: &str, params: JsonValue) -> Result<JsonValue> {
         use reqwest;
-        
+        use url::Url;
+
+        let parsed_url = Url::parse(url).map_err(|e| DeezelError::Configuration(format!("Invalid RPC URL: {}", e)))?;
+        let username = parsed_url.username();
+        let password = parsed_url.password();
+
         let request = RpcRequest::new(method, params, self.next_id());
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(self.config.timeout_seconds))
             .build()
             .map_err(|e| DeezelError::Network(e.to_string()))?;
-        
-        let response = client
+
+        let mut req_builder = client
             .post(url)
             .header("Content-Type", "application/json")
-            .json(&request)
+            .json(&request);
+        
+        if !username.is_empty() {
+            req_builder = req_builder.basic_auth(username, password);
+        }
+
+        let response = req_builder
             .send()
             .await
             .map_err(|e| DeezelError::Network(e.to_string()))?;
