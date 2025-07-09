@@ -1,7 +1,14 @@
-use alloc::{boxed::Box, format, vec::Vec};
+use alloc::boxed::Box;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
+use alloc::format;
+extern crate alloc;
 use crate::{
     armor::BlockType,
-    composed::{message::Message, shared::is_binary, Edata, Esk},
+    composed::{
+        message::Message, shared::is_binary, CompressedDataReader, Edata, Esk, LiteralDataReader,
+        SignatureBodyReader, SignatureOnePassReader,
+    },
     errors::{bail, format_err, unimplemented_err, Result},
     types::{PkeskVersion, SkeskVersion, Tag},
 };
@@ -229,7 +236,7 @@ impl<'a> Message<'a> {
     pub fn from_armor(
         input: &'a [u8],
     ) -> Result<(Self, crate::armor::Headers)> {
-        let (typ, headers, decoded) = crate::armor::parse(input)?;
+        let (typ, headers, decoded) = crate::armor::decode(input)?;
 
         match typ {
             // Standard PGP types
@@ -238,7 +245,8 @@ impl<'a> Message<'a> {
                     bail!("unexpected block type: {}", typ);
                 }
 
-                Ok((Self::from_bytes(&decoded)?, headers))
+                let static_slice: &'static [u8] = Box::leak(decoded.into_boxed_slice());
+                Ok((Self::from_bytes(static_slice)?, headers))
             }
             BlockType::PublicKey
             | BlockType::PrivateKey

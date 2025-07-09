@@ -65,6 +65,11 @@
 //!      .verify(&*verification_key, DATA)
 //!      .expect("Failed to validate signature");
 //! ```
+extern crate alloc;
+use alloc::boxed::Box;
+use alloc::string::{String, ToString};
+use alloc::vec;
+use alloc::format;
 
 mod header;
 mod many;

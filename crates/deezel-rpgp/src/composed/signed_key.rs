@@ -102,6 +102,11 @@
 //!     .verify_signature(HashAlgorithm::Sha256, digest, &raw_signature)
 //!     .expect("Verify must succeed");
 //! ```
+extern crate alloc;
+use alloc::boxed::Box;
+use alloc::string::{String, ToString};
+use alloc::vec;
+use alloc::format;
 
 mod key_parser;
 mod parse;

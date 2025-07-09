@@ -1,3 +1,9 @@
+use alloc::boxed::Box;
+use alloc::string::{String, ToString};
+use alloc::vec;
+use alloc::vec::Vec;
+use alloc::format;
+extern crate alloc;
 use crate::io::{self, BufRead};
 
 use byteorder::WriteBytesExt;
@@ -469,7 +475,7 @@ impl StringToKey {
 }
 
 impl Serialize for StringToKey {
-    fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: io::Write + WriteBytesExt>(&self, writer: &mut W) -> Result<()> {
         match self {
             Self::Simple { hash_alg } => {
                 writer.write_u8(self.id())?;

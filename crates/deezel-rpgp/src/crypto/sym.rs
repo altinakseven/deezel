@@ -1,6 +1,10 @@
+use alloc::boxed::Box;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
+use alloc::format;
+use alloc::vec;
 extern crate alloc;
 use aes::{Aes128, Aes192, Aes256};
-use alloc::{format, vec, vec::Vec};
 use blowfish::Blowfish;
 use camellia::{Camellia128, Camellia192, Camellia256};
 use cast5::Cast5;

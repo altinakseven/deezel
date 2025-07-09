@@ -1,5 +1,9 @@
 extern crate alloc;
-use alloc::{format, vec, vec::Vec};
+use alloc::boxed::Box;
+use alloc::string::{String, ToString};
+use alloc::vec;
+use alloc::format;
+use alloc::vec::Vec;
 use log::debug;
 use rand::{CryptoRng, Rng};
 use x25519_dalek::{PublicKey, StaticSecret};

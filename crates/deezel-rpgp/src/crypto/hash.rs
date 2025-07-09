@@ -1,5 +1,7 @@
 extern crate alloc;
-use alloc::{boxed::Box, string::ToString, vec::Vec};
+use alloc::boxed::Box;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 use core::str::FromStr;
 
 use digest::{Digest, DynDigest};

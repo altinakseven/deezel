@@ -1,5 +1,7 @@
 extern crate alloc;
-use alloc::{format, vec, vec::Vec};
+use alloc::format;
+use alloc::vec;
+use alloc::vec::Vec;
 pub use dsa::KeySize;
 use dsa::{Components, Signature, SigningKey};
 use num_bigint::BigUint;

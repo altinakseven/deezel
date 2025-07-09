@@ -1,3 +1,9 @@
+use alloc::boxed::Box;
+use alloc::string::{String, ToString};
+use alloc::vec;
+use alloc::vec::Vec;
+use alloc::format;
+extern crate alloc;
 use crate::io::{self, BufRead};
 
 use byteorder::{BigEndian, WriteBytesExt};
@@ -51,7 +57,7 @@ impl LiteralDataHeader {
         Self {
             mode,
             file_name: "".into(),
-            created: std::time::UNIX_EPOCH.into(),
+            created: Utc.timestamp_opt(0, 0).single().expect("invalid time"),
         }
     }
 

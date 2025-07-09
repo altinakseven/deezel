@@ -1,5 +1,9 @@
 extern crate alloc;
-use alloc::{format, string::ToString, vec, vec::Vec};
+use alloc::boxed::Box;
+use alloc::string::{String, ToString};
+use alloc::vec;
+use alloc::format;
+use alloc::vec::Vec;
 use ecdsa::SigningKey;
 use p521::NistP521;
 use rand::{CryptoRng, Rng};

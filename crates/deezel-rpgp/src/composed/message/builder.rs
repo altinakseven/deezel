@@ -1,10 +1,10 @@
-use alloc::{
-    collections::VecDeque,
-    format,
-    string::{String, ToString},
-    vec,
-    vec::Vec,
-};
+use alloc::boxed::Box;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
+use alloc::format;
+use alloc::vec;
+extern crate alloc;
+use alloc::collections::VecDeque;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use chrono::SubsecRound;
 use crc24::Crc24Hasher;

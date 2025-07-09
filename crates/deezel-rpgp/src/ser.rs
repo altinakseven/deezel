@@ -1,4 +1,9 @@
 //! # Serialize trait module
+extern crate alloc;
+use alloc::boxed::Box;
+use alloc::string::{String, ToString};
+use alloc::vec;
+use alloc::format;
 
 use alloc::vec::Vec;
 use crate::errors::Result;

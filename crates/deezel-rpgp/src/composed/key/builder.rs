@@ -1,12 +1,13 @@
+use alloc::boxed::Box;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
+use alloc::format;
+extern crate alloc;
+use alloc::vec;
 use chrono::{Duration, SubsecRound};
 use derive_builder::Builder;
 use rand::{CryptoRng, Rng};
 use smallvec::SmallVec;
-use alloc::{
-    string::{String, ToString},
-    vec,
-    vec::Vec,
-};
 
 #[cfg(feature = "draft-pqc")]
 use crate::crypto::{
@@ -26,7 +27,7 @@ use crate::{
 };
 
 #[derive(Debug, PartialEq, Eq, Builder)]
-#[builder(build_fn(validate = "Self::validate"))]
+#[builder(build_fn(validate = "Self::validate"), no_std)]
 pub struct SecretKeyParams {
     /// OpenPGP key version of primary
     #[builder(default)]
@@ -92,6 +93,7 @@ pub struct SecretKeyParams {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Builder)]
+#[builder(no_std)]
 pub struct SubkeyParams {
     // -- OpenPGP key version of this subkey
     #[builder(default)]

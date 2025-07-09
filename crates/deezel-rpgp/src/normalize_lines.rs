@@ -1,4 +1,9 @@
 //! # Line ending normalization module
+extern crate alloc;
+use alloc::boxed::Box;
+use alloc::string::{String, ToString};
+use alloc::vec;
+use alloc::format;
 
 use alloc::borrow::Cow;
 use bytes::{Buf, BytesMut};

@@ -44,6 +44,11 @@
 //!
 //! [Packet based signing and verifying]: super::super::packet
 //! [signing and verifying with external hashing]: super::signed_key
+extern crate alloc;
+use alloc::boxed::Box;
+use alloc::string::{String, ToString};
+use alloc::vec;
+use alloc::format;
 
 mod builder;
 mod public;

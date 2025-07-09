@@ -1,9 +1,9 @@
+use alloc::boxed::Box;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
+use alloc::format;
+extern crate alloc;
 use core::iter::Peekable;
-use alloc::{
-    format,
-    string::{String, ToString},
-    vec::Vec,
-};
 
 use crate::{
     armor,

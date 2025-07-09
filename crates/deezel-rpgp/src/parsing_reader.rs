@@ -1,6 +1,6 @@
 extern crate alloc;
 use crate::io::{BufRead, Read, Result};
-use alloc::{boxed::Box, format, vec, vec::Vec};
+use alloc::{boxed::Box, format, string::{String, ToString}, vec, vec::Vec};
 use core::cmp;
 
 use bytes::{Bytes, BytesMut};
@@ -53,7 +53,7 @@ pub trait BufReadParsing: BufRead + Sized {
         if read != arr.len() {
             return Err(crate::io::Error::new(
                 crate::io::ErrorKind::UnexpectedEof,
-                "no more data available",
+                "no more data available".to_string(),
             ));
         }
 
@@ -79,7 +79,7 @@ pub trait BufReadParsing: BufRead + Sized {
         if read != arr.len() {
             return Err(crate::io::Error::new(
                 crate::io::ErrorKind::UnexpectedEof,
-                "no more data available",
+                "no more data available".to_string(),
             ));
         }
 
@@ -105,7 +105,7 @@ pub trait BufReadParsing: BufRead + Sized {
         if arr.len() != size {
             return Err(crate::io::Error::new(
                 crate::io::ErrorKind::UnexpectedEof,
-                "no more data available",
+                "no more data available".to_string(),
             ));
         }
 

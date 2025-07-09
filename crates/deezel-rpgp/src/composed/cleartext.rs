@@ -1,12 +1,10 @@
 //! Implements Cleartext Signature Framework
-
-use alloc::{
-    boxed::Box,
-    format,
-    string::{String, ToString},
-    vec,
-    vec::Vec,
-};
+extern crate alloc;
+use alloc::vec;
+use alloc::boxed::Box;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
+use alloc::format;
 use buffer_redux::BufReader;
 use chrono::SubsecRound;
 use log::debug;

@@ -1,3 +1,8 @@
+use alloc::boxed::Box;
+use alloc::string::{String, ToString};
+use alloc::vec;
+use alloc::format;
+extern crate alloc;
 use rand::{CryptoRng, Rng};
 use signature::{Signer as _, Verifier};
 use slh_dsa::Shake256s;

@@ -1,4 +1,8 @@
-use alloc::string::String;
+use alloc::boxed::Box;
+use alloc::string::{String, ToString};
+use alloc::vec;
+use alloc::format;
+extern crate alloc;
 use core::hash::Hasher;
 
 use base64::engine::{general_purpose, Engine as _};
@@ -33,6 +37,34 @@ impl Write for alloc::vec::Vec<u8> {
 }
 
 
+pub struct Base64Encoder<'a, W: Write> {
+    inner: &'a mut W,
+    buffer: alloc::vec::Vec<u8>,
+}
+
+impl<'a, W: Write> Base64Encoder<'a, W> {
+    pub fn new(inner: &'a mut W) -> Self {
+        Self {
+            inner,
+            buffer: alloc::vec::Vec::new(),
+        }
+    }
+}
+
+impl<'a, W: Write> Write for Base64Encoder<'a, W> {
+    fn write_all(&mut self, buf: &[u8]) -> Result<()> {
+        self.buffer.extend_from_slice(buf);
+        Ok(())
+    }
+
+    fn flush(&mut self) -> Result<()> {
+        let encoded = general_purpose::STANDARD.encode(&self.buffer);
+        self.inner.write_all(encoded.as_bytes())?;
+        self.buffer.clear();
+        self.inner.flush()
+    }
+}
+
 pub fn write(
     source: &impl Serialize,
     typ: BlockType,
@@ -45,8 +77,7 @@ pub fn write(
     // write body
     let mut crc_hasher = include_checksum.then(Crc24Hasher::new);
 
-    // This part needs to be refactored to not use crate::io::Write
-    // write_body(writer, source, crc_hasher.as_mut())?;
+    write_body(writer, source, crc_hasher.as_mut())?;
 
     write_footer(writer, typ, crc_hasher)?;
 

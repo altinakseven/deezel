@@ -1,3 +1,8 @@
+use alloc::boxed::Box;
+use alloc::string::{String, ToString};
+use alloc::vec;
+use alloc::format;
+extern crate alloc;
 /// Represents a Key ID.
 ///
 /// This ID is always 8 bytes long, but calculated differently, depending on the key version.

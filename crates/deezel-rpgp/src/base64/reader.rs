@@ -1,4 +1,9 @@
 //! # base64 reader module
+extern crate alloc;
+use alloc::boxed::Box;
+use alloc::string::{String, ToString};
+use alloc::vec;
+use alloc::format;
 
 // This will be replaced with a no_std compatible trait
 pub trait Read {}

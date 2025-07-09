@@ -1,7 +1,11 @@
+extern crate alloc;
 use alloc::{
+    boxed::Box,
     collections::BTreeMap,
     string::{String, ToString},
+    vec,
     vec::Vec,
+    format,
 };
 use core::{fmt, hash::Hasher, str};
 use crate::ser::Serialize;
@@ -22,6 +26,7 @@ use nom::{
 use crate::{
     base64::{Base64Decoder, Base64Reader},
     errors::{bail, Result},
+    io::{BufRead, Cursor, Read},
 };
 
 /// Armor block types.
@@ -241,7 +246,7 @@ fn armor_headers(i: &[u8]) -> IResult<&[u8], Headers> {
 }
 
 /// Armor Header
-fn armor_header(i: &[u8]) -> IResult<&[u8], (BlockType, Headers)> {
+pub fn armor_header(i: &[u8]) -> IResult<&[u8], (BlockType, Headers)> {
     let (i, typ) = armor_header_line(i)?;
     let (i, headers) = match typ {
         BlockType::CleartextMessage => armor_headers_hash(i)?,
@@ -293,4 +298,15 @@ fn hash_header_line(i: &[u8]) -> IResult<&[u8], Vec<String>> {
     values.push(last_value);
 
     Ok((i, values))
+}
+
+pub fn decode(i: &[u8]) -> Result<(BlockType, Headers, Vec<u8>)> {
+    let (i, (typ, headers)) = armor_header(i).map_err(|e| e.to_owned())?;
+
+    // TODO: should not be a BufReader here
+    let mut reader = Base64Reader::new(BufReader::new(Cursor::new(i)));
+    let mut decoded = Vec::new();
+    reader.read_to_end(&mut decoded)?;
+
+    Ok((typ, headers, decoded))
 }
