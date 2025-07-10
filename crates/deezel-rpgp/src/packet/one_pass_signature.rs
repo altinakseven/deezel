@@ -2,8 +2,6 @@ use alloc::string::ToString;
 use alloc::vec::Vec;
 extern crate alloc;
 use crate::io::{self, BufRead};
-
-use byteorder::WriteBytesExt;
 use bytes::Bytes;
 #[cfg(test)]
 use proptest::prelude::*;

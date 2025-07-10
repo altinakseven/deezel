@@ -4,7 +4,7 @@ use alloc::{
     string::{String, ToString},
     vec::Vec,
 };
-use core::{fmt, hash::Hasher, str};
+use core::{fmt, str};
 use crate::ser::Serialize;
 
 use crate::io::BufReader;

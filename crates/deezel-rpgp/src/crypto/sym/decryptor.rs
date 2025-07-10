@@ -344,7 +344,7 @@ where
                             let encrypted_prefix = prefix[2..].to_vec();
                             encryptor.decrypt(&mut prefix);
                             encryptor = BufDecryptor::<M>::new_from_slices(key, &encrypted_prefix)
-                                .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, "BufDecryptor creation failed"))?;
+                                .map_err(|_e| io::Error::new(io::ErrorKind::InvalidInput, "BufDecryptor creation failed"))?;
                         }
                         MaybeProtected::Protected { ref mut hasher } => {
                             encryptor.decrypt(&mut prefix);

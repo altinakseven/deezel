@@ -3,7 +3,6 @@ use alloc::format;
 extern crate alloc;
 use crate::io::{self, BufRead, Read};
 
-use byteorder::WriteBytesExt;
 use bytes::Bytes;
 use rand::{CryptoRng, Rng};
 

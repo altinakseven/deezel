@@ -2,7 +2,7 @@ extern crate alloc;
 use crate::io;
 use core::hash::Hasher;
 
-use byteorder::{BigEndian, ByteOrder, WriteBytesExt};
+use byteorder::{BigEndian, ByteOrder};
 use snafu::Snafu;
 
 #[derive(Debug, Snafu)]

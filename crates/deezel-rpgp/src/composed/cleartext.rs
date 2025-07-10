@@ -200,14 +200,14 @@ impl CleartextSignedMessage {
     pub fn from_armor_after_header(
         mut b: &[u8],
         headers: Headers,
-        limit: usize,
+        _limit: usize,
     ) -> Result<(Self, Headers)> {
         let hashes = validate_headers(headers)?;
 
         debug!("Found Hash headers: {:?}", hashes);
 
         // Cleartext Body
-        let (csf_encoded_text, prefix) = read_cleartext_body(&mut b)?;
+        let (csf_encoded_text, _prefix) = read_cleartext_body(&mut b)?;
         
         // This needs to be refactored to not use crate::io::Cursor
         // let b = crate::io::Cursor::new(prefix).chain(b);
@@ -334,15 +334,9 @@ fn dash_unescape_and_trim(text: &str) -> String {
     out
 }
 
-/// Does the remaining buffer contain any non-whitespace characters?
-fn has_rest(b: &[u8]) -> Result<bool> {
-    // This function needs to be refactored to not use crate::io
-    Ok(false)
-}
-
 const HEADER_LINE: &str = "-----BEGIN PGP SIGNED MESSAGE-----";
 
-fn read_cleartext_body(b: &mut &[u8]) -> Result<(String, String)> {
+fn read_cleartext_body(_b: &mut &[u8]) -> Result<(String, String)> {
     let out = String::new();
 
     loop {

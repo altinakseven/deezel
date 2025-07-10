@@ -66,7 +66,6 @@
 //!      .expect("Failed to validate signature");
 //! ```
 extern crate alloc;
-use alloc::string::ToString;
 
 mod header;
 mod many;

@@ -140,7 +140,7 @@ impl<R: Read> StreamEncryptor<R> {
 impl<R: Read> Read for StreamEncryptor<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.fill_buffer()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, "fill_buffer failed"))?;
+            .map_err(|_e| io::Error::new(io::ErrorKind::Other, "fill_buffer failed"))?;
 
         let amt = core::cmp::min(buf.len(), self.buffer.remaining());
         self.buffer.copy_to_slice(&mut buf[..amt]);

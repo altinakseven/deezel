@@ -937,7 +937,6 @@ enum State<'a, R: Read> {
         configs: VecDeque<SigningConfig<'a>>,
         hashers: VecDeque<SignatureHasher>,
     },
-    Error,
     Done,
 }
 
@@ -952,14 +951,6 @@ impl<R> SignatureHashers<R> {
         for hasher in &mut self.hashers {
             hasher.update(buf);
         }
-    }
-
-    fn into_hashers(self) -> VecDeque<SignatureHasher> {
-        self.hashers
-    }
-
-    fn into_inner(self) -> R {
-        self.source
     }
 }
 
@@ -1071,7 +1062,7 @@ impl<R: Read> Read for SignGenerator<'_, R> {
                         Some(op) => {
                             let mut temp_buf = Vec::new();
                             op.to_writer_with_header(&mut temp_buf)
-                                .map_err(|e| crate::io::Error::new(crate::io::ErrorKind::Other, "ops write failed"))?;
+                                .map_err(|_e| crate::io::Error::new(crate::io::ErrorKind::Other, "ops write failed"))?;
                             buffer.extend_from_slice(&temp_buf);
                             continue;
                         }
@@ -1115,10 +1106,10 @@ impl<R: Read> Read for SignGenerator<'_, R> {
                         Some(config) => {
                             let hasher = hashers.pop_front().expect("equal length");
                             let signature = hasher.sign(config.key, &config.key_pw)
-                                .map_err(|e| crate::io::Error::new(crate::io::ErrorKind::Other, "signature creation failed"))?;
+                                .map_err(|_e| crate::io::Error::new(crate::io::ErrorKind::Other, "signature creation failed"))?;
                             let mut temp_buf = Vec::new();
                             signature.to_writer(&mut temp_buf)
-                                .map_err(|e| crate::io::Error::new(crate::io::ErrorKind::Other, "signature write failed"))?;
+                                .map_err(|_e| crate::io::Error::new(crate::io::ErrorKind::Other, "signature write failed"))?;
                             buffer.extend_from_slice(&temp_buf);
                             continue;
                         }
@@ -1126,7 +1117,6 @@ impl<R: Read> Read for SignGenerator<'_, R> {
                     }
                 }
                 State::Done => return Ok(0),
-                State::Error => panic!("error state"),
             };
 
             self.state = next_state;

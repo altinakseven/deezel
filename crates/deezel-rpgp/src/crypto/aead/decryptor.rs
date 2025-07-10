@@ -115,7 +115,7 @@ impl<R: BufRead> StreamDecryptor<R> {
                 &self.info,
                 &mut out,
             )
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, "AEAD decryption failed"))?;
+            .map_err(|_e| io::Error::new(io::ErrorKind::InvalidInput, "AEAD decryption failed"))?;
         self.written += out.len() as u64;
 
         self.buffer.unsplit(out);
@@ -162,7 +162,7 @@ impl<R: BufRead> StreamDecryptor<R> {
                 &final_info,
                 &mut final_auth_tag,
             )
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, "AEAD final decryption failed"))?;
+            .map_err(|_e| io::Error::new(io::ErrorKind::InvalidInput, "AEAD final decryption failed"))?;
 
         Ok(())
     }

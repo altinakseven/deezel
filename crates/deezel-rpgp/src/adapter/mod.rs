@@ -2,7 +2,6 @@
 //! [`pgp`] but backed by a [`signature::Signer`] to keep keys in HSMs or other
 //! secure controllers.
 extern crate alloc;
-use alloc::string::ToString;
 
 mod ecdsa;
 mod rsa;

@@ -42,7 +42,7 @@ impl<'a, W: Write> Write for Base64Encoder<'a, W> {
     fn flush(&mut self) -> crate::io::Result<()> {
         let encoded = general_purpose::STANDARD.encode(&self.buffer);
         self.inner.write_all(encoded.as_bytes())
-            .map_err(|e| crate::io::Error::new(crate::io::ErrorKind::Other, "write failed"))?;
+            .map_err(|_e| crate::io::Error::new(crate::io::ErrorKind::Other, "write failed"))?;
         self.buffer.clear();
         self.inner.flush()
     }
@@ -96,9 +96,9 @@ pub(crate) fn write_header(
 }
 
 fn write_body(
-    writer: &mut impl Write,
-    source: &impl Serialize,
-    crc_hasher: Option<&mut Crc24Hasher>,
+    _writer: &mut impl Write,
+    _source: &impl Serialize,
+    _crc_hasher: Option<&mut Crc24Hasher>,
 ) -> Result<()> {
     // This function needs a major refactor to work without crate::io.
     // For now, it is a no-op.

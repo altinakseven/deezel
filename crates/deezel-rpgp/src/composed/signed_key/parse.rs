@@ -15,8 +15,6 @@ use crate::{
     types::Tag,
 };
 
-use crate::io::BufRead;
-
 impl PublicOrSecret {
     /// Parses a list of secret and public keys, from either ASCII-armored or binary OpenPGP data.
     ///

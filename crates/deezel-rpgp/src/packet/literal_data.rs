@@ -3,7 +3,7 @@ use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
 extern crate alloc;
-use crate::io::{self, BufRead, Write};
+use crate::io::{self, BufRead};
 use alloc::borrow::ToOwned;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use chrono::{DateTime, TimeZone, Utc};
@@ -271,14 +271,6 @@ pub(crate) enum MaybeNormalizedReader<R: io::Read> {
 }
 
 impl<R: io::Read> MaybeNormalizedReader<R> {
-    pub(crate) fn into_inner(self) -> R {
-        match self {
-            #[cfg(feature = "std")]
-            Self::Normalized(s) => s.into_inner(),
-            Self::Raw(s) => s,
-        }
-    }
-
     pub(crate) fn inner_mut(&mut self) -> &mut R {
         match self {
             #[cfg(feature = "std")]
@@ -355,13 +347,6 @@ impl<R: io::Read> LiteralDataGenerator<R> {
         }
     }
 
-    pub(crate) fn into_inner(self) -> R {
-        match self {
-            Self::Fixed(s) => s.into_inner().into_inner(),
-            Self::Partial(s) => s.into_inner().into_inner(),
-        }
-    }
-
     pub(crate) fn inner_mut(&mut self) -> &mut R {
         match self {
             Self::Fixed(s) => s.inner_mut().inner_mut(),
@@ -407,10 +392,6 @@ impl<R: io::Read> LiteralDataFixedGenerator<R> {
             header_written: 0,
             total_len,
         })
-    }
-
-    pub(crate) fn into_inner(self) -> R {
-        self.source
     }
 
     pub(crate) fn inner_mut(&mut self) -> &mut R {
@@ -469,10 +450,6 @@ impl<R: io::Read> LiteralDataPartialGenerator<R> {
             is_fixed_emitted: false,
             current_packet: BytesMut::with_capacity(chunk_size as usize),
         })
-    }
-
-    pub(crate) fn into_inner(self) -> R {
-        self.source
     }
 
     pub(crate) fn inner_mut(&mut self) -> &mut R {
@@ -544,11 +521,11 @@ impl<R: io::Read> io::Read for LiteralDataPartialGenerator<R> {
                 .expect("known construction");
                 packet_header
                     .to_writer(&mut writer)
-                    .map_err(|e| io::Error::new(io::ErrorKind::Other, "failed to write packet header"))?;
+                    .map_err(|_e| io::Error::new(io::ErrorKind::Other, "failed to write packet header"))?;
 
                 self.header
                     .to_writer(&mut writer)
-                    .map_err(|e| io::Error::new(io::ErrorKind::Other, "failed to write literal data header"))?;
+                    .map_err(|_e| io::Error::new(io::ErrorKind::Other, "failed to write literal data header"))?;
 
                 debug!("first partial packet {:?}", packet_header);
                 self.is_first = false;
@@ -556,7 +533,7 @@ impl<R: io::Read> io::Read for LiteralDataPartialGenerator<R> {
                 // only length
                 packet_length
                     .to_writer_new(&mut writer)
-                    .map_err(|e| io::Error::new(io::ErrorKind::Other, "failed to write packet length"))?;
+                    .map_err(|_e| io::Error::new(io::ErrorKind::Other, "failed to write packet length"))?;
                 debug!("partial packet {:?}", packet_length);
             };
 
