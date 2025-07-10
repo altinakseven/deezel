@@ -1,40 +1,17 @@
-use alloc::boxed::Box;
-use alloc::string::{String, ToString};
-use alloc::vec;
-use alloc::format;
 extern crate alloc;
 use core::hash::Hasher;
 
 use base64::engine::{general_purpose, Engine as _};
 use crc24::Crc24Hasher;
-use generic_array::typenum::U64;
 
 use super::Headers;
 use crate::{
     armor::BlockType,
     errors::Result,
-    line_writer::{LineBreak, LineWriter},
     ser::Serialize,
-    util::TeeWriter,
 };
 
-// This is a placeholder for a no_std compatible Write trait.
-// I will define this properly later.
-pub trait Write {
-    fn write_all(&mut self, buf: &[u8]) -> Result<()>;
-    fn flush(&mut self) -> Result<()>;
-}
-
-impl Write for alloc::vec::Vec<u8> {
-    fn write_all(&mut self, buf: &[u8]) -> Result<()> {
-        self.extend_from_slice(buf);
-        Ok(())
-    }
-
-    fn flush(&mut self) -> Result<()> {
-        Ok(())
-    }
-}
+use crate::io::Write;
 
 
 pub struct Base64Encoder<'a, W: Write> {
@@ -52,14 +29,20 @@ impl<'a, W: Write> Base64Encoder<'a, W> {
 }
 
 impl<'a, W: Write> Write for Base64Encoder<'a, W> {
-    fn write_all(&mut self, buf: &[u8]) -> Result<()> {
+    fn write(&mut self, buf: &[u8]) -> crate::io::Result<usize> {
+        self.buffer.extend_from_slice(buf);
+        Ok(buf.len())
+    }
+    
+    fn write_all(&mut self, buf: &[u8]) -> crate::io::Result<()> {
         self.buffer.extend_from_slice(buf);
         Ok(())
     }
 
-    fn flush(&mut self) -> Result<()> {
+    fn flush(&mut self) -> crate::io::Result<()> {
         let encoded = general_purpose::STANDARD.encode(&self.buffer);
-        self.inner.write_all(encoded.as_bytes())?;
+        self.inner.write_all(encoded.as_bytes())
+            .map_err(|e| crate::io::Error::new(crate::io::ErrorKind::Other, "write failed"))?;
         self.buffer.clear();
         self.inner.flush()
     }

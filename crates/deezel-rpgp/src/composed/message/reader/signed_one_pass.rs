@@ -1,6 +1,5 @@
 use alloc::boxed::Box;
-use alloc::string::{String, ToString};
-use alloc::vec;
+use alloc::string::ToString;
 use alloc::format;
 extern crate alloc;
 use bytes::{Buf, BytesMut};
@@ -10,7 +9,7 @@ use super::PacketBodyReader;
 use crate::{
     composed::{Message, MessageReader, RingResult, TheRing},
     errors::{bail, ensure_eq, Result},
-    packet::{OnePassSignature, OpsVersionSpecific, Packet, PacketTrait, Signature, SignatureType},
+    packet::{OnePassSignature, OpsVersionSpecific, Packet, Signature, SignatureType},
     util::{fill_buffer, NormalizingHasher},
 };
 
@@ -135,7 +134,7 @@ impl<'a> SignatureOnePassReader<'a> {
                     buffer.truncate(read);
 
                     if read == 0 {
-                        return Err(Error::Other);
+                        return Err(crate::io::Error::new(crate::io::ErrorKind::UnexpectedEof, "unexpected end of file"));
                     }
 
                     if let Some(ref mut hasher) = norm_hasher {
@@ -182,13 +181,13 @@ impl<'a> SignatureOnePassReader<'a> {
                         // read the signature
                         let mut packets = crate::packet::PacketParser::new(reader);
                         let Some(packet) = packets.next() else {
-                            return Err(Error::Other);
+                            return Err(crate::io::Error::new(crate::io::ErrorKind::Other, "missing signature packet"));
                         };
                         let packet =
-                            packet.map_err(|_| Error::Other)?;
+                            packet.map_err(|_| crate::io::Error::new(crate::io::ErrorKind::Other, "failed to parse packet"))?;
 
                         let Packet::Signature(signature) = packet else {
-                            return Err(Error::Other);
+                            return Err(crate::io::Error::new(crate::io::ErrorKind::Other, "expected signature packet"));
                         };
 
                         // calculate final hash
@@ -197,9 +196,9 @@ impl<'a> SignatureOnePassReader<'a> {
                             if let Some(config) = signature.config() {
                                 let len = config
                                     .hash_signature_data(&mut hasher)
-                                    .map_err(|_| Error::Other)?;
+                                    .map_err(|_| crate::io::Error::new(crate::io::ErrorKind::Other, "failed to hash signature data"))?;
                                 hasher.update(
-                                    &config.trailer(len).map_err(|_| Error::Other)?,
+                                    &config.trailer(len).map_err(|_| crate::io::Error::new(crate::io::ErrorKind::Other, "failed to create trailer"))?,
                                 );
                                 Some(hasher.finalize())
                             } else {
@@ -240,7 +239,7 @@ impl<'a> SignatureOnePassReader<'a> {
                     };
                     return Ok(());
                 }
-                Self::Error => return Err(Error::Other),
+                Self::Error => return Err(crate::io::Error::new(crate::io::ErrorKind::Other, "signed one pass reader error")),
             }
         }
     }
@@ -300,7 +299,7 @@ impl BufRead for SignatureOnePassReader<'_> {
             Self::Init { .. } => unreachable!("invalid state"),
             Self::Body { buffer, .. } => Ok(&buffer[..]),
             Self::Done { .. } => Ok(&[][..]),
-            Self::Error => Err(Error::Other),
+            Self::Error => Err(crate::io::Error::new(crate::io::ErrorKind::Other, "signed one pass reader error")),
         }
     }
 

@@ -1,5 +1,5 @@
 use alloc::boxed::Box;
-use alloc::string::{String, ToString};
+use alloc::string::ToString;
 use alloc::vec;
 use alloc::vec::Vec;
 use alloc::format;
@@ -8,7 +8,6 @@ use crate::io::Read;
 
 use byteorder::{BigEndian, ByteOrder};
 use chrono::{DateTime, Utc};
-use digest::DynDigest;
 use log::debug;
 use rand::{CryptoRng, Rng};
 
@@ -24,7 +23,7 @@ use crate::{
     },
     ser::Serialize,
     types::{Fingerprint, KeyId, KeyVersion, Password, PublicKeyTrait, SecretKeyTrait, Tag},
-    util::NormalizingHasher,
+    util::{CloneableDigest, NormalizingHasher},
 };
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -450,7 +449,7 @@ impl SignatureConfig {
     }
 
     /// Calculate the serialized version of this packet, but only the part relevant for hashing.
-    pub fn hash_signature_data(&self, hasher: &mut Box<dyn DynDigest + Send>) -> Result<usize> {
+    pub fn hash_signature_data(&self, hasher: &mut Box<dyn CloneableDigest>) -> Result<usize> {
         match self.version() {
             SignatureVersion::V2 | SignatureVersion::V3 => {
                 let created = {
@@ -545,7 +544,7 @@ impl SignatureConfig {
 
     pub fn hash_data_to_sign<R>(
         &self,
-        hasher: &mut Box<dyn DynDigest + Send>,
+        hasher: &mut Box<dyn CloneableDigest>,
         mut data: R,
     ) -> Result<usize>
     where
@@ -705,6 +704,7 @@ impl SignatureConfig {
     }
 }
 
+#[derive(Clone)]
 pub struct SignatureHasher {
     norm_hasher: NormalizingHasher,
     config: SignatureConfig,

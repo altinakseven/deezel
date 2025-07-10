@@ -1,7 +1,3 @@
-use alloc::boxed::Box;
-use alloc::string::{String, ToString};
-use alloc::vec;
-use alloc::format;
 extern crate alloc;
 use bytes::{Buf, BytesMut};
 use log::debug;
@@ -41,7 +37,7 @@ impl<R: BufRead> BufRead for PacketBodyReader<R> {
         match self.state {
             State::Body { ref mut buffer, .. } => Ok(&buffer[..]),
             State::Done { .. } => Ok(&[][..]),
-            State::Error => Err(Error::Other),
+            State::Error => Err(crate::io::Error::new(crate::io::ErrorKind::Other, "packet body reader error")),
         }
     }
 
@@ -90,16 +86,16 @@ impl<R: BufRead> PacketBodyReader<R> {
                         | Tag::SymEncryptedData
                         | Tag::SymEncryptedProtectedData
                 ) {
-                    return Err(Error::Other);
+                    return Err(crate::io::Error::new(crate::io::ErrorKind::Other, "packet body reader error"));
                 }
 
                 // https://www.rfc-editor.org/rfc/rfc9580.html#section-4.2.1.4-5
                 // "The first partial length MUST be at least 512 octets long."
                 if len < 512 {
-                    return Err(Error::Other);
+                    return Err(crate::io::Error::new(crate::io::ErrorKind::Other, "packet body reader error"));
                 }
 
-                LimitedReader::Partial(source.take(len as u64))
+                LimitedReader::Partial(super::limited::Take::new(source, len as u64))
             }
         };
 
@@ -171,7 +167,7 @@ impl<R: BufRead> PacketBodyReader<R> {
                                 debug_assert!(rest.is_empty(), "{}", hex::encode(&rest));
 
                                 if reader.limit() > 0 {
-                                    return Err(Error::Other);
+                                    return Err(crate::io::Error::new(crate::io::ErrorKind::Other, "packet body reader error"));
                                 }
 
                                 self.state = State::Done {
@@ -184,7 +180,7 @@ impl<R: BufRead> PacketBodyReader<R> {
                             LimitedReader::Partial(r) => {
                                 // new round
                                 let mut source = r.into_inner();
-                                let packet_length = PacketLength::try_from_reader(&mut source).map_err(|_| Error::Other)?;
+                                let packet_length = PacketLength::try_from_reader(&mut source).map_err(|_| crate::io::Error::new(crate::io::ErrorKind::Other, "packet body reader error"))?;
 
                                 let source = match packet_length {
                                     PacketLength::Fixed(len) => {
@@ -195,10 +191,10 @@ impl<R: BufRead> PacketBodyReader<R> {
                                     PacketLength::Partial(len) => {
                                         // another one
                                         debug!("intermediary partial packet {}", len);
-                                        LimitedReader::Partial(source.take(len as u64))
+                                        LimitedReader::Partial(super::limited::Take::new(source, len as u64))
                                     }
                                     PacketLength::Indeterminate => {
-                                        return Err(Error::Other);
+                                        return Err(crate::io::Error::new(crate::io::ErrorKind::Other, "packet body reader error"));
                                     }
                                 };
 
@@ -216,7 +212,7 @@ impl<R: BufRead> PacketBodyReader<R> {
                     return Ok(());
                 }
                 State::Error => {
-                    return Err(Error::Other);
+                    return Err(crate::io::Error::new(crate::io::ErrorKind::Other, "packet body reader error"));
                 }
             }
         }

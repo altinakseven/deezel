@@ -1,5 +1,5 @@
 use alloc::boxed::Box;
-use alloc::string::{String, ToString};
+use alloc::string::ToString;
 use alloc::vec::Vec;
 use alloc::format;
 extern crate alloc;
@@ -9,18 +9,17 @@ use crate::{
         message::Message, shared::is_binary, CompressedDataReader, Edata, Esk, LiteralDataReader,
         SignatureBodyReader, SignatureOnePassReader,
     },
-    errors::{bail, format_err, unimplemented_err, Result},
+    errors::{bail, unimplemented_err, Result},
+    parsing_reader::BufReadParsing,
     types::{PkeskVersion, SkeskVersion, Tag},
 };
 
-use crate::io::BufRead;
-use core::fmt::Debug;
 
 /// Parses a single message level
-pub(super) fn next<T: BufRead + Debug>(
-    mut packets: crate::packet::PacketParser<T>,
+pub(super) fn next(
+    mut packets: crate::packet::PacketParser<super::MessageReader<'_>>,
     is_nested: bool,
-) -> Result<Option<Message<'static>>> {
+) -> Result<Option<Message<'_>>> {
     loop {
         let Some(packet) = packets.next_owned() else {
             return Ok(None);
@@ -182,7 +181,7 @@ fn esk_filter(esk: Vec<Esk>, pkesk_allowed: PkeskVersion, skesk_allowed: SkeskVe
 impl<'a> Message<'a> {
     /// Parse a composed message.
     /// Ref: <https://www.rfc-editor.org/rfc/rfc9580.html#name-openpgp-messages>
-    fn from_packets<T: BufRead + Debug>(packets: crate::packet::PacketParser<T>) -> Result<Self> {
+    fn from_packets(packets: crate::packet::PacketParser<super::MessageReader<'a>>) -> Result<Self> {
         match next(packets, false)? {
             Some(message) => Ok(message),
             None => {
@@ -193,7 +192,8 @@ impl<'a> Message<'a> {
 
     /// Parses a message from the given bytes.
     pub fn from_bytes(source: &'a [u8]) -> Result<Self> {
-        let parser = crate::packet::PacketParser::new(source);
+        let message_reader = super::MessageReader::Reader(Box::new(source));
+        let parser = crate::packet::PacketParser::new(message_reader);
         Self::from_packets(parser)
     }
 

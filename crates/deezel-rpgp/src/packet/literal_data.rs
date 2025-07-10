@@ -2,12 +2,11 @@ use alloc::boxed::Box;
 use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
-use alloc::format;
 extern crate alloc;
 use crate::io::{self, BufRead, Write};
 use alloc::borrow::ToOwned;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
-use chrono::{DateTime, SubsecRound, TimeZone, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use log::debug;
 use num_enum::{FromPrimitive, IntoPrimitive};
 #[cfg(test)]
@@ -15,7 +14,6 @@ use proptest::prelude::*;
 
 use crate::{
     errors::{ensure, Result},
-    line_writer::LineBreak,
     packet::{PacketHeader, PacketTrait},
     parsing_reader::BufReadParsing,
     ser::Serialize,
@@ -265,6 +263,7 @@ impl PacketTrait for LiteralData {
 }
 
 #[allow(clippy::large_enum_variant)]
+#[derive(Clone)]
 pub(crate) enum MaybeNormalizedReader<R: io::Read> {
     #[cfg(feature = "std")]
     Normalized(NormalizedReader<R>),
@@ -276,6 +275,14 @@ impl<R: io::Read> MaybeNormalizedReader<R> {
         match self {
             #[cfg(feature = "std")]
             Self::Normalized(s) => s.into_inner(),
+            Self::Raw(s) => s,
+        }
+    }
+
+    pub(crate) fn inner_mut(&mut self) -> &mut R {
+        match self {
+            #[cfg(feature = "std")]
+            Self::Normalized(s) => s.inner_mut(),
             Self::Raw(s) => s,
         }
     }
@@ -292,6 +299,7 @@ impl<R: io::Read> io::Read for MaybeNormalizedReader<R> {
 }
 
 #[allow(clippy::large_enum_variant)]
+#[derive(Clone)]
 pub(crate) enum LiteralDataGenerator<R: io::Read> {
     Fixed(LiteralDataFixedGenerator<MaybeNormalizedReader<R>>),
     Partial(LiteralDataPartialGenerator<MaybeNormalizedReader<R>>),
@@ -353,6 +361,13 @@ impl<R: io::Read> LiteralDataGenerator<R> {
             Self::Partial(s) => s.into_inner().into_inner(),
         }
     }
+
+    pub(crate) fn inner_mut(&mut self) -> &mut R {
+        match self {
+            Self::Fixed(s) => s.inner_mut().inner_mut(),
+            Self::Partial(s) => s.inner_mut().inner_mut(),
+        }
+    }
 }
 
 impl<R: io::Read> io::Read for LiteralDataGenerator<R> {
@@ -365,6 +380,7 @@ impl<R: io::Read> io::Read for LiteralDataGenerator<R> {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct LiteralDataFixedGenerator<R: io::Read> {
     /// The serialized packet header
     header: Vec<u8>,
@@ -396,6 +412,10 @@ impl<R: io::Read> LiteralDataFixedGenerator<R> {
     pub(crate) fn into_inner(self) -> R {
         self.source
     }
+
+    pub(crate) fn inner_mut(&mut self) -> &mut R {
+        &mut self.source
+    }
 }
 
 impl<R: io::Read> io::Read for LiteralDataFixedGenerator<R> {
@@ -415,6 +435,7 @@ impl<R: io::Read> io::Read for LiteralDataFixedGenerator<R> {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct LiteralDataPartialGenerator<R: io::Read> {
     /// The header
     header: LiteralDataHeader,
@@ -452,6 +473,10 @@ impl<R: io::Read> LiteralDataPartialGenerator<R> {
 
     pub(crate) fn into_inner(self) -> R {
         self.source
+    }
+
+    pub(crate) fn inner_mut(&mut self) -> &mut R {
+        &mut self.source
     }
 }
 

@@ -1,12 +1,11 @@
-use alloc::boxed::Box;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use alloc::format;
 use alloc::vec;
 extern crate alloc;
 use alloc::collections::VecDeque;
-use bytes::{Buf, BufMut, Bytes, BytesMut};
-use chrono::SubsecRound;
+use bytes::{Buf, Bytes, BytesMut};
+use chrono::TimeZone;
 use crc24::Crc24Hasher;
 use generic_array::typenum::U64;
 use log::debug;
@@ -37,7 +36,7 @@ use crate::{
         CompressionAlgorithm, Fingerprint, KeyId, KeyVersion, PacketHeaderVersion, PacketLength,
         Password, SecretKeyTrait, StringToKey, Tag,
     },
-    util::{fill_buffer, TeeWriter},
+    util::TeeWriter,
 };
 
 #[cfg(feature = "std")]
@@ -121,7 +120,7 @@ pub trait Encryption: PartialEq {
 }
 
 /// Configures a signing key and how to use it.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct SigningConfig<'a> {
     /// The key to sign with
     key: &'a dyn SecretKeyTrait,
@@ -185,7 +184,7 @@ where
         let hashed_subpackets = vec![
             Subpacket::regular(SubpacketData::IssuerFingerprint(config.key.fingerprint()))?,
             Subpacket::regular(SubpacketData::SignatureCreationTime(
-                chrono::Utc::now().trunc_subsecs(0),
+                chrono::Utc.timestamp_opt(0, 0).single().expect("invalid time"),
             ))?,
         ];
 
@@ -590,7 +589,7 @@ impl<'a, R: Read, E: Encryption> Builder<'a, R, E> {
         let mut crc_hasher = opts.include_checksum.then(Crc24Hasher::new);
         {
             let crc_hasher = crc_hasher.as_mut();
-            let mut line_wrapper = LineWriter::<_, U64>::new(out.by_ref(), LineBreak::Lf);
+            let mut line_wrapper = LineWriter::<_, U64>::new(&mut out, LineBreak::Lf);
             let mut enc = armor::Base64Encoder::new(&mut line_wrapper);
 
             if let Some(crc_hasher) = crc_hasher {
@@ -653,7 +652,7 @@ where
     // Construct Literal Data Packet (inner)
     let literal_data_header = LiteralDataHeader::new(data_mode);
 
-    let sign_generator = SignGenerator::new(
+    let mut sign_generator = SignGenerator::new(
         &mut rng,
         sign_typ,
         literal_data_header,
@@ -683,7 +682,7 @@ where
             }
             encryption.encrypt(
                 &mut rng,
-                &mut &compressed_data[..],
+                &compressed_data[..],
                 partial_chunk_size,
                 Some(compressed_data.len() as u32),
                 out,
@@ -910,11 +909,13 @@ fn encrypt_write<R: Read, W: Write>(
     Ok(())
 }
 
+#[derive(Clone)]
 struct SignGenerator<'a, R: Read> {
     total_len: Option<u32>,
     state: State<'a, R>,
 }
 
+#[derive(Clone)]
 enum State<'a, R: Read> {
     /// Buffer a single OPS
     Ops {
@@ -922,7 +923,7 @@ enum State<'a, R: Read> {
         ops: VecDeque<OnePassSignature>,
         buffer: BytesMut,
         configs: VecDeque<SigningConfig<'a>>,
-        source: LiteralDataGenerator<SignatureHashers<MaybeNormalizedReader<R>>>,
+        source: Option<LiteralDataGenerator<SignatureHashers<MaybeNormalizedReader<R>>>>,
     },
     /// Pass through the source,
     /// sending the data to the hashers as well
@@ -940,6 +941,7 @@ enum State<'a, R: Read> {
     Done,
 }
 
+#[derive(Clone)]
 struct SignatureHashers<R> {
     hashers: VecDeque<SignatureHasher>,
     source: R,
@@ -950,6 +952,14 @@ impl<R> SignatureHashers<R> {
         for hasher in &mut self.hashers {
             hasher.update(buf);
         }
+    }
+
+    fn into_hashers(self) -> VecDeque<SignatureHasher> {
+        self.hashers
+    }
+
+    fn into_inner(self) -> R {
+        self.source
     }
 }
 
@@ -1025,7 +1035,7 @@ impl<'a, R: Read> SignGenerator<'a, R> {
                 ops,
                 buffer: BytesMut::new(),
                 configs,
-                source,
+                source: Some(source),
             }
         };
 
@@ -1059,25 +1069,15 @@ impl<R: Read> Read for SignGenerator<'_, R> {
 
                     match ops.pop_front() {
                         Some(op) => {
-                            op.to_writer_with_header(buffer)?;
+                            let mut temp_buf = Vec::new();
+                            op.to_writer_with_header(&mut temp_buf)
+                                .map_err(|e| crate::io::Error::new(crate::io::ErrorKind::Other, "ops write failed"))?;
+                            buffer.extend_from_slice(&temp_buf);
                             continue;
                         }
                         None => State::Body {
                             configs: mem::take(configs),
-                            source: mem::replace(
-                                source,
-                                // dummy
-                                LiteralDataGenerator::new(
-                                    LiteralDataHeader::new(DataMode::Binary),
-                                    SignatureHashers {
-                                        hashers: Default::default(),
-                                        source: MaybeNormalizedReader::Raw(&[]),
-                                    },
-                                    None,
-                                    0,
-                                )
-                                .unwrap(),
-                            ),
+                            source: source.take().expect("source must be present"),
                         },
                     }
                 }
@@ -1085,7 +1085,11 @@ impl<R: Read> Read for SignGenerator<'_, R> {
                     let read = source.read(buf)?;
                     if read == 0 {
                         // done reading the body, create signatures
-                        let hashers = source.inner_mut().hashers.drain(..).collect();
+                        // We need to extract the hashers from the source
+                        // The source is LiteralDataGenerator<SignatureHashers<MaybeNormalizedReader<R>>>
+                        // We need to get the SignatureHashers and extract its hashers field
+                        let signature_hashers = source.inner_mut();
+                        let hashers = signature_hashers.hashers.clone();
                         State::Signatures {
                             buffer: BytesMut::new(),
                             configs: mem::take(configs),
@@ -1109,8 +1113,13 @@ impl<R: Read> Read for SignGenerator<'_, R> {
 
                     match configs.pop_front() {
                         Some(config) => {
-                            let mut hasher = hashers.pop_front().expect("equal length");
-                            hasher.finalize(&config.key, &config.key_pw)?.to_writer(buffer)?;
+                            let hasher = hashers.pop_front().expect("equal length");
+                            let signature = hasher.sign(config.key, &config.key_pw)
+                                .map_err(|e| crate::io::Error::new(crate::io::ErrorKind::Other, "signature creation failed"))?;
+                            let mut temp_buf = Vec::new();
+                            signature.to_writer(&mut temp_buf)
+                                .map_err(|e| crate::io::Error::new(crate::io::ErrorKind::Other, "signature write failed"))?;
+                            buffer.extend_from_slice(&temp_buf);
                             continue;
                         }
                         None => State::Done,

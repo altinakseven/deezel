@@ -61,6 +61,7 @@ mod no_std_io {
     pub enum ErrorKind {
         UnexpectedEof,
         InvalidInput,
+        InvalidData,
         Other,
     }
 
@@ -111,6 +112,18 @@ mod no_std_io {
             }
             Ok(read)
         }
+
+        fn read_to_string(&mut self, buf: &mut alloc::string::String) -> Result<usize> {
+            let mut bytes = alloc::vec::Vec::new();
+            let len = self.read_to_end(&mut bytes)?;
+            match alloc::string::String::from_utf8(bytes) {
+                Ok(s) => {
+                    *buf = s;
+                    Ok(len)
+                }
+                Err(_) => Err(Error::new(ErrorKind::InvalidData, "invalid UTF-8")),
+            }
+        }
     }
 
     impl<'a> Read for &'a [u8] {
@@ -157,6 +170,12 @@ mod no_std_io {
 
         fn write_le_u16(&mut self, n: u16) -> Result<()> {
             self.write_all(&n.to_le_bytes())
+        }
+    }
+
+    impl<'a, R: ?Sized + Read> Read for &'a mut R {
+        fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+            (**self).read(buf)
         }
     }
 
@@ -269,6 +288,68 @@ mod no_std_io {
     pub trait BufRead: Read {
         fn fill_buf(&mut self) -> Result<&[u8]>;
         fn consume(&mut self, amt: usize);
+        
+        /// Create a Take adapter that limits reads to the specified number of bytes
+        fn take(self, limit: u64) -> Take<Self>
+        where
+            Self: Sized,
+        {
+            Take::new(self, limit)
+        }
+    }
+    
+    /// A Take adapter that limits reads to a specified number of bytes
+    #[derive(Debug)]
+    pub struct Take<R> {
+        inner: R,
+        limit: u64,
+    }
+
+    impl<R> Take<R> {
+        pub fn new(inner: R, limit: u64) -> Self {
+            Self { inner, limit }
+        }
+        
+        pub fn into_inner(self) -> R {
+            self.inner
+        }
+        
+        pub fn get_mut(&mut self) -> &mut R {
+            &mut self.inner
+        }
+        
+        pub fn limit(&self) -> u64 {
+            self.limit
+        }
+    }
+
+    impl<R: Read> Read for Take<R> {
+        fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+            if self.limit == 0 {
+                return Ok(0);
+            }
+            let max = (buf.len() as u64).min(self.limit) as usize;
+            let n = self.inner.read(&mut buf[..max])?;
+            self.limit -= n as u64;
+            Ok(n)
+        }
+    }
+
+    impl<R: BufRead> BufRead for Take<R> {
+        fn fill_buf(&mut self) -> Result<&[u8]> {
+            if self.limit == 0 {
+                return Ok(&[]);
+            }
+            let buf = self.inner.fill_buf()?;
+            let len = (buf.len() as u64).min(self.limit) as usize;
+            Ok(&buf[..len])
+        }
+        
+        fn consume(&mut self, amt: usize) {
+            let amt = (amt as u64).min(self.limit) as usize;
+            self.inner.consume(amt);
+            self.limit -= amt as u64;
+        }
     }
 
     impl<'a> BufRead for &'a [u8] {
@@ -353,6 +434,23 @@ mod no_std_io {
 
         fn consume(&mut self, amt: usize) {
             self.pos = core::cmp::min(self.pos + amt, self.cap);
+        }
+    }
+
+    // Additional BufRead implementations for Box types
+    impl<T: BufRead> BufRead for alloc::boxed::Box<T> {
+        fn fill_buf(&mut self) -> Result<&[u8]> {
+            (**self).fill_buf()
+        }
+
+        fn consume(&mut self, amt: usize) {
+            (**self).consume(amt)
+        }
+    }
+
+    impl<T: Read> Read for alloc::boxed::Box<T> {
+        fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+            (**self).read(buf)
         }
     }
 }

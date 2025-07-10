@@ -1,7 +1,6 @@
 use alloc::boxed::Box;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use alloc::format;
 extern crate alloc;
 
 use crate::io;
@@ -120,7 +119,7 @@ impl SignedSecretKey {
     /// Get the secret key expiration as a date.
     pub fn expires_at(&self) -> Option<DateTime<Utc>> {
         let expiration = self.details.key_expiration_time()?;
-        Some(*self.primary_key.public_key().created_at() + expiration)
+        Some(self.primary_key.public_key().created_at() + expiration)
     }
 
     fn verify_public_subkeys(&self) -> Result<()> {

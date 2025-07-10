@@ -1,6 +1,5 @@
 use alloc::boxed::Box;
-use alloc::string::{String, ToString};
-use alloc::vec;
+use alloc::string::ToString;
 use alloc::format;
 extern crate alloc;
 use log::warn;

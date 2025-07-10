@@ -1,7 +1,4 @@
-use alloc::boxed::Box;
-use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use alloc::format;
 use alloc::vec;
 extern crate alloc;
 use core::ops::Deref;
@@ -62,7 +59,7 @@ impl PublicKey {
     ) -> Result<SignedPublicKey>
     where
         R: CryptoRng + Rng,
-        K: SecretKeyTrait,
+        K: SecretKeyTrait + crate::types::PublicKeyTrait,
         P: PublicKeyTrait + Serialize,
     {
         let primary_key = self.primary_key;
@@ -117,7 +114,7 @@ impl PublicSubkey {
     ) -> Result<SignedPublicSubKey>
     where
         R: CryptoRng + Rng,
-        K: SecretKeyTrait,
+        K: SecretKeyTrait + crate::types::PublicKeyTrait,
         P: PublicKeyTrait + Serialize,
     {
         let key = self.key;
@@ -176,7 +173,7 @@ impl PublicKeyTrait for PublicSubkey {
         self.key.public_params()
     }
 
-    fn created_at(&self) -> &chrono::DateTime<chrono::Utc> {
+    fn created_at(&self) -> chrono::DateTime<chrono::Utc> {
         self.key.created_at()
     }
 

@@ -66,10 +66,7 @@
 //!      .expect("Failed to validate signature");
 //! ```
 extern crate alloc;
-use alloc::boxed::Box;
-use alloc::string::{String, ToString};
-use alloc::vec;
-use alloc::format;
+use alloc::string::ToString;
 
 mod header;
 mod many;
@@ -77,6 +74,7 @@ mod packet_sum;
 mod single;
 
 pub mod compressed_data;
+mod decompressor_reader;
 mod key;
 mod literal_data;
 mod marker;
@@ -97,6 +95,7 @@ mod secret_key_parser;
 
 pub use self::{
     compressed_data::*,
+    decompressor_reader::Decompressor,
     header::{NewPacketHeader, OldPacketHeader, PacketHeader},
     key::*,
     literal_data::*,

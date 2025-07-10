@@ -1,8 +1,5 @@
-use alloc::boxed::Box;
-use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
-use alloc::format;
 extern crate alloc;
 use aes_gcm::aead::rand_core::CryptoRng;
 use rand::Rng;
@@ -100,7 +97,7 @@ impl SecretSubkey {
     ) -> Result<SignedSecretSubKey>
     where
         R: CryptoRng + Rng,
-        K: SecretKeyTrait,
+        K: SecretKeyTrait + crate::types::PublicKeyTrait,
         P: PublicKeyTrait + Serialize,
     {
         let key = self.key;

@@ -1,9 +1,6 @@
 //! Parsing functions to parse data using [Buf].
 extern crate alloc;
-use alloc::boxed::Box;
 use alloc::string::{String, ToString};
-use alloc::vec;
-use alloc::format;
 use alloc::vec::Vec;
 use bytes::{Buf, Bytes};
 use snafu::Snafu;

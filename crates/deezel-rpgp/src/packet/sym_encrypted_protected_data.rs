@@ -1,6 +1,3 @@
-use alloc::boxed::Box;
-use alloc::string::{String, ToString};
-use alloc::vec;
 use alloc::vec::Vec;
 use alloc::format;
 extern crate alloc;
@@ -119,7 +116,7 @@ impl SymEncryptedProtectedData {
         aead: AeadAlgorithm,
         chunk_size: ChunkSize,
         session_key: &[u8],
-        mut plaintext: &[u8],
+        plaintext: &[u8],
     ) -> Result<Self> {
         // Generate new salt for this seipd packet.
         let mut salt = [0u8; 32];
@@ -156,7 +153,7 @@ impl SymEncryptedProtectedData {
     }
 
     /// Encrypts the data using the given symmetric key.
-    pub fn encrypt_seipdv2_stream<R: Read + Clone>(
+    pub fn encrypt_seipdv2_stream<R: Read>(
         sym_alg: SymmetricKeyAlgorithm,
         aead: AeadAlgorithm,
         chunk_size: ChunkSize,

@@ -1,20 +1,17 @@
 use alloc::boxed::Box;
-use alloc::string::{String, ToString};
+use alloc::string::ToString;
 use alloc::vec;
 use alloc::vec::Vec;
 use alloc::format;
 extern crate alloc;
 
-use byteorder::{BigEndian, ByteOrder};
 use chrono::{DateTime, TimeZone, Utc};
 use digest::generic_array::GenericArray;
-use log::debug;
 use md5::Md5;
 use rand::{CryptoRng, Rng};
 use rsa::traits::PublicKeyParts;
 use sha1_checked::Sha1;
 use sha2::Sha256;
-use smallvec::SmallVec;
 
 use crate::io::{BufRead, Write};
 
@@ -413,7 +410,7 @@ impl PubKeyInner {
     where
         K: SecretKeyTrait + Serialize,
     {
-        use chrono::SubsecRound;
+        
 
         let mut config = SignatureConfig::from_key(&mut rng, key, sig_type)?;
         #[cfg(feature = "std")]
@@ -934,8 +931,10 @@ impl PublicKeyTrait for PubKeyInner {
         &self.public_params
     }
 
-    fn created_at(&self) -> u32 {
-        self.created_at
+    fn created_at(&self) -> DateTime<Utc> {
+        Utc.timestamp_opt(self.created_at as i64, 0)
+            .single()
+            .expect("invalid timestamp")
     }
 
     fn expiration(&self) -> Option<u16> {
@@ -981,8 +980,8 @@ impl PublicKeyTrait for PublicKey {
         PublicKeyTrait::public_params(&self.inner)
     }
 
-    fn created_at(&self) -> u32 {
-        self.inner.created_at
+    fn created_at(&self) -> DateTime<Utc> {
+        self.inner.created_at()
     }
 
     fn expiration(&self) -> Option<u16> {
@@ -1028,8 +1027,8 @@ impl PublicKeyTrait for PublicSubkey {
         PublicKeyTrait::public_params(&self.inner)
     }
 
-    fn created_at(&self) -> u32 {
-        self.inner.created_at
+    fn created_at(&self) -> DateTime<Utc> {
+        self.inner.created_at()
     }
 
     fn expiration(&self) -> Option<u16> {

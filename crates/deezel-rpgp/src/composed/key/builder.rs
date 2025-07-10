@@ -1,10 +1,9 @@
-use alloc::boxed::Box;
-use alloc::string::{String, ToString};
+use alloc::string::String;
 use alloc::vec::Vec;
 use alloc::format;
 extern crate alloc;
 use alloc::vec;
-use chrono::{Duration, SubsecRound};
+use chrono::{Duration, TimeZone};
 use derive_builder::Builder;
 use rand::{CryptoRng, Rng};
 use smallvec::SmallVec;
@@ -23,7 +22,7 @@ use crate::{
     },
     errors::Result,
     packet::{self, PubKeyInner, UserAttribute, UserId},
-    packet::{KeyFlags, Signature},
+    packet::KeyFlags,
     types::{self, CompressionAlgorithm, PlainSecretParams, PublicParams, S2kParams},
 };
 
@@ -48,7 +47,7 @@ pub struct SecretKeyParams {
     can_authenticate: bool,
 
     // -- Metadata for the primary key
-    #[builder(default = "chrono::Utc::now().trunc_subsecs(0)")]
+    #[builder(default = "chrono::Utc.timestamp_opt(0, 0).single().expect(\"invalid time\")")]
     created_at: chrono::DateTime<chrono::Utc>,
     #[builder(default)]
     expiration: Option<Duration>,
@@ -112,7 +111,7 @@ pub struct SubkeyParams {
     can_authenticate: bool,
 
     // -- Metadata for the primary key
-    #[builder(default = "chrono::Utc::now().trunc_subsecs(0)")]
+    #[builder(default = "chrono::Utc.timestamp_opt(0, 0).single().expect(\"invalid time\")")]
     created_at: chrono::DateTime<chrono::Utc>,
     #[builder(default)]
     expiration: Option<Duration>,
@@ -261,7 +260,7 @@ impl SecretKeyParams {
         let pub_key = PubKeyInner::new(
             self.version,
             self.key_type.to_alg(),
-            self.created_at,
+            self.created_at.timestamp() as u32,
             self.expiration.map(|v| v.num_seconds() as u16),
             public_params,
         )?;
@@ -325,7 +324,7 @@ impl SecretKeyParams {
                     let pub_key = PubKeyInner::new(
                         subkey.version,
                         subkey.key_type.to_alg(),
-                        subkey.created_at,
+                        subkey.created_at.timestamp() as u32,
                         subkey.expiration.map(|v| v.num_seconds() as u16),
                         public_params,
                     )?;

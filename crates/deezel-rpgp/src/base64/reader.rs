@@ -1,26 +1,9 @@
 //! # base64 reader module
 extern crate alloc;
-use alloc::boxed::Box;
-use alloc::string::{String, ToString};
 use alloc::vec;
-use alloc::format;
 
-// This will be replaced with a no_std compatible trait
-pub trait Read {}
-impl Read for &[u8] {}
-pub trait BufRead: Read {
-    fn fill_buf(&mut self) -> Result<&[u8], ()>;
-    fn consume(&mut self, amt: usize);
-}
-impl BufRead for &[u8] {
-    fn fill_buf(&mut self) -> Result<&[u8], ()> {
-        Ok(self)
-    }
-    fn consume(&mut self, amt: usize) {
-        *self = &self[amt..];
-    }
-}
-
+use base64::Engine;
+use crate::io::{self, BufRead, Read};
 
 /// Reads base64 values from a given byte input, stops once it detects the first non base64 char.
 #[derive(Debug)]
@@ -41,7 +24,27 @@ impl<R: BufRead> Base64Reader<R> {
 }
 
 impl<R: BufRead> Read for Base64Reader<R> {
-    // This function needs to be refactored to not use crate::io
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let mut temp_buf = vec![0; buf.len() * 4 / 3 + 4];
+        let available = self.inner.fill_buf()?;
+        let mut end = 0;
+        for (i, &b) in available.iter().enumerate() {
+            if !is_base64_token(b) {
+                end = i;
+                break;
+            }
+            end = i + 1;
+        }
+
+        let len = base64::engine::general_purpose::STANDARD
+            .decode_slice(&available[..end], &mut temp_buf)
+            .map_err(|_e| io::Error::new(io::ErrorKind::InvalidData, "base64 decode error"))?;
+
+        buf[..len].copy_from_slice(&temp_buf[..len]);
+        self.inner.consume(end);
+
+        Ok(len)
+    }
 }
 
 #[inline]

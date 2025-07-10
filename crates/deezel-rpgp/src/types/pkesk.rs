@@ -1,12 +1,8 @@
 use alloc::boxed::Box;
-use alloc::string::{String, ToString};
-use alloc::vec;
-use alloc::vec::Vec;
 use alloc::format;
 extern crate alloc;
 use crate::io::BufRead;
 
-use byteorder::WriteBytesExt;
 use bytes::Bytes;
 #[cfg(test)]
 use proptest::prelude::*;
@@ -262,7 +258,7 @@ impl PkeskBytes {
 }
 
 impl Serialize for PkeskBytes {
-    fn to_writer<W: crate::io::Write + WriteBytesExt>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: crate::io::Write>(&self, writer: &mut W) -> Result<()> {
         match self {
             PkeskBytes::Rsa { mpi } => {
                 mpi.to_writer(writer)?;

@@ -1,14 +1,11 @@
-use alloc::boxed::Box;
-use alloc::string::{String, ToString};
-use alloc::vec;
+use alloc::string::ToString;
 use alloc::format;
 extern crate alloc;
 use log::debug;
 
 use crate::{
     crypto::public_key::PublicKeyAlgorithm,
-    errors::{ensure, format_err, unsupported_err, Result},
-    io::BufRead,
+    errors::{ensure, unsupported_err, Result},
     parsing_reader::BufReadParsing,
     types::{KeyVersion, PublicParams},
 };

@@ -2,15 +2,13 @@
 
 extern crate alloc;
 use alloc::boxed::Box;
-use alloc::string::{String, ToString};
-use alloc::vec;
-use alloc::format;
 
 use core::hash;
 use digest::DynDigest;
 use nom::Input;
+use dyn_clone::DynClone;
 
-use crate::io::{BufRead, Read, Write};
+use crate::io::{Read, Write};
 
 pub(crate) fn fill_buffer<R: Read>(
     source: &mut R,
@@ -83,16 +81,34 @@ impl<A: hash::Hasher, B: Write> Write for TeeWriter<'_, A, B> {
     }
 }
 
+/// A `DynDigest` that is also `Clone` and `Send`.
+pub trait CloneableDigest: DynDigest + DynClone + Send {}
+
+dyn_clone::clone_trait_object!(CloneableDigest);
+
+// Every type that implements `DynDigest`, `DynClone` and `Send` also implements `CloneableDigest`.
+impl<T: DynDigest + DynClone + Send + 'static> CloneableDigest for T {}
+
 #[derive(derive_more::Debug)]
 pub struct NormalizingHasher {
     #[debug("hasher")]
-    hasher: Box<dyn DynDigest + Send>,
+    hasher: Box<dyn CloneableDigest>,
     text_mode: bool,
     last_was_cr: bool,
 }
 
+impl Clone for NormalizingHasher {
+    fn clone(&self) -> Self {
+        Self {
+            hasher: self.hasher.clone(),
+            text_mode: self.text_mode,
+            last_was_cr: self.last_was_cr,
+        }
+    }
+}
+
 impl NormalizingHasher {
-    pub(crate) fn new(hasher: Box<dyn DynDigest + Send>, text_mode: bool) -> Self {
+    pub(crate) fn new(hasher: Box<dyn CloneableDigest>, text_mode: bool) -> Self {
         Self {
             hasher,
             text_mode,
@@ -100,7 +116,7 @@ impl NormalizingHasher {
         }
     }
 
-    pub(crate) fn done(mut self) -> Box<dyn DynDigest + Send> {
+    pub(crate) fn done(mut self) -> Box<dyn CloneableDigest> {
         if self.text_mode && self.last_was_cr {
             self.hasher.update(b"\n")
         }

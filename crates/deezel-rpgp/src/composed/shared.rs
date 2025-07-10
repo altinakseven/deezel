@@ -1,6 +1,6 @@
 use alloc::boxed::Box;
-use alloc::string::{String, ToString};
-use alloc::vec;
+use alloc::string::ToString;
+use alloc::vec::Vec;
 use alloc::format;
 extern crate alloc;
 use core::iter::Peekable;
@@ -8,11 +8,10 @@ use log::{debug, warn};
 
 use crate::{
     armor::{self, BlockType},
-    errors::{bail, format_err, unimplemented_err, Error, Result},
+    errors::{bail, unimplemented_err, Error, Result},
     packet::{Packet, PacketParser},
 };
 
-use crate::io::{BufRead, Read};
 
 pub trait Deserializable: Sized {
     /// Parse a single byte encoded composition.
@@ -37,7 +36,7 @@ pub trait Deserializable: Sized {
     fn from_string_many<'a>(
         input: &'a str,
     ) -> Result<(Box<dyn Iterator<Item = Result<Self>> + 'a>, armor::Headers)> {
-        Self::from_armor_many_buf(input.as_bytes())
+        Self::from_armor_many(input.as_bytes())
     }
 
     /// Armored ascii data.
@@ -52,7 +51,7 @@ pub trait Deserializable: Sized {
 
     /// Armored ascii data.
     fn from_armor_single_buf(input: &[u8]) -> Result<(Self, armor::Headers)> {
-        let (mut el, headers) = Self::from_armor_many_buf(input)?;
+        let (mut el, headers) = Self::from_armor_many(input)?;
         Ok((
             el.next()
                 .ok_or_else(|| crate::errors::NoMatchingPacketSnafu.build())??,
@@ -65,7 +64,40 @@ pub trait Deserializable: Sized {
     fn from_armor_many<'a>(
         input: &'a [u8],
     ) -> Result<(Box<dyn Iterator<Item = Result<Self>> + 'a>, armor::Headers)> {
-        Self::from_armor_many_buf(input)
+        let (typ, headers, decoded) = armor::decode(input)?;
+
+        // TODO: add typ information to the key possibly?
+        match typ {
+            // Standard PGP types
+            BlockType::PublicKey
+            | BlockType::PrivateKey
+            | BlockType::Message
+            | BlockType::MultiPartMessage(_, _)
+            | BlockType::Signature
+            | BlockType::CleartextMessage
+            | BlockType::File => {
+                if !Self::matches_block_type(typ) {
+                    bail!("unexpected block type: {}", typ);
+                }
+
+                // We need to own the decoded data to avoid lifetime issues
+                let owned_decoded = decoded.into_boxed_slice();
+                // We need to collect packets to avoid lifetime issues with the decoded buffer
+                let packets: Vec<_> = PacketParser::new(&*owned_decoded)
+                    .filter_map(crate::composed::shared::filter_parsed_packet_results)
+                    .collect::<Result<Vec<_>>>()?;
+
+                Ok((Self::from_packets(packets.into_iter().map(Ok).peekable()), headers))
+            }
+            BlockType::PublicKeyPKCS1(_)
+            | BlockType::PublicKeyPKCS8
+            | BlockType::PublicKeyOpenssh
+            | BlockType::PrivateKeyPKCS1(_)
+            | BlockType::PrivateKeyPKCS8
+            | BlockType::PrivateKeyOpenssh => {
+                unimplemented_err!("key format {:?}", typ);
+            }
+        }
     }
 
     #[allow(clippy::type_complexity)]
@@ -172,7 +204,7 @@ pub trait Deserializable: Sized {
         Option<armor::Headers>,
     )> {
         if !is_binary(&mut input)? {
-            let (keys, headers) = Self::from_armor_many_buf(input)?;
+            let (keys, headers) = Self::from_armor_many(input)?;
             Ok((keys, Some(headers)))
         } else {
             Ok((Self::from_bytes_many(input)?, None))

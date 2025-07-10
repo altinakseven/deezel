@@ -5,7 +5,7 @@ use alloc::format;
 use core::num::TryFromIntError;
 
 use ed25519_dalek::SignatureError;
-use snafu::{Backtrace, Snafu};
+use snafu::Snafu;
 
 pub type Result<T, E = Error> = core::result::Result<T, E>;
 

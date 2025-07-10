@@ -1,6 +1,6 @@
 extern crate alloc;
 use alloc::boxed::Box;
-use alloc::string::{String, ToString};
+use alloc::string::ToString;
 use alloc::vec;
 use alloc::format;
 use core::str;
@@ -9,7 +9,6 @@ use bytes::Buf;
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use log::{debug, warn};
 use smallvec::SmallVec;
-use crate::io::BufRead;
 
 use super::{KeyFlags, Signature, SignatureType, SignatureVersion};
 use crate::{

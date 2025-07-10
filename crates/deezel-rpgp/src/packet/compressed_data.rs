@@ -1,23 +1,17 @@
-use alloc::boxed::Box;
-use alloc::string::{String, ToString};
-use alloc::vec;
-use alloc::vec::Vec;
-use alloc::format;
 extern crate alloc;
-use crate::io::{self, BufRead, Read, Write};
-use bytes::{Buf, BufMut, Bytes, BytesMut};
+use crate::io::{self, BufRead, Write};
+use bytes::Bytes;
 #[cfg(feature = "bzip2")]
-use bzip2::{self, Compression as BzCompression};
-use flate2::{Compress, Compression, Decompress, FlushCompress, Status};
+use bzip2::{self, Action, Compression as BzCompression, Status as BzStatus};
+use flate2::{Compression, FlushCompress, Status};
 use log::debug;
 
 use crate::{
-    errors::{unsupported_err, Result},
+    errors::Result,
     packet::{PacketHeader, PacketTrait},
     parsing_reader::BufReadParsing,
     ser::Serialize,
-    types::{CompressionAlgorithm, PacketHeaderVersion, PacketLength, Tag},
-    util::fill_buffer,
+    types::CompressionAlgorithm,
 };
 
 /// Packet for compressed data.
@@ -34,13 +28,24 @@ pub struct CompressedData {
 }
 
 /// Structure to decompress a given reader.
-#[derive(derive_more::Debug)]
 pub enum Decompressor {
     Uncompressed,
     Zip(flate2::Decompress),
     Zlib(flate2::Decompress),
     #[cfg(feature = "bzip2")]
     Bzip2(bzip2::Decompress),
+}
+
+impl core::fmt::Debug for Decompressor {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Uncompressed => write!(f, "Uncompressed"),
+            Self::Zip(_) => write!(f, "Zip"),
+            Self::Zlib(_) => write!(f, "Zlib"),
+            #[cfg(feature = "bzip2")]
+            Self::Bzip2(_) => write!(f, "Bzip2"),
+        }
+    }
 }
 
 impl Decompressor {
@@ -60,7 +65,7 @@ impl Decompressor {
         &mut self,
         input: &[u8],
         output: &mut [u8],
-    ) -> Result<(usize, usize), flate2::DecompressError> {
+    ) -> Result<(usize, usize), DecompressError> {
         match self {
             Decompressor::Uncompressed => {
                 let len = input.len().min(output.len());
@@ -80,7 +85,7 @@ impl Decompressor {
             Decompressor::Bzip2(d) => {
                 let before_in = d.total_in();
                 let before_out = d.total_out();
-                d.decompress(input, output)?;
+                d.decompress(input, output).map_err(DecompressError::Bzip2)?;
                 Ok((
                     (d.total_in() - before_in) as usize,
                     (d.total_out() - before_out) as usize,
@@ -90,6 +95,18 @@ impl Decompressor {
     }
 }
 
+#[derive(Debug)]
+pub enum DecompressError {
+    Flate2(flate2::DecompressError),
+    #[cfg(feature = "bzip2")]
+    Bzip2(bzip2::Error),
+}
+
+impl From<flate2::DecompressError> for DecompressError {
+    fn from(err: flate2::DecompressError) -> Self {
+        Self::Flate2(err)
+    }
+}
 
 pub enum Compressor {
     Uncompressed,
@@ -149,11 +166,28 @@ impl Compressor {
             Compressor::Bzip2(d) => {
                 let before_in = d.total_in();
                 let before_out = d.total_out();
-                let status = d.compress(input, output, flush.into()).unwrap();
+                let bz_action = match flush {
+                    FlushCompress::None => Action::Run,
+                    FlushCompress::Sync => Action::Flush,
+                    FlushCompress::Full => Action::Flush,
+                    FlushCompress::Finish => Action::Finish,
+                    _ => return Err(()), // New variants are not supported
+                };
+                let status = match d.compress(input, output, bz_action) {
+                    Ok(s) => s,
+                    Err(_) => return Err(()),
+                };
                 Ok((
                     (d.total_in() - before_in) as usize,
                     (d.total_out() - before_out) as usize,
-                    status.into(),
+                    match status {
+                        BzStatus::Ok => Status::Ok,
+                        BzStatus::FlushOk => Status::Ok,
+                        BzStatus::RunOk => Status::Ok,
+                        BzStatus::FinishOk => Status::Ok,
+                        BzStatus::StreamEnd => Status::StreamEnd,
+                        _ => return Err(()), // Unknown status
+                    },
                 ))
             }
         }

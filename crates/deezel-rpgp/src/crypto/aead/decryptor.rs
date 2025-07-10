@@ -1,7 +1,3 @@
-use alloc::boxed::Box;
-use alloc::string::{String, ToString};
-use alloc::vec;
-use alloc::format;
 extern crate alloc;
 use crate::io::{self, BufRead, Read};
 use alloc::vec::Vec;
@@ -119,7 +115,7 @@ impl<R: BufRead> StreamDecryptor<R> {
                 &self.info,
                 &mut out,
             )
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, "AEAD decryption failed"))?;
         self.written += out.len() as u64;
 
         self.buffer.unsplit(out);
@@ -166,7 +162,7 @@ impl<R: BufRead> StreamDecryptor<R> {
                 &final_info,
                 &mut final_auth_tag,
             )
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, "AEAD final decryption failed"))?;
 
         Ok(())
     }

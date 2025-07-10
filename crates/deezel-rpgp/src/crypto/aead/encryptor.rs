@@ -1,7 +1,4 @@
-use alloc::boxed::Box;
-use alloc::string::{String, ToString};
 use alloc::vec;
-use alloc::format;
 extern crate alloc;
 use alloc::vec::Vec;
 use bytes::{Buf, BytesMut};
@@ -107,7 +104,8 @@ impl<R: Read> StreamEncryptor<R> {
 
         // read a new chunk from the source
         let mut chunk = vec![0; self.chunk_size_expanded];
-        let read = fill_buffer(&mut self.source, &mut chunk, None)?;
+        let read = fill_buffer(&mut self.source, &mut chunk, Some(self.chunk_size_expanded))
+            .map_err(|e| crate::crypto::aead::Error::Io { source: e })?;
         self.bytes_read += read as u64;
 
         // Associated data is extended with chunk index.

@@ -12,9 +12,7 @@
 //! This implicitly yields differing OpenPGP fingerprints, so the two OpenPGP key variants cannot
 //! be used interchangeably.
 extern crate alloc;
-use alloc::boxed::Box;
 use alloc::format;
-use alloc::string::{String, ToString};
 use alloc::vec;
 use core::ops::Deref;
 

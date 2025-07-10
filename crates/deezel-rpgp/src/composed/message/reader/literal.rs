@@ -1,7 +1,3 @@
-use alloc::boxed::Box;
-use alloc::string::{String, ToString};
-use alloc::vec;
-use alloc::format;
 extern crate alloc;
 use bytes::{Buf, BytesMut};
 use log::debug;
@@ -37,7 +33,7 @@ pub enum LiteralDataReader<R: BufRead> {
 impl<R: BufRead> LiteralDataReader<R> {
     pub fn new(mut source: PacketBodyReader<R>) -> Result<Self, Error> {
         debug_assert_eq!(source.packet_header().tag(), Tag::LiteralData);
-        let header = LiteralDataHeader::try_from_reader(&mut source).map_err(|_| Error::Other)?;
+        let header = LiteralDataHeader::try_from_reader(&mut source).map_err(|_| crate::io::Error::new(crate::io::ErrorKind::Other, "failed to read literal data header"))?;
 
         Ok(Self::Body {
             source,
@@ -147,7 +143,7 @@ impl<R: BufRead> LiteralDataReader<R> {
                 };
                 Ok(())
             }
-            Self::Error => Err(Error::Other),
+            Self::Error => Err(crate::io::Error::new(crate::io::ErrorKind::Other, "literal data reader error")),
         }
     }
 }
@@ -157,7 +153,7 @@ impl<R: BufRead> BufRead for LiteralDataReader<R> {
         self.fill_inner()?;
         match self {
             Self::Body { buffer, .. } | Self::Done { buffer, .. } => Ok(&buffer[..]),
-            Self::Error => Err(Error::Other),
+            Self::Error => Err(crate::io::Error::new(crate::io::ErrorKind::Other, "literal data reader error")),
         }
     }
 

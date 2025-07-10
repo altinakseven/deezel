@@ -1,5 +1,4 @@
-use alloc::boxed::Box;
-use alloc::string::{String, ToString};
+use alloc::string::ToString;
 use alloc::vec::Vec;
 use alloc::format;
 use alloc::vec;
@@ -345,7 +344,7 @@ where
                             let encrypted_prefix = prefix[2..].to_vec();
                             encryptor.decrypt(&mut prefix);
                             encryptor = BufDecryptor::<M>::new_from_slices(key, &encrypted_prefix)
-                                .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+                                .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, "BufDecryptor creation failed"))?;
                         }
                         MaybeProtected::Protected { ref mut hasher } => {
                             encryptor.decrypt(&mut prefix);

@@ -31,6 +31,7 @@ bytes = "1.9.0"
 byteorder = "1.4"
 chrono = { version = "0.4.39", default-features = false }
 derive_builder = "0.20.0"
+dyn-clone = "1.0"
 hex = "0.4"
 nom = "8.0"
 log = "0.4.22"

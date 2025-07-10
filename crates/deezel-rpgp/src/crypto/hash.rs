@@ -1,6 +1,5 @@
 extern crate alloc;
 use alloc::boxed::Box;
-use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::str::FromStr;
 
@@ -12,7 +11,7 @@ use sha1_checked::{CollisionResult, Sha1};
 use snafu::Snafu;
 
 use super::checksum::Sha1HashCollision;
-use crate::crypto::checksum::Sha1HashCollisionSnafu;
+use crate::{crypto::checksum::Sha1HashCollisionSnafu, util::CloneableDigest};
 
 /// Available hash algorithms.
 /// Ref: <https://www.rfc-editor.org/rfc/rfc9580.html#name-hash-algorithms>
@@ -126,8 +125,8 @@ impl HashAlgorithm {
     }
 }
 
-/// Temporary wrapper around `Box<dyn DynDigest>` to implement `io::Write`.
-pub(crate) struct WriteHasher<'a>(pub(crate) &'a mut Box<dyn DynDigest + Send>);
+/// Temporary wrapper around `Box<dyn CloneableDigest>` to implement `io::Write`.
+pub(crate) struct WriteHasher<'a>(pub(crate) &'a mut Box<dyn CloneableDigest>);
 
 impl crate::io::Write for WriteHasher<'_> {
     fn write(&mut self, buf: &[u8]) -> crate::io::Result<usize> {
@@ -152,7 +151,7 @@ pub enum Error {
 
 impl HashAlgorithm {
     /// Create a new hasher.
-    pub fn new_hasher(self) -> Result<Box<dyn DynDigest + Send>, Error> {
+    pub fn new_hasher(self) -> Result<Box<dyn CloneableDigest>, Error> {
         match self {
             HashAlgorithm::Md5 => Ok(Box::<Md5>::default()),
             HashAlgorithm::Sha1 => Ok(Box::<Sha1>::default()),

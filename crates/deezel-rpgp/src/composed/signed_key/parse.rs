@@ -1,6 +1,5 @@
 use alloc::boxed::Box;
-use alloc::string::{String, ToString};
-use alloc::vec;
+use alloc::vec::Vec;
 use alloc::format;
 extern crate alloc;
 use core::iter;
@@ -11,12 +10,12 @@ use crate::{
         PublicOrSecret, SignedPublicKey, SignedPublicKeyParser, SignedSecretKey,
         SignedSecretKeyParser,
     },
-    errors::{bail, format_err, unimplemented_err, Result},
+    errors::{bail, unimplemented_err, Result},
     packet::{Packet, PacketParser, PacketTrait},
     types::Tag,
 };
 
-use crate::io::{BufRead, Read};
+use crate::io::BufRead;
 
 impl PublicOrSecret {
     /// Parses a list of secret and public keys, from either ASCII-armored or binary OpenPGP data.
@@ -41,7 +40,7 @@ impl PublicOrSecret {
         Option<armor::Headers>,
     )> {
         if !crate::composed::shared::is_binary(&mut input)? {
-            let (keys, headers) = Self::from_armor_many_buf(input)?;
+            let (keys, headers) = Self::from_armor_many(input)?;
             Ok((keys, Some(headers)))
         } else {
             Ok((Self::from_bytes_many(input)?, None))
@@ -56,7 +55,39 @@ impl PublicOrSecret {
         Box<dyn Iterator<Item = Result<PublicOrSecret>> + 'a>,
         armor::Headers,
     )> {
-        Self::from_armor_many_buf(input)
+        let (typ, headers, decoded) = armor::decode(input)?;
+
+        // TODO: add typ information to the key possibly?
+        match typ {
+            // Standard PGP types
+            BlockType::PublicKey | BlockType::PrivateKey | BlockType::File => {
+                // TODO: check that the result is what it actually said.
+                // We need to own the decoded data to avoid lifetime issues
+                let owned_decoded = decoded.into_boxed_slice();
+                // We need to collect packets to avoid lifetime issues with the decoded buffer
+                let packets: Vec<_> = PacketParser::new(&*owned_decoded)
+                    .filter_map(crate::composed::shared::filter_parsed_packet_results)
+                    .collect::<Result<Vec<_>>>()?;
+
+              Ok((Box::new(PubPrivIterator {
+                  inner: Some(packets.into_iter().map(Ok).peekable()),
+              }), headers))
+            }
+            BlockType::Message
+            | BlockType::MultiPartMessage(_, _)
+            | BlockType::Signature
+            | BlockType::CleartextMessage => {
+                bail!("unexpected block type: {}", typ)
+            }
+            BlockType::PublicKeyPKCS1(_)
+            | BlockType::PublicKeyPKCS8
+            | BlockType::PublicKeyOpenssh
+            | BlockType::PrivateKeyPKCS1(_)
+            | BlockType::PrivateKeyPKCS8
+            | BlockType::PrivateKeyOpenssh => {
+                unimplemented_err!("key format {}", typ);
+            }
+        }
     }
 
     // TODO: re-enable this

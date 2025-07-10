@@ -1,5 +1,4 @@
-use alloc::boxed::Box;
-use alloc::string::{String, ToString};
+use alloc::string::ToString;
 use alloc::vec;
 use alloc::format;
 extern crate alloc;
@@ -264,6 +263,29 @@ impl KeyDetails for SecretKey {
     }
 }
 
+impl PublicKeyTrait for SecretKey {
+    fn verify_signature(
+        &self,
+        hash: HashAlgorithm,
+        data: &[u8],
+        sig: &SignatureBytes,
+    ) -> Result<()> {
+        self.details.verify_signature(hash, data, sig)
+    }
+
+    fn created_at(&self) -> chrono::DateTime<chrono::Utc> {
+        self.details.created_at()
+    }
+
+    fn expiration(&self) -> Option<u16> {
+        self.details.expiration()
+    }
+
+    fn public_params(&self) -> &PublicParams {
+        self.details.public_params()
+    }
+}
+
 impl Imprint for SecretKey {
     fn imprint<D: KnownDigest>(&self) -> Result<GenericArray<u8, D::OutputSize>> {
         self.details.imprint::<D>()
@@ -283,6 +305,29 @@ impl KeyDetails for SecretSubkey {
     }
     fn algorithm(&self) -> PublicKeyAlgorithm {
         self.details.algorithm()
+    }
+}
+
+impl PublicKeyTrait for SecretSubkey {
+    fn verify_signature(
+        &self,
+        hash: HashAlgorithm,
+        data: &[u8],
+        sig: &SignatureBytes,
+    ) -> Result<()> {
+        self.details.verify_signature(hash, data, sig)
+    }
+
+    fn created_at(&self) -> chrono::DateTime<chrono::Utc> {
+        self.details.created_at()
+    }
+
+    fn expiration(&self) -> Option<u16> {
+        self.details.expiration()
+    }
+
+    fn public_params(&self) -> &PublicParams {
+        self.details.public_params()
     }
 }
 

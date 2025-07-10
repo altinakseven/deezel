@@ -1,7 +1,3 @@
-use alloc::boxed::Box;
-use alloc::string::{String, ToString};
-use alloc::vec;
-use alloc::format;
 extern crate alloc;
 use bytes::{Buf, BytesMut};
 
@@ -92,8 +88,8 @@ impl<R: DebugBufRead> CompressedDataReader<R> {
                 source: source.decompress()?,
                 buffer,
             }),
-            Self::Done { .. } => Err(Error::Other),
-            Self::Error => Err(Error::Other),
+            Self::Done { .. } => Err(crate::io::Error::new(crate::io::ErrorKind::Other, "compressed reader already done")),
+            Self::Error => Err(crate::io::Error::new(crate::io::ErrorKind::Other, "compressed reader error")),
         }
     }
 }
@@ -104,7 +100,7 @@ impl<R: DebugBufRead> BufRead for CompressedDataReader<R> {
         match self {
             Self::Body { ref mut buffer, .. } => Ok(&buffer[..]),
             Self::Done { .. } => Ok(&[][..]),
-            Self::Error => Err(Error::Other),
+            Self::Error => Err(crate::io::Error::new(crate::io::ErrorKind::Other, "compressed reader error")),
         }
     }
 
@@ -164,7 +160,7 @@ impl<R: DebugBufRead> CompressedDataReader<R> {
                 *self = Self::Done { source };
                 Ok(())
             }
-            Self::Error => Err(Error::Other),
+            Self::Error => Err(crate::io::Error::new(crate::io::ErrorKind::Other, "compressed reader error")),
         }
     }
 }

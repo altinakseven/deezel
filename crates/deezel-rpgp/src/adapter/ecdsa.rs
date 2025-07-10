@@ -1,5 +1,4 @@
-use alloc::boxed::Box;
-use alloc::string::{String, ToString};
+use alloc::string::ToString;
 use alloc::vec::Vec;
 extern crate alloc;
 use alloc::{format, vec};
@@ -73,7 +72,7 @@ where
         let public_key = PubKeyInner::new(
             version,
             <T as Keypair>::VerifyingKey::PGP_ALGORITHM,
-            created_at,
+            created_at.timestamp() as u32,
             None,
             inner.verifying_key().pgp_parameters(),
         )?;
@@ -180,7 +179,7 @@ impl<C, T> PublicKeyTrait for EcdsaSigner<T, C> {
         self.public_key.verify_signature(hash, data, sig)
     }
 
-    fn created_at(&self) -> &chrono::DateTime<chrono::Utc> {
+    fn created_at(&self) -> chrono::DateTime<chrono::Utc> {
         self.public_key.created_at()
     }
 

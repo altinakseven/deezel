@@ -1,7 +1,6 @@
 use alloc::boxed::Box;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use alloc::format;
 extern crate alloc;
 use core::iter::Peekable;
 use chrono::{DateTime, Utc};
@@ -20,6 +19,7 @@ use crate::{
         public_key::PublicKeyAlgorithm,
     },
     errors::{bail, ensure, Result},
+    io::Write,
     packet::{self, Packet, PacketTrait, SignatureType, SubpacketData},
     ser::Serialize,
     types::{
@@ -27,10 +27,6 @@ use crate::{
         PublicKeyTrait, PublicParams, SignatureBytes, Tag,
     },
 };
-
-// This will be replaced with a no_std compatible trait
-pub trait Write {}
-impl Write for &mut Vec<u8> {}
 
 
 /// A Public OpenPGP key ("Transferable Public Key"), complete with self-signatures (and optionally
@@ -123,7 +119,7 @@ impl SignedPublicKey {
     /// Get the public key expiration as a date.
     pub fn expires_at(&self) -> Option<DateTime<Utc>> {
         let expiration = self.details.key_expiration_time()?;
-        Some(*self.primary_key.created_at() + expiration)
+        Some(self.primary_key.created_at() + expiration)
     }
 
     fn verify_public_subkeys(&self) -> Result<()> {
@@ -227,7 +223,7 @@ impl PublicKeyTrait for SignedPublicKey {
         self.primary_key.public_params()
     }
 
-    fn created_at(&self) -> &chrono::DateTime<chrono::Utc> {
+    fn created_at(&self) -> chrono::DateTime<chrono::Utc> {
         self.primary_key.created_at()
     }
 
@@ -237,7 +233,7 @@ impl PublicKeyTrait for SignedPublicKey {
 }
 
 impl Serialize for SignedPublicKey {
-    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: crate::io::Write>(&self, writer: &mut W) -> Result<()> {
         self.primary_key.to_writer_with_header(writer)?;
         self.details.to_writer(writer)?;
         for ps in &self.public_subkeys {
@@ -368,7 +364,7 @@ impl PublicKeyTrait for SignedPublicSubKey {
         self.key.public_params()
     }
 
-    fn created_at(&self) -> &chrono::DateTime<chrono::Utc> {
+    fn created_at(&self) -> chrono::DateTime<chrono::Utc> {
         self.key.created_at()
     }
 
@@ -378,7 +374,7 @@ impl PublicKeyTrait for SignedPublicSubKey {
 }
 
 impl Serialize for SignedPublicSubKey {
-    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: crate::io::Write>(&self, writer: &mut W) -> Result<()> {
         self.key.to_writer_with_header(writer)?;
         for sig in &self.signatures {
             sig.to_writer_with_header(writer)?;

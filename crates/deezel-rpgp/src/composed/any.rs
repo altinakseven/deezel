@@ -1,18 +1,15 @@
 use alloc::boxed::Box;
-use alloc::string::{String, ToString};
-use alloc::vec;
-use alloc::format;
-extern crate alloc;
 use crate::{
     armor::{self, BlockType},
     composed::{
         cleartext::CleartextSignedMessage, Deserializable, Message, SignedPublicKey,
         SignedSecretKey, StandaloneSignature,
     },
-    errors::{ensure, unimplemented_err, Result},
+    errors::{format_err, Result},
+    io::Cursor,
 };
+use alloc::string::ToString;
 
-use crate::io::{BufRead, Read};
 use core::fmt::Debug;
 
 
@@ -29,47 +26,48 @@ pub enum Any<'a> {
 
 impl<'a> Any<'a> {
     /// Parse armored ascii data.
-    pub fn from_armor(
-        bytes: &'a [u8],
-    ) -> Result<(Self, armor::Headers)> {
-        Self::from_armor_buf(bytes)
+    pub fn from_armor(bytes: &'a [u8]) -> Result<(Self, armor::Headers)> {
+        let (typ, headers, decoded) = armor::decode(bytes)?;
+        let packets = crate::packet::PacketParser::new(Cursor::new(&decoded));
+
+        let first = match typ {
+            BlockType::PublicKey => {
+                let key = SignedPublicKey::from_packets(packets.peekable())
+                    .next()
+                    .ok_or_else(|| format_err!("unable to parse public key"))??;
+                Self::PublicKey(key)
+            }
+            BlockType::PrivateKey => {
+                let key = SignedSecretKey::from_packets(packets.peekable())
+                    .next()
+                    .ok_or_else(|| format_err!("unable to parse secret key"))??;
+                Self::SecretKey(key)
+            }
+            BlockType::Message => {
+                let static_slice: &'static [u8] = Box::leak(decoded.into_boxed_slice());
+                let msg = Message::from_bytes(static_slice)?;
+                Self::Message(msg)
+            }
+            BlockType::Signature => {
+                let sig = StandaloneSignature::from_packets(packets.peekable())
+                    .next()
+                    .ok_or_else(|| format_err!("unable to parse signature"))??;
+                Self::Signature(sig)
+            }
+            BlockType::CleartextMessage => {
+                let (sig, _headers) =
+                    CleartextSignedMessage::from_armor_after_header(&decoded, headers.clone(), 0)?;
+                Self::Cleartext(sig)
+            }
+            _ => unimplemented!("unsupported block type: {}", typ),
+        };
+
+        Ok((first, headers))
     }
 
     /// Parse a single armor encoded composition.
     pub fn from_string(input: &'a str) -> Result<(Self, armor::Headers)> {
-        Self::from_armor_buf(input.as_bytes())
+        Self::from_armor(input.as_bytes())
     }
 
-    // TODO: re-enable this
-    // /// Parse armored ascii data.
-    // pub fn from_armor_buf(
-    //     input: &'a [u8],
-    // ) -> Result<(Self, armor::Headers)> {
-    //     let (typ, headers, decoded) = armor::parse(input)?;
-    //     match typ {
-    //         // Standard PGP types
-    //         BlockType::PublicKey => {
-    //             let key = SignedPublicKey::from_bytes(&decoded)?;
-    //             Ok((Self::PublicKey(key), headers))
-    //         }
-    //         BlockType::PrivateKey => {
-    //             let key = SignedSecretKey::from_bytes(&decoded)?;
-    //             Ok((Self::SecretKey(key), headers))
-    //         }
-    //         BlockType::Message => {
-    //             let msg = Message::from_bytes(&decoded)?;
-    //             Ok((Self::Message(msg), headers))
-    //         }
-    //         BlockType::Signature => {
-    //             let sig = StandaloneSignature::from_bytes(&decoded)?;
-    //             Ok((Self::Signature(sig), headers))
-    //         }
-    //         BlockType::CleartextMessage => {
-    //             let (sig, headers) =
-    //                 CleartextSignedMessage::from_armor_after_header(&decoded, headers, 0)?;
-    //             Ok((Self::Cleartext(sig), headers))
-    //         }
-    //         _ => unimplemented_err!("unsupported block type: {}", typ),
-    //     }
-    // }
 }

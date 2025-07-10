@@ -1,13 +1,10 @@
-use alloc::boxed::Box;
-use alloc::string::{String, ToString};
-use alloc::vec;
+use alloc::string::ToString;
 use alloc::format;
 extern crate alloc;
 use crate::io::{BufRead, Write};
 use core::fmt;
 
 use bitfields::bitfield;
-use byteorder::{BigEndian, WriteBytesExt};
 use log::debug;
 
 use crate::{
@@ -165,7 +162,7 @@ impl PacketHeader {
 }
 
 impl Serialize for PacketHeader {
-    fn to_writer<W: Write + WriteBytesExt>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
         debug!("writing packet header {:?}", self);
 
         match self {
@@ -183,13 +180,11 @@ impl Serialize for PacketHeader {
                         crate::io::Write::write_u8(writer, *len as u8)?;
                     } else if *len < 65536 {
                         // two octets
-                        writer
-                            .write_u16::<BigEndian>(*len as u16)
+                        crate::io::Write::write_be_u16(writer, *len as u16)
                             .map_err(|e| crate::errors::Error::from(e.to_string()))?;
                     } else {
                         // four octets
-                        writer
-                            .write_u32::<BigEndian>(*len)
+                        crate::io::Write::write_be_u32(writer, *len)
                             .map_err(|e| crate::errors::Error::from(e.to_string()))?;
                     }
                 }

@@ -1,11 +1,9 @@
 extern crate alloc;
-use alloc::boxed::Box;
-use alloc::string::{String, ToString};
+use alloc::string::ToString;
 use alloc::vec;
 use alloc::format;
 use crate::io::{self, Write};
 use alloc::vec::Vec;
-use byteorder::BigEndian;
 use bytes::{Buf, Bytes, BytesMut};
 use digest::Digest;
 use zeroize::ZeroizeOnDrop;
@@ -243,7 +241,7 @@ impl EncryptedSecretParams {
 
         let mut s2k_params = vec![];
 
-        let mut s2k_writer = &mut s2k_params;
+        let s2k_writer = &mut s2k_params;
 
         match &self.s2k_params {
             S2kParams::Unprotected => {

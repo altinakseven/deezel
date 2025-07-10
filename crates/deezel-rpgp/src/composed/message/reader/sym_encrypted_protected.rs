@@ -1,6 +1,4 @@
-use alloc::boxed::Box;
-use alloc::string::{String, ToString};
-use alloc::vec;
+use alloc::string::ToString;
 use alloc::format;
 extern crate alloc;
 use super::PacketBodyReader;
@@ -253,7 +251,7 @@ impl<R: DebugBufRead> SymEncryptedProtectedDataReader<R> {
                     return Ok(());
                 }
                 Self::Error => {
-                    return Err(Error::Other);
+                    return Err(crate::io::Error::new(crate::io::ErrorKind::Other, "sym encrypted protected reader error"));
                 }
             }
         }
@@ -268,7 +266,7 @@ impl<R: DebugBufRead> BufRead for SymEncryptedProtectedDataReader<R> {
             Self::Body { decryptor, .. } => decryptor.fill_buf(),
 
             Self::Done { .. } => Ok(&[][..]),
-            Self::Error => Err(Error::Other),
+            Self::Error => Err(crate::io::Error::new(crate::io::ErrorKind::Other, "sym encrypted protected reader error")),
         }
     }
 

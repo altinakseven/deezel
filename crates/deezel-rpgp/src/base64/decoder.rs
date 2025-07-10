@@ -1,9 +1,5 @@
 //! # base64 decoder module
 extern crate alloc;
-use alloc::boxed::Box;
-use alloc::string::{String, ToString};
-use alloc::vec;
-use alloc::format;
 
 use base64::engine::{general_purpose::GeneralPurpose, Engine};
 use buffer_redux::{BufReader, Buffer};

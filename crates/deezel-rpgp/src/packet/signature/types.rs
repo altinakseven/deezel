@@ -1,6 +1,6 @@
 extern crate alloc;
 use alloc::boxed::Box;
-use alloc::string::{String, ToString};
+use alloc::string::ToString;
 use alloc::vec;
 use alloc::vec::Vec;
 use alloc::format;
@@ -12,7 +12,6 @@ use crate::io::{BufRead, Read, Write};
 use bitfields::bitfield;
 use bytes::Bytes;
 use chrono::{DateTime, Duration, Utc};
-use digest::DynDigest;
 use log::debug;
 use num_enum::{FromPrimitive, IntoPrimitive};
 
@@ -24,7 +23,6 @@ use crate::{
         sym::SymmetricKeyAlgorithm,
     },
     errors::{bail, ensure, ensure_eq, unimplemented_err, unsupported_err, Result},
-    line_writer::LineBreak,
     packet::{
         signature::SignatureConfig, PacketHeader, PacketTrait, SignatureVersionSpecific, Subpacket,
         SubpacketData,
@@ -36,6 +34,7 @@ use crate::{
         self, CompressionAlgorithm, Fingerprint, KeyDetails, KeyId, KeyVersion, PacketLength,
         PublicKeyTrait, SignatureBytes, Tag,
     },
+    util::CloneableDigest,
 };
 
 #[cfg(feature = "std")]
@@ -1526,7 +1525,7 @@ impl PacketTrait for Signature {
 
 pub(super) fn serialize_for_hashing<K: KeyDetails + Serialize>(
     key: &K,
-    hasher: &mut Box<dyn DynDigest + Send>,
+    hasher: &mut Box<dyn CloneableDigest>,
 ) -> Result<()> {
     let key_len = key.write_len();
 

@@ -15,6 +15,7 @@ use crate::{
     composed::{message::decrypt::*, signed_key::SignedSecretKey},
     crypto::sym::SymmetricKeyAlgorithm,
     errors::{bail, ensure, ensure_eq, format_err, Error, Result},
+    io::{BufRead, Read},
     packet::{
         InnerSignature, LiteralDataHeader, OnePassSignature, Packet, PacketHeader, PacketTrait,
         PublicKeyEncryptedSessionKey, Signature, SymEncryptedProtectedDataConfig,
@@ -26,28 +27,9 @@ use crate::{
     util::impl_try_from_into,
 };
 
-// This will be replaced with a no_std compatible trait
-pub trait Read {}
-impl Read for &[u8] {}
-pub trait BufRead: Read {
-    fn fill_buf(&mut self) -> Result<&[u8], ()>;
-    fn consume(&mut self, amt: usize);
-}
-impl BufRead for &[u8] {
-    fn fill_buf(&mut self) -> Result<&[u8], ()> {
-        Ok(self)
-    }
-    fn consume(&mut self, amt: usize) {
-        *self = &self[amt..];
-    }
-}
-pub trait Debug {}
-impl Debug for &[u8] {}
+pub trait DebugBufRead: crate::io::BufRead + core::fmt::Debug + Send {}
 
-
-pub trait DebugBufRead: BufRead + Debug + Send {}
-
-impl<T: BufRead + Debug + Send> DebugBufRead for T {}
+impl<T: crate::io::BufRead + core::fmt::Debug + Send> DebugBufRead for T {}
 
 /// The inner reader type in a nested message
 #[derive(Debug)]
@@ -66,10 +48,10 @@ impl MessageReader<'_> {
         }
     }
 
-    fn check_trailing_data(&mut self) -> Result<(), ()> {
+    fn check_trailing_data(&mut self) -> crate::io::Result<()> {
         fn check_next_packet<R: DebugBufRead>(
             mut parser: crate::packet::PacketParser<R>,
-        ) -> Result<(), ()> {
+        ) -> crate::io::Result<()> {
             match parser.next_ref() {
                 Some(Ok(packet)) => {
                     let tag = packet.packet_header().tag();
@@ -78,13 +60,13 @@ impl MessageReader<'_> {
                             debug!("ignoring trailing packet: {:?}", tag);
                         }
                         _ => {
-                            return Err(());
+                            return Err(crate::io::Error::new(crate::io::ErrorKind::InvalidData, "unexpected trailing packet"));
                         }
                     }
                 }
                 Some(Err(err)) => {
                     warn!("failed to parse trailing data: {:?}", err);
-                    return Err(());
+                    return Err(crate::io::Error::new(crate::io::ErrorKind::InvalidData, "failed to parse trailing data"));
                 }
                 None => {
                     // all good
@@ -98,7 +80,7 @@ impl MessageReader<'_> {
                 let compressed_body_reader = r.get_mut();
 
                 // discard excess data in the compressed packet
-                let excess = compressed_body_reader.drain()?;
+                let excess = compressed_body_reader.drain().map_err(|_| crate::io::Error::new(crate::io::ErrorKind::Other, "failed to drain compressed data"))?;
                 if excess > 0 {
                     debug!("discarded excess data in compressed packet: {excess}");
                 }
@@ -107,15 +89,14 @@ impl MessageReader<'_> {
                 message_reader.check_trailing_data()?;
             }
             MessageReader::Edata(e) => {
-                let mut inner_reader = e;
-                let parser = crate::packet::PacketParser::new(inner_reader);
+                let parser = crate::packet::PacketParser::new(&mut **e);
                 check_next_packet(parser)?;
 
-                let message_reader = inner_reader.get_mut().get_mut();
+                let message_reader = e.get_mut().get_mut();
                 message_reader.check_trailing_data()?;
             }
             MessageReader::Reader(r) => {
-                let parser = crate::packet::PacketParser::new(r);
+                let parser = crate::packet::PacketParser::new(&mut **r);
                 check_next_packet(parser)?;
             }
         }
@@ -125,11 +106,17 @@ impl MessageReader<'_> {
 }
 
 impl Read for MessageReader<'_> {
-    // This function needs to be refactored to not use crate::io
+    fn read(&mut self, buf: &mut [u8]) -> crate::io::Result<usize> {
+        match self {
+            Self::Compressed(r) => r.read(buf),
+            Self::Edata(r) => r.read(buf),
+            Self::Reader(r) => r.read(buf),
+        }
+    }
 }
 
 impl BufRead for MessageReader<'_> {
-    fn fill_buf(&mut self) -> Result<&[u8], ()> {
+    fn fill_buf(&mut self) -> crate::io::Result<&[u8]> {
         match self {
             Self::Compressed(r) => r.fill_buf(),
             Self::Edata(r) => r.fill_buf(),
@@ -421,7 +408,7 @@ pub enum Esk {
 }
 
 impl Esk {
-    pub fn try_from_reader(packet: &mut PacketBodyReader<MessageReader<'_>>) -> Result<Self> {
+    pub fn try_from_reader<R: crate::io::BufRead>(packet: &mut PacketBodyReader<R>) -> Result<Self> {
         let packet_header = packet.packet_header();
         match packet_header.tag() {
             Tag::PublicKeyEncryptedSessionKey => {
@@ -520,7 +507,7 @@ impl<'a> Edata<'a> {
 }
 
 impl BufRead for Edata<'_> {
-    fn fill_buf(&mut self) -> Result<&[u8], ()> {
+    fn fill_buf(&mut self) -> crate::io::Result<&[u8]> {
         match self {
             Self::SymEncryptedData { reader } => reader.fill_buf(),
             Self::SymEncryptedProtectedData { reader } => reader.fill_buf(),
@@ -536,7 +523,12 @@ impl BufRead for Edata<'_> {
 }
 
 impl Read for Edata<'_> {
-    // This function needs to be refactored to not use crate::io
+    fn read(&mut self, buf: &mut [u8]) -> crate::io::Result<usize> {
+        match self {
+            Self::SymEncryptedData { reader } => reader.read(buf),
+            Self::SymEncryptedProtectedData { reader } => reader.read(buf),
+        }
+    }
 }
 
 impl<'a> Edata<'a> {
@@ -608,6 +600,23 @@ pub enum VerificationResult {
 }
 
 impl<'a> Message<'a> {
+    /// Create a message from compressed data reader
+    pub fn from_compressed(reader: CompressedDataReader<MessageReader<'a>>, is_nested: bool) -> Result<Self> {
+        Ok(Message::Compressed { reader, is_nested })
+    }
+
+    /// Create a message from encrypted data
+    pub fn from_edata(edata: Edata<'a>, is_nested: bool) -> Result<Self> {
+        // This should parse the decrypted content as a new message
+        // For now, we'll create a simple literal message wrapper
+        // TODO: This might need more sophisticated parsing
+        Ok(Message::Encrypted {
+            esk: Vec::new(),
+            edata,
+            is_nested
+        })
+    }
+
     /// Decompresses the data if compressed.
     pub fn decompress(self) -> Result<Self> {
         match self {
@@ -933,14 +942,14 @@ impl<'a> Message<'a> {
     }
 
     /// Consumes the reader and reads into a vec.
-    pub fn as_data_vec(&mut self) -> Result<Vec<u8>, ()> {
+    pub fn as_data_vec(&mut self) -> crate::io::Result<Vec<u8>> {
         let mut out = Vec::new();
         self.read_to_end(&mut out)?;
         Ok(out)
     }
 
     /// Consumes the reader and reads into a string.
-    pub fn as_data_string(&mut self) -> Result<String, ()> {
+    pub fn as_data_string(&mut self) -> crate::io::Result<String> {
         let mut out = String::new();
         self.read_to_string(&mut out)?;
         Ok(out)
@@ -972,7 +981,7 @@ impl<'a> Message<'a> {
         }
     }
 
-    fn has_buffer_available(&mut self) -> Result<bool, ()> {
+    fn has_buffer_available(&mut self) -> crate::io::Result<bool> {
         let buf = self.fill_inner()?;
         Ok(!buf.is_empty())
     }
@@ -987,7 +996,7 @@ impl<'a> Message<'a> {
         }
     }
 
-    fn check_trailing_data(&mut self) -> Result<(), ()> {
+    fn check_trailing_data(&mut self) -> crate::io::Result<()> {
         // if this is a nested message, the outer readers will verify trailing data
         if self.is_nested() {
             return Ok(());
@@ -1000,7 +1009,7 @@ impl<'a> Message<'a> {
         inner.check_trailing_data()
     }
 
-    fn fill_inner(&mut self) -> Result<&[u8], ()> {
+    fn fill_inner(&mut self) -> crate::io::Result<&[u8]> {
         match self {
             Self::Literal { reader, .. } => reader.fill_buf(),
             Self::Compressed { reader, .. } => reader.fill_buf(),
@@ -1012,11 +1021,19 @@ impl<'a> Message<'a> {
 }
 
 impl Read for Message<'_> {
-    // This function needs to be refactored to not use crate::io
+    fn read(&mut self, buf: &mut [u8]) -> crate::io::Result<usize> {
+        match self {
+            Self::Literal { reader, .. } => reader.read(buf),
+            Self::Compressed { reader, .. } => reader.read(buf),
+            Self::Signed { reader, .. } => reader.read(buf),
+            Self::SignedOnePass { reader, .. } => reader.read(buf),
+            Self::Encrypted { edata, .. } => edata.read(buf),
+        }
+    }
 }
 
 impl BufRead for Message<'_> {
-    fn fill_buf(&mut self) -> Result<&[u8], ()> {
+    fn fill_buf(&mut self) -> crate::io::Result<&[u8]> {
         // sad workaround because of compiler lifetime limits
         if !self.has_buffer_available()? {
             self.check_trailing_data()?;

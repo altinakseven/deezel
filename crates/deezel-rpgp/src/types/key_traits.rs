@@ -1,7 +1,4 @@
 use alloc::boxed::Box;
-use alloc::string::{String, ToString};
-use alloc::vec;
-use alloc::format;
 extern crate alloc;
 use crate::{
     crypto::{
@@ -37,7 +34,7 @@ pub trait Imprint {
 }
 
 pub trait PublicKeyTrait: KeyDetails + core::fmt::Debug {
-    fn created_at(&self) -> &chrono::DateTime<chrono::Utc>;
+    fn created_at(&self) -> chrono::DateTime<chrono::Utc>;
     fn expiration(&self) -> Option<u16>;
 
     /// Verify a signed message.
@@ -106,7 +103,7 @@ impl<T: PublicKeyTrait> PublicKeyTrait for &T {
         (*self).expiration()
     }
 
-    fn created_at(&self) -> &chrono::DateTime<chrono::Utc> {
+    fn created_at(&self) -> chrono::DateTime<chrono::Utc> {
         (*self).created_at()
     }
 }

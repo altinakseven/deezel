@@ -1,8 +1,5 @@
-use alloc::boxed::Box;
-use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
-use alloc::format;
 extern crate alloc;
 use aes::{Aes128, Aes192, Aes256};
 use aes_gcm::{
@@ -50,6 +47,8 @@ pub enum Error {
     Decrypt { alg: AeadAlgorithm },
     #[snafu(display("encryption failed: {:?}", alg))]
     Encrypt { alg: AeadAlgorithm },
+    #[snafu(display("IO error: {}", source))]
+    Io { source: crate::io::Error },
 }
 
 /// Available AEAD algorithms.

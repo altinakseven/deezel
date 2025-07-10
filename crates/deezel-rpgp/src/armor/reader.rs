@@ -1,32 +1,27 @@
 extern crate alloc;
 use alloc::{
-    boxed::Box,
     collections::BTreeMap,
     string::{String, ToString},
-    vec,
     vec::Vec,
-    format,
 };
 use core::{fmt, hash::Hasher, str};
 use crate::ser::Serialize;
 
-use base64::engine::{general_purpose::STANDARD, Engine as _};
-use buffer_redux::BufReader;
-use byteorder::{BigEndian, ByteOrder};
+use crate::io::BufReader;
 use nom::{
     branch::alt,
-    bytes::streaming::{tag, take, take_until, take_until1},
-    character::streaming::{digit1, line_ending, not_line_ending, space0},
-    combinator::{complete, map, map_res, opt, success, value},
+    bytes::streaming::{tag, take_until1},
+    character::streaming::{digit1, line_ending, not_line_ending},
+    combinator::{complete, map, map_res, opt, value},
     multi::many0,
     sequence::{delimited, pair, preceded, terminated},
     AsChar, IResult, Input, Parser,
 };
 
 use crate::{
-    base64::{Base64Decoder, Base64Reader},
-    errors::{bail, Result},
-    io::{BufRead, Cursor, Read},
+    base64::Base64Reader,
+    errors::Result,
+    io::{Cursor, Read},
 };
 
 /// Armor block types.
@@ -80,8 +75,8 @@ impl fmt::Display for BlockType {
 }
 
 impl Serialize for BlockType {
-    fn to_writer<W: super::writer::Write>(&self, w: &mut W) -> Result<()> {
-        write!(w, "{}", self)?;
+    fn to_writer<W: crate::io::Write>(&self, w: &mut W) -> Result<()> {
+        w.write_all(self.to_string().as_bytes())?;
 
         Ok(())
     }
@@ -301,7 +296,9 @@ fn hash_header_line(i: &[u8]) -> IResult<&[u8], Vec<String>> {
 }
 
 pub fn decode(i: &[u8]) -> Result<(BlockType, Headers, Vec<u8>)> {
-    let (i, (typ, headers)) = armor_header(i).map_err(|e| e.to_owned())?;
+    let (i, (typ, headers)) = armor_header(i).map_err(|e: nom::Err<nom::error::Error<_>>| {
+        crate::errors::Error::from(e.to_string())
+    })?;
 
     // TODO: should not be a BufReader here
     let mut reader = Base64Reader::new(BufReader::new(Cursor::new(i)));

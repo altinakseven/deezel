@@ -1,6 +1,5 @@
 use alloc::boxed::Box;
-use alloc::string::{String, ToString};
-use alloc::vec;
+use alloc::string::ToString;
 use alloc::format;
 extern crate alloc;
 use bytes::{Buf, BytesMut};
@@ -143,7 +142,7 @@ impl<'a> SignatureBodyReader<'a> {
                     buffer.truncate(read);
 
                     if read == 0 {
-                        return Err(Error::Other);
+                        return Err(crate::io::Error::new(crate::io::ErrorKind::Other, "signed reader error"));
                     }
 
                     if let Some(ref mut hasher) = norm_hasher {
@@ -188,15 +187,15 @@ impl<'a> SignatureBodyReader<'a> {
 
                         let hash = if let Some(norm_hasher) = norm_hasher {
                             let mut hasher = norm_hasher.done();
-                            let config = signature.config().ok_or_else(|| Error::Other)?;
+                            let config = signature.config().ok_or_else(|| crate::io::Error::new(crate::io::ErrorKind::Other, "signed reader error"))?;
                             // calculate final hash
                             let len = config
                                 .hash_signature_data(&mut hasher)
-                                .map_err(|_| Error::Other)?;
+                                .map_err(|_| crate::io::Error::new(crate::io::ErrorKind::Other, "signed reader error"))?;
                             hasher.update(
                                 &config
                                     .trailer(len)
-                                    .map_err(|_| Error::Other)?,
+                                    .map_err(|_| crate::io::Error::new(crate::io::ErrorKind::Other, "signed reader error"))?,
                             );
 
                             Some(hasher.finalize())
@@ -232,7 +231,7 @@ impl<'a> SignatureBodyReader<'a> {
                     };
                     return Ok(());
                 }
-                Self::Error => return Err(Error::Other),
+                Self::Error => return Err(crate::io::Error::new(crate::io::ErrorKind::Other, "signed reader error")),
             }
         }
     }
@@ -296,7 +295,7 @@ impl<'a> BufRead for SignatureBodyReader<'a> {
             Self::Init { .. } => unreachable!("invalid state"),
             Self::Body { buffer, .. } => Ok(&buffer[..]),
             Self::Done { .. } => Ok(&[][..]),
-            Self::Error => Err(Error::Other),
+            Self::Error => Err(crate::io::Error::new(crate::io::ErrorKind::Other, "signed reader error")),
         }
     }
 

@@ -1,20 +1,17 @@
 //! Implements Cleartext Signature Framework
 extern crate alloc;
 use alloc::vec;
-use alloc::boxed::Box;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use alloc::format;
-use buffer_redux::BufReader;
-use chrono::SubsecRound;
+use chrono::TimeZone;
 use log::debug;
 
 use crate::{
-    armor::{self, BlockType, Headers},
-    composed::{ArmorOptions, Deserializable, StandaloneSignature},
+    armor::{self, Headers},
+    composed::{ArmorOptions, StandaloneSignature},
     crypto::hash::HashAlgorithm,
-    errors::{bail, ensure, ensure_eq, format_err, InvalidInputSnafu, Result},
-    line_writer::LineBreak,
+    errors::{bail, ensure_eq, format_err, InvalidInputSnafu, Result},
     packet::{Signature, SignatureConfig, SignatureType, Subpacket, SubpacketData},
     types::{KeyVersion, Password, PublicKeyTrait, SecretKeyTrait},
     MAX_BUFFER_SIZE,
@@ -53,7 +50,7 @@ impl CleartextSignedMessage {
     ) -> Result<Self>
     where
     {
-        let mut bytes = text.as_bytes();
+        let bytes = text.as_bytes();
         #[cfg(feature = "std")]
         let signature_text = NormalizedReader::new(&mut bytes, LineBreak::Crlf);
         #[cfg(not(feature = "std"))]
@@ -77,7 +74,7 @@ impl CleartextSignedMessage {
         let hashed_subpackets = vec![
             Subpacket::regular(SubpacketData::IssuerFingerprint(key.fingerprint()))?,
             Subpacket::regular(SubpacketData::SignatureCreationTime(
-                chrono::Utc::now().trunc_subsecs(0),
+                chrono::Utc.timestamp_opt(0, 0).single().expect("invalid time"),
             ))?,
         ];
 
@@ -105,7 +102,7 @@ impl CleartextSignedMessage {
         #[cfg(feature = "std")]
         let signature_text = normalize_lines(text, LineBreak::Crlf);
         #[cfg(not(feature = "std"))]
-        let signature_text = text.into();
+        let signature_text: String = text.into();
 
         let raw_signatures = signer(&signature_text[..])?;
         let mut hashes = Vec::new();
@@ -191,7 +188,7 @@ impl CleartextSignedMessage {
     }
 
     /// Parse from a buffered reader, containing the text of the message.
-    pub fn from_armor_buf(mut b: &[u8], limit: usize) -> Result<(Self, Headers)> {
+    pub fn from_armor_buf(b: &[u8], limit: usize) -> Result<(Self, Headers)> {
         debug!("parsing cleartext message");
         // Headers
         // This is a placeholder implementation
@@ -338,7 +335,7 @@ fn dash_unescape_and_trim(text: &str) -> String {
 }
 
 /// Does the remaining buffer contain any non-whitespace characters?
-fn has_rest(mut b: &[u8]) -> Result<bool> {
+fn has_rest(b: &[u8]) -> Result<bool> {
     // This function needs to be refactored to not use crate::io
     Ok(false)
 }
@@ -346,7 +343,7 @@ fn has_rest(mut b: &[u8]) -> Result<bool> {
 const HEADER_LINE: &str = "-----BEGIN PGP SIGNED MESSAGE-----";
 
 fn read_cleartext_body(b: &mut &[u8]) -> Result<(String, String)> {
-    let mut out = String::new();
+    let out = String::new();
 
     loop {
         // This function needs to be refactored to not use crate::io
