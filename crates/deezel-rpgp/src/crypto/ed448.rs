@@ -18,11 +18,11 @@ pub const KEY_LEN: usize = 57;
 
 /// Secret key for EdDSA with Curve448.
 #[derive(Clone, PartialEq, Eq, ZeroizeOnDrop, derive_more::Debug)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+#[cfg_attr(all(test, feature = "std"), derive(proptest_derive::Arbitrary))]
 pub struct SecretKey {
     /// The secret point.
     #[debug("..")]
-    #[cfg_attr(test, proptest(strategy = "tests::key_gen()"))]
+    #[cfg_attr(all(test, feature = "std"), proptest(strategy = "tests::key_gen()"))]
     secret: cx448::SigningKey,
 }
 
@@ -113,6 +113,7 @@ pub fn verify(
 }
 
 #[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use proptest::prelude::*;
 

@@ -62,6 +62,7 @@ mod no_std_io {
         UnexpectedEof,
         InvalidInput,
         InvalidData,
+        Interrupted,
         Other,
     }
 

@@ -192,3 +192,51 @@ impl NormalizingHasher {
         }
     }
 }
+#[cfg(test)]
+pub mod test {
+    use crate::io::{self, Read};
+    use alloc::string::String;
+    use alloc::vec::Vec;
+    use rand::{Rng, RngCore};
+
+    #[derive(Debug, Clone)]
+    pub struct ChaosReader<R: Rng> {
+        rng: R,
+        data: Vec<u8>,
+        pos: usize,
+    }
+
+    impl<R: Rng> ChaosReader<R> {
+        pub fn new(rng: R, data: Vec<u8>) -> Self {
+            Self { rng, data, pos: 0 }
+        }
+    }
+
+    impl<R: RngCore> Read for ChaosReader<R> {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            if self.pos >= self.data.len() {
+                return Ok(0);
+            }
+
+            let remaining = self.data.len() - self.pos;
+            let max_read = self.rng.gen_range(1..=buf.len().min(remaining));
+            let end = self.pos + max_read;
+            buf[..max_read].copy_from_slice(&self.data[self.pos..end]);
+            self.pos = end;
+
+            Ok(max_read)
+        }
+    }
+
+    pub fn random_string<R: Rng>(rng: &mut R, len: usize) -> String {
+        let mut s = String::with_capacity(len);
+        for _ in 0..len {
+            s.push(rng.gen_range('a'..='z') as char);
+        }
+        s
+    }
+
+    pub fn check_strings(a: String, b: String) {
+        assert_eq!(a, b);
+    }
+}

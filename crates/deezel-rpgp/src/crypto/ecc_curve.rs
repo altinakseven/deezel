@@ -11,7 +11,7 @@ use crate::{
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+#[cfg_attr(all(test, feature = "std"), derive(proptest_derive::Arbitrary))]
 pub enum ECCCurve {
     Curve25519,
     Ed25519,
@@ -22,7 +22,7 @@ pub enum ECCCurve {
     BrainpoolP384r1,
     BrainpoolP512r1,
     Secp256k1,
-    #[cfg_attr(test, proptest(skip))]
+    #[cfg_attr(all(test, feature = "std"), proptest(skip))]
     Unknown(ObjectIdentifier),
 }
 

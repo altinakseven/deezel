@@ -3,7 +3,7 @@ extern crate alloc;
 use crate::io::{BufRead, Write};
 
 use bytes::Bytes;
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 use proptest::prelude::*;
 use rand::{CryptoRng, RngCore};
 
@@ -19,12 +19,12 @@ use crate::{
 ///
 /// <https://www.rfc-editor.org/rfc/rfc9580.html#name-padding-packet-type-id-21>
 #[derive(derive_more::Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+#[cfg_attr(all(test, feature = "std"), derive(proptest_derive::Arbitrary))]
 pub struct Padding {
     packet_header: PacketHeader,
     /// Random data.
     #[debug("{}", hex::encode(data))]
-    #[cfg_attr(test, proptest(strategy = "any::<Vec<u8>>().prop_map(Into::into)"))]
+    #[cfg_attr(all(test, feature = "std"), proptest(strategy = "any::<Vec<u8>>().prop_map(Into::into)"))]
     data: Bytes,
 }
 
@@ -78,6 +78,7 @@ impl PacketTrait for Padding {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "std")]
     use proptest::prelude::*;
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
@@ -123,6 +124,7 @@ mod tests {
         assert_eq!(encoded, packet.data);
     }
 
+    #[cfg(feature = "std")]
     proptest! {
         #[test]
         fn write_len(padding: Padding) {

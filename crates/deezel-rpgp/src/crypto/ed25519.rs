@@ -35,7 +35,7 @@ pub const KEY_LEN: usize = 32;
 /// Specifies which OpenPGP framing (e.g. `Ed25519` vs. `EdDSALegacy`) is used, and also chooses
 /// between curve Ed25519 and Ed448 (TODO: not yet implemented)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+#[cfg_attr(all(test, feature = "std"), derive(proptest_derive::Arbitrary))]
 pub enum Mode {
     /// EdDSALegacy (with curve Ed25519). May only be used with v4 keys.
     ///
@@ -50,11 +50,11 @@ pub enum Mode {
 
 /// Secret key for EdDSA with Curve25519, the only combination we currently support.
 #[derive(Clone, PartialEq, Eq, ZeroizeOnDrop, derive_more::Debug)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+#[cfg_attr(all(test, feature = "std"), derive(proptest_derive::Arbitrary))]
 pub struct SecretKey {
     /// The secret point.
     #[debug("..")]
-    #[cfg_attr(test, proptest(strategy = "tests::key_gen()"))]
+    #[cfg_attr(all(test, feature = "std"), proptest(strategy = "tests::key_gen()"))]
     secret: ed25519_dalek::SigningKey,
     #[zeroize(skip)]
     pub(crate) mode: Mode,
@@ -192,6 +192,7 @@ pub fn verify(
     Ok(key.verify(hashed, &sig)?)
 }
 
+#[cfg(all(test, feature = "std"))]
 #[cfg(all(test, feature = "std"))]
 mod tests {
     use proptest::prelude::*;

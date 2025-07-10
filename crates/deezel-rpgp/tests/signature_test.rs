@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate pretty_assertions;
 
-use pgp::composed::{Deserializable, StandaloneSignature};
+use deezel_rpgp::composed::{Deserializable, StandaloneSignature};
 
 #[test]
 fn sig_odd() {

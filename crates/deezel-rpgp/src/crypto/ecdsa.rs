@@ -18,29 +18,29 @@ use crate::{
 };
 
 #[derive(Clone, PartialEq, Eq, ZeroizeOnDrop, derive_more::Debug)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+#[cfg_attr(all(test, feature = "std"), derive(proptest_derive::Arbitrary))]
 pub enum SecretKey {
     P256(
         #[debug("..")]
-        #[cfg_attr(test, proptest(strategy = "tests::key_p256_gen()"))]
+        #[cfg_attr(all(test, feature = "std"), proptest(strategy = "tests::key_p256_gen()"))]
         p256::SecretKey,
     ),
     P384(
         #[debug("..")]
-        #[cfg_attr(test, proptest(strategy = "tests::key_p384_gen()"))]
+        #[cfg_attr(all(test, feature = "std"), proptest(strategy = "tests::key_p384_gen()"))]
         p384::SecretKey,
     ),
     P521(
         #[debug("..")]
-        #[cfg_attr(test, proptest(strategy = "tests::key_p521_gen()"))]
+        #[cfg_attr(all(test, feature = "std"), proptest(strategy = "tests::key_p521_gen()"))]
         p521::SecretKey,
     ),
     Secp256k1(
         #[debug("..")]
-        #[cfg_attr(test, proptest(strategy = "tests::key_k256_gen()"))]
+        #[cfg_attr(all(test, feature = "std"), proptest(strategy = "tests::key_k256_gen()"))]
         k256::SecretKey,
     ),
-    #[cfg_attr(test, proptest(skip))]
+    #[cfg_attr(all(test, feature = "std"), proptest(skip))]
     Unsupported {
         /// The secret point.
         #[debug("..")]
@@ -365,6 +365,7 @@ pub fn verify(
 }
 
 #[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use proptest::prelude::*;
     use rand::SeedableRng;

@@ -313,7 +313,7 @@ fn old_fixed_type(len: u32) -> u8 {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use proptest::prelude::*;
 
@@ -325,13 +325,14 @@ mod tests {
         // :attribute packet: [jpeg image of size 4951]
         let packet_header_raw = hex::decode(b"d1ff0000136d").unwrap();
         let header = PacketHeader::try_from_reader(&packet_header_raw[..]).unwrap();
-        dbg!(&header);
+        // dbg!(&header);
 
         assert_eq!(header.version(), PacketHeaderVersion::New);
         assert_eq!(header.tag(), Tag::UserAttribute);
         assert_eq!(header.packet_length(), PacketLength::Fixed(4973));
     }
 
+    #[cfg(feature = "std")]
     impl Arbitrary for OldPacketHeader {
         type Parameters = u8; // length type
         type Strategy = BoxedStrategy<Self>;
@@ -354,6 +355,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "std")]
     impl Arbitrary for NewPacketHeader {
         type Parameters = ();
         type Strategy = BoxedStrategy<Self>;
@@ -365,6 +367,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "std")]
     impl Arbitrary for PacketHeader {
         type Parameters = ();
         type Strategy = BoxedStrategy<Self>;
@@ -394,6 +397,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "std")]
     proptest! {
         #[test]
         fn write_len(header: PacketHeader) {

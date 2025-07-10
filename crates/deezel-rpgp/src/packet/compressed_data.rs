@@ -18,12 +18,12 @@ use crate::{
 ///
 /// Ref <https://www.rfc-editor.org/rfc/rfc9580.html#name-compressed-data-packet-type>
 #[derive(Clone, PartialEq, Eq, derive_more::Debug)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+#[cfg_attr(all(test, feature = "std"), derive(proptest_derive::Arbitrary))]
 pub struct CompressedData {
     packet_header: PacketHeader,
     compression_algorithm: CompressionAlgorithm,
     #[debug("{}", hex::encode(compressed_data))]
-    #[cfg_attr(test, proptest(strategy = "tests::compressed_data_gen()"))]
+    #[cfg_attr(all(test, feature = "std"), proptest(strategy = "tests::compressed_data_gen()"))]
     compressed_data: Bytes,
 }
 
@@ -269,7 +269,7 @@ impl PacketTrait for CompressedData {
 
 
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use proptest::prelude::*;
     use rand::SeedableRng;

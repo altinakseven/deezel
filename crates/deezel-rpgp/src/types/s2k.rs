@@ -146,7 +146,7 @@ impl From<u8> for S2kUsage {
 }
 
 #[derive(derive_more::Debug, PartialEq, Eq, Clone)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+#[cfg_attr(all(test, feature = "std"), derive(proptest_derive::Arbitrary))]
 pub enum StringToKey {
     /// Type ID 0
     Simple { hash_alg: HashAlgorithm },
@@ -157,7 +157,7 @@ pub enum StringToKey {
         salt: [u8; 8],
     },
     /// Type ID 2
-    #[cfg_attr(test, proptest(skip))] // doesn't roundtrip
+    #[cfg_attr(all(test, feature = "std"), proptest(skip))] // doesn't roundtrip
     Reserved {
         #[debug("{}", hex::encode(unknown))]
         unknown: Bytes,
@@ -181,14 +181,14 @@ pub enum StringToKey {
         m_enc: u8,
     },
     /// Private/Experimental S2K: 100-110
-    #[cfg_attr(test, proptest(skip))] // doesn't roundtrip
+    #[cfg_attr(all(test, feature = "std"), proptest(skip))] // doesn't roundtrip
     Private {
         typ: u8,
         #[debug("{}", hex::encode(unknown))]
         unknown: Bytes,
     },
     /// Unknown S2K types
-    #[cfg_attr(test, proptest(skip))] // doesn't roundtrip
+    #[cfg_attr(all(test, feature = "std"), proptest(skip))] // doesn't roundtrip
     Other {
         typ: u8,
         #[debug("{}", hex::encode(unknown))]
@@ -545,7 +545,7 @@ impl Serialize for StringToKey {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use proptest::prelude::*;
     use rand::{
@@ -578,7 +578,7 @@ mod tests {
             for sym_alg in sym_algs {
                 for alg in algs {
                     for count in counts {
-                        println!("{size}/{alg:?}/{count}/{sym_alg:?}");
+                        // println!("{size}/{alg:?}/{count}/{sym_alg:?}");
                         let s2k = StringToKey::new_iterated(&mut rng, alg, count);
                         let passphrase = Alphanumeric.sample_string(&mut rng, size);
 
@@ -674,11 +674,12 @@ mod tests {
         use crate::composed::Message;
 
         for filename in MSGS {
-            println!("reading {}", filename);
+            // println!("reading {}", filename);
 
-            let (msg, header) = Message::from_armor_file(filename).expect("failed to load msg");
+            let armored = std::fs::read_to_string(filename).expect("failed to load msg");
+            let (msg, header) = Message::from_armor(&armored).expect("failed to parse msg");
 
-            dbg!(&header);
+            // dbg!(&header);
             let mut decrypted = msg
                 .decrypt_with_password(&"password".into())
                 .expect("decrypt argon2 skesk");
@@ -728,14 +729,15 @@ mod tests {
 
         use crate::composed::Message;
 
-        println!("reading {}", filename);
-        let (msg, _header) = Message::from_armor_file(filename).expect("parse");
+        // println!("reading {}", filename);
+        let armored = std::fs::read_to_string(filename).expect("failed to load msg");
+        let (msg, _header) = Message::from_armor(&armored).expect("parse");
 
         let mut decrypted = msg
             .decrypt_with_password(&"password".into())
             .expect("decrypt");
 
-        dbg!(&decrypted);
+        // dbg!(&decrypted);
         let data = decrypted.as_data_vec().unwrap();
         assert_eq!(data, b"Hello, world!");
 

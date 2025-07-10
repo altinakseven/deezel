@@ -360,6 +360,7 @@ mod tests {
     use rand_chacha::ChaCha8Rng;
 
     use super::*;
+    use alloc::vec;
 
     #[test]
     fn test_aead_message_sizes() {
@@ -379,7 +380,7 @@ mod tests {
             rng.fill_bytes(&mut message);
 
             for aead in [AeadAlgorithm::Ocb, AeadAlgorithm::Eax, AeadAlgorithm::Gcm] {
-                println!("{} bytes: {:?}", size, aead);
+                // println!("{} bytes: {:?}", size, aead);
                 let enc = SymEncryptedProtectedData::encrypt_seipdv2(
                     &mut rng,
                     SYM_ALG,

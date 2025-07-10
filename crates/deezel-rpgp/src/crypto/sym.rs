@@ -102,12 +102,12 @@ where
 /// Available symmetric key algorithms.
 /// Ref: <https://www.rfc-editor.org/rfc/rfc9580.html#name-symmetric-key-algorithms>
 #[derive(Debug, PartialEq, Eq, Copy, Clone, FromPrimitive, IntoPrimitive)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+#[cfg_attr(all(test, feature = "std"), derive(proptest_derive::Arbitrary))]
 #[repr(u8)]
 #[non_exhaustive]
 pub enum SymmetricKeyAlgorithm {
     /// Plaintext or unencrypted data
-    #[cfg_attr(test, proptest(skip))]
+    #[cfg_attr(all(test, feature = "std"), proptest(skip))]
     Plaintext = 0,
     /// IDEA
     IDEA = 1,
@@ -135,7 +135,7 @@ pub enum SymmetricKeyAlgorithm {
     Private10 = 110,
 
     #[num_enum(catch_all)]
-    Other(#[cfg_attr(test, proptest(strategy = "111u8.."))] u8),
+    Other(#[cfg_attr(all(test, feature = "std"), proptest(strategy = "111u8.."))] u8),
 }
 
 impl Default for SymmetricKeyAlgorithm {
@@ -781,7 +781,7 @@ mod tests {
 
                     {
                         info!("unprotected decrypt streaming");
-                        dbg!(ciphertext.len(), $alg.cfb_prefix_size());
+                        // dbg!(ciphertext.len(), $alg.cfb_prefix_size());
                         let mut input = crate::io::Cursor::new(&ciphertext);
                         let mut decryptor =
                             $alg.stream_decryptor_unprotected(&key, &mut input).unwrap();
@@ -847,7 +847,7 @@ mod tests {
                     }
                     {
                         info!("decrypt streaming");
-                        dbg!(ciphertext.len(), $alg.cfb_prefix_size());
+                        // dbg!(ciphertext.len(), $alg.cfb_prefix_size());
                         let mut input = crate::io::Cursor::new(&ciphertext);
                         let mut decryptor =
                             $alg.stream_decryptor_protected(&key, &mut input).unwrap();

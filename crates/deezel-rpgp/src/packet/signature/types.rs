@@ -1571,7 +1571,7 @@ mod tests {
     #[test]
     fn test_keyflags_crazy_versions() {
         for i in 0..1024 {
-            println!("size {}", i);
+            // println!("size {}", i);
             // I write this with pain...
             let source = BytesMut::zeroed(i).freeze();
             let flags = KeyFlags::try_from_reader(&source[..]).unwrap();

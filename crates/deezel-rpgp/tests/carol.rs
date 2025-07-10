@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate pretty_assertions;
 
-use pgp::composed::{ArmorOptions, Deserializable};
+use deezel_rpgp::composed::{ArmorOptions, Deserializable};
 
 #[test]
 fn load_carol_sec() {
@@ -10,7 +10,7 @@ fn load_carol_sec() {
     let original_key = std::fs::read_to_string("tests/carol.sec.asc").unwrap();
 
     let (sec_key, headers) =
-        pgp::composed::SignedSecretKey::from_armor_single(original_key.as_bytes())
+        deezel_rpgp::composed::SignedSecretKey::from_armor_single(original_key.as_bytes())
             .expect("parsing");
 
     let serialized_key = sec_key
@@ -39,7 +39,7 @@ fn load_carol_pub() {
 
     let original_key = std::fs::read_to_string("tests/carol.pub.asc").unwrap();
 
-    let (key, headers) = pgp::composed::SignedPublicKey::from_armor_single(original_key.as_bytes())
+    let (key, headers) = deezel_rpgp::composed::SignedPublicKey::from_armor_single(original_key.as_bytes())
         .expect("parsing");
 
     let serialized_key = key

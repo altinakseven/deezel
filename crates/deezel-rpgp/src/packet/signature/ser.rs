@@ -438,7 +438,7 @@ impl SignatureConfig {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     #![allow(clippy::unwrap_used)]
 

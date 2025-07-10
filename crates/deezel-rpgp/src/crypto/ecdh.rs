@@ -80,7 +80,7 @@ impl Curve25519 {
 
 /// Secret key for ECDH
 #[derive(Clone, PartialEq, Eq, ZeroizeOnDrop, derive_more::Debug)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+#[cfg_attr(all(test, feature = "std"), derive(proptest_derive::Arbitrary))]
 pub enum SecretKey {
     /// ECDH with Curve25519
     Curve25519(Curve25519),
@@ -88,7 +88,7 @@ pub enum SecretKey {
     P256 {
         /// The secret point.
         #[debug("..")]
-        #[cfg_attr(test, proptest(strategy = "tests::key_p256_gen()"))]
+        #[cfg_attr(all(test, feature = "std"), proptest(strategy = "tests::key_p256_gen()"))]
         secret: p256::SecretKey,
     },
 
@@ -96,7 +96,7 @@ pub enum SecretKey {
     P384 {
         /// The secret point.
         #[debug("..")]
-        #[cfg_attr(test, proptest(strategy = "tests::key_p384_gen()"))]
+        #[cfg_attr(all(test, feature = "std"), proptest(strategy = "tests::key_p384_gen()"))]
         secret: p384::SecretKey,
     },
 
@@ -104,7 +104,7 @@ pub enum SecretKey {
     P521 {
         /// The secret point.
         #[debug("..")]
-        #[cfg_attr(test, proptest(strategy = "tests::key_p521_gen()"))]
+        #[cfg_attr(all(test, feature = "std"), proptest(strategy = "tests::key_p521_gen()"))]
         secret: p521::SecretKey,
     },
 }
@@ -599,10 +599,9 @@ where
     ))
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use std::fs;
-
     use proptest::prelude::*;
     use rand::{RngCore, SeedableRng};
     use rand_chacha::ChaChaRng;
@@ -714,17 +713,21 @@ mod tests {
         }
     }
 
-    impl Arbitrary for Curve25519 {
-        type Parameters = ();
-        type Strategy = BoxedStrategy<Self>;
+}
 
-        fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-            any::<u64>()
-                .prop_map(|seed| {
-                    let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
-                    Curve25519::generate(&mut rng)
-                })
-                .boxed()
-        }
+#[cfg(all(test, feature = "std"))]
+impl proptest::prelude::Arbitrary for Curve25519 {
+    type Parameters = ();
+    type Strategy = proptest::strategy::BoxedStrategy<Self>;
+
+    fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+        use proptest::prelude::*;
+        use rand::SeedableRng;
+        any::<u64>()
+            .prop_map(|seed| {
+                let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
+                Curve25519::generate(&mut rng)
+            })
+            .boxed()
     }
 }

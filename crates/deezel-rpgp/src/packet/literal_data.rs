@@ -22,7 +22,9 @@ use crate::{
 };
 
 #[cfg(feature = "std")]
-use crate::normalize_lines::{normalize_lines, NormalizedReader};
+use crate::normalize_lines::{
+    check_strings, normalize_lines, random_string, LineBreak, NormalizedReader,
+};
 
 /// Literal Data Packet
 /// <https://www.rfc-editor.org/rfc/rfc9580.html#name-literal-data-packet-type-id>
@@ -550,14 +552,14 @@ impl<R: io::Read> io::Read for LiteralDataPartialGenerator<R> {
 
 #[cfg(test)]
 mod tests {
-    use rand::SeedableRng;
+    use alloc::format;
+    use rand::{Rng, SeedableRng};
     use rand_chacha::ChaCha20Rng;
 
     use super::*;
     use crate::{
-        normalize_lines::normalize_lines,
         packet::Packet,
-        util::test::{check_strings, random_string, ChaosReader},
+        util::test::ChaosReader,
     };
 
     #[test]
@@ -623,7 +625,7 @@ mod tests {
         let max_file_size = chunk_size * 5 + 100;
 
         for file_size in 1..=max_file_size {
-            println!("size {}", file_size);
+            // println!("size {}", file_size);
             let mut buf = vec![0u8; file_size];
             rng.fill(&mut buf[..]);
 
@@ -655,6 +657,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "std")]
     fn test_literal_data_utf8_partial_roundtrip() {
         pretty_env_logger::try_init().ok();
 
@@ -664,7 +667,7 @@ mod tests {
         let max_file_size = chunk_size * 5 + 100;
 
         for file_size in 1..=max_file_size {
-            println!("size {}", file_size);
+            // println!("size {}", file_size);
 
             let header = LiteralDataHeader {
                 file_name: "hello.txt".into(),

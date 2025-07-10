@@ -421,6 +421,7 @@ impl Serialize for PublicParams {
 
 #[cfg(test)]
 mod tests {
+    use alloc::{format, vec::Vec};
     use proptest::prelude::*;
 
     use super::*;

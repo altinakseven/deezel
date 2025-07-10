@@ -65,6 +65,7 @@ impl Serialize for DsaPublicParams {
 
 #[cfg(test)]
 mod tests {
+    use alloc::{format, vec::Vec};
     use proptest::prelude::*;
     use rand::SeedableRng;
 

@@ -1,5 +1,5 @@
 #![cfg(feature = "draft-pqc")]
-use pgp::{
+use deezel_rpgp::{
     composed::{
         Deserializable, KeyType, Message, MessageBuilder, SecretKeyParamsBuilder, SignedPublicKey,
         SignedSecretKey, StandaloneSignature, SubkeyParamsBuilder,

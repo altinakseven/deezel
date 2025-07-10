@@ -1,6 +1,4 @@
-use std::fs::File;
-
-use pgp::composed::{Any, Deserializable, SignedPublicKey};
+use deezel_rpgp::composed::{Any, Deserializable, SignedPublicKey};
 
 #[test]
 fn load_csf() {
@@ -39,10 +37,8 @@ fn load_csf_starts_with_newline() {
             assert_eq!(payload, "\ntest\n");
 
             // verify signature
-            let (pkey, _) = SignedPublicKey::from_armor_single(
-                File::open("./tests/unit-tests/csf/alice.pub.asc").unwrap(),
-            )
-            .unwrap();
+            let key_bytes = std::fs::read("./tests/unit-tests/csf/alice.pub.asc").unwrap();
+            let (pkey, _) = SignedPublicKey::from_armor_single(&key_bytes).unwrap();
 
             csm.verify(&pkey).expect("verify ok");
         }

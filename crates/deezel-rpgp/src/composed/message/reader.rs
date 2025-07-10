@@ -19,6 +19,8 @@ pub use self::{
 
 #[cfg(test)]
 mod tests {
+    use alloc::string::String;
+    use alloc::vec::Vec;
     use crate::io::{BufReader, Read};
 
     use rand::SeedableRng;
@@ -39,7 +41,7 @@ mod tests {
 
         for file_size in (1..1024 * 10).step_by(100) {
             for is_partial in [true, false] {
-                println!("--- size: {file_size}, is_partial: {is_partial}");
+                // println!("--- size: {file_size}, is_partial: {is_partial}");
 
                 let buf = random_string(&mut rng, file_size);
                 let message = if is_partial {
@@ -52,7 +54,9 @@ mod tests {
 
                 let reader = ChaosReader::new(rng.clone(), message.clone());
                 let mut reader = BufReader::new(reader);
-                let mut msg = Message::from_bytes(&mut reader).unwrap();
+                let mut data = Vec::new();
+                reader.read_to_end(&mut data).unwrap();
+                let mut msg = Message::from_bytes(&data).unwrap();
 
                 let mut out = String::new();
                 msg.read_to_string(&mut out)?;
@@ -74,9 +78,9 @@ mod tests {
         for file_size in (1..1024 * 10).step_by(100) {
             for is_partial in [true, false] {
                 for is_armor in [true, false] {
-                    println!(
-                        "--- size: {file_size}, is_partial: {is_partial}, is_armor: {is_armor}"
-                    );
+                    // println!(
+                    //     "--- size: {file_size}, is_partial: {is_partial}, is_armor: {is_armor}"
+                    // );
                     let buf = random_string(&mut rng, file_size);
 
                     if is_armor {
@@ -92,9 +96,11 @@ mod tests {
                             builder.compression(CompressionAlgorithm::ZIP);
                             builder.to_armored_string(&mut rng, Default::default())?
                         };
-                        let reader = ChaosReader::new(rng.clone(), message.clone());
+                        let reader = ChaosReader::new(rng.clone(), message.clone().into());
                         let mut reader = BufReader::new(reader);
-                        let (message, _) = Message::from_armor(&mut reader)?;
+                        let mut data = Vec::new();
+                        reader.read_to_end(&mut data).unwrap();
+                        let (message, _) = Message::from_armor(&data)?;
 
                         let mut decompressed_message = message.decompress()?;
                         let mut out = String::new();
@@ -115,7 +121,9 @@ mod tests {
 
                         let reader = ChaosReader::new(rng.clone(), message.clone());
                         let mut reader = BufReader::new(reader);
-                        let message = Message::from_bytes(&mut reader)?;
+                        let mut data = Vec::new();
+                        reader.read_to_end(&mut data).unwrap();
+                        let message = Message::from_bytes(&data)?;
 
                         let mut decompressed_message = message.decompress()?;
                         let mut out = String::new();

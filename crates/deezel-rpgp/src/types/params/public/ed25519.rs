@@ -38,6 +38,7 @@ impl Serialize for Ed25519PublicParams {
 
 #[cfg(test)]
 mod tests {
+    use alloc::{format, vec::Vec};
     use proptest::prelude::*;
 
     use super::*;

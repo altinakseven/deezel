@@ -158,6 +158,7 @@ impl PacketTrait for UserId {
 
 #[cfg(test)]
 mod tests {
+    use alloc::format;
     use proptest::prelude::*;
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;

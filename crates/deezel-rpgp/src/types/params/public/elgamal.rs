@@ -56,6 +56,7 @@ impl Serialize for ElgamalPublicParams {
 
 #[cfg(test)]
 mod tests {
+    use alloc::{format, vec::Vec};
     use proptest::prelude::*;
 
     use super::*;

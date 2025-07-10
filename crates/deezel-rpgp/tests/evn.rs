@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate pretty_assertions;
 
-use pgp::composed::{ArmorOptions, Deserializable};
+use deezel_rpgp::composed::{ArmorOptions, Deserializable};
 
 /// "evn.cert" is a real world certificate with some unusual properties:
 /// For one thing, it encodes subpacket length in the 5 byte format.
@@ -14,7 +14,7 @@ fn load_evn_pub() {
 
     let original_key = std::fs::read_to_string("tests/evn.cert").unwrap();
 
-    let (key, headers) = pgp::composed::SignedPublicKey::from_armor_single(original_key.as_bytes())
+    let (key, headers) = deezel_rpgp::composed::SignedPublicKey::from_armor_single(original_key.as_bytes())
         .expect("parsing");
 
     key.verify().expect("failed to verify");

@@ -1,8 +1,7 @@
-use std::fs::File;
-
-use pgp::{
+use deezel_rpgp::io::Read;
+use deezel_rpgp::{
     composed::{
-        CleartextSignedMessage, KeyType, Message, MessageBuilder, SecretKeyParamsBuilder,
+        CleartextSignedMessage, Deserializable, KeyType, Message, SecretKeyParamsBuilder,
         SignedPublicKey, SignedSecretKey,
     },
     crypto::{
@@ -10,8 +9,9 @@ use pgp::{
         ecc_curve::ECCCurve,
         sym::SymmetricKeyAlgorithm,
     },
-    types::{KeyVersion, PublicKeyTrait},
+    types::{KeyVersion, Password},
 };
+use deezel_rpgp::composed::MessageBuilder;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 
@@ -36,23 +36,24 @@ const CASES_PRE_9580: &[&str] = &[
 ];
 
 fn load_ssk(filename: &str) -> SignedSecretKey {
-    let (mut iter, _) =
-        pgp::composed::PublicOrSecret::from_reader_many(File::open(filename).unwrap()).expect("ok");
-    let pos = iter.next().expect("some").expect("ok");
-
-    pos.try_into().unwrap()
+    let bytes = std::fs::read(filename).unwrap();
+    let (key, _) = SignedSecretKey::from_armor_single(&bytes).unwrap();
+    key
 }
 
 fn try_decrypt(keyfile: &str, msg_file: &str) {
+    use deezel_rpgp::io::Read;
     let ssk = load_ssk(keyfile);
 
     // load seipdv1 msg, decrypt
-    let (message, _) = Message::from_armor_file(msg_file).expect("ok");
-    let mut dec = message.decrypt(&"".into(), &ssk).expect("decrypt");
+    let msg_bytes = std::fs::read(msg_file).unwrap();
+    let (message, _) = Message::from_armor(&msg_bytes).expect("ok");
+    let mut dec = message.decrypt(&Password::empty(), &ssk).expect("decrypt");
 
-    let decrypted = dec.as_data_string().unwrap();
+    let mut decrypted = String::new();
+    dec.read_to_string(&mut decrypted).unwrap();
 
-    assert_eq!(&decrypted, MSG);
+    assert_eq!(decrypted, MSG);
 }
 
 #[test]
@@ -87,8 +88,9 @@ fn rfc9580_verify_csf() {
         spk.verify().expect("SignedPublicKey::verify");
 
         // load+verify csf msg
+        let csf_bytes = std::fs::read(csffile).unwrap();
         let (csf, _) =
-            CleartextSignedMessage::from_armor(File::open(csffile).unwrap()).expect("csf loaded");
+            CleartextSignedMessage::from_armor(&csf_bytes).expect("csf loaded");
 
         csf.verify(&spk).expect("verify ok");
     }
@@ -106,15 +108,16 @@ fn rfc9580_seipdv1_roundtrip() {
         let enc_subkey = &spk.public_subkeys.first().unwrap().key;
 
         // SEIPDv1 encrypt/decrypt roundtrip
-        let mut builder = MessageBuilder::from_bytes("", MSG.as_bytes())
-            .seipd_v1(&mut rng, SymmetricKeyAlgorithm::AES256);
-        builder.encrypt_to_key(&mut rng, &enc_subkey).unwrap();
+        let mut builder =
+            MessageBuilder::from_bytes("", MSG.as_bytes()).seipd_v1(&mut rng, SymmetricKeyAlgorithm::AES256);
+        builder.encrypt_to_key(&mut rng, enc_subkey).unwrap();
         let enc = builder.to_vec(&mut rng).unwrap();
 
         let msg = Message::from_bytes(&enc[..]).unwrap();
-        let mut dec = msg.decrypt(&"".into(), &ssk).expect("decrypt");
+        let mut dec = msg.decrypt(&Password::empty(), &ssk).expect("decrypt");
 
-        let data = dec.as_data_string().unwrap();
+        let mut data = String::new();
+        dec.read_to_string(&mut data).unwrap();
         assert_eq!(data, MSG);
     }
 }
@@ -137,13 +140,14 @@ fn rfc9580_seipdv2_roundtrip() {
             AeadAlgorithm::Ocb,
             ChunkSize::default(),
         );
-        builder.encrypt_to_key(&mut rng, &enc_subkey).unwrap();
+        builder.encrypt_to_key(&mut rng, enc_subkey).unwrap();
         let enc = builder.to_vec(&mut rng).unwrap();
 
         let msg = Message::from_bytes(&enc[..]).unwrap();
-        let mut dec = msg.decrypt(&"".into(), &ssk).expect("decrypt");
+        let mut dec = msg.decrypt(&Password::empty(), &ssk).expect("decrypt");
 
-        let data = dec.as_data_string().unwrap();
+        let mut data = String::new();
+        dec.read_to_string(&mut data).unwrap();
         assert_eq!(data, MSG);
     }
 }
@@ -159,7 +163,8 @@ fn rfc9580_roundtrip_csf() {
         let spk = SignedPublicKey::from(ssk.clone());
 
         // roundtrip sign+verify csf
-        let csf = CleartextSignedMessage::sign(&mut rng, MSG, &*ssk, &"".into()).expect("sign");
+        let csf =
+            CleartextSignedMessage::sign(&mut rng, MSG, &*ssk, &Password::empty()).expect("sign");
         csf.verify(&spk).expect("verify");
     }
 }
@@ -174,16 +179,18 @@ fn rfc9580_roundtrip_sign_verify_inline_msg() {
 
         let spk = SignedPublicKey::from(ssk.clone());
 
+        use deezel_rpgp::crypto::hash::HashAlgorithm;
+        use deezel_rpgp::io::Read;
+
         let mut builder = MessageBuilder::from_bytes("", MSG.as_bytes());
-        builder.sign(
-            &*ssk,
-            "".into(),
-            ssk.public_key().public_params().hash_alg(),
-        );
+        builder.sign(&*ssk, Password::empty(), HashAlgorithm::Sha256);
         let msg = builder.to_vec(&mut rng).unwrap();
 
         let mut msg = Message::from_bytes(&msg[..]).unwrap();
-        msg.verify_read(&spk).expect("verify");
+        let _ = msg.verify_read(&spk).expect("verify");
+        let mut data = Vec::new();
+        msg.read_to_end(&mut data).unwrap();
+        assert_eq!(data, MSG.as_bytes());
     }
 }
 
@@ -200,10 +207,8 @@ fn rfc9580_legacy_25519_illegal_in_v6() {
     let mut rng = ChaCha8Rng::seed_from_u64(0);
 
     // -- Try (and fail) to load a v6/legacy key --
-    let key_file = File::open("tests/rfc9580/v6-legacy_illegal/tsk.asc").unwrap();
-
-    let (mut iter, _) = pgp::composed::PublicOrSecret::from_reader_many(key_file).expect("ok");
-    let res = iter.next().expect("result");
+    let key_bytes = std::fs::read("tests/rfc9580/v6-legacy_illegal/tsk.asc").unwrap();
+    let res = SignedSecretKey::from_armor_single(&key_bytes);
 
     // we expect an error about the illegal legacy parameters in a v6 key
     assert!(res.is_err());

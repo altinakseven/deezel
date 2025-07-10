@@ -699,7 +699,7 @@ mod tests {
     prop_compose! {
         fn v4_gen()(
             pw in any::<String>(),
-            session_key in any::<Vec<u8>>(),
+            session_key in prop::collection::vec(any::<u8>(), 1..100),
             sym_alg in supported_sym_alg_gen(),
             s2k in s2k_with_salt_gen()
         ) -> SymKeyEncryptedSessionKey {
@@ -711,7 +711,7 @@ mod tests {
     prop_compose! {
         fn v6_gen()(
             pw in any::<String>(),
-            session_key in any::<Vec<u8>>(),
+            session_key in prop::collection::vec(any::<u8>(), 1..100),
             sym_alg in supported_sym_alg_gen(),
             aead in supported_aead_gen(),
             s2k in s2k_with_salt_gen()

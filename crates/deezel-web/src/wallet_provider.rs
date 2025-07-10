@@ -789,7 +789,7 @@ impl TimeProvider for BrowserWalletProvider {
         self.web_provider.now_millis()
     }
     
-    fn sleep_ms(&self, ms: u64) -> core::pin::Pin<Box<dyn core::future::Future<Output = ()>>> {
+    fn sleep_ms(&self, ms: u64) -> core::pin::Pin<Box<dyn core::future::Future<Output = ()> + Send>> {
         self.web_provider.sleep_ms(ms)
     }
 }

@@ -21,7 +21,7 @@ protorune-support = { git = "https://github.com/kungfuflex/alkanes-rs" }
 
 # Cryptography and wallet functionality
 secp256k1 = { version = "0.29", features = ["rand", "recovery"] }
-bip39 = "2.0"
+bip39 = { version = "2.0", package = "tiny-bip39" }
 pbkdf2 = "0.12"
 aes-gcm = "0.10"
 rand = "0.8"

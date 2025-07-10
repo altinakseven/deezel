@@ -35,6 +35,7 @@ impl Serialize for X25519PublicParams {
 
 #[cfg(test)]
 mod tests {
+    use alloc::{format, vec::Vec};
     use proptest::prelude::*;
 
     use super::*;

@@ -15,7 +15,7 @@ const PGP: [u8; 3] = [0x50, 0x47, 0x50];
 /// Marker Packet
 /// <https://www.rfc-editor.org/rfc/rfc9580.html#name-marker-packet-type-id-10>
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+#[cfg_attr(all(test, feature = "std"), derive(proptest_derive::Arbitrary))]
 pub struct Marker {
     packet_header: PacketHeader,
 }
@@ -47,7 +47,7 @@ impl PacketTrait for Marker {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use proptest::prelude::*;
 

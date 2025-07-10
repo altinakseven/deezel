@@ -20,7 +20,7 @@ use crate::{
 /// corresponding flag is known as "Version 1 Symmetrically Encrypted and Integrity Protected
 /// Data packet".
 #[derive(derive_more::Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+#[cfg_attr(all(test, feature = "std"), derive(proptest_derive::Arbitrary))]
 pub struct ModDetectionCode {
     packet_header: PacketHeader,
     /// 20 byte SHA1 hash of the preceding plaintext data.
@@ -57,9 +57,11 @@ impl PacketTrait for ModDetectionCode {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use proptest::prelude::*;
+    use alloc::format;
+    use alloc::vec::Vec;
 
     use super::*;
 

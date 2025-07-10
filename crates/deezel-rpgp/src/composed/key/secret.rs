@@ -115,8 +115,10 @@ impl SecretSubkey {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
+    use std::fs;
+
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 
@@ -126,12 +128,10 @@ mod tests {
     /// Based on the operations "split_public_key" in Deltachat
     #[test]
     fn test_split_key() {
-        let (public, _) =
-            SignedPublicKey::from_armor_file("./tests/autocrypt/alice@autocrypt.example.pub.asc")
-                .unwrap();
-        let (secret, _) =
-            SignedSecretKey::from_armor_file("./tests/autocrypt/alice@autocrypt.example.sec.asc")
-                .unwrap();
+        let pub_bytes = fs::read("./tests/autocrypt/alice@autocrypt.example.pub.asc").unwrap();
+        let (public, _) = SignedPublicKey::from_armor_single(&pub_bytes).unwrap();
+        let sec_bytes = fs::read("./tests/autocrypt/alice@autocrypt.example.sec.asc").unwrap();
+        let (secret, _) = SignedSecretKey::from_armor_single(&sec_bytes).unwrap();
 
         secret.verify().unwrap();
         public.verify().unwrap();

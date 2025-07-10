@@ -45,37 +45,41 @@ fn ecdh_roundtrip_with_rpgp_0_10() {
 }
 
 fn decrypt_rpgp_cur(enc_msg: &str, keyfile: &str) -> Vec<u8> {
-    use pgp::composed::Deserializable;
+    use deezel_rpgp::composed::{Deserializable, Message};
+    use deezel_rpgp::io::Read;
+    use deezel_rpgp::types::Password;
 
-    let (enc_msg, _) = pgp::composed::Message::from_string(enc_msg).expect("decrypt_rpgp_cur");
+    let (enc_msg, _) = Message::from_armor(enc_msg.as_bytes()).expect("decrypt_rpgp_cur");
 
+    let key_bytes = std::fs::read(keyfile).unwrap();
     let (ssk, _headers) =
-        pgp::composed::SignedSecretKey::from_armor_single(std::fs::File::open(keyfile).unwrap())
+        deezel_rpgp::composed::SignedSecretKey::from_armor_single(&key_bytes)
             .expect("failed to read key");
 
-    let mut dec = enc_msg.decrypt(&"".into(), &ssk).unwrap();
+    let mut dec = enc_msg.decrypt(&Password::empty(), &ssk).unwrap();
 
-    dec.as_data_vec().unwrap()
+    let mut data = Vec::new();
+    dec.read_to_end(&mut data).unwrap();
+    data
 }
 
 fn encrypt_rpgp_cur(msg: &'static [u8], keyfile: &str) -> String {
-    use pgp::{
-        composed::{ArmorOptions, Deserializable, MessageBuilder},
+    use deezel_rpgp::{
+        composed::{Deserializable, MessageBuilder},
         crypto::sym::SymmetricKeyAlgorithm,
     };
 
     let mut rng = ChaChaRng::from_seed([0u8; 32]);
 
+    let key_bytes = std::fs::read(keyfile).unwrap();
     let (ssk, _headers) =
-        pgp::composed::SignedSecretKey::from_armor_single(std::fs::File::open(keyfile).unwrap())
+        deezel_rpgp::composed::SignedSecretKey::from_armor_single(&key_bytes)
             .expect("failed to read key");
 
-    let enc = &ssk.secret_subkeys[0];
+    let enc_key = &ssk.secret_subkeys[0].public_key();
 
     let mut builder =
         MessageBuilder::from_bytes("", msg).seipd_v1(&mut rng, SymmetricKeyAlgorithm::AES128);
-    builder.encrypt_to_key(&mut rng, &enc.public_key()).unwrap();
-    builder
-        .to_armored_string(&mut rng, ArmorOptions::default())
-        .unwrap()
+    builder.encrypt_to_key(&mut rng, enc_key).unwrap();
+    builder.to_armored_string(&mut rng, Default::default()).unwrap()
 }

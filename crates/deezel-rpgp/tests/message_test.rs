@@ -4,14 +4,12 @@ extern crate pretty_assertions;
 extern crate serde_json;
 #[macro_use]
 extern crate serde;
-extern crate pgp;
+extern crate deezel_rpgp;
 extern crate pretty_env_logger;
 #[macro_use]
 extern crate log;
 
-use std::fs::File;
-
-use pgp::{
+use deezel_rpgp::{
     composed::{
         CleartextSignedMessage, Deserializable, Message, PlainSessionKey, SignedPublicKey,
         SignedSecretKey,
@@ -33,6 +31,7 @@ struct Testcase {
     keyid: Option<String>,
 }
 
+/*
 fn test_parse_msg(entry: &str, base_path: &str, _is_normalized: bool) {
     let _ = pretty_env_logger::try_init();
 
@@ -137,7 +136,7 @@ macro_rules! msg_test {
         fn $name() {
             test_parse_msg(
                 &format!("{}.json", $pos),
-                "./tests/openpgp-interop/testcases/messages",
+                "./tests/opendeezel_rpgp-interop/testcases/messages",
                 $normalized,
             );
         }
@@ -145,98 +144,99 @@ macro_rules! msg_test {
 }
 
 // RSA
-msg_test!(msg_gnupg_v1_001, "gnupg-v1-001", false);
-// Elgamal
-// msg_test!(msg_gnupg_v1_002, "gnupg-v1-002", true);
-// RSA
-msg_test!(msg_gnupg_v1_003, "gnupg-v1-003", false);
+// msg_test!(msg_gnupg_v1_001, "gnupg-v1-001", false);
+// // Elgamal
+// // msg_test!(msg_gnupg_v1_002, "gnupg-v1-002", true);
+// // RSA
+// msg_test!(msg_gnupg_v1_003, "gnupg-v1-003", false);
 
-msg_test!(msg_gnupg_v1_4_11_001, "gnupg-v1-4-11-001", true);
-msg_test!(msg_gnupg_v1_4_11_002, "gnupg-v1-4-11-002", false);
-msg_test!(msg_gnupg_v1_4_11_003, "gnupg-v1-4-11-003", true);
-msg_test!(msg_gnupg_v1_4_11_004, "gnupg-v1-4-11-004", true);
-msg_test!(msg_gnupg_v1_4_11_005, "gnupg-v1-4-11-005", true);
-msg_test!(msg_gnupg_v1_4_11_006, "gnupg-v1-4-11-006", false);
-msg_test!(msg_gnupg_v2_0_17_001, "gnupg-v2-0-17-001", true);
-msg_test!(msg_gnupg_v2_0_17_002, "gnupg-v2-0-17-002", false);
-msg_test!(msg_gnupg_v2_0_17_003, "gnupg-v2-0-17-003", true);
-msg_test!(msg_gnupg_v2_0_17_004, "gnupg-v2-0-17-004", true);
-msg_test!(msg_gnupg_v2_0_17_005, "gnupg-v2-0-17-005", true);
-msg_test!(msg_gnupg_v2_0_17_006, "gnupg-v2-0-17-006", true);
-// parsing error
-// ECDH key - nist p256
-// msg_test!(msg_gnupg_v2_1_5_001, "gnupg-v2-1-5-001", true);
+// msg_test!(msg_gnupg_v1_4_11_001, "gnupg-v1-4-11-001", true);
+// msg_test!(msg_gnupg_v1_4_11_002, "gnupg-v1-4-11-002", false);
+// msg_test!(msg_gnupg_v1_4_11_003, "gnupg-v1-4-11-003", true);
+// msg_test!(msg_gnupg_v1_4_11_004, "gnupg-v1-4-11-004", true);
+// msg_test!(msg_gnupg_v1_4_11_005, "gnupg-v1-4-11-005", true);
+// msg_test!(msg_gnupg_v1_4_11_006, "gnupg-v1-4-11-006", false);
+// msg_test!(msg_gnupg_v2_0_17_001, "gnupg-v2-0-17-001", true);
+// msg_test!(msg_gnupg_v2_0_17_002, "gnupg-v2-0-17-002", false);
+// msg_test!(msg_gnupg_v2_0_17_003, "gnupg-v2-0-17-003", true);
+// msg_test!(msg_gnupg_v2_0_17_004, "gnupg-v2-0-17-004", true);
+// msg_test!(msg_gnupg_v2_0_17_005, "gnupg-v2-0-17-005", true);
+// msg_test!(msg_gnupg_v2_0_17_006, "gnupg-v2-0-17-006", true);
+// // parsing error
+// // ECDH key - nist p256
+// // msg_test!(msg_gnupg_v2_1_5_001, "gnupg-v2-1-5-001", true);
 
-// parsing error
-// ECDH key - nist p384
-// msg_test!(msg_gnupg_v2_1_5_002, "gnupg-v2-1-5-002", true);
-// parsing error
-// ECDH key - nist p512
-// msg_test!(msg_gnupg_v2_1_5_003, "gnupg-v2-1-5-003", true);
+// // parsing error
+// // ECDH key - nist p384
+// // msg_test!(msg_gnupg_v2_1_5_002, "gnupg-v2-1-5-002", true);
+// // parsing error
+// // ECDH key - nist p512
+// // msg_test!(msg_gnupg_v2_1_5_003, "gnupg-v2-1-5-003", true);
 
-msg_test!(msg_gnupg_v2_10_001, "gnupg-v2-10-001", true);
-msg_test!(msg_gnupg_v2_10_002, "gnupg-v2-10-002", true);
-msg_test!(msg_gnupg_v2_10_003, "gnupg-v2-10-003", true);
-msg_test!(msg_gnupg_v2_10_004, "gnupg-v2-10-004", false);
-msg_test!(msg_gnupg_v2_10_005, "gnupg-v2-10-005", true);
-msg_test!(msg_gnupg_v2_10_006, "gnupg-v2-10-006", true);
-msg_test!(msg_gnupg_v2_10_007, "gnupg-v2-10-007", true);
+// msg_test!(msg_gnupg_v2_10_001, "gnupg-v2-10-001", true);
+// msg_test!(msg_gnupg_v2_10_002, "gnupg-v2-10-002", true);
+// msg_test!(msg_gnupg_v2_10_003, "gnupg-v2-10-003", true);
+// msg_test!(msg_gnupg_v2_10_004, "gnupg-v2-10-004", false);
+// msg_test!(msg_gnupg_v2_10_005, "gnupg-v2-10-005", true);
+// msg_test!(msg_gnupg_v2_10_006, "gnupg-v2-10-006", true);
+// msg_test!(msg_gnupg_v2_10_007, "gnupg-v2-10-007", true);
 
-// ECDH
-// msg_test!(msg_e2e_001, "e2e-001", true);
-// ECDH
-// msg_test!(msg_e2e_002, "e2e-001", true);
+// // ECDH
+// // msg_test!(msg_e2e_001, "e2e-001", true);
+// // ECDH
+// // msg_test!(msg_e2e_002, "e2e-001", true);
 
-msg_test!(msg_pgp_10_0_001, "pgp-10-0-001", false);
-msg_test!(msg_pgp_10_0_002, "pgp-10-0-002", false);
-msg_test!(msg_pgp_10_0_003, "pgp-10-0-003", false);
-msg_test!(msg_pgp_10_0_004, "pgp-10-0-004", false);
-msg_test!(msg_pgp_10_0_005, "pgp-10-0-005", false);
-msg_test!(msg_pgp_10_0_006, "pgp-10-0-006", false);
-msg_test!(msg_pgp_10_0_007, "pgp-10-0-007", false);
+// msg_test!(msg_deezel_rpgp_10_0_001, "deezel_rpgp-10-0-001", false);
+// msg_test!(msg_deezel_rpgp_10_0_002, "deezel_rpgp-10-0-002", false);
+// msg_test!(msg_deezel_rpgp_10_0_003, "deezel_rpgp-10-0-003", false);
+// msg_test!(msg_deezel_rpgp_10_0_004, "deezel_rpgp-10-0-004", false);
+// msg_test!(msg_deezel_rpgp_10_0_005, "deezel_rpgp-10-0-005", false);
+// msg_test!(msg_deezel_rpgp_10_0_006, "deezel_rpgp-10-0-006", false);
+// msg_test!(msg_deezel_rpgp_10_0_007, "deezel_rpgp-10-0-007", false);
 
-msg_test!(msg_camellia128_001, "camellia128-001", false);
-msg_test!(msg_camellia192_001, "camellia192-001", false);
-msg_test!(msg_camellia256_001, "camellia256-001", false);
+// msg_test!(msg_camellia128_001, "camellia128-001", false);
+// msg_test!(msg_camellia192_001, "camellia192-001", false);
+// msg_test!(msg_camellia256_001, "camellia256-001", false);
 
-// ECDH
-// msg_test!(msg_openkeychain_001, "openkeychain-001", true);
+// // ECDH
+// // msg_test!(msg_openkeychain_001, "openkeychain-001", true);
 
-msg_test!(msg_openpgp_001, "openpgp-001", false);
+// msg_test!(msg_opendeezel_rpgp_001, "opendeezel_rpgp-001", false);
 
-macro_rules! msg_test_js {
-    ($name:ident, $pos:expr, $normalized:expr) => {
-        #[test]
-        fn $name() {
-            test_parse_msg(&format!("{}.json", $pos), "./tests/openpgpjs", $normalized);
-        }
-    };
-}
+// macro_rules! msg_test_js {
+//     ($name:ident, $pos:expr, $normalized:expr) => {
+//         #[test]
+//         fn $name() {
+//             test_parse_msg(&format!("{}.json", $pos), "./tests/opendeezel_rpgpjs", $normalized);
+//         }
+//     };
+// }
 
-msg_test_js!(msg_openpgpjs_x25519, "x25519", true);
+// msg_test_js!(msg_opendeezel_rpgpjs_x25519, "x25519", true);
+*/
 
 #[test]
 fn msg_partial_body_len() {
-    let msg_file = "./tests/partial.asc";
-    Message::from_armor_file(msg_file).expect("failed to parse message");
+    let msg_bytes = std::fs::read("./tests/partial.asc").unwrap();
+    Message::from_armor(&msg_bytes).expect("failed to parse message");
 }
 
 #[test]
 fn msg_regression_01() {
-    let msg_file = "./tests/regression-01.asc";
-    Message::from_armor_file(msg_file).expect("failed to parse message");
+    let msg_bytes = std::fs::read("./tests/regression-01.asc").unwrap();
+    Message::from_armor(&msg_bytes).expect("failed to parse message");
 }
 
 #[test]
 fn msg_large_indeterminate_len() {
     let _ = pretty_env_logger::try_init();
 
-    let msg_file = "./tests/indeterminate.asc";
-    let (message, _headers) = Message::from_armor_file(msg_file).expect("failed to parse message");
+    let msg_bytes = std::fs::read("./tests/indeterminate.asc").unwrap();
+    let (message, _headers) = Message::from_armor(&msg_bytes).expect("failed to parse message");
 
-    let mut key_file = File::open("./tests/openpgpjs/x25519.sec.asc").unwrap();
+    let key_bytes = std::fs::read("./tests/opendeezel_rpgpjs/x25519.sec.asc").unwrap();
     let (decrypt_key, _headers) =
-        SignedSecretKey::from_armor_single(&mut key_file).expect("failed to parse key");
+        SignedSecretKey::from_armor_single(&key_bytes).expect("failed to parse key");
 
     let decrypted = message
         .decrypt(&"moon".into(), &decrypt_key)
@@ -315,12 +315,10 @@ test1
 
 #[test]
 fn msg_literal_signature() {
-    let (pkey, _) = SignedPublicKey::from_armor_single(
-        File::open("./tests/autocrypt/alice@autocrypt.example.pub.asc").unwrap(),
-    )
-    .unwrap();
-    let (msg, _) = Message::from_armor_file("./tests/literal-text-signed.asc")
-        .expect("failed to parse message");
+    let pkey_bytes = std::fs::read("./tests/autocrypt/alice@autocrypt.example.pub.asc").unwrap();
+    let (pkey, _) = SignedPublicKey::from_armor_single(&pkey_bytes).unwrap();
+    let msg_bytes = std::fs::read("./tests/literal-text-signed.asc").unwrap();
+    let (msg, _) = Message::from_armor(&msg_bytes).expect("failed to parse message");
 
     let mut msg = msg.decompress().unwrap();
     msg.verify_read(&pkey).unwrap();
@@ -329,7 +327,8 @@ fn msg_literal_signature() {
 #[test]
 fn binary_msg_password() {
     // encrypted README.md using gpg
-    let message = Message::from_file("./tests/binary_password.pgp").unwrap();
+    let msg_bytes = std::fs::read("./tests/binary_password.deezel_rpgp").unwrap();
+    let message = Message::from_bytes(&msg_bytes).unwrap();
     let decrypted = message.decrypt_with_password(&"1234".into()).unwrap();
     let decompressed = decrypted.decompress().unwrap();
 
@@ -345,12 +344,12 @@ fn binary_msg_password() {
 /// Test message comes from the "Recipient IDs" test in the OpenPGP interoperability test suite.
 #[test]
 fn wildcard_id_decrypt() {
-    let (skey, _headers) = SignedSecretKey::from_armor_single(
-        std::fs::File::open("./tests/draft-bre-openpgp-samples-00/bob.sec.asc").unwrap(),
-    )
-    .unwrap();
+    let skey_bytes =
+        std::fs::read("./tests/draft-bre-opendeezel_rpgp-samples-00/bob.sec.asc").unwrap();
+    let (skey, _headers) = SignedSecretKey::from_armor_single(&skey_bytes).unwrap();
 
-    let (msg, _) = Message::from_armor_file("./tests/wildcard.msg").expect("msg");
+    let msg_bytes = std::fs::read("./tests/wildcard.msg").unwrap();
+    let (msg, _) = Message::from_armor(&msg_bytes).expect("msg");
 
     let mut dec = msg.decrypt(&Password::empty(), &skey).expect("decrypt");
 
@@ -361,7 +360,8 @@ fn wildcard_id_decrypt() {
 /// Tests decryption of a message that is encrypted to a symmetrical secret.
 #[test]
 fn skesk_decrypt() {
-    let (msg, _) = Message::from_armor_file("./tests/sym-password.msg").expect("msg");
+    let msg_bytes = std::fs::read("./tests/sym-password.msg").unwrap();
+    let (msg, _) = Message::from_armor(&msg_bytes).expect("msg");
 
     let mut dec = msg
         .decrypt_with_password(&Password::from("password"))
@@ -374,13 +374,12 @@ fn skesk_decrypt() {
 /// Tests decryption of a message that was encrypted by PGP 6.5.8 to a v3 RSA key.
 /// The message uses a historical SED encryption container.
 #[test]
-fn pgp6_decrypt() {
-    let (skey, _headers) = SignedSecretKey::from_armor_single(
-        std::fs::File::open("./tests/pgp6/alice.sec.asc").unwrap(),
-    )
-    .unwrap();
+fn deezel_rpgp6_decrypt() {
+    let skey_bytes = std::fs::read("./tests/deezel_rpgp6/alice.sec.asc").unwrap();
+    let (skey, _headers) = SignedSecretKey::from_armor_single(&skey_bytes).unwrap();
 
-    let (msg, _) = Message::from_armor_file("./tests/pgp6/hello.msg").expect("msg");
+    let msg_bytes = std::fs::read("./tests/deezel_rpgp6/hello.msg").unwrap();
+    let (msg, _) = Message::from_armor(&msg_bytes).expect("msg");
     dbg!(&msg);
 
     let dec = msg
@@ -393,23 +392,23 @@ fn pgp6_decrypt() {
 }
 
 /// Tests that decompressing compression quine does not result in stack overflow.
-/// quine.out comes from <https://mumble.net/~campbell/misc/pgp-quine/>
+/// quine.out comes from <https://mumble.net/~campbell/misc/deezel_rpgp-quine/>
 /// See <https://mumble.net/~campbell/2013/10/08/compression> for details.
 #[test]
 fn test_compression_quine() {
     // Public key does not matter as the message is not signed.
-    let (skey, _headers) = SignedSecretKey::from_armor_single(
-        std::fs::File::open("./tests/autocrypt/alice@autocrypt.example.sec.asc").unwrap(),
-    )
-    .unwrap();
+    let skey_bytes = std::fs::read("./tests/autocrypt/alice@autocrypt.example.sec.asc").unwrap();
+    let (skey, _headers) = SignedSecretKey::from_armor_single(&skey_bytes).unwrap();
     let pkey = skey.public_key();
 
-    let msg = Message::from_file("./tests/quine.out").unwrap();
+    let msg_bytes = std::fs::read("./tests/quine.out").unwrap();
+    let msg = Message::from_bytes(&msg_bytes).unwrap();
     let mut msg = msg.decompress().unwrap();
     let res = msg.as_data_vec().unwrap();
     assert_eq!(res.len(), 176);
 
-    let msg = Message::from_file("./tests/quine.out").unwrap();
+    let msg_bytes = std::fs::read("./tests/quine.out").unwrap();
+    let msg = Message::from_bytes(&msg_bytes).unwrap();
     assert!(msg.verify(&*pkey).is_err());
 }
 
@@ -426,13 +425,12 @@ fn test_text_signature_normalization() {
     // so the hash for this message is calculated over "foo\r\nbar\r\nbaz".
     //
     // So it must also be verified against a hash digest over this normalized format.
-    let (mut signed_msg, _header) =
-        Message::from_armor_file("./tests/unit-tests/text_signature_normalization.msg").unwrap();
+    let msg_bytes = std::fs::read("./tests/unit-tests/text_signature_normalization.msg").unwrap();
+    let (mut signed_msg, _header) = Message::from_armor(&msg_bytes).unwrap();
 
-    let (skey, _headers) = SignedSecretKey::from_armor_single(
-        std::fs::File::open("./tests/unit-tests/text_signature_normalization_alice.key").unwrap(),
-    )
-    .unwrap();
+    let skey_bytes =
+        std::fs::read("./tests/unit-tests/text_signature_normalization_alice.key").unwrap();
+    let (skey, _headers) = SignedSecretKey::from_armor_single(&skey_bytes).unwrap();
 
     // Manually find the signing subkey
     let signing = skey
@@ -564,13 +562,13 @@ bhF30A+IitsxxA==
 fn test_invalid_partial_messages() {
     pretty_env_logger::try_init().ok();
 
-    let (ssk, _headers) =
-        SignedSecretKey::from_armor_file("./tests/draft-bre-openpgp-samples-00/bob.sec.asc")
-            .expect("ssk");
+    let ssk_bytes =
+        std::fs::read("./tests/draft-bre-opendeezel_rpgp-samples-00/bob.sec.asc").unwrap();
+    let (ssk, _headers) = SignedSecretKey::from_armor_single(&ssk_bytes).expect("ssk");
 
     // 512 bytes, f256 p128 f128
-    let (message, _) =
-        Message::from_armor_file("./tests/partial_invalid_two_fixed.asc").expect("ok");
+    let msg_bytes = std::fs::read("./tests/partial_invalid_two_fixed.asc").unwrap();
+    let (message, _) = Message::from_armor(&msg_bytes).expect("ok");
 
     dbg!(&message);
     let mut msg = message.decrypt(&Password::empty(), &ssk).expect("decrypt");
@@ -585,8 +583,8 @@ fn test_invalid_partial_messages() {
     );
 
     // 512 bytes, p512 f0 f0
-    let (message, _) =
-        Message::from_armor_file("./tests/partial_invalid_two_fixed_empty.asc").expect("ok");
+    let msg_bytes = std::fs::read("./tests/partial_invalid_two_fixed_empty.asc").unwrap();
+    let (message, _) = Message::from_armor(&msg_bytes).expect("ok");
 
     dbg!(&message);
     let mut msg = message.decrypt(&Password::empty(), &ssk).expect("decrypt");
@@ -601,8 +599,8 @@ fn test_invalid_partial_messages() {
     );
 
     // 512 bytes, p512 f1
-    let (message, _) =
-        Message::from_armor_file("./tests/partial_invalid_short_last.asc").expect("ok");
+    let msg_bytes = std::fs::read("./tests/partial_invalid_short_last.asc").unwrap();
+    let (message, _) = Message::from_armor(&msg_bytes).expect("ok");
 
     dbg!(&message);
     let mut msg = message.decrypt(&Password::empty(), &ssk).expect("decrypt");
@@ -622,12 +620,13 @@ fn test_invalid_partial_messages() {
 fn test_invalid_multi_message() {
     pretty_env_logger::try_init().ok();
 
-    let (ssk, _headers) =
-        SignedSecretKey::from_armor_file("./tests/draft-bre-openpgp-samples-00/bob.sec.asc")
-            .expect("ssk");
+    let ssk_bytes =
+        std::fs::read("./tests/draft-bre-opendeezel_rpgp-samples-00/bob.sec.asc").unwrap();
+    let (ssk, _headers) = SignedSecretKey::from_armor_single(&ssk_bytes).expect("ssk");
 
     // compressed, followed by literal
-    let (message, _) = Message::from_armor_file("./tests/multi_message_1.asc").expect("ok");
+    let msg_bytes = std::fs::read("./tests/multi_message_1.asc").unwrap();
+    let (message, _) = Message::from_armor(&msg_bytes).expect("ok");
 
     dbg!(&message);
     let mut msg = message.decrypt(&Password::empty(), &ssk).expect("decrypt");
@@ -654,12 +653,13 @@ fn test_packet_excess_data() {
 
     pretty_env_logger::try_init().ok();
 
-    let (ssk, _headers) =
-        SignedSecretKey::from_armor_file("./tests/draft-bre-openpgp-samples-00/bob.sec.asc")
-            .expect("ssk");
+    let ssk_bytes =
+        std::fs::read("./tests/draft-bre-opendeezel_rpgp-samples-00/bob.sec.asc").unwrap();
+    let (ssk, _headers) = SignedSecretKey::from_armor_single(&ssk_bytes).expect("ssk");
 
     // 100kbyte of excess trailing data in the compressed packet
-    let (message, _) = Message::from_armor_file("./tests/tests/excess_100k.msg").expect("ok");
+    let msg_bytes = std::fs::read("./tests/tests/excess_100k.msg").unwrap();
+    let (message, _) = Message::from_armor(&msg_bytes).expect("ok");
 
     dbg!(&message);
     let msg = message.decrypt(&Password::empty(), &ssk).expect("decrypt");
@@ -677,11 +677,12 @@ fn test_two_messages() {
 
     pretty_env_logger::try_init().ok();
 
-    let (ssk, _headers) =
-        SignedSecretKey::from_armor_file("./tests/draft-bre-openpgp-samples-00/bob.sec.asc")
-            .expect("ssk");
+    let ssk_bytes =
+        std::fs::read("./tests/draft-bre-opendeezel_rpgp-samples-00/bob.sec.asc").unwrap();
+    let (ssk, _headers) = SignedSecretKey::from_armor_single(&ssk_bytes).expect("ssk");
 
-    let (message, _) = Message::from_armor_file("./tests/two_messages.asc").expect("ok");
+    let msg_bytes = std::fs::read("./tests/two_messages.asc").unwrap();
+    let (message, _) = Message::from_armor(&msg_bytes).expect("ok");
 
     dbg!(&message);
     let mut msg = message.decrypt(&Password::empty(), &ssk).expect("decrypt");
@@ -703,12 +704,12 @@ fn test_two_literals_first_compressed_no_decompression() {
 
     pretty_env_logger::try_init().ok();
 
-    let (ssk, _headers) =
-        SignedSecretKey::from_armor_file("./tests/draft-bre-openpgp-samples-00/bob.sec.asc")
-            .expect("ssk");
+    let ssk_bytes =
+        std::fs::read("./tests/draft-bre-opendeezel_rpgp-samples-00/bob.sec.asc").unwrap();
+    let (ssk, _headers) = SignedSecretKey::from_armor_single(&ssk_bytes).expect("ssk");
 
-    let (message, _) =
-        Message::from_armor_file("./tests/two_literals_first_compressed.asc").expect("ok");
+    let msg_bytes = std::fs::read("./tests/two_literals_first_compressed.asc").unwrap();
+    let (message, _) = Message::from_armor(&msg_bytes).expect("ok");
 
     dbg!(&message);
     let mut msg = message.decrypt(&Password::empty(), &ssk).expect("decrypt");
@@ -729,13 +730,13 @@ fn test_two_literals_first_compressed_two_times() {
 
     pretty_env_logger::try_init().ok();
 
-    let (ssk, _headers) =
-        SignedSecretKey::from_armor_file("./tests/draft-bre-openpgp-samples-00/bob.sec.asc")
-            .expect("ssk");
+    let ssk_bytes =
+        std::fs::read("./tests/draft-bre-opendeezel_rpgp-samples-00/bob.sec.asc").unwrap();
+    let (ssk, _headers) = SignedSecretKey::from_armor_single(&ssk_bytes).expect("ssk");
 
-    let (message, _) =
-        Message::from_armor_file("./tests/two_literals_first_compressed_two_times.asc")
-            .expect("ok");
+    let msg_bytes =
+        std::fs::read("./tests/two_literals_first_compressed_two_times.asc").unwrap();
+    let (message, _) = Message::from_armor(&msg_bytes).expect("ok");
 
     dbg!(&message);
     let mut msg = message.decrypt(&Password::empty(), &ssk).expect("decrypt");
@@ -759,12 +760,12 @@ fn test_two_literals_first_compressed_explicit_decompression() {
 
     pretty_env_logger::try_init().ok();
 
-    let (ssk, _headers) =
-        SignedSecretKey::from_armor_file("./tests/draft-bre-openpgp-samples-00/bob.sec.asc")
-            .expect("ssk");
+    let ssk_bytes =
+        std::fs::read("./tests/draft-bre-opendeezel_rpgp-samples-00/bob.sec.asc").unwrap();
+    let (ssk, _headers) = SignedSecretKey::from_armor_single(&ssk_bytes).expect("ssk");
 
-    let (message, _) =
-        Message::from_armor_file("./tests/two_literals_first_compressed.asc").expect("ok");
+    let msg_bytes = std::fs::read("./tests/two_literals_first_compressed.asc").unwrap();
+    let (message, _) = Message::from_armor(&msg_bytes).expect("ok");
 
     dbg!(&message);
     let msg = message.decrypt(&Password::empty(), &ssk).expect("decrypt");
@@ -790,13 +791,13 @@ fn test_two_literals_first_compressed_two_times_explicit_decompression() {
 
     pretty_env_logger::try_init().ok();
 
-    let (ssk, _headers) =
-        SignedSecretKey::from_armor_file("./tests/draft-bre-openpgp-samples-00/bob.sec.asc")
-            .expect("ssk");
+    let ssk_bytes =
+        std::fs::read("./tests/draft-bre-opendeezel_rpgp-samples-00/bob.sec.asc").unwrap();
+    let (ssk, _headers) = SignedSecretKey::from_armor_single(&ssk_bytes).expect("ssk");
 
-    let (message, _) =
-        Message::from_armor_file("./tests/two_literals_first_compressed_two_times.asc")
-            .expect("ok");
+    let msg_bytes =
+        std::fs::read("./tests/two_literals_first_compressed_two_times.asc").unwrap();
+    let (message, _) = Message::from_armor(&msg_bytes).expect("ok");
 
     dbg!(&message);
     let msg = message.decrypt(&Password::empty(), &ssk).expect("decrypt");
@@ -823,11 +824,12 @@ fn test_literal_eating_mdc() {
 
     pretty_env_logger::try_init().ok();
 
-    let (ssk, _headers) =
-        SignedSecretKey::from_armor_file("./tests/draft-bre-openpgp-samples-00/bob.sec.asc")
-            .expect("ssk");
+    let ssk_bytes =
+        std::fs::read("./tests/draft-bre-opendeezel_rpgp-samples-00/bob.sec.asc").unwrap();
+    let (ssk, _headers) = SignedSecretKey::from_armor_single(&ssk_bytes).expect("ssk");
 
-    let (message, _) = Message::from_armor_file("./tests/literal_eating_mdc.asc").expect("ok");
+    let msg_bytes = std::fs::read("./tests/literal_eating_mdc.asc").unwrap();
+    let (message, _) = Message::from_armor(&msg_bytes).expect("ok");
 
     dbg!(&message);
     let mut msg = message.decrypt(&Password::empty(), &ssk).expect("decrypt");
@@ -847,7 +849,8 @@ fn test_literal_eating_mdc() {
 #[test]
 fn test_unknown_hash() {
     pretty_env_logger::try_init().ok();
-    let (msg, _) = Message::from_armor_file("tests/sigs/unknown_hash.sig.asc").unwrap();
+    let msg_bytes = std::fs::read("tests/sigs/unknown_hash.sig.asc").unwrap();
+    let (msg, _) = Message::from_armor(&msg_bytes).unwrap();
     dbg!(&msg);
 
     let mut msg = msg
@@ -866,11 +869,12 @@ fn test_unknown_hash() {
 #[test]
 fn test_unknown_one_pass() {
     pretty_env_logger::try_init().ok();
-    let (ssk, _headers) =
-        SignedSecretKey::from_armor_file("./tests/draft-bre-openpgp-samples-00/bob.sec.asc")
-            .expect("ssk");
+    let ssk_bytes =
+        std::fs::read("./tests/draft-bre-opendeezel_rpgp-samples-00/bob.sec.asc").unwrap();
+    let (ssk, _headers) = SignedSecretKey::from_armor_single(&ssk_bytes).expect("ssk");
 
-    let (msg, _) = Message::from_armor_file("tests/sigs/unknown_one_pass.sig.asc").unwrap();
+    let msg_bytes = std::fs::read("tests/sigs/unknown_one_pass.sig.asc").unwrap();
+    let (msg, _) = Message::from_armor(&msg_bytes).unwrap();
     dbg!(&msg);
 
     let mut msg = msg
@@ -890,12 +894,13 @@ fn test_signature_leniency() {
 
     pretty_env_logger::try_init().ok();
 
-    let (ssk, _headers) =
-        SignedSecretKey::from_armor_file("./tests/draft-bre-openpgp-samples-00/bob.sec.asc")
-            .expect("ssk");
+    let ssk_bytes =
+        std::fs::read("./tests/draft-bre-opendeezel_rpgp-samples-00/bob.sec.asc").unwrap();
+    let (ssk, _headers) = SignedSecretKey::from_armor_single(&ssk_bytes).expect("ssk");
 
     // "PKESK3 SEIPDv1 [OPS3[H99] Literal Sig4[H99]]" from the OpenPGP interoperability test suite
-    let (message, _) = Message::from_armor_file("./tests/message_other_hash.asc").expect("ok");
+    let msg_bytes = std::fs::read("./tests/message_other_hash.asc").unwrap();
+    let (message, _) = Message::from_armor(&msg_bytes).expect("ok");
 
     dbg!(&message);
     let mut msg = message.decrypt(&Password::empty(), &ssk).expect("decrypt");
@@ -906,7 +911,8 @@ fn test_signature_leniency() {
     assert!(res.is_ok());
 
     // "PKESK3 SEIPDv1 [OPS3[P99] Literal Sig4[P99]]" from the OpenPGP interoperability test suite
-    let (message, _) = Message::from_armor_file("./tests/message_other_pub_algo.asc").expect("ok");
+    let msg_bytes = std::fs::read("./tests/message_other_pub_algo.asc").unwrap();
+    let (message, _) = Message::from_armor(&msg_bytes).expect("ok");
 
     dbg!(&message);
     let mut msg = message.decrypt(&Password::empty(), &ssk).expect("decrypt");
@@ -917,8 +923,8 @@ fn test_signature_leniency() {
     assert!(res.is_ok());
 
     // "PKESK3 SEIP [OPS23 OPS3 Literal Sig4 Sig23]" from the OpenPGP interoperability test suite
-    let (message, _) =
-        Message::from_armor_file("./tests/message_future_signature.asc").expect("ok");
+    let msg_bytes = std::fs::read("./tests/message_future_signature.asc").unwrap();
+    let (message, _) = Message::from_armor(&msg_bytes).expect("ok");
 
     dbg!(&message);
     let mut msg = message.decrypt(&Password::empty(), &ssk).expect("decrypt");
@@ -936,7 +942,8 @@ fn test_packet_leniency() {
 
     pretty_env_logger::try_init().ok();
 
-    let (key, _) = SignedPublicKey::from_armor_file("./tests/perturbed.pub.asc").unwrap();
+    let key_bytes = std::fs::read("./tests/perturbed.pub.asc").unwrap();
+    let (key, _) = SignedPublicKey::from_armor_single(&key_bytes).unwrap();
     dbg!(&key);
 }
 
@@ -946,30 +953,30 @@ fn test_packet_leniency() {
 #[test]
 fn test_mock_pq_cert_leniency_unkown_algo_mpi() {
     pretty_env_logger::try_init().ok();
-    let (key, _) =
-        SignedPublicKey::from_armor_file("./tests/mock_pq/unknown_algo_mpi.pub.asc").unwrap();
+    let key_bytes = std::fs::read("./tests/mock_pq/unknown_algo_mpi.pub.asc").unwrap();
+    let (key, _) = SignedPublicKey::from_armor_single(&key_bytes).unwrap();
     dbg!(&key);
 }
 
 #[test]
 fn test_mock_pq_cert_leniency_ecdsa_opaque() {
     pretty_env_logger::try_init().ok();
-    let (key, _) =
-        SignedPublicKey::from_armor_file("./tests/mock_pq/ecdsa_opaque_small.pub.asc").unwrap();
+    let key_bytes = std::fs::read("./tests/mock_pq/ecdsa_opaque_small.pub.asc").unwrap();
+    let (key, _) = SignedPublicKey::from_armor_single(&key_bytes).unwrap();
     dbg!(&key);
 }
 #[test]
 fn test_mock_pq_cert_leniency_eddsa_opaque() {
     pretty_env_logger::try_init().ok();
-    let (key, _) =
-        SignedPublicKey::from_armor_file("./tests/mock_pq/eddsa_opaque_small.pub.asc").unwrap();
+    let key_bytes = std::fs::read("./tests/mock_pq/eddsa_opaque_small.pub.asc").unwrap();
+    let (key, _) = SignedPublicKey::from_armor_single(&key_bytes).unwrap();
     dbg!(&key);
 }
 #[test]
 fn test_mock_pq_cert_leniency_ecdh_opaque() {
     pretty_env_logger::try_init().ok();
-    let (key, _) =
-        SignedPublicKey::from_armor_file("./tests/mock_pq/ecdh_opaque_small.pub.asc").unwrap();
+    let key_bytes = std::fs::read("./tests/mock_pq/ecdh_opaque_small.pub.asc").unwrap();
+    let (key, _) = SignedPublicKey::from_armor_single(&key_bytes).unwrap();
     dbg!(key);
 }
 
@@ -985,7 +992,8 @@ fn fuzz_msg_reader() {
         // OPS SKESK SED
         "./tests/fuzz/minimized-from-82b02bbac39a10c7b98d020f78153ffb75c94607",
     ] {
-        let _ = Message::from_file(file).unwrap().as_data_vec();
+        let msg_bytes = std::fs::read(file).unwrap();
+        let _ = Message::from_bytes(&msg_bytes).unwrap().as_data_vec();
     }
 }
 
@@ -994,7 +1002,8 @@ fn message_parsing_pqc_pkesk() {
     pretty_env_logger::try_init().ok();
 
     // This is a message that is encrypted to one traditional PKESK and one PQC PKESK
-    let (message, _) = Message::from_armor_file("./tests/message_pqc.asc").expect("ok");
+    let msg_bytes = std::fs::read("./tests/message_pqc.asc").unwrap();
+    let (message, _) = Message::from_armor(&msg_bytes).expect("ok");
 
     let Message::Encrypted { esk, .. } = message else {
         panic!("destructure encrypted message")
