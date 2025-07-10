@@ -119,6 +119,49 @@ pub trait CryptoProvider {
     async fn pbkdf2_derive(&self, password: &[u8], salt: &[u8], iterations: u32, key_len: usize) -> Result<Vec<u8>>;
 }
 
+/// Trait for PGP operations
+#[async_trait(?Send)]
+pub trait PgpProvider {
+    /// Generate a new PGP key pair
+    async fn generate_keypair(&self, user_id: &str, passphrase: Option<&str>) -> Result<PgpKeyPair>;
+    
+    /// Import a PGP key from armored text
+    async fn import_key(&self, armored_key: &str) -> Result<PgpKey>;
+    
+    /// Export a PGP key to armored text
+    async fn export_key(&self, key: &PgpKey, include_private: bool) -> Result<String>;
+    
+    /// Encrypt data with PGP
+    async fn encrypt(&self, data: &[u8], recipient_keys: &[PgpKey], armor: bool) -> Result<Vec<u8>>;
+    
+    /// Decrypt data with PGP
+    async fn decrypt(&self, encrypted_data: &[u8], private_key: &PgpKey, passphrase: Option<&str>) -> Result<Vec<u8>>;
+    
+    /// Sign data with PGP
+    async fn sign(&self, data: &[u8], private_key: &PgpKey, passphrase: Option<&str>, armor: bool) -> Result<Vec<u8>>;
+    
+    /// Verify a PGP signature
+    async fn verify(&self, data: &[u8], signature: &[u8], public_key: &PgpKey) -> Result<bool>;
+    
+    /// Encrypt and sign data
+    async fn encrypt_and_sign(&self, data: &[u8], recipient_keys: &[PgpKey], signing_key: &PgpKey, passphrase: Option<&str>, armor: bool) -> Result<Vec<u8>>;
+    
+    /// Decrypt and verify data
+    async fn decrypt_and_verify(&self, encrypted_data: &[u8], private_key: &PgpKey, sender_public_key: &PgpKey, passphrase: Option<&str>) -> Result<PgpDecryptResult>;
+    
+    /// List keys in keyring
+    async fn list_pgp_keys(&self) -> Result<Vec<PgpKeyInfo>>;
+    
+    /// Get key by ID or fingerprint
+    async fn get_key(&self, identifier: &str) -> Result<Option<PgpKey>>;
+    
+    /// Delete key from keyring
+    async fn delete_key(&self, identifier: &str) -> Result<()>;
+    
+    /// Change key passphrase
+    async fn change_passphrase(&self, key: &PgpKey, old_passphrase: Option<&str>, new_passphrase: Option<&str>) -> Result<PgpKey>;
+}
+
 /// Trait for time operations
 pub trait TimeProvider {
     /// Get current Unix timestamp in seconds
@@ -342,6 +385,82 @@ pub struct NetworkParams {
     pub default_port: u16,
     pub rpc_port: u16,
     pub bech32_hrp: String,
+}
+
+/// PGP key pair (public and private key)
+#[derive(Debug, Clone)]
+pub struct PgpKeyPair {
+    pub public_key: PgpKey,
+    pub private_key: PgpKey,
+    pub fingerprint: String,
+    pub key_id: String,
+}
+
+/// PGP key (can be public or private)
+#[derive(Debug, Clone)]
+pub struct PgpKey {
+    pub key_data: Vec<u8>,
+    pub is_private: bool,
+    pub fingerprint: String,
+    pub key_id: String,
+    pub user_ids: Vec<String>,
+    pub creation_time: u64,
+    pub expiration_time: Option<u64>,
+    pub algorithm: PgpAlgorithm,
+}
+
+/// PGP algorithm information
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PgpAlgorithm {
+    pub public_key_algorithm: String,
+    pub symmetric_algorithm: Option<String>,
+    pub hash_algorithm: Option<String>,
+    pub compression_algorithm: Option<String>,
+}
+
+/// PGP key information for listing
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PgpKeyInfo {
+    pub fingerprint: String,
+    pub key_id: String,
+    pub user_ids: Vec<String>,
+    pub is_private: bool,
+    pub creation_time: u64,
+    pub expiration_time: Option<u64>,
+    pub algorithm: String,
+    pub key_size: Option<u32>,
+    pub is_expired: bool,
+    pub is_revoked: bool,
+}
+
+/// Result of PGP decrypt and verify operation
+#[derive(Debug, Clone)]
+pub struct PgpDecryptResult {
+    pub data: Vec<u8>,
+    pub signature_valid: bool,
+    pub signer_key_id: Option<String>,
+    pub signature_time: Option<u64>,
+}
+
+/// PGP operation parameters
+#[derive(Debug, Clone)]
+pub struct PgpEncryptParams {
+    pub data: Vec<u8>,
+    pub recipient_keys: Vec<PgpKey>,
+    pub armor: bool,
+    pub compression: Option<String>,
+    pub cipher: Option<String>,
+}
+
+/// PGP signing parameters
+#[derive(Debug, Clone)]
+pub struct PgpSignParams {
+    pub data: Vec<u8>,
+    pub signing_key: PgpKey,
+    pub passphrase: Option<String>,
+    pub armor: bool,
+    pub detached: bool,
+    pub hash_algorithm: Option<String>,
 }
 
 
@@ -851,6 +970,7 @@ pub trait DeezelProvider:
     StorageProvider +
     NetworkProvider +
     CryptoProvider +
+    PgpProvider +
     TimeProvider +
     LogProvider +
     WalletProvider +
@@ -945,6 +1065,49 @@ impl<T: DeezelProvider + ?Sized> CryptoProvider for Box<T> {
    }
    async fn pbkdf2_derive(&self, password: &[u8], salt: &[u8], iterations: u32, key_len: usize) -> Result<Vec<u8>> {
        (**self).pbkdf2_derive(password, salt, iterations, key_len).await
+   }
+}
+
+#[async_trait(?Send)]
+impl<T: DeezelProvider + ?Sized> PgpProvider for Box<T> {
+   async fn generate_keypair(&self, user_id: &str, passphrase: Option<&str>) -> Result<PgpKeyPair> {
+       (**self).generate_keypair(user_id, passphrase).await
+   }
+   async fn import_key(&self, armored_key: &str) -> Result<PgpKey> {
+       (**self).import_key(armored_key).await
+   }
+   async fn export_key(&self, key: &PgpKey, include_private: bool) -> Result<String> {
+       (**self).export_key(key, include_private).await
+   }
+   async fn encrypt(&self, data: &[u8], recipient_keys: &[PgpKey], armor: bool) -> Result<Vec<u8>> {
+       (**self).encrypt(data, recipient_keys, armor).await
+   }
+   async fn decrypt(&self, encrypted_data: &[u8], private_key: &PgpKey, passphrase: Option<&str>) -> Result<Vec<u8>> {
+       (**self).decrypt(encrypted_data, private_key, passphrase).await
+   }
+   async fn sign(&self, data: &[u8], private_key: &PgpKey, passphrase: Option<&str>, armor: bool) -> Result<Vec<u8>> {
+       (**self).sign(data, private_key, passphrase, armor).await
+   }
+   async fn verify(&self, data: &[u8], signature: &[u8], public_key: &PgpKey) -> Result<bool> {
+       (**self).verify(data, signature, public_key).await
+   }
+   async fn encrypt_and_sign(&self, data: &[u8], recipient_keys: &[PgpKey], signing_key: &PgpKey, passphrase: Option<&str>, armor: bool) -> Result<Vec<u8>> {
+       (**self).encrypt_and_sign(data, recipient_keys, signing_key, passphrase, armor).await
+   }
+   async fn decrypt_and_verify(&self, encrypted_data: &[u8], private_key: &PgpKey, sender_public_key: &PgpKey, passphrase: Option<&str>) -> Result<PgpDecryptResult> {
+       (**self).decrypt_and_verify(encrypted_data, private_key, sender_public_key, passphrase).await
+   }
+   async fn list_pgp_keys(&self) -> Result<Vec<PgpKeyInfo>> {
+       (**self).list_pgp_keys().await
+   }
+   async fn get_key(&self, identifier: &str) -> Result<Option<PgpKey>> {
+       (**self).get_key(identifier).await
+   }
+   async fn delete_key(&self, identifier: &str) -> Result<()> {
+       (**self).delete_key(identifier).await
+   }
+   async fn change_passphrase(&self, key: &PgpKey, old_passphrase: Option<&str>, new_passphrase: Option<&str>) -> Result<PgpKey> {
+       (**self).change_passphrase(key, old_passphrase, new_passphrase).await
    }
 }
 
@@ -1341,6 +1504,13 @@ pub trait SystemEsplora {
    async fn execute_esplora_command(&self, command: crate::commands::EsploraCommands) -> Result<()>;
 }
 
+/// Trait for system-level PGP operations
+#[async_trait(?Send)]
+pub trait SystemPgp {
+   /// Execute a PGP command
+   async fn execute_pgp_command(&self, command: crate::commands::PgpCommands) -> Result<()>;
+}
+
 /// Combined system trait that includes all system-level functionality
 #[async_trait(?Send)]
 pub trait System:
@@ -1352,6 +1522,7 @@ pub trait System:
    SystemProtorunes +
    SystemMonitor +
    SystemEsplora +
+   SystemPgp +
    Send + Sync
 {
    /// Get the underlying provider

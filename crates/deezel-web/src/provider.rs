@@ -467,7 +467,12 @@ impl TimeProvider for WebProvider {
         self.time.now_millis()
     }
 
-    fn sleep_ms(&self, ms: u64) -> core::pin::Pin<Box<dyn core::future::Future<Output = ()> + Send>> {
+    #[cfg(not(target_arch = "wasm32"))]
+    fn sleep_ms(&self, ms: u64) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
+        self.time.sleep_ms(ms)
+    }
+    #[cfg(target_arch = "wasm32")]
+    fn sleep_ms(&self, ms: u64) -> core::pin::Pin<Box<dyn core::future::Future<Output = ()>>> {
         self.time.sleep_ms(ms)
     }
 }

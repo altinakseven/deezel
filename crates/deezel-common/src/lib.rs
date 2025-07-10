@@ -88,6 +88,7 @@ pub enum DeezelError {
     Crypto(String),
     Io(String),
     Parse(String),
+    Pgp(String),
     NotImplemented(String),
 }
 
@@ -110,6 +111,7 @@ impl core::fmt::Display for DeezelError {
             DeezelError::Crypto(msg) => write!(f, "Cryptography error: {}", msg),
             DeezelError::Io(msg) => write!(f, "I/O error: {}", msg),
             DeezelError::Parse(msg) => write!(f, "Parse error: {}", msg),
+            DeezelError::Pgp(msg) => write!(f, "PGP error: {}", msg),
             DeezelError::NotImplemented(msg) => write!(f, "Not implemented: {}", msg),
         }
     }

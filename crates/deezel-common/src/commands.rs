@@ -93,6 +93,11 @@ pub enum Commands {
         #[command(subcommand)]
         command: EsploraCommands,
     },
+    /// PGP operations
+    Pgp {
+        #[command(subcommand)]
+        command: PgpCommands,
+    },
 }
 
 /// Wallet subcommands
@@ -581,4 +586,150 @@ pub enum EsploraCommands {
     MempoolRecent,
     /// Get fee estimates
     FeeEstimates,
+}
+
+/// PGP subcommands
+#[derive(Subcommand, Debug, Clone)]
+pub enum PgpCommands {
+    /// Generate a new PGP key pair
+    GenerateKey {
+        /// User ID for the key (e.g., "John Doe <john@example.com>")
+        user_id: String,
+        /// Passphrase for the private key
+        #[arg(long)]
+        passphrase: Option<String>,
+        /// Show raw JSON output
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Import a PGP key from file or stdin
+    ImportKey {
+        /// Path to armored key file (use "-" for stdin)
+        key_file: String,
+        /// Show raw JSON output
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Export a PGP key
+    ExportKey {
+        /// Key identifier (fingerprint, key ID, or user ID)
+        identifier: String,
+        /// Include private key in export
+        #[arg(long)]
+        private: bool,
+        /// Output file (use "-" for stdout)
+        #[arg(short, long)]
+        output: Option<String>,
+        /// Show raw JSON output
+        #[arg(long)]
+        raw: bool,
+    },
+    /// List PGP keys
+    ListKeys {
+        /// Show private keys only
+        #[arg(long)]
+        private: bool,
+        /// Show public keys only
+        #[arg(long)]
+        public: bool,
+        /// Show raw JSON output
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Delete a PGP key
+    DeleteKey {
+        /// Key identifier (fingerprint, key ID, or user ID)
+        identifier: String,
+        /// Auto-confirm without user prompt
+        #[arg(short = 'y', long)]
+        yes: bool,
+    },
+    /// Encrypt data with PGP
+    Encrypt {
+        /// Input file (use "-" for stdin)
+        input: String,
+        /// Output file (use "-" for stdout)
+        #[arg(short, long)]
+        output: Option<String>,
+        /// Recipient key identifiers (comma-separated)
+        #[arg(short, long)]
+        recipients: String,
+        /// Output ASCII armored text instead of binary
+        #[arg(long)]
+        armor: bool,
+        /// Sign the encrypted data
+        #[arg(long)]
+        sign: bool,
+        /// Signing key identifier (required if --sign is used)
+        #[arg(long)]
+        sign_key: Option<String>,
+        /// Passphrase for signing key
+        #[arg(long)]
+        passphrase: Option<String>,
+    },
+    /// Decrypt PGP encrypted data
+    Decrypt {
+        /// Input file (use "-" for stdin)
+        input: String,
+        /// Output file (use "-" for stdout)
+        #[arg(short, long)]
+        output: Option<String>,
+        /// Private key identifier
+        #[arg(short, long)]
+        key: String,
+        /// Passphrase for private key
+        #[arg(long)]
+        passphrase: Option<String>,
+        /// Verify signature if present
+        #[arg(long)]
+        verify: bool,
+        /// Expected signer key identifier (for verification)
+        #[arg(long)]
+        signer: Option<String>,
+    },
+    /// Sign data with PGP
+    Sign {
+        /// Input file (use "-" for stdin)
+        input: String,
+        /// Output file (use "-" for stdout)
+        #[arg(short, long)]
+        output: Option<String>,
+        /// Signing key identifier
+        #[arg(short, long)]
+        key: String,
+        /// Passphrase for signing key
+        #[arg(long)]
+        passphrase: Option<String>,
+        /// Output ASCII armored text instead of binary
+        #[arg(long)]
+        armor: bool,
+        /// Create detached signature
+        #[arg(long)]
+        detached: bool,
+    },
+    /// Verify a PGP signature
+    Verify {
+        /// Input file (use "-" for stdin)
+        input: String,
+        /// Signature file (for detached signatures)
+        #[arg(short, long)]
+        signature: Option<String>,
+        /// Signer's public key identifier
+        #[arg(short, long)]
+        key: String,
+        /// Show raw JSON output
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Change passphrase of a PGP key
+    ChangePassphrase {
+        /// Key identifier (fingerprint, key ID, or user ID)
+        identifier: String,
+        /// Current passphrase
+        #[arg(long)]
+        old_passphrase: Option<String>,
+        /// New passphrase
+        #[arg(long)]
+        new_passphrase: Option<String>,
+    },
 }

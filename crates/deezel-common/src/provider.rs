@@ -115,6 +115,61 @@ impl CryptoProvider for ConcreteProvider {
     }
 }
 
+#[async_trait(?Send)]
+impl PgpProvider for ConcreteProvider {
+    async fn generate_keypair(&self, _user_id: &str, _passphrase: Option<&str>) -> Result<PgpKeyPair> {
+        unimplemented!()
+    }
+    
+    async fn import_key(&self, _armored_key: &str) -> Result<PgpKey> {
+        unimplemented!()
+    }
+    
+    async fn export_key(&self, _key: &PgpKey, _include_private: bool) -> Result<String> {
+        unimplemented!()
+    }
+    
+    async fn encrypt(&self, _data: &[u8], _recipient_keys: &[PgpKey], _armor: bool) -> Result<Vec<u8>> {
+        unimplemented!()
+    }
+    
+    async fn decrypt(&self, _encrypted_data: &[u8], _private_key: &PgpKey, _passphrase: Option<&str>) -> Result<Vec<u8>> {
+        unimplemented!()
+    }
+    
+    async fn sign(&self, _data: &[u8], _private_key: &PgpKey, _passphrase: Option<&str>, _armor: bool) -> Result<Vec<u8>> {
+        unimplemented!()
+    }
+    
+    async fn verify(&self, _data: &[u8], _signature: &[u8], _public_key: &PgpKey) -> Result<bool> {
+        unimplemented!()
+    }
+    
+    async fn encrypt_and_sign(&self, _data: &[u8], _recipient_keys: &[PgpKey], _signing_key: &PgpKey, _passphrase: Option<&str>, _armor: bool) -> Result<Vec<u8>> {
+        unimplemented!()
+    }
+    
+    async fn decrypt_and_verify(&self, _encrypted_data: &[u8], _private_key: &PgpKey, _sender_public_key: &PgpKey, _passphrase: Option<&str>) -> Result<PgpDecryptResult> {
+        unimplemented!()
+    }
+    
+    async fn list_pgp_keys(&self) -> Result<Vec<PgpKeyInfo>> {
+        unimplemented!()
+    }
+    
+    async fn get_key(&self, _identifier: &str) -> Result<Option<PgpKey>> {
+        unimplemented!()
+    }
+    
+    async fn delete_key(&self, _identifier: &str) -> Result<()> {
+        unimplemented!()
+    }
+    
+    async fn change_passphrase(&self, _key: &PgpKey, _old_passphrase: Option<&str>, _new_passphrase: Option<&str>) -> Result<PgpKey> {
+        unimplemented!()
+    }
+}
+
 impl TimeProvider for ConcreteProvider {
     fn now_secs(&self) -> u64 {
         unimplemented!()

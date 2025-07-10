@@ -93,7 +93,12 @@ impl deezel_common::TimeProvider for WebTime {
         self.get_date_now() as u64
     }
 
-    fn sleep_ms(&self, ms: u64) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    #[cfg(not(target_arch = "wasm32"))]
+    fn sleep_ms(&self, ms: u64) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
+        Box::pin(gloo_timers::future::sleep(std::time::Duration::from_millis(ms)))
+    }
+    #[cfg(target_arch = "wasm32")]
+    fn sleep_ms(&self, ms: u64) -> core::pin::Pin<Box<dyn core::future::Future<Output = ()>>> {
         Box::pin(WebSleep::new(ms))
     }
 }

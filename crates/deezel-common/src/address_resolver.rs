@@ -454,6 +454,62 @@ impl CryptoProvider for StandaloneAddressResolver {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+#[async_trait(?Send)]
+impl PgpProvider for StandaloneAddressResolver {
+    async fn generate_keypair(&self, _user_id: &str, _passphrase: Option<&str>) -> Result<PgpKeyPair> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support PGP operations".to_string()))
+    }
+    
+    async fn import_key(&self, _armored_key: &str) -> Result<PgpKey> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support PGP operations".to_string()))
+    }
+    
+    async fn export_key(&self, _key: &PgpKey, _include_private: bool) -> Result<String> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support PGP operations".to_string()))
+    }
+    
+    async fn encrypt(&self, _data: &[u8], _recipient_keys: &[PgpKey], _armor: bool) -> Result<Vec<u8>> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support PGP operations".to_string()))
+    }
+    
+    async fn decrypt(&self, _encrypted_data: &[u8], _private_key: &PgpKey, _passphrase: Option<&str>) -> Result<Vec<u8>> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support PGP operations".to_string()))
+    }
+    
+    async fn sign(&self, _data: &[u8], _private_key: &PgpKey, _passphrase: Option<&str>, _armor: bool) -> Result<Vec<u8>> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support PGP operations".to_string()))
+    }
+    
+    async fn verify(&self, _data: &[u8], _signature: &[u8], _public_key: &PgpKey) -> Result<bool> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support PGP operations".to_string()))
+    }
+    
+    async fn encrypt_and_sign(&self, _data: &[u8], _recipient_keys: &[PgpKey], _signing_key: &PgpKey, _passphrase: Option<&str>, _armor: bool) -> Result<Vec<u8>> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support PGP operations".to_string()))
+    }
+    
+    async fn decrypt_and_verify(&self, _encrypted_data: &[u8], _private_key: &PgpKey, _sender_public_key: &PgpKey, _passphrase: Option<&str>) -> Result<PgpDecryptResult> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support PGP operations".to_string()))
+    }
+    
+    async fn list_pgp_keys(&self) -> Result<Vec<PgpKeyInfo>> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support PGP operations".to_string()))
+    }
+    
+    async fn get_key(&self, _identifier: &str) -> Result<Option<PgpKey>> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support PGP operations".to_string()))
+    }
+    
+    async fn delete_key(&self, _identifier: &str) -> Result<()> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support PGP operations".to_string()))
+    }
+    
+    async fn change_passphrase(&self, _key: &PgpKey, _old_passphrase: Option<&str>, _new_passphrase: Option<&str>) -> Result<PgpKey> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support PGP operations".to_string()))
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 impl TimeProvider for StandaloneAddressResolver {
     fn now_secs(&self) -> u64 { 0 }
     fn now_millis(&self) -> u64 { 0 }
