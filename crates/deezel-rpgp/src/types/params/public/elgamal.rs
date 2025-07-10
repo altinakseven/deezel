@@ -22,13 +22,13 @@ impl ElgamalPublicParams {
         self.encrypt_only
     }
 
-    pub fn try_from_reader<B: BufRead>(mut i: B, encrypt_only: bool) -> Result<Self> {
+    pub fn try_from_reader<B: BufRead>(i: &mut B, encrypt_only: bool) -> Result<Self> {
         // MPI of Elgamal prime p
-        let p = Mpi::try_from_reader(&mut i)?;
+        let p = Mpi::try_from_reader(i)?;
         // MPI of Elgamal group generator g
-        let g = Mpi::try_from_reader(&mut i)?;
+        let g = Mpi::try_from_reader(i)?;
         // MPI of Elgamal public key value y (= g**x mod p where x is secret)
-        let y = Mpi::try_from_reader(&mut i)?;
+        let y = Mpi::try_from_reader(i)?;
 
         let params = ElgamalPublicParams {
             p,

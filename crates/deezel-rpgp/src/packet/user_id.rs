@@ -7,6 +7,7 @@ use crate::io::{BufRead, Write};
 use core::str;
 
 use bytes::Bytes;
+#[cfg(feature = "std")]
 use chrono::{SubsecRound, Utc};
 use rand::{CryptoRng, Rng};
 
@@ -114,9 +115,12 @@ impl UserId {
         P: SecretKeyTrait,
         K: PublicKeyTrait + Serialize,
     {
+        #[cfg(feature = "std")]
         let hashed_subpackets = vec![Subpacket::regular(SubpacketData::SignatureCreationTime(
             Utc::now().trunc_subsecs(0),
         ))?];
+        #[cfg(not(feature = "std"))]
+        let hashed_subpackets = vec![];
 
         let mut config = SignatureConfig::from_key(&mut rng, signer, SignatureType::CertGeneric)?;
 
@@ -184,7 +188,7 @@ mod tests {
         let pub_key = packet::PubKeyInner::new(
             KeyVersion::V4,
             key_type.to_alg(),
-            Utc::now().trunc_subsecs(0),
+            0,
             None,
             public_params,
         )
@@ -210,7 +214,7 @@ mod tests {
         let pub_key = packet::PubKeyInner::new(
             KeyVersion::V4,
             key_type.to_alg(),
-            Utc::now().trunc_subsecs(0),
+            0,
             None,
             public_params,
         )

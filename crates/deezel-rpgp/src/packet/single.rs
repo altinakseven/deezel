@@ -7,6 +7,7 @@ use log::warn;
 
 use crate::{
     errors::{format_err, Error, Result, UnsupportedSnafu},
+    io::BufRead,
     packet::{
         CompressedData, LiteralData, Marker, ModDetectionCode, OnePassSignature, Packet,
         PacketHeader, Padding, PublicKey, PublicKeyEncryptedSessionKey, PublicSubkey, SecretKey,
@@ -17,12 +18,11 @@ use crate::{
     types::Tag,
 };
 
-// This will be replaced with a no_std compatible trait
-pub trait BufRead {}
-impl BufRead for &[u8] {}
-
 impl Packet {
-    pub fn from_reader<R: BufRead>(packet_header: PacketHeader, mut body: R) -> Result<Self> {
+    pub fn from_reader<R: BufRead + BufReadParsing>(
+        packet_header: PacketHeader,
+        mut body: R,
+    ) -> Result<Self> {
         let res: Result<Self> = match packet_header.tag() {
             Tag::Signature => Signature::try_from_reader(packet_header, &mut body).map(Into::into),
             Tag::OnePassSignature => {

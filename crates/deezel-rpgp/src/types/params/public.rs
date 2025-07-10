@@ -129,37 +129,37 @@ impl PublicParams {
     pub fn try_from_reader<B: BufRead>(
         typ: PublicKeyAlgorithm,
         len: Option<usize>,
-        i: B,
+        mut i: B,
     ) -> Result<PublicParams> {
         match typ {
             PublicKeyAlgorithm::RSA
             | PublicKeyAlgorithm::RSAEncrypt
             | PublicKeyAlgorithm::RSASign => {
-                let params = RsaPublicParams::try_from_reader(i)?;
+                let params = RsaPublicParams::try_from_reader(&mut i)?;
                 Ok(PublicParams::RSA(params))
             }
             PublicKeyAlgorithm::DSA => {
-                let params = DsaPublicParams::try_from_reader(i)?;
+                let params = DsaPublicParams::try_from_reader(&mut i)?;
                 Ok(PublicParams::DSA(params))
             }
             PublicKeyAlgorithm::ECDSA => {
-                let params = EcdsaPublicParams::try_from_reader(i, len)?;
+                let params = EcdsaPublicParams::try_from_reader(&mut i, len)?;
                 Ok(PublicParams::ECDSA(params))
             }
             PublicKeyAlgorithm::ECDH => {
-                let params = EcdhPublicParams::try_from_reader(i, len)?;
+                let params = EcdhPublicParams::try_from_reader(&mut i, len)?;
                 Ok(PublicParams::ECDH(params))
             }
             PublicKeyAlgorithm::Elgamal => {
-                let params = ElgamalPublicParams::try_from_reader(i, false)?;
+                let params = ElgamalPublicParams::try_from_reader(&mut i, false)?;
                 Ok(PublicParams::Elgamal(params))
             }
             PublicKeyAlgorithm::ElgamalEncrypt => {
-                let params = ElgamalPublicParams::try_from_reader(i, true)?;
+                let params = ElgamalPublicParams::try_from_reader(&mut i, true)?;
                 Ok(PublicParams::Elgamal(params))
             }
             PublicKeyAlgorithm::EdDSALegacy => {
-                let params = EddsaLegacyPublicParams::try_from_reader(i, len)?;
+                let params = EddsaLegacyPublicParams::try_from_reader(&mut i, len)?;
                 Ok(PublicParams::EdDSALegacy(params))
             }
             PublicKeyAlgorithm::Ed25519 => {

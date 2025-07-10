@@ -22,9 +22,8 @@ pub enum Error {
     #[snafu(display("invalid input"))]
     InvalidInput {
         #[cfg(feature = "std")]
-        backtrace: Option<Backtrace>,
-        #[cfg(not(feature = "std"))]
-        backtrace: (),
+        #[snafu(backtrace)]
+        backtrace: Backtrace,
     },
     #[snafu(display("invalid armor wrappers"))]
     InvalidArmorWrappers,
@@ -34,18 +33,16 @@ pub enum Error {
     Base64Decode {
         source: base64::DecodeError,
         #[cfg(feature = "std")]
-        backtrace: Option<Backtrace>,
-        #[cfg(not(feature = "std"))]
-        backtrace: (),
+        #[snafu(backtrace)]
+        backtrace: Backtrace,
     },
     #[snafu(display("requested data size is larger than the packet body"))]
     RequestedSizeTooLarge,
     #[snafu(display("no matching packet found"))]
     NoMatchingPacket {
         #[cfg(feature = "std")]
-        backtrace: Option<Backtrace>,
-        #[cfg(not(feature = "std"))]
-        backtrace: (),
+        #[snafu(backtrace)]
+        backtrace: Backtrace,
     },
     #[snafu(display("more than one matching packet was found"))]
     TooManyPackets,
@@ -56,25 +53,22 @@ pub enum Error {
         #[snafu(source(from(rsa::errors::Error, Box::new)))]
         source: Box<rsa::errors::Error>,
         #[cfg(feature = "std")]
-        backtrace: Option<Backtrace>,
-        #[cfg(not(feature = "std"))]
-        backtrace: (),
+        #[snafu(backtrace)]
+        backtrace: Backtrace,
     },
     #[snafu(transparent)]
     EllipticCurve {
         source: elliptic_curve::Error,
         #[cfg(feature = "std")]
-        backtrace: Option<Backtrace>,
-        #[cfg(not(feature = "std"))]
-        backtrace: (),
+        #[snafu(backtrace)]
+        backtrace: Backtrace,
     },
     #[snafu(display("IO error: {}", source), context(false))]
     IO {
         source: crate::io::Error,
         #[cfg(feature = "std")]
-        backtrace: Option<Backtrace>,
-        #[cfg(not(feature = "std"))]
-        backtrace: (),
+        #[snafu(backtrace)]
+        backtrace: Backtrace,
     },
     #[snafu(display("invalid key length"))]
     InvalidKeyLength,
@@ -88,26 +82,23 @@ pub enum Error {
     Unimplemented {
         message: String,
         #[cfg(feature = "std")]
-        backtrace: Option<Backtrace>,
-        #[cfg(not(feature = "std"))]
-        backtrace: (),
+        #[snafu(backtrace)]
+        backtrace: Backtrace,
     },
     /// Signals packet versions and parameters we don't support, but can safely ignore
     #[snafu(display("Unsupported: {message}"))]
     Unsupported {
         message: String,
         #[cfg(feature = "std")]
-        backtrace: Option<Backtrace>,
-        #[cfg(not(feature = "std"))]
-        backtrace: (),
+        #[snafu(backtrace)]
+        backtrace: Backtrace,
     },
     #[snafu(display("{message}"))]
     Message {
         message: String,
         #[cfg(feature = "std")]
-        backtrace: Option<Backtrace>,
-        #[cfg(not(feature = "std"))]
-        backtrace: (),
+        #[snafu(backtrace)]
+        backtrace: Backtrace,
     },
     #[snafu(display("Invalid Packet {kind:?}"))]
     PacketError { kind: nom::error::ErrorKind },
@@ -119,17 +110,15 @@ pub enum Error {
     Utf8Error {
         source: core::str::Utf8Error,
         #[cfg(feature = "std")]
-        backtrace: Option<Backtrace>,
-        #[cfg(not(feature = "std"))]
-        backtrace: (),
+        #[snafu(backtrace)]
+        backtrace: Backtrace,
     },
     #[snafu(transparent)]
     ParseIntError {
         source: core::num::ParseIntError,
         #[cfg(feature = "std")]
-        backtrace: Option<Backtrace>,
-        #[cfg(not(feature = "std"))]
-        backtrace: (),
+        #[snafu(backtrace)]
+        backtrace: Backtrace,
     },
     #[snafu(display("Invalid Packet Content {source:?}"))]
     InvalidPacketContent { source: Box<Error> },
@@ -141,9 +130,8 @@ pub enum Error {
     TryFromInt {
         source: TryFromIntError,
         #[cfg(feature = "std")]
-        backtrace: Option<Backtrace>,
-        #[cfg(not(feature = "std"))]
-        backtrace: (),
+        #[snafu(backtrace)]
+        backtrace: Backtrace,
     },
     #[snafu(display("AEAD {:?}", source), context(false))]
     Aead { source: crate::crypto::aead::Error },
@@ -159,25 +147,30 @@ pub enum Error {
     Sha1HashCollision {
         source: crate::crypto::checksum::Sha1HashCollision,
     },
-    #[snafu(transparent)]
-    AesKek { source: aes_kw::Error },
+    #[snafu(display("AES KEK error: {}", msg))]
+    AesKek {
+        msg: String,
+    },
     #[snafu(transparent)]
     PacketParsing {
-        #[snafu(backtrace, source(from(ParsingError, Box::new)))]
-        source: Box<ParsingError>,
+        source: ParsingError,
+        #[cfg(feature = "std")]
+        #[snafu(backtrace)]
+        backtrace: Backtrace,
     },
     #[snafu(display("packet is incomplete"))]
     PacketIncomplete {
-        #[snafu(backtrace)]
-        source: Box<ParsingError>,
-    },
-    #[snafu(transparent)]
-    Argon2 {
-        source: argon2::Error,
+        source: ParsingError,
         #[cfg(feature = "std")]
-        backtrace: Option<Backtrace>,
-        #[cfg(not(feature = "std"))]
-        backtrace: (),
+        #[snafu(backtrace)]
+        backtrace: Backtrace,
+    },
+    #[snafu(display("Argon2 error: {}", msg))]
+    Argon2 {
+        msg: String,
+        #[cfg(feature = "std")]
+        #[snafu(backtrace)]
+        backtrace: Backtrace,
     },
     #[snafu(transparent)]
     SigningError { source: cx448::SigningError },
@@ -218,9 +211,7 @@ impl From<String> for Error {
         Error::Message {
             message: err,
             #[cfg(feature = "std")]
-            backtrace: Some(snafu::GenerateImplicitData::generate()),
-            #[cfg(not(feature = "std"))]
-            backtrace: (),
+            backtrace: snafu::GenerateImplicitData::generate(),
         }
     }
 }
@@ -230,9 +221,16 @@ impl From<derive_builder::UninitializedFieldError> for Error {
         Error::Message {
             message: err.to_string(),
             #[cfg(feature = "std")]
-            backtrace: Some(snafu::GenerateImplicitData::generate()),
-            #[cfg(not(feature = "std"))]
-            backtrace: (),
+            backtrace: snafu::GenerateImplicitData::generate(),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl From<std::io::Error> for Error {
+    fn from(err: std::io::Error) -> Self {
+        Self::IO {
+            source: err.into(),
         }
     }
 }
@@ -265,8 +263,6 @@ macro_rules! bail {
             message: $e.to_string(),
             #[cfg(feature = "std")]
             backtrace: ::snafu::GenerateImplicitData::generate(),
-            #[cfg(not(feature = "std"))]
-            backtrace: (),
         })
     };
     ($fmt:expr, $($arg:tt)+) => {
@@ -274,8 +270,6 @@ macro_rules! bail {
             message: format!($fmt, $($arg)+),
             #[cfg(feature = "std")]
             backtrace: ::snafu::GenerateImplicitData::generate(),
-            #[cfg(not(feature = "std"))]
-            backtrace: (),
         })
     };
 }
@@ -286,8 +280,6 @@ macro_rules! format_err {
             message: $e.to_string(),
             #[cfg(feature = "std")]
             backtrace: ::snafu::GenerateImplicitData::generate(),
-            #[cfg(not(feature = "std"))]
-            backtrace: (),
         }
     };
     ($fmt:expr, $($arg:tt)+) => {
@@ -295,8 +287,6 @@ macro_rules! format_err {
             message: format!($fmt, $($arg)+),
             #[cfg(feature = "std")]
             backtrace: ::snafu::GenerateImplicitData::generate(),
-            #[cfg(not(feature = "std"))]
-            backtrace: (),
         }
     };
 }

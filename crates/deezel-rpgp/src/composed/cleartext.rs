@@ -15,11 +15,13 @@ use crate::{
     crypto::hash::HashAlgorithm,
     errors::{bail, ensure, ensure_eq, format_err, InvalidInputSnafu, Result},
     line_writer::LineBreak,
-    normalize_lines::{normalize_lines, NormalizedReader},
     packet::{Signature, SignatureConfig, SignatureType, Subpacket, SubpacketData},
     types::{KeyVersion, Password, PublicKeyTrait, SecretKeyTrait},
     MAX_BUFFER_SIZE,
 };
+
+#[cfg(feature = "std")]
+use crate::normalize_lines::{normalize_lines, NormalizedReader};
 
 
 
@@ -52,7 +54,10 @@ impl CleartextSignedMessage {
     where
     {
         let mut bytes = text.as_bytes();
+        #[cfg(feature = "std")]
         let signature_text = NormalizedReader::new(&mut bytes, LineBreak::Crlf);
+        #[cfg(not(feature = "std"))]
+        let signature_text = bytes;
         let hash = config.hash_alg;
         let signature = config.sign(key, key_pw, signature_text)?;
         let signature = StandaloneSignature::new(signature);
@@ -97,7 +102,10 @@ impl CleartextSignedMessage {
     where
         F: FnOnce(&str) -> Result<Vec<Signature>>,
     {
+        #[cfg(feature = "std")]
         let signature_text = normalize_lines(text, LineBreak::Crlf);
+        #[cfg(not(feature = "std"))]
+        let signature_text = text.into();
 
         let raw_signatures = signer(&signature_text[..])?;
         let mut hashes = Vec::new();
@@ -157,7 +165,14 @@ impl CleartextSignedMessage {
     pub fn signed_text(&self) -> String {
         let unescaped = dash_unescape_and_trim(&self.csf_encoded_text);
 
-        normalize_lines(&unescaped, LineBreak::Crlf).to_string()
+        #[cfg(feature = "std")]
+        {
+            normalize_lines(&unescaped, LineBreak::Crlf).to_string()
+        }
+        #[cfg(not(feature = "std"))]
+        {
+            unescaped
+        }
     }
 
     /// The "cleartext framework"-encoded (i.e. dash-escaped) form of the message.
@@ -216,7 +231,7 @@ impl CleartextSignedMessage {
 
     pub fn to_armored_writer(
         &self,
-        writer: &mut impl crate::ser::Write,
+        writer: &mut impl crate::io::Write,
         opts: ArmorOptions<'_>,
     ) -> Result<()> {
         // Header

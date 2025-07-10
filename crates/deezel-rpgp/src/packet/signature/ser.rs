@@ -6,7 +6,6 @@ use alloc::format;
 extern crate alloc;
 use crate::io;
 
-use byteorder::{BigEndian, WriteBytesExt};
 use chrono::Duration;
 use log::debug;
 
@@ -153,13 +152,13 @@ impl Serialize for SubpacketData {
         debug!("writing subpacket: {:?}", self);
         match &self {
             SubpacketData::SignatureCreationTime(t) => {
-                writer.write_u32::<BigEndian>(t.timestamp().try_into()?)?;
+                writer.write_be_u32(t.timestamp().try_into()?)?;
             }
             SubpacketData::SignatureExpirationTime(d) => {
-                writer.write_u32::<BigEndian>(duration_to_u32(d))?;
+                writer.write_be_u32(duration_to_u32(d))?;
             }
             SubpacketData::KeyExpirationTime(d) => {
-                writer.write_u32::<BigEndian>(duration_to_u32(d))?;
+                writer.write_be_u32(duration_to_u32(d))?;
             }
             SubpacketData::Issuer(id) => {
                 writer.write_all(id.as_ref())?;
@@ -202,9 +201,9 @@ impl Serialize for SubpacketData {
                 let is_readable = if notation.readable { 0x80 } else { 0 };
                 writer.write_all(&[is_readable, 0, 0, 0])?;
 
-                writer.write_u16::<BigEndian>(notation.name.len().try_into()?)?;
+                writer.write_be_u16(notation.name.len().try_into()?)?;
 
-                writer.write_u16::<BigEndian>(notation.value.len().try_into()?)?;
+                writer.write_be_u16(notation.value.len().try_into()?)?;
 
                 writer.write_all(&notation.name)?;
                 writer.write_all(&notation.value)?;
@@ -345,7 +344,7 @@ impl SignatureConfig {
         if let SignatureVersionSpecific::V2 { created, issuer }
         | SignatureVersionSpecific::V3 { created, issuer } = &self.version_specific
         {
-            writer.write_u32::<BigEndian>(created.timestamp().try_into()?)?;
+            writer.write_be_u32(created.timestamp().try_into()?)?;
             writer.write_all(issuer.as_ref())?;
         } else {
             bail!("expecting SignatureVersionSpecific::V3 for a v2/v3 signature")
@@ -384,8 +383,8 @@ impl SignatureConfig {
         // hashed subpackets
         let hashed_sub_len = self.hashed_subpackets.write_len();
         match self.version() {
-            SignatureVersion::V4 => writer.write_u16::<BigEndian>(hashed_sub_len.try_into()?)?,
-            SignatureVersion::V6 => writer.write_u32::<BigEndian>(hashed_sub_len.try_into()?)?,
+            SignatureVersion::V4 => writer.write_be_u16(hashed_sub_len.try_into()?)?,
+            SignatureVersion::V6 => writer.write_be_u32(hashed_sub_len.try_into()?)?,
             v => unimplemented_err!("signature version {:?}", v),
         }
 
@@ -397,8 +396,8 @@ impl SignatureConfig {
         let unhashed_sub_len = self.unhashed_subpackets.write_len();
 
         match self.version() {
-            SignatureVersion::V4 => writer.write_u16::<BigEndian>(unhashed_sub_len.try_into()?)?,
-            SignatureVersion::V6 => writer.write_u32::<BigEndian>(unhashed_sub_len.try_into()?)?,
+            SignatureVersion::V4 => writer.write_be_u16(unhashed_sub_len.try_into()?)?,
+            SignatureVersion::V6 => writer.write_be_u32(unhashed_sub_len.try_into()?)?,
             v => unimplemented_err!("signature version {:?}", v),
         }
 

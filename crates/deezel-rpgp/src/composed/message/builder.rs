@@ -11,6 +11,7 @@ use crc24::Crc24Hasher;
 use generic_array::typenum::U64;
 use log::debug;
 use rand::{CryptoRng, Rng};
+use flate2::FlushCompress;
 use zeroize::Zeroizing;
 
 use super::ArmorOptions;
@@ -24,13 +25,12 @@ use crate::{
     },
     errors::{bail, ensure, ensure_eq, Result},
     line_writer::{LineBreak, LineWriter},
-    normalize_lines::NormalizedReader,
     packet::{
-        CompressedDataGenerator, DataMode, LiteralDataGenerator, LiteralDataHeader,
+        DataMode, LiteralDataGenerator, LiteralDataHeader,
         MaybeNormalizedReader, OnePassSignature, PacketHeader, PacketTrait,
         PublicKeyEncryptedSessionKey, SignatureHasher, SignatureType, SignatureVersionSpecific,
         Subpacket, SubpacketData, SymEncryptedProtectedData, SymEncryptedProtectedDataConfig,
-        SymKeyEncryptedSessionKey,
+        SymKeyEncryptedSessionKey, Compressor,
     },
     ser::Serialize,
     types::{
@@ -39,6 +39,9 @@ use crate::{
     },
     util::{fill_buffer, TeeWriter},
 };
+
+#[cfg(feature = "std")]
+use crate::normalize_lines::NormalizedReader;
 
 use crate::io::{Read, Write};
 
@@ -662,11 +665,29 @@ where
 
     match compression {
         Some(compression) => {
-            let len = sign_generator.len();
-            let generator =
-                CompressedDataGenerator::new(compression, sign_generator, len, partial_chunk_size)?;
-
-            encryption.encrypt(&mut rng, generator, partial_chunk_size, None, out)?;
+            let mut compressor = Compressor::new(compression);
+            let mut compressed_data = Vec::new();
+            let mut input_buf = vec![0u8; 4096];
+            let mut temp_out = vec![0u8; 4096];
+            loop {
+                let read = sign_generator.read(&mut input_buf)?;
+                if read == 0 {
+                    break;
+                }
+                let (_consumed, written, _status) = compressor
+                    .compress(&input_buf[..read], &mut temp_out, FlushCompress::None)
+                    .map_err(|_| {
+                        crate::io::Error::new(crate::io::ErrorKind::Other, "compression failed")
+                    })?;
+                compressed_data.extend_from_slice(&temp_out[..written]);
+            }
+            encryption.encrypt(
+                &mut rng,
+                &mut &compressed_data[..],
+                partial_chunk_size,
+                Some(compressed_data.len() as u32),
+                out,
+            )?;
         }
         None => {
             let len = sign_generator.len();
@@ -964,7 +985,14 @@ impl<'a, R: Read> SignGenerator<'a, R> {
         }
 
         let normalized_source = if literal_data_header.mode() == DataMode::Utf8 {
-            MaybeNormalizedReader::Normalized(NormalizedReader::new(source, LineBreak::Crlf))
+            #[cfg(feature = "std")]
+            {
+                MaybeNormalizedReader::Normalized(NormalizedReader::new(source, LineBreak::Crlf))
+            }
+            #[cfg(not(feature = "std"))]
+            {
+                MaybeNormalizedReader::Raw(source)
+            }
         } else {
             MaybeNormalizedReader::Raw(source)
         };

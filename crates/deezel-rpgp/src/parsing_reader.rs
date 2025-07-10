@@ -5,7 +5,7 @@ use core::cmp;
 
 use bytes::{Bytes, BytesMut};
 
-pub trait BufReadParsing: BufRead + Sized {
+pub trait BufReadParsing: BufRead + Read + Sized {
     fn read_u8(&mut self) -> Result<u8> {
         let arr = self.read_array::<1>()?;
         Ok(arr[0])
@@ -53,7 +53,7 @@ pub trait BufReadParsing: BufRead + Sized {
         if read != arr.len() {
             return Err(crate::io::Error::new(
                 crate::io::ErrorKind::UnexpectedEof,
-                "no more data available".to_string(),
+                "no more data available",
             ));
         }
 
@@ -79,7 +79,7 @@ pub trait BufReadParsing: BufRead + Sized {
         if read != arr.len() {
             return Err(crate::io::Error::new(
                 crate::io::ErrorKind::UnexpectedEof,
-                "no more data available".to_string(),
+                "no more data available",
             ));
         }
 
@@ -105,7 +105,7 @@ pub trait BufReadParsing: BufRead + Sized {
         if arr.len() != size {
             return Err(crate::io::Error::new(
                 crate::io::ErrorKind::UnexpectedEof,
-                "no more data available".to_string(),
+                "no more data available",
             ));
         }
 
@@ -142,11 +142,7 @@ pub trait BufReadParsing: BufRead + Sized {
         if tag != &found_tag {
             return Err(crate::io::Error::new(
                 crate::io::ErrorKind::InvalidInput,
-                format!(
-                    "expected {}, found {}",
-                    hex::encode(tag),
-                    hex::encode(found_tag)
-                ),
+                "invalid tag",
             ));
         }
         Ok(())

@@ -1,11 +1,11 @@
 use alloc::boxed::Box;
 use alloc::string::{String, ToString};
-use alloc::vec;
+use alloc::vec::{self, Vec};
 use alloc::format;
 extern crate alloc;
 use crate::io::{BufRead, Write};
 
-use byteorder::WriteBytesExt;
+use byteorder::BigEndian;
 use bytes::Bytes;
 
 use crate::{
@@ -79,7 +79,13 @@ pub enum EcdhPublicParams {
 impl Serialize for EcdhPublicParams {
     fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
         let oid = self.curve().oid();
-        writer.write_u8(oid.len().try_into()?)?;
+        #[cfg(feature = "std")]
+        {
+            use byteorder::WriteBytesExt;
+            writer.write_u8(oid.len().try_into()?)?;
+        }
+        #[cfg(not(feature = "std"))]
+        writer.write_all(&[oid.len().try_into()?])?;
         writer.write_all(&oid)?;
 
         let tags = match self {
@@ -125,11 +131,21 @@ impl Serialize for EcdhPublicParams {
         };
 
         if let Some((hash, alg_sym)) = tags {
-            writer.write_u8(0x03)?; // len of the following fields
-            writer.write_u8(0x01)?; // fixed tag
-
-            writer.write_u8((*hash).into())?;
-            writer.write_u8((*alg_sym).into())?;
+            #[cfg(feature = "std")]
+            {
+                use byteorder::WriteBytesExt;
+                writer.write_u8(0x03)?; // len of the following fields
+                writer.write_u8(0x01)?; // fixed tag
+                writer.write_u8((*hash).into())?;
+                writer.write_u8((*alg_sym).into())?;
+            }
+            #[cfg(not(feature = "std"))]
+            {
+                writer.write_all(&[0x03])?; // len of the following fields
+                writer.write_all(&[0x01])?; // fixed tag
+                writer.write_all(&[(*hash).into()])?;
+                writer.write_all(&[(*alg_sym).into()])?;
+            }
         }
 
         Ok(())
@@ -213,7 +229,7 @@ impl EcdhPublicParams {
     }
 
     /// Ref: <https://www.rfc-editor.org/rfc/rfc9580.html#name-algorithm-specific-part-for-ecd>
-    pub fn try_from_reader<B: BufRead>(mut i: B, len: Option<usize>) -> Result<Self> {
+    pub fn try_from_reader<B: BufRead>(i: &mut B, len: Option<usize>) -> Result<Self> {
         // a one-octet size of the following field
         // octets representing a curve OID
         let curve_len = i.read_u8()?;
@@ -229,7 +245,7 @@ impl EcdhPublicParams {
             | ECCCurve::BrainpoolP384r1
             | ECCCurve::BrainpoolP512r1 => {
                 // MPI of an EC point representing a public key
-                let p = Mpi::try_from_reader(&mut i)?;
+                let p = Mpi::try_from_reader(i)?;
 
                 // a one-octet size of the following fields
                 let _len2 = i.read_u8()?;

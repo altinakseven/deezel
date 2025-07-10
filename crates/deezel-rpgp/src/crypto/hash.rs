@@ -141,6 +141,7 @@ impl crate::io::Write for WriteHasher<'_> {
     }
 }
 
+
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[snafu(display("unsupported {:?}", alg))]

@@ -5,7 +5,7 @@ use alloc::vec;
 use alloc::format;
 use crate::io::{self, Write};
 use alloc::vec::Vec;
-use byteorder::WriteBytesExt;
+use byteorder::BigEndian;
 use bytes::{Buf, Bytes, BytesMut};
 use digest::Digest;
 use zeroize::ZeroizeOnDrop;
@@ -133,7 +133,7 @@ impl EncryptedSecretParams {
                 }
 
                 PlainSecretParams::try_from_reader(
-                    plaintext.reader(),
+                    &mut plaintext.reader(),
                     pub_key.version(),
                     alg,
                     params,
@@ -171,7 +171,7 @@ impl EncryptedSecretParams {
 
                         // "decrypt" now contains the decrypted key material
                         PlainSecretParams::try_from_reader_no_checksum(
-                            ciphertext.reader(),
+                            &mut ciphertext.reader(),
                             pub_key.version(),
                             alg,
                             pub_key.public_params(),
@@ -202,7 +202,7 @@ impl EncryptedSecretParams {
                     return Err(InvalidInputSnafu.build());
                 }
                 PlainSecretParams::try_from_reader_no_checksum(
-                    plaintext.reader(),
+                    &mut plaintext.reader(),
                     pub_key.version(),
                     alg,
                     params,
@@ -219,7 +219,7 @@ impl EncryptedSecretParams {
                 }
 
                 PlainSecretParams::try_from_reader(
-                    plaintext.reader(),
+                    &mut plaintext.reader(),
                     pub_key.version(),
                     alg,
                     params,
@@ -233,7 +233,13 @@ impl EncryptedSecretParams {
         writer: &mut W,
         version: KeyVersion,
     ) -> Result<()> {
-        writer.write_u8((&self.s2k_params).into())?;
+        #[cfg(feature = "std")]
+        {
+            use byteorder::WriteBytesExt;
+            writer.write_u8((&self.s2k_params).into())?;
+        }
+        #[cfg(not(feature = "std"))]
+        writer.write_all(&[(&self.s2k_params).into()])?;
 
         let mut s2k_params = vec![];
 
@@ -252,13 +258,29 @@ impl EncryptedSecretParams {
                 s2k,
                 ref nonce,
             } => {
-                s2k_writer.write_u8((*sym_alg).into())?;
-                s2k_writer.write_u8((*aead_mode).into())?;
+                #[cfg(feature = "std")]
+                {
+                    use byteorder::WriteBytesExt;
+                    s2k_writer.write_u8((*sym_alg).into())?;
+                    s2k_writer.write_u8((*aead_mode).into())?;
+                }
+                #[cfg(not(feature = "std"))]
+                {
+                    s2k_writer.write_all(&[(*sym_alg).into()])?;
+                    s2k_writer.write_all(&[(*aead_mode).into()])?;
+                }
 
                 if version == KeyVersion::V6 {
-                    s2k_writer.write_u8(s2k.len()?)?; // length of S2K Specifier Type
+                    #[cfg(feature = "std")]
+                    {
+                        use byteorder::WriteBytesExt;
+                        s2k_writer.write_u8(s2k.len()?)?;
+                    }
+                    #[cfg(not(feature = "std"))]
+                    s2k_writer.write_all(&[s2k.len()?])?;
+                    // length of S2K Specifier Type
                 }
-                s2k.to_writer(&mut s2k_writer)?;
+                s2k.to_writer(s2k_writer)?;
 
                 s2k_writer.write_all(nonce)?;
             }
@@ -272,13 +294,26 @@ impl EncryptedSecretParams {
                 s2k,
                 ref iv,
             } => {
-                s2k_writer.write_u8((*sym_alg).into())?;
+                #[cfg(feature = "std")]
+                {
+                    use byteorder::WriteBytesExt;
+                    s2k_writer.write_u8((*sym_alg).into())?;
+                }
+                #[cfg(not(feature = "std"))]
+                s2k_writer.write_all(&[(*sym_alg).into()])?;
 
                 if version == KeyVersion::V6 && matches!(self.s2k_params, S2kParams::Cfb { .. }) {
-                    s2k_writer.write_u8(s2k.len()?)?; // length of S2K Specifier Type
+                    #[cfg(feature = "std")]
+                    {
+                        use byteorder::WriteBytesExt;
+                        s2k_writer.write_u8(s2k.len()?)?;
+                    }
+                    #[cfg(not(feature = "std"))]
+                    s2k_writer.write_all(&[s2k.len()?])?;
+                    // length of S2K Specifier Type
                 }
 
-                s2k.to_writer(&mut s2k_writer)?;
+                s2k.to_writer(s2k_writer)?;
 
                 s2k_writer.write_all(iv)?;
             }
@@ -289,7 +324,13 @@ impl EncryptedSecretParams {
                 let len = s2k_params.len();
                 ensure!(len <= 255, "unexpected s2k_params length {}", len);
 
-                writer.write_u8(len.try_into()?)?;
+                #[cfg(feature = "std")]
+                {
+                    use byteorder::WriteBytesExt;
+                    writer.write_u8(len.try_into()?)?;
+                }
+                #[cfg(not(feature = "std"))]
+                writer.write_all(&[len.try_into()?])?;
             }
             writer.write_all(&s2k_params)?;
         }

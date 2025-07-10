@@ -22,7 +22,8 @@ use crate::{
         x25519, x448,
     },
     errors::Result,
-    packet::{self, KeyFlags, PubKeyInner, UserAttribute, UserId},
+    packet::{self, PubKeyInner, UserAttribute, UserId},
+    packet::{KeyFlags, Signature},
     types::{self, CompressionAlgorithm, PlainSecretParams, PublicParams, S2kParams},
 };
 

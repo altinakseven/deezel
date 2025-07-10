@@ -76,7 +76,7 @@ mod many;
 mod packet_sum;
 mod single;
 
-mod compressed_data;
+pub mod compressed_data;
 mod key;
 mod literal_data;
 mod marker;

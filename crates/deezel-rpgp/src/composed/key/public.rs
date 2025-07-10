@@ -12,7 +12,8 @@ use crate::{
     composed::{KeyDetails, SignedPublicKey, SignedPublicSubKey},
     crypto::{hash::HashAlgorithm, public_key::PublicKeyAlgorithm},
     errors::Result,
-    packet::{self, KeyFlags, Signature},
+    packet,
+    packet::{KeyFlags, Signature},
     ser::Serialize,
     types::{
         EskType, Fingerprint, KeyId, Password, PkeskBytes, PublicKeyTrait, PublicParams,

@@ -1,6 +1,7 @@
 use alloc::boxed::Box;
 use alloc::string::{String, ToString};
 use alloc::vec;
+use alloc::vec::Vec;
 use alloc::format;
 extern crate alloc;
 use crate::io::{self, BufRead, Read};
@@ -130,11 +131,11 @@ impl SymEncryptedProtectedData {
             chunk_size,
             session_key,
             &salt,
-            &mut plaintext,
+            plaintext,
         )?;
 
         let mut out = Vec::new();
-        encryptor.read_to_end(&mut out)?;
+        io::copy(&mut encryptor, &mut out)?;
 
         let config = Config::V2 {
             sym_alg,
@@ -155,7 +156,7 @@ impl SymEncryptedProtectedData {
     }
 
     /// Encrypts the data using the given symmetric key.
-    pub fn encrypt_seipdv2_stream<R: io::Read>(
+    pub fn encrypt_seipdv2_stream<R: Read + Clone>(
         sym_alg: SymmetricKeyAlgorithm,
         aead: AeadAlgorithm,
         chunk_size: ChunkSize,

@@ -5,7 +5,6 @@ use alloc::format;
 extern crate alloc;
 use crate::io::BufRead;
 
-use byteorder::{BigEndian, WriteBytesExt};
 use bytes::Bytes;
 use chrono::{DateTime, Duration, Utc};
 use smallvec::SmallVec;
@@ -204,7 +203,7 @@ impl SubpacketLength {
 }
 
 impl Serialize for SubpacketLength {
-    fn to_writer<W: crate::io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: crate::io::Write>(&self, writer: &mut W) -> crate::errors::Result<()> {
         match self {
             Self::One(l) => {
                 debug_assert!(*l < 192, "Inconsistent SubpacketLength::One");
@@ -224,7 +223,7 @@ impl Serialize for SubpacketLength {
             }
             Self::Five(l) => {
                 writer.write_u8(0xFF)?;
-                writer.write_u32::<BigEndian>(*l)?
+                writer.write_be_u32(*l)?
             }
         }
         Ok(())

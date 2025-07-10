@@ -1,11 +1,11 @@
 use alloc::boxed::Box;
 use alloc::string::{String, ToString};
-use alloc::vec;
+use alloc::vec::{self, Vec};
 use alloc::format;
 extern crate alloc;
 use crate::io::{BufRead, Write};
 
-use byteorder::WriteBytesExt;
+use byteorder::BigEndian;
 use bytes::Bytes;
 
 use crate::{
@@ -33,7 +33,7 @@ pub enum EddsaLegacyPublicParams {
 
 impl EddsaLegacyPublicParams {
     /// <https://www.rfc-editor.org/rfc/rfc9580.html#name-algorithm-specific-part-for-ed>
-    pub fn try_from_reader<B: BufRead>(mut i: B, len: Option<usize>) -> Result<Self> {
+    pub fn try_from_reader<B: BufRead>(i: &mut B, len: Option<usize>) -> Result<Self> {
         // a one-octet size of the following field
         let curve_len = i.read_u8()?;
         // octets representing a curve OID
@@ -43,7 +43,7 @@ impl EddsaLegacyPublicParams {
         // MPI of an EC point representing a public key
         match curve {
             ECCCurve::Ed25519 => {
-                let q = Mpi::try_from_reader(&mut i)?;
+                let q = Mpi::try_from_reader(i)?;
                 ensure_eq!(q.len(), 33, "invalid Q (len)");
                 ensure_eq!(q.as_ref()[0], 0x40, "invalid Q (prefix)");
                 let public = &q.as_ref()[1..];
@@ -76,7 +76,13 @@ impl Serialize for EddsaLegacyPublicParams {
         match self {
             Self::Ed25519 { key } => {
                 let oid = ECCCurve::Ed25519.oid();
-                writer.write_u8(oid.len().try_into()?)?;
+                #[cfg(feature = "std")]
+                {
+                    use byteorder::WriteBytesExt;
+                    writer.write_u8(oid.len().try_into()?)?;
+                }
+                #[cfg(not(feature = "std"))]
+                writer.write_all(&[oid.len().try_into()?])?;
                 writer.write_all(&oid)?;
                 let mut mpi = Vec::with_capacity(33);
                 mpi.push(0x40);
@@ -86,7 +92,13 @@ impl Serialize for EddsaLegacyPublicParams {
             }
             Self::Unsupported { curve, opaque } => {
                 let oid = curve.oid();
-                writer.write_u8(oid.len().try_into()?)?;
+                #[cfg(feature = "std")]
+                {
+                    use byteorder::WriteBytesExt;
+                    writer.write_u8(oid.len().try_into()?)?;
+                }
+                #[cfg(not(feature = "std"))]
+                writer.write_all(&[oid.len().try_into()?])?;
                 writer.write_all(&oid)?;
 
                 writer.write_all(opaque)?;

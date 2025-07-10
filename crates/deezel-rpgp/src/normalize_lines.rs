@@ -1,3 +1,4 @@
+#![cfg(feature = "std")]
 //! # Line ending normalization module
 extern crate alloc;
 use alloc::boxed::Box;

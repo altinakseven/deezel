@@ -394,12 +394,14 @@ impl StringToKey {
                 let a2 = Argon2::new(
                     Algorithm::Argon2id,
                     Version::V0x13,
-                    Params::new(m, *t as u32, *p as u32, Some(key_size))?,
+                    Params::new(m, *t as u32, *p as u32, Some(key_size))
+                        .map_err(|e| crate::errors::Argon2Snafu { msg: format!("{:?}", e) }.build())?,
                 );
 
                 let mut output_key_material = vec![0; key_size];
 
-                a2.hash_password_into(passphrase, salt, &mut output_key_material)?;
+                a2.hash_password_into(passphrase, salt, &mut output_key_material)
+                    .map_err(|e| crate::errors::Argon2Snafu { msg: format!("{:?}", e) }.build())?;
 
                 output_key_material
             }
@@ -424,7 +426,7 @@ impl StringToKey {
     }
 
     /// Parses the identifier from the given buffer.
-    pub fn try_from_reader<B: BufRead>(mut i: B) -> Result<Self> {
+    pub fn try_from_reader<B: BufRead>(i: &mut B) -> Result<Self> {
         let typ = i.read_u8()?;
 
         match typ {
@@ -475,15 +477,15 @@ impl StringToKey {
 }
 
 impl Serialize for StringToKey {
-    fn to_writer<W: io::Write + WriteBytesExt>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
         match self {
             Self::Simple { hash_alg } => {
-                writer.write_u8(self.id())?;
-                writer.write_u8((*hash_alg).into())?;
+                writer.write_all(&[self.id()])?;
+                writer.write_all(&[(*hash_alg).into()])?;
             }
             Self::Salted { hash_alg, salt } => {
-                writer.write_u8(self.id())?;
-                writer.write_u8((*hash_alg).into())?;
+                writer.write_all(&[self.id()])?;
+                writer.write_all(&[(*hash_alg).into()])?;
                 writer.write_all(salt)?;
             }
             Self::IteratedAndSalted {
@@ -491,13 +493,13 @@ impl Serialize for StringToKey {
                 salt,
                 count,
             } => {
-                writer.write_u8(self.id())?;
-                writer.write_u8((*hash_alg).into())?;
+                writer.write_all(&[self.id()])?;
+                writer.write_all(&[(*hash_alg).into()])?;
                 writer.write_all(salt)?;
-                writer.write_u8(*count)?;
+                writer.write_all(&[*count])?;
             }
             Self::Argon2 { salt, t, p, m_enc } => {
-                writer.write_u8(self.id())?;
+                writer.write_all(&[self.id()])?;
                 writer.write_all(salt)?;
                 writer.write_all(&[*t, *p, *m_enc])?;
             }
@@ -505,7 +507,7 @@ impl Serialize for StringToKey {
             Self::Reserved { unknown, .. }
             | Self::Private { unknown, .. }
             | Self::Other { unknown, .. } => {
-                writer.write_u8(self.id())?;
+                writer.write_all(&[self.id()])?;
                 writer.write_all(unknown)?;
             }
         }

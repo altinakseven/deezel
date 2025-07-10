@@ -17,9 +17,9 @@ pub struct RsaPublicParams {
 }
 
 impl RsaPublicParams {
-    pub fn try_from_reader<B: BufRead>(mut i: B) -> Result<Self> {
-        let n = Mpi::try_from_reader(&mut i)?;
-        let e = Mpi::try_from_reader(&mut i)?;
+    pub fn try_from_reader<B: BufRead>(i: &mut B) -> Result<Self> {
+        let n = Mpi::try_from_reader(i)?;
+        let e = Mpi::try_from_reader(i)?;
 
         let params = RsaPublicParams::try_from_mpi(n, e)?;
         Ok(params)

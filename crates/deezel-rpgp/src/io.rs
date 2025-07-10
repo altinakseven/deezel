@@ -1,110 +1,81 @@
-// crates/deezel-rpgp/src/io.rs
-
-//! A `no_std` compatible `io` module.
+//! A `no_std` compatible version of `std::io`.
 //!
-//! It exports items from `std::io` when the `std` feature is enabled,
-//! otherwise it provides `no_std`-friendly alternatives.
+//! This module provides `Read`, `Write`, and `BufRead` traits that are
+//! compatible with `std::io` but also work in `no_std` environments.
+
 #![allow(clippy::module_inception)]
-extern crate alloc;
-use alloc::boxed::Box;
-use alloc::string::{String, ToString};
-use alloc::vec;
-use alloc::format;
 
 #[cfg(feature = "std")]
-pub mod imp {
-    pub use std::io::{self, BufRead, Error, ErrorKind, Read, Result, Write};
-}
+pub use std::io::{self, copy, BufRead, BufReader, Cursor, Error, ErrorKind, Read, Result, Write};
 
 #[cfg(not(feature = "std"))]
-pub mod imp {
-    extern crate alloc;
-    use snafu::Snafu;
-
-    #[derive(Debug, Snafu)]
-    pub enum Error {
-        #[snafu(display("other error: {message}"))]
-        Other { message: String },
-        #[snafu(display("write zero"))]
-        WriteZero,
-        #[snafu(display("unexpected eof"))]
-        UnexpectedEof,
-        #[snafu(display("invalid input: {message}"))]
-        InvalidInput { message: String },
-    }
-
-    impl From<snafu::NoneError> for Error {
-        fn from(_: snafu::NoneError) -> Self {
-            Error::Other {
-                message: "NoneError".to_string(),
-            }
+mod no_std_io {
+    pub fn copy<R: ?Sized, W: ?Sized>(reader: &mut R, writer: &mut W) -> Result<u64>
+    where
+        R: Read,
+        W: Write,
+    {
+        let mut buf = [0; 8 * 1024];
+        let mut written = 0;
+        loop {
+            let len = match reader.read(&mut buf) {
+                Ok(0) => return Ok(written),
+                Ok(len) => len,
+                Err(e) => return Err(e),
+            };
+            writer.write_all(&buf[..len])?;
+            written += len as u64;
         }
     }
+    use alloc::vec::Vec;
+    use core::result;
+    use bytes::{BufMut, BytesMut};
 
-    pub type Result<T> = core::result::Result<T, Error>;
-
-    pub struct Cursor<T> {
-        inner: T,
-        pos: usize,
-    }
-
-    impl<T> Cursor<T> {
-        pub fn new(inner: T) -> Self {
-            Cursor { inner, pos: 0 }
-        }
-    }
-
-    #[derive(Debug, PartialEq, Eq, Copy, Clone)]
-    pub enum ErrorKind {
-        WriteZero,
-        UnexpectedEof,
-        Other,
-        InvalidInput,
+    /// A `no_std` compatible `io::Error`.
+    #[derive(Debug)]
+    pub struct Error {
+        kind: ErrorKind,
+        msg: &'static str,
     }
 
     impl Error {
-        pub fn new(kind: ErrorKind, msg: String) -> Self {
-            match kind {
-                ErrorKind::WriteZero => Error::WriteZero,
-                ErrorKind::UnexpectedEof => Error::UnexpectedEof,
-                ErrorKind::InvalidInput => Error::InvalidInput { message: msg },
-                _ => Error::Other { message: msg },
-            }
+        pub fn new(kind: ErrorKind, msg: &'static str) -> Self {
+            Self { kind, msg }
         }
 
         pub fn kind(&self) -> ErrorKind {
-            match self {
-                Error::WriteZero => ErrorKind::WriteZero,
-                Error::UnexpectedEof => ErrorKind::UnexpectedEof,
-                Error::Other { .. } => ErrorKind::Other,
-                Error::InvalidInput { .. } => ErrorKind::InvalidInput,
-            }
+            self.kind
         }
     }
 
-    /// A trait for objects that can be read from.
+    impl core::fmt::Display for Error {
+        fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            write!(f, "{:?}: {}", self.kind, self.msg)
+        }
+    }
+
+    impl snafu::Error for Error {}
+
+    /// A `no_std` compatible `io::ErrorKind`.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum ErrorKind {
+        UnexpectedEof,
+        InvalidInput,
+        Other,
+    }
+
+    impl From<ErrorKind> for Error {
+        fn from(kind: ErrorKind) -> Self {
+            Self::new(kind, "")
+        }
+    }
+
+    pub type Result<T> = result::Result<T, Error>;
+
+    /// A `no_std` compatible `io::Read` trait.
     pub trait Read {
-        /// Read from the stream.
         fn read(&mut self, buf: &mut [u8]) -> Result<usize>;
 
-        /// Reads all bytes until EOF in this source, placing them into `buf`.
-        fn read_to_end(&mut self, buf: &mut alloc::vec::Vec<u8>) -> Result<usize> {
-            let start_len = buf.len();
-            // A buffer on the stack.
-            let mut local_buf = [0u8; 2048];
-
-            loop {
-                match self.read(&mut local_buf) {
-                    Ok(0) => return Ok(buf.len() - start_len),
-                    Ok(n) => {
-                        buf.extend_from_slice(&local_buf[..n]);
-                    }
-                    Err(e) => return Err(e),
-                }
-            }
-        }
-
-        /// Read the exact number of bytes required to fill `buf`.
         fn read_exact(&mut self, mut buf: &mut [u8]) -> Result<()> {
             while !buf.is_empty() {
                 match self.read(buf) {
@@ -117,20 +88,32 @@ pub mod imp {
                 }
             }
             if !buf.is_empty() {
-                Err(Error::UnexpectedEof)
+                Err(Error::new(
+                    ErrorKind::UnexpectedEof,
+                    "failed to fill whole buffer",
+                ))
             } else {
                 Ok(())
             }
         }
-    }
 
-    impl<R: Read + ?Sized> Read for &mut R {
-        fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-            (**self).read(buf)
+        fn read_to_end(&mut self, buf: &mut Vec<u8>) -> Result<usize> {
+            let mut buffer = [0; 8 * 1024];
+            let mut read = 0;
+            loop {
+                let len = match self.read(&mut buffer) {
+                    Ok(0) => break,
+                    Ok(len) => len,
+                    Err(e) => return Err(e),
+                };
+                buf.extend_from_slice(&buffer[..len]);
+                read += len;
+            }
+            Ok(read)
         }
     }
 
-    impl Read for &[u8] {
+    impl<'a> Read for &'a [u8] {
         fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
             let amt = core::cmp::min(buf.len(), self.len());
             let (a, b) = self.split_at(amt);
@@ -140,32 +123,17 @@ pub mod imp {
         }
     }
 
-    impl<T: AsRef<[u8]>> Read for Cursor<T> {
-        fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-            let remaining = &self.inner.as_ref()[self.pos..];
-            let amt = core::cmp::min(buf.len(), remaining.len());
-            if amt > 0 {
-                buf[..amt].copy_from_slice(&remaining[..amt]);
-                self.pos += amt;
-            }
-            Ok(amt)
-        }
-    }
-
-    /// A trait for objects that can be written to.
+    /// A `no_std` compatible `io::Write` trait.
     pub trait Write {
-        /// Write a buffer into this writer, returning how many bytes were written.
         fn write(&mut self, buf: &[u8]) -> Result<usize>;
-
-        /// Flush this output stream, ensuring that all intermediately buffered contents reach their destination.
-        fn flush(&mut self) -> Result<()>;
-
-        /// Attempts to write an entire buffer into this writer.
         fn write_all(&mut self, mut buf: &[u8]) -> Result<()> {
             while !buf.is_empty() {
                 match self.write(buf) {
                     Ok(0) => {
-                        return Err(Error::WriteZero);
+                        return Err(Error::new(
+                            ErrorKind::Other,
+                            "failed to write whole buffer",
+                        ));
                     }
                     Ok(n) => buf = &buf[n..],
                     Err(e) => return Err(e),
@@ -173,39 +141,76 @@ pub mod imp {
             }
             Ok(())
         }
+        fn flush(&mut self) -> Result<()>;
+
+        fn write_u8(&mut self, n: u8) -> Result<()> {
+            self.write_all(&[n])
+        }
+
+        fn write_be_u16(&mut self, n: u16) -> Result<()> {
+            self.write_all(&n.to_be_bytes())
+        }
+
+        fn write_be_u32(&mut self, n: u32) -> Result<()> {
+            self.write_all(&n.to_be_bytes())
+        }
+
+        fn write_le_u16(&mut self, n: u16) -> Result<()> {
+            self.write_all(&n.to_le_bytes())
+        }
     }
 
-    impl<W: Write + ?Sized> Write for &mut W {
-        fn write(&mut self, buf: &[u8]) -> Result<usize> {
-            (**self).write(buf)
+    impl<'a, R: ?Sized + BufRead> BufRead for &'a mut R {
+        fn fill_buf(&mut self) -> Result<&[u8]> {
+            (**self).fill_buf()
+        }
+
+        fn consume(&mut self, amt: usize) {
+            (**self).consume(amt)
+        }
+    }
+ 
+     impl<'a, W: Write + ?Sized> Write for &'a mut W {
+         fn write(&mut self, buf: &[u8]) -> Result<usize> {
+            (*self).write(buf)
+        }
+
+        fn write_all(&mut self, buf: &[u8]) -> Result<()> {
+            (*self).write_all(buf)
         }
 
         fn flush(&mut self) -> Result<()> {
-            (**self).flush()
-        }
-    }
-    
-    pub fn copy<R: ?Sized, W: ?Sized>(reader: &mut R, writer: &mut W) -> Result<u64>
-    where
-        R: Read,
-        W: Write,
-    {
-        let mut buf = [0; 8 * 1024];
-        let mut written = 0;
-        loop {
-            let len = match reader.read(&mut buf) {
-                Ok(0) => return Ok(written),
-                Ok(len) => len,
-                Err(e) => return Err(e.into()),
-            };
-            writer.write_all(&buf[..len])?;
-            written += len as u64;
+            (*self).flush()
         }
     }
 
-    impl Write for alloc::vec::Vec<u8> {
+    impl Write for Vec<u8> {
         fn write(&mut self, buf: &[u8]) -> Result<usize> {
             self.extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    impl<'a> Write for &'a mut [u8] {
+        fn write(&mut self, buf: &[u8]) -> Result<usize> {
+            let amt = core::cmp::min(buf.len(), self.len());
+            let (a, b) = core::mem::take(self).split_at_mut(amt);
+            a.copy_from_slice(&buf[..amt]);
+            *self = b;
+            Ok(amt)
+        }
+
+        fn flush(&mut self) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    impl Write for bytes::buf::Writer<BytesMut> {
+        fn write(&mut self, buf: &[u8]) -> Result<usize> {
+            self.get_mut().put_slice(buf);
             Ok(buf.len())
         }
 
@@ -214,30 +219,143 @@ pub mod imp {
         }
     }
 
-    /// A no-std BufRead trait. This is a simplified version.
+    /// A `no_std` compatible `io::Cursor`.
+    #[derive(Debug, Clone, Default)]
+    pub struct Cursor<T> {
+        inner: T,
+        pos: u64,
+    }
+
+    impl<T> Cursor<T> {
+        pub fn new(inner: T) -> Self {
+            Cursor { inner, pos: 0 }
+        }
+
+        pub fn position(&self) -> u64 {
+            self.pos
+        }
+
+        pub fn set_position(&mut self, pos: u64) {
+            self.pos = pos;
+        }
+    }
+
+    impl<T: AsRef<[u8]>> Read for Cursor<T> {
+        fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+            let inner_buf = self.inner.as_ref();
+            let pos = self.pos as usize;
+            if pos >= inner_buf.len() {
+                return Ok(0);
+            }
+
+            let remaining = &inner_buf[pos..];
+            let amt = core::cmp::min(buf.len(), remaining.len());
+            buf[..amt].copy_from_slice(&remaining[..amt]);
+            self.pos += amt as u64;
+            Ok(amt)
+        }
+    }
+
+   impl<T: bytes::Buf> Read for bytes::buf::Reader<T> {
+       fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+           let amt = core::cmp::min(buf.len(), self.get_ref().chunk().len());
+           buf[..amt].copy_from_slice(&self.get_ref().chunk()[..amt]);
+           self.get_mut().advance(amt);
+           Ok(amt)
+       }
+   }
+
+    /// A `no_std` compatible `io::BufRead` trait.
     pub trait BufRead: Read {
         fn fill_buf(&mut self) -> Result<&[u8]>;
         fn consume(&mut self, amt: usize);
     }
 
-    impl<T: AsRef<[u8]>> BufRead for Cursor<T> {
+    impl<'a> BufRead for &'a [u8] {
         fn fill_buf(&mut self) -> Result<&[u8]> {
-            Ok(&self.inner.as_ref()[self.pos..])
+            Ok(*self)
         }
 
         fn consume(&mut self, amt: usize) {
-            self.pos = core::cmp::min(self.pos + amt, self.inner.as_ref().len());
+            *self = &self[amt..];
         }
     }
 
-    impl<'a, R: BufRead + ?Sized> BufRead for &'a mut R {
+    impl<'a, T: AsRef<[u8]>> BufRead for Cursor<T> {
         fn fill_buf(&mut self) -> Result<&[u8]> {
-            (**self).fill_buf()
+            let len = self.inner.as_ref().len() as u64;
+            let end = core::cmp::min(self.pos, len);
+            Ok(&self.inner.as_ref()[(end as usize)..])
         }
+
         fn consume(&mut self, amt: usize) {
-            (**self).consume(amt)
+            self.pos += amt as u64;
+        }
+    }
+
+    impl<T: bytes::Buf> BufRead for bytes::buf::Reader<T> {
+        fn fill_buf(&mut self) -> Result<&[u8]> {
+            Ok(self.get_ref().chunk())
+        }
+
+        fn consume(&mut self, amt: usize) {
+            self.get_mut().advance(amt);
+        }
+    }
+ 
+     pub struct BufReader<R> {
+         inner: R,
+        buf: Vec<u8>,
+        pos: usize,
+        cap: usize,
+    }
+
+    impl<R: Read> BufReader<R> {
+        pub fn new(inner: R) -> Self {
+            Self::with_capacity(8 * 1024, inner)
+        }
+
+        pub fn with_capacity(cap: usize, inner: R) -> Self {
+            let mut buf = Vec::new();
+            buf.resize(cap, 0);
+            Self {
+                inner,
+                buf,
+                pos: 0,
+                cap: 0,
+            }
+        }
+    }
+
+    impl<R: Read> Read for BufReader<R> {
+        fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+            if self.pos == self.cap && buf.len() >= self.buf.len() {
+                return self.inner.read(buf);
+            }
+
+            let nread = {
+                let mut rem = self.fill_buf()?;
+                rem.read(buf)?
+            };
+            self.consume(nread);
+            Ok(nread)
+        }
+    }
+
+    impl<R: Read> BufRead for BufReader<R> {
+        fn fill_buf(&mut self) -> Result<&[u8]> {
+            if self.pos >= self.cap {
+                self.cap = self.inner.read(&mut self.buf)?;
+                self.pos = 0;
+            }
+            Ok(&self.buf[self.pos..self.cap])
+        }
+
+        fn consume(&mut self, amt: usize) {
+            self.pos = core::cmp::min(self.pos + amt, self.cap);
         }
     }
 }
 
-pub use self::imp::{BufRead, Cursor, Error, ErrorKind, Read, Result, Write};
+#[cfg(not(feature = "std"))]
+pub use self::no_std_io::*;

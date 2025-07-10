@@ -54,7 +54,9 @@ pub struct SimpleChecksum(u16);
 impl SimpleChecksum {
     #[inline]
     pub fn to_writer<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
-        writer.write_u16::<BigEndian>(self.0)
+        let mut buf = [0u8; 2];
+        BigEndian::write_u16(&mut buf, self.0);
+        writer.write_all(&buf)
     }
 
     #[inline]

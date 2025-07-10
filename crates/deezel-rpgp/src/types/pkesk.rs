@@ -87,18 +87,18 @@ impl PkeskBytes {
     pub fn try_from_reader<B: BufRead>(
         alg: &PublicKeyAlgorithm,
         version: u8,
-        mut i: B,
+        i: &mut B,
     ) -> Result<Self> {
         match alg {
             PublicKeyAlgorithm::RSA
             | PublicKeyAlgorithm::RSASign
             | PublicKeyAlgorithm::RSAEncrypt => {
-                let mpi = Mpi::try_from_reader(&mut i)?;
+                let mpi = Mpi::try_from_reader(i)?;
                 Ok(PkeskBytes::Rsa { mpi })
             }
             PublicKeyAlgorithm::Elgamal | PublicKeyAlgorithm::ElgamalEncrypt => {
-                let first = Mpi::try_from_reader(&mut i)?;
-                let second = Mpi::try_from_reader(&mut i)?;
+                let first = Mpi::try_from_reader(i)?;
+                let second = Mpi::try_from_reader(i)?;
                 Ok(PkeskBytes::Elgamal { first, second })
             }
             PublicKeyAlgorithm::ECDSA
@@ -108,7 +108,7 @@ impl PkeskBytes {
                 Ok(PkeskBytes::Other { key })
             }
             PublicKeyAlgorithm::ECDH => {
-                let public_point = Mpi::try_from_reader(&mut i)?;
+                let public_point = Mpi::try_from_reader(i)?;
                 let session_key_len = i.read_u8()?;
                 let session_key = i.take_bytes(session_key_len.into())?.freeze();
 
@@ -278,16 +278,16 @@ impl Serialize for PkeskBytes {
                 public_point.to_writer(writer)?;
 
                 // length of session key as one octet
-                writer.write_u8(encrypted_session_key.len().try_into()?)?;
+                crate::io::Write::write_all(writer, &[encrypted_session_key.len().try_into()?])?;
 
-                writer.write_all(encrypted_session_key)?;
+                crate::io::Write::write_all(writer, encrypted_session_key)?;
             }
             PkeskBytes::X25519 {
                 ephemeral,
                 sym_alg,
                 session_key,
             } => {
-                writer.write_all(ephemeral)?;
+                crate::io::Write::write_all(writer, ephemeral)?;
 
                 // Unlike the other public-key algorithms, in the case of a v3 PKESK packet,
                 // the symmetric algorithm ID is not encrypted [for X25519].
@@ -295,17 +295,17 @@ impl Serialize for PkeskBytes {
                 // https://www.rfc-editor.org/rfc/rfc9580.html#name-algorithm-specific-fields-for-
                 if let Some(sym_alg) = sym_alg {
                     // len: algo octet + session_key len
-                    writer.write_u8((session_key.len() + 1).try_into()?)?;
+                    crate::io::Write::write_all(writer, &[(session_key.len() + 1).try_into()?])?;
 
-                    writer.write_u8((*sym_alg).into())?;
+                    crate::io::Write::write_all(writer, &[(u8::from(*sym_alg))])?;
                 } else {
                     // len: esk len
-                    writer.write_u8(session_key.len().try_into()?)?;
+                    crate::io::Write::write_all(writer, &[session_key.len().try_into()?])?;
 
                     // For v6 PKESK, sym_alg is None, and the algorithm is not written here
                 }
 
-                writer.write_all(session_key)?; // encrypted session key
+                crate::io::Write::write_all(writer, session_key)?; // encrypted session key
             }
             PkeskBytes::MlKem768X25519 {
                 ecdh_ciphertext: ephemeral,
@@ -313,8 +313,8 @@ impl Serialize for PkeskBytes {
                 session_key,
                 ml_kem_ciphertext,
             } => {
-                writer.write_all(ephemeral)?;
-                writer.write_all(&ml_kem_ciphertext[..])?;
+                crate::io::Write::write_all(writer, ephemeral)?;
+                crate::io::Write::write_all(writer, &ml_kem_ciphertext[..])?;
 
                 // Unlike the other public-key algorithms, in the case of a v3 PKESK packet,
                 // the symmetric algorithm ID is not encrypted [for X25519].
@@ -322,17 +322,17 @@ impl Serialize for PkeskBytes {
                 // https://www.rfc-editor.org/rfc/rfc9580.html#name-algorithm-specific-fields-for-
                 if let Some(sym_alg) = sym_alg {
                     // len: algo octet + session_key len
-                    writer.write_u8((session_key.len() + 1).try_into()?)?;
+                    crate::io::Write::write_all(writer, &[(session_key.len() + 1).try_into()?])?;
 
-                    writer.write_u8((*sym_alg).into())?;
+                    crate::io::Write::write_all(writer, &[(u8::from(*sym_alg))])?;
                 } else {
                     // len: esk len
-                    writer.write_u8(session_key.len().try_into()?)?;
+                    crate::io::Write::write_all(writer, &[session_key.len().try_into()?])?;
 
                     // For v6 PKESK, sym_alg is None, and the algorithm is not written here
                 }
 
-                writer.write_all(session_key)?; // encrypted session key
+                crate::io::Write::write_all(writer, session_key)?; // encrypted session key
             }
             PkeskBytes::MlKem1024X448 {
                 ecdh_ciphertext: ephemeral,
@@ -340,8 +340,8 @@ impl Serialize for PkeskBytes {
                 session_key,
                 ml_kem_ciphertext,
             } => {
-                writer.write_all(ephemeral.as_bytes())?;
-                writer.write_all(&ml_kem_ciphertext[..])?;
+                crate::io::Write::write_all(writer, ephemeral.as_bytes())?;
+                crate::io::Write::write_all(writer, &ml_kem_ciphertext[..])?;
 
                 // Unlike the other public-key algorithms, in the case of a v3 PKESK packet,
                 // the symmetric algorithm ID is not encrypted [for X448].
@@ -349,24 +349,24 @@ impl Serialize for PkeskBytes {
                 // https://www.rfc-editor.org/rfc/rfc9580.html#name-algorithm-specific-fields-for-
                 if let Some(sym_alg) = sym_alg {
                     // len: algo octet + session_key len
-                    writer.write_u8((session_key.len() + 1).try_into()?)?;
+                    crate::io::Write::write_all(writer, &[(session_key.len() + 1).try_into()?])?;
 
-                    writer.write_u8((*sym_alg).into())?;
+                    crate::io::Write::write_all(writer, &[(u8::from(*sym_alg))])?;
                 } else {
                     // len: esk len
-                    writer.write_u8(session_key.len().try_into()?)?;
+                    crate::io::Write::write_all(writer, &[session_key.len().try_into()?])?;
 
                     // For v6 PKESK, sym_alg is None, and the algorithm is not written here
                 }
 
-                writer.write_all(session_key)?; // encrypted session key
+                crate::io::Write::write_all(writer, session_key)?; // encrypted session key
             }
             PkeskBytes::X448 {
                 ephemeral,
                 sym_alg,
                 session_key,
             } => {
-                writer.write_all(ephemeral)?;
+                crate::io::Write::write_all(writer, ephemeral)?;
 
                 // Unlike the other public-key algorithms, in the case of a v3 PKESK packet,
                 // the symmetric algorithm ID is not encrypted [for X448].
@@ -374,20 +374,20 @@ impl Serialize for PkeskBytes {
                 // https://www.rfc-editor.org/rfc/rfc9580.html#name-algorithm-specific-fields-for-x
                 if let Some(sym_alg) = sym_alg {
                     // len: algo + esk len
-                    writer.write_u8((session_key.len() + 1).try_into()?)?;
+                    crate::io::Write::write_all(writer, &[(session_key.len() + 1).try_into()?])?;
 
-                    writer.write_u8((*sym_alg).into())?;
+                    crate::io::Write::write_all(writer, &[(u8::from(*sym_alg))])?;
                 } else {
                     // len: algo octet + session_key len
-                    writer.write_u8(session_key.len().try_into()?)?;
+                    crate::io::Write::write_all(writer, &[session_key.len().try_into()?])?;
 
                     // For v6 PKESK, sym_alg is None, and the algorithm is not written here
                 }
 
-                writer.write_all(session_key)?; // encrypted session key
+                crate::io::Write::write_all(writer, session_key)?; // encrypted session key
             }
             PkeskBytes::Other { key } => {
-                writer.write_all(key)?;
+                crate::io::Write::write_all(writer, key)?;
             }
         }
         Ok(())

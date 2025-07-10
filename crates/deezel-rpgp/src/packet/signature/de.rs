@@ -9,6 +9,7 @@ use bytes::Buf;
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use log::{debug, warn};
 use smallvec::SmallVec;
+use crate::io::BufRead;
 
 use super::{KeyFlags, Signature, SignatureType, SignatureVersion};
 use crate::{
@@ -28,15 +29,12 @@ use crate::{
     },
 };
 
-// This will be replaced with a no_std compatible trait
-pub trait BufRead {}
-impl BufRead for &[u8] {}
 
 impl Signature {
     /// Parses a `Signature` packet from the given buffer
     ///
     /// Ref: <https://www.rfc-editor.org/rfc/rfc9580.html#name-signature-packet-type-id-2>
-    pub fn try_from_reader<B: BufRead>(packet_header: PacketHeader, mut i: B) -> Result<Self> {
+    pub fn try_from_reader<B: BufReadParsing>(packet_header: PacketHeader, mut i: B) -> Result<Self> {
         let version = i.read_u8().map(SignatureVersion::from)?;
 
         let signature = match version {
@@ -55,7 +53,7 @@ impl Signature {
 
 /// Parse a v2 or v3 signature packet
 /// Ref: https://www.rfc-editor.org/rfc/rfc9580.html#name-version-3-signature-packet-
-fn v3_parser<B: BufRead>(
+fn v3_parser<B: BufReadParsing>(
     packet_header: PacketHeader,
     version: SignatureVersion,
     mut i: B,
@@ -109,7 +107,7 @@ fn v3_parser<B: BufRead>(
 
 /// Parse a v4 signature packet
 /// Ref: https://www.rfc-editor.org/rfc/rfc9580.html#name-versions-4-and-6-signature-
-fn v4_parser<B: BufRead>(
+fn v4_parser<B: BufReadParsing>(
     packet_header: PacketHeader,
     version: SignatureVersion,
     mut i: B,
@@ -165,7 +163,7 @@ fn v4_parser<B: BufRead>(
 
 /// Parse a v6 signature packet
 /// Ref: https://www.rfc-editor.org/rfc/rfc9580.html#name-versions-4-and-6-signature-
-fn v6_parser<B: BufRead>(packet_header: PacketHeader, mut i: B) -> Result<Signature> {
+fn v6_parser<B: BufReadParsing>(packet_header: PacketHeader, mut i: B) -> Result<Signature> {
     // One-octet signature type.
     let typ = i.read_u8().map(SignatureType::from)?;
     // One-octet public-key algorithm.
@@ -228,7 +226,7 @@ fn v6_parser<B: BufRead>(packet_header: PacketHeader, mut i: B) -> Result<Signat
     ))
 }
 
-fn subpackets<B: BufRead>(
+fn subpackets<B: BufReadParsing>(
     packet_version: PacketHeaderVersion,
     len: usize,
     mut i: B,
@@ -262,7 +260,7 @@ fn subpackets<B: BufRead>(
     Ok(packets)
 }
 
-fn subpacket<B: BufRead>(
+fn subpacket<B: BufReadParsing>(
     typ: SubpacketType,
     is_critical: bool,
     packet_len: SubpacketLength,
@@ -318,7 +316,7 @@ fn subpacket<B: BufRead>(
     res
 }
 
-fn actual_signature<B: BufRead>(typ: &PublicKeyAlgorithm, mut i: B) -> Result<SignatureBytes> {
+fn actual_signature<B: BufReadParsing>(typ: &PublicKeyAlgorithm, mut i: B) -> Result<SignatureBytes> {
     match typ {
         PublicKeyAlgorithm::RSA | &PublicKeyAlgorithm::RSASign => {
             let v = Mpi::try_from_reader(&mut i)?;
@@ -382,7 +380,7 @@ fn duration_from_timestamp(ts: u32) -> Option<Duration> {
 
 /// Parse a Signature Creation Time subpacket
 /// Ref: https://www.rfc-editor.org/rfc/rfc9580.html#name-signature-creation-time
-fn signature_creation_time<B: BufRead>(mut i: B) -> Result<SubpacketData> {
+fn signature_creation_time<B: BufReadParsing>(mut i: B) -> Result<SubpacketData> {
     // 4-octet time field
     let date = i.read_be_u32()?;
     let created = dt_from_timestamp(date).ok_or_else(|| format_err!("invalid creation time"))?;
@@ -392,7 +390,7 @@ fn signature_creation_time<B: BufRead>(mut i: B) -> Result<SubpacketData> {
 
 /// Parse an Issuer Key ID subpacket
 /// Ref: https://www.rfc-editor.org/rfc/rfc9580.html#name-issuer-key-id
-fn issuer<B: BufRead>(mut i: B) -> Result<SubpacketData> {
+fn issuer<B: BufReadParsing>(mut i: B) -> Result<SubpacketData> {
     let key_id = i.read_array::<8>().map(KeyId::from)?;
 
     Ok(SubpacketData::Issuer(key_id))
@@ -400,7 +398,7 @@ fn issuer<B: BufRead>(mut i: B) -> Result<SubpacketData> {
 
 /// Parse a Key Expiration Time subpacket
 /// Ref: https://www.rfc-editor.org/rfc/rfc9580.html#name-key-expiration-time
-fn key_expiration<B: BufRead>(mut i: B) -> Result<SubpacketData> {
+fn key_expiration<B: BufReadParsing>(mut i: B) -> Result<SubpacketData> {
     // 4-octet time field
     let duration = i.read_be_u32()?;
     let duration =
@@ -411,7 +409,7 @@ fn key_expiration<B: BufRead>(mut i: B) -> Result<SubpacketData> {
 
 /// Parse a Preferred Symmetric Ciphers for v1 SEIPD subpacket
 /// Ref: https://www.rfc-editor.org/rfc/rfc9580.html#preferred-v1-seipd
-fn pref_sym_alg<B: BufRead>(mut i: B) -> Result<SubpacketData> {
+fn pref_sym_alg<B: BufReadParsing>(mut i: B) -> Result<SubpacketData> {
     let mut list = SmallVec::<[SymmetricKeyAlgorithm; 8]>::new();
     while i.has_remaining()? {
         let alg = i.read_u8().map(SymmetricKeyAlgorithm::from)?;
@@ -424,7 +422,7 @@ fn pref_sym_alg<B: BufRead>(mut i: B) -> Result<SubpacketData> {
 /// Parse a Preferred AEAD Ciphersuites subpacket (for SEIPD v2)
 ///
 /// Ref: https://www.rfc-editor.org/rfc/rfc9580.html#name-preferred-aead-ciphersuites
-fn pref_aead_alg<B: BufRead>(mut i: B) -> Result<SubpacketData> {
+fn pref_aead_alg<B: BufReadParsing>(mut i: B) -> Result<SubpacketData> {
     let mut list = SmallVec::<[(SymmetricKeyAlgorithm, AeadAlgorithm); 4]>::new();
     while i.has_remaining()? {
         let alg = i.read_u8().map(SymmetricKeyAlgorithm::from)?;
@@ -437,7 +435,7 @@ fn pref_aead_alg<B: BufRead>(mut i: B) -> Result<SubpacketData> {
 
 /// Parse a Preferred Hash Algorithms subpacket
 /// Ref: https://www.rfc-editor.org/rfc/rfc9580.html#name-preferred-hash-algorithms
-fn pref_hash_alg<B: BufRead>(mut i: B) -> Result<SubpacketData> {
+fn pref_hash_alg<B: BufReadParsing>(mut i: B) -> Result<SubpacketData> {
     let mut list = SmallVec::<[HashAlgorithm; 8]>::new();
     while i.has_remaining()? {
         let alg = i.read_u8().map(HashAlgorithm::from)?;
@@ -449,7 +447,7 @@ fn pref_hash_alg<B: BufRead>(mut i: B) -> Result<SubpacketData> {
 
 /// Parse a Preferred Compression Algorithms subpacket
 /// Ref: https://www.rfc-editor.org/rfc/rfc9580.html#name-preferred-compression-algor
-fn pref_com_alg<B: BufRead>(mut i: B) -> Result<SubpacketData> {
+fn pref_com_alg<B: BufReadParsing>(mut i: B) -> Result<SubpacketData> {
     let mut list = SmallVec::<[CompressionAlgorithm; 8]>::new();
     while i.has_remaining()? {
         let alg = i.read_u8().map(CompressionAlgorithm::from)?;
@@ -461,7 +459,7 @@ fn pref_com_alg<B: BufRead>(mut i: B) -> Result<SubpacketData> {
 
 /// Parse a Signature Expiration Time subpacket
 /// Ref: https://www.rfc-editor.org/rfc/rfc9580.html#name-signature-expiration-time
-fn signature_expiration_time<B: BufRead>(mut i: B) -> Result<SubpacketData> {
+fn signature_expiration_time<B: BufReadParsing>(mut i: B) -> Result<SubpacketData> {
     // 4-octet time field
     let duration = i.read_be_u32()?;
     let duration =
@@ -472,7 +470,7 @@ fn signature_expiration_time<B: BufRead>(mut i: B) -> Result<SubpacketData> {
 
 /// Parse an Exportable Certification subpacket.
 /// Ref: https://www.rfc-editor.org/rfc/rfc9580.html#name-exportable-certification
-fn exportable_certification<B: BufRead>(mut i: B) -> Result<SubpacketData> {
+fn exportable_certification<B: BufReadParsing>(mut i: B) -> Result<SubpacketData> {
     let is_exportable = i.read_u8()? == 1;
 
     Ok(SubpacketData::ExportableCertification(is_exportable))
@@ -480,7 +478,7 @@ fn exportable_certification<B: BufRead>(mut i: B) -> Result<SubpacketData> {
 
 /// Parse a Revocable subpacket
 /// Ref: https://www.rfc-editor.org/rfc/rfc9580.html#name-revocable
-fn revocable<B: BufRead>(mut i: B) -> Result<SubpacketData> {
+fn revocable<B: BufReadParsing>(mut i: B) -> Result<SubpacketData> {
     let is_revocable = i.read_u8()? == 1;
 
     Ok(SubpacketData::Revocable(is_revocable))
@@ -488,7 +486,7 @@ fn revocable<B: BufRead>(mut i: B) -> Result<SubpacketData> {
 
 /// Parse a Trust Signature subpacket.
 /// Ref: https://www.rfc-editor.org/rfc/rfc9580.html#name-trust-signature
-fn trust_signature<B: BufRead>(mut i: B) -> Result<SubpacketData> {
+fn trust_signature<B: BufReadParsing>(mut i: B) -> Result<SubpacketData> {
     let depth = i.read_u8()?;
     let value = i.read_u8()?;
 
@@ -497,7 +495,7 @@ fn trust_signature<B: BufRead>(mut i: B) -> Result<SubpacketData> {
 
 /// Parse a Regular Expression subpacket.
 /// Ref: https://www.rfc-editor.org/rfc/rfc9580.html#name-regular-expression
-fn regular_expression<B: BufRead>(mut i: B) -> Result<SubpacketData> {
+fn regular_expression<B: BufReadParsing>(mut i: B) -> Result<SubpacketData> {
     let regex = i.rest()?.freeze();
 
     Ok(SubpacketData::RegularExpression(regex))
@@ -505,7 +503,7 @@ fn regular_expression<B: BufRead>(mut i: B) -> Result<SubpacketData> {
 
 /// Parse a Revocation Key subpacket (Deprecated)
 /// Ref: https://www.rfc-editor.org/rfc/rfc9580.html#name-revocation-key-deprecated
-fn revocation_key<B: BufRead>(mut i: B) -> Result<SubpacketData> {
+fn revocation_key<B: BufReadParsing>(mut i: B) -> Result<SubpacketData> {
     let class = i
         .read_u8()?
         .try_into()
@@ -520,7 +518,7 @@ fn revocation_key<B: BufRead>(mut i: B) -> Result<SubpacketData> {
 
 /// Parse a Notation Data subpacket
 /// Ref: https://www.rfc-editor.org/rfc/rfc9580.html#name-notation-data
-fn notation_data<B: BufRead>(mut i: B) -> Result<SubpacketData> {
+fn notation_data<B: BufReadParsing>(mut i: B) -> Result<SubpacketData> {
     // Flags
     let readable = i.read_u8().map(|v| v == 0x80)?;
     i.read_tag(&[0, 0, 0])?;
@@ -538,7 +536,7 @@ fn notation_data<B: BufRead>(mut i: B) -> Result<SubpacketData> {
 
 /// Parse a Key Server Preferences subpacket
 /// https://www.rfc-editor.org/rfc/rfc9580.html#name-key-server-preferences
-fn key_server_prefs<B: BufRead>(mut i: B) -> Result<SubpacketData> {
+fn key_server_prefs<B: BufReadParsing>(mut i: B) -> Result<SubpacketData> {
     let prefs = SmallVec::from_slice(&i.rest()?);
 
     Ok(SubpacketData::KeyServerPreferences(prefs))
@@ -546,7 +544,7 @@ fn key_server_prefs<B: BufRead>(mut i: B) -> Result<SubpacketData> {
 
 /// Parse a Preferred Key Server subpacket
 /// Ref: https://www.rfc-editor.org/rfc/rfc9580.html#name-preferred-key-server
-fn preferred_key_server<B: BufRead>(mut i: B) -> Result<SubpacketData> {
+fn preferred_key_server<B: BufReadParsing>(mut i: B) -> Result<SubpacketData> {
     let body = i.rest()?;
     let body_str = str::from_utf8(&body)?;
 
@@ -555,7 +553,7 @@ fn preferred_key_server<B: BufRead>(mut i: B) -> Result<SubpacketData> {
 
 /// Parse a Primary User ID subpacket
 /// Ref: https://www.rfc-editor.org/rfc/rfc9580.html#name-primary-user-id
-fn primary_userid<B: BufRead>(mut i: B) -> Result<SubpacketData> {
+fn primary_userid<B: BufReadParsing>(mut i: B) -> Result<SubpacketData> {
     let is_primary = i.read_u8()? == 1;
 
     Ok(SubpacketData::IsPrimary(is_primary))
@@ -563,7 +561,7 @@ fn primary_userid<B: BufRead>(mut i: B) -> Result<SubpacketData> {
 
 /// Parse a Policy URI subpacket.
 /// Ref: https://www.rfc-editor.org/rfc/rfc9580.html#name-policy-uri
-fn policy_uri<B: BufRead>(mut i: B) -> Result<SubpacketData> {
+fn policy_uri<B: BufReadParsing>(mut i: B) -> Result<SubpacketData> {
     let body = i.rest()?;
     let body_str = str::from_utf8(&body)?;
 
@@ -572,7 +570,7 @@ fn policy_uri<B: BufRead>(mut i: B) -> Result<SubpacketData> {
 
 /// Parse a Key Flags subpacket
 /// Ref: https://www.rfc-editor.org/rfc/rfc9580.html#name-key-flags
-fn key_flags<B: BufRead>(i: B) -> Result<SubpacketData> {
+fn key_flags<B: BufReadParsing>(i: B) -> Result<SubpacketData> {
     let flags = KeyFlags::try_from_reader(i)?;
 
     Ok(SubpacketData::KeyFlags(flags))
@@ -580,7 +578,7 @@ fn key_flags<B: BufRead>(i: B) -> Result<SubpacketData> {
 
 /// Parse a Signer's User ID subpacket
 /// Ref: https://www.rfc-editor.org/rfc/rfc9580.html#name-key-flags
-fn signers_userid<B: BufRead>(mut i: B) -> Result<SubpacketData> {
+fn signers_userid<B: BufReadParsing>(mut i: B) -> Result<SubpacketData> {
     let userid = i.rest()?.freeze();
 
     Ok(SubpacketData::SignersUserID(userid))
@@ -588,7 +586,7 @@ fn signers_userid<B: BufRead>(mut i: B) -> Result<SubpacketData> {
 
 /// Parse a Reason for Revocation subpacket
 /// Ref: https://www.rfc-editor.org/rfc/rfc9580.html#name-key-flags
-fn rev_reason<B: BufRead>(mut i: B) -> Result<SubpacketData> {
+fn rev_reason<B: BufReadParsing>(mut i: B) -> Result<SubpacketData> {
     let code = i.read_u8().map(RevocationCode::from)?;
     let reason = i.rest()?.freeze();
 
@@ -597,7 +595,7 @@ fn rev_reason<B: BufRead>(mut i: B) -> Result<SubpacketData> {
 
 /// Parse a Features subpacket
 /// Ref: https://www.rfc-editor.org/rfc/rfc9580.html#name-features
-fn features<B: BufRead>(mut i: B) -> Result<SubpacketData> {
+fn features<B: BufReadParsing>(mut i: B) -> Result<SubpacketData> {
     let features = i.rest()?;
 
     Ok(SubpacketData::Features(features.as_ref().into()))
@@ -605,7 +603,7 @@ fn features<B: BufRead>(mut i: B) -> Result<SubpacketData> {
 
 /// Parse a Signature Target subpacket
 /// Ref: https://www.rfc-editor.org/rfc/rfc9580.html#name-signature-target
-fn sig_target<B: BufRead>(mut i: B) -> Result<SubpacketData> {
+fn sig_target<B: BufReadParsing>(mut i: B) -> Result<SubpacketData> {
     let pub_alg = i.read_u8().map(PublicKeyAlgorithm::from)?;
     let hash_alg = i.read_u8().map(HashAlgorithm::from)?;
     let hash = i.rest()?.freeze();
@@ -615,7 +613,7 @@ fn sig_target<B: BufRead>(mut i: B) -> Result<SubpacketData> {
 
 /// Parse an Embedded Signature subpacket
 /// Ref: https://www.rfc-editor.org/rfc/rfc9580.html#name-embedded-signature
-fn embedded_sig<B: BufRead>(
+fn embedded_sig<B: BufReadParsing>(
     packet_version: PacketHeaderVersion,
     mut i: B,
 ) -> Result<SubpacketData> {
@@ -633,7 +631,7 @@ fn embedded_sig<B: BufRead>(
 
 /// Parse an Issuer Fingerprint subpacket
 /// Ref: https://www.rfc-editor.org/rfc/rfc9580.html#name-issuer-fingerprint
-fn issuer_fingerprint<B: BufRead>(mut i: B) -> Result<SubpacketData> {
+fn issuer_fingerprint<B: BufReadParsing>(mut i: B) -> Result<SubpacketData> {
     let version = i.read_u8().map(KeyVersion::from)?;
 
     // This subpacket is only used for v4 and newer fingerprints
@@ -651,7 +649,7 @@ fn issuer_fingerprint<B: BufRead>(mut i: B) -> Result<SubpacketData> {
 }
 
 /// Parse a preferred encryption modes subpacket (non-RFC subpacket for GnuPG "OCB" mode)
-fn preferred_encryption_modes<B: BufRead>(mut i: B) -> Result<SubpacketData> {
+fn preferred_encryption_modes<B: BufReadParsing>(mut i: B) -> Result<SubpacketData> {
     let mut list = SmallVec::<[AeadAlgorithm; 2]>::new();
     while i.has_remaining()? {
         let alg = i.read_u8().map(AeadAlgorithm::from)?;
@@ -663,7 +661,7 @@ fn preferred_encryption_modes<B: BufRead>(mut i: B) -> Result<SubpacketData> {
 
 /// Parse an Intended Recipient Fingerprint subpacket
 /// Ref: https://www.rfc-editor.org/rfc/rfc9580.html#name-intended-recipient-fingerpr
-fn intended_recipient_fingerprint<B: BufRead>(mut i: B) -> Result<SubpacketData> {
+fn intended_recipient_fingerprint<B: BufReadParsing>(mut i: B) -> Result<SubpacketData> {
     let version = i.read_u8().map(KeyVersion::from)?;
 
     // This subpacket is only used for v4 and newer fingerprints

@@ -9,16 +9,13 @@ use log::debug;
 use crate::{
     crypto::public_key::PublicKeyAlgorithm,
     errors::{ensure, format_err, unsupported_err, Result},
+    io::BufRead,
     parsing_reader::BufReadParsing,
     types::{KeyVersion, PublicParams, SecretParams},
 };
 
-// This will be replaced with a no_std compatible trait
-pub trait BufRead {}
-impl BufRead for &[u8] {}
-
 /// Parse the whole private key, both public and private fields.
-fn parse_pub_priv_fields<B: BufRead>(
+fn parse_pub_priv_fields<B: BufRead + BufReadParsing>(
     key_ver: KeyVersion,
     typ: PublicKeyAlgorithm,
     pub_len: Option<usize>,
@@ -50,7 +47,7 @@ fn parse_pub_priv_fields<B: BufRead>(
     Ok((pub_params, secret_params))
 }
 
-fn private_key_parser_v4_v6<B: BufRead>(
+fn private_key_parser_v4_v6<B: BufRead + BufReadParsing>(
     key_ver: &KeyVersion,
     mut i: B,
 ) -> Result<(
@@ -81,7 +78,7 @@ fn private_key_parser_v4_v6<B: BufRead>(
     Ok((*key_ver, alg, created_at, None, params.0, params.1))
 }
 
-fn private_key_parser_v2_v3<B: BufRead>(
+fn private_key_parser_v2_v3<B: BufRead + BufReadParsing>(
     key_ver: &KeyVersion,
     mut i: B,
 ) -> Result<(
@@ -107,7 +104,7 @@ fn private_key_parser_v2_v3<B: BufRead>(
 /// Parse a secret key packet (Tag 5)
 /// Ref: https://www.rfc-editor.org/rfc/rfc9580.html#name-secret-key-packet-formats
 #[allow(clippy::type_complexity)]
-pub(crate) fn parse<B: BufRead>(
+pub(crate) fn parse<B: BufRead + BufReadParsing>(
     mut i: B,
 ) -> Result<(
     KeyVersion,

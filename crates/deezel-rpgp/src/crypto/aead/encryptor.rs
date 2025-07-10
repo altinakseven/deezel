@@ -13,12 +13,9 @@ use crate::{
         aead::{aead_setup, AeadAlgorithm, Error},
         sym::SymmetricKeyAlgorithm,
     },
+    io::{self, Read},
     util::fill_buffer,
 };
-
-// This will be replaced with a no_std compatible trait
-pub trait Read {}
-impl Read for &[u8] {}
 
 pub struct StreamEncryptor<R> {
     source: R,
@@ -100,11 +97,55 @@ impl<R: Read> StreamEncryptor<R> {
     }
 
     fn fill_buffer(&mut self) -> Result<(), Error> {
-        // This function needs to be refactored to not use crate::io
+        if self.buffer.has_remaining() {
+            return Ok(());
+        }
+
+        if self.is_source_done {
+            return Ok(());
+        }
+
+        // read a new chunk from the source
+        let mut chunk = vec![0; self.chunk_size_expanded];
+        let read = fill_buffer(&mut self.source, &mut chunk, None)?;
+        self.bytes_read += read as u64;
+
+        // Associated data is extended with chunk index.
+        let mut info = self.info.to_vec();
+        // chunk index: 8 octets as big endian
+        info.extend_from_slice(&self.chunk_index.to_be_bytes());
+
+        // encrypt the chunk
+        let mut encrypted_chunk = BytesMut::from(&chunk[..read]);
+        self.aead.encrypt_in_place(
+            &self.sym_alg,
+            &self.message_key,
+            &self.nonce,
+            &info,
+            &mut encrypted_chunk,
+        )?;
+
+        // copy the encrypted chunk into our buffer
+        self.buffer.extend_from_slice(&encrypted_chunk);
+
+        self.chunk_index += 1;
+
+        if read < self.chunk_size_expanded {
+            self.is_source_done = true;
+            self.create_final_auth_tag()?;
+        }
+
         Ok(())
     }
 }
 
 impl<R: Read> Read for StreamEncryptor<R> {
-    // This function needs to be refactored to not use crate::io
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.fill_buffer()
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, "fill_buffer failed"))?;
+
+        let amt = core::cmp::min(buf.len(), self.buffer.remaining());
+        self.buffer.copy_to_slice(&mut buf[..amt]);
+        Ok(amt)
+    }
 }

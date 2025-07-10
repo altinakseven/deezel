@@ -13,7 +13,7 @@ use nom::Input;
 use crate::io::{BufRead, Read, Write};
 
 pub(crate) fn fill_buffer<R: Read>(
-    mut source: R,
+    source: &mut R,
     buffer: &mut [u8],
     chunk_size: Option<usize>,
 ) -> Result<usize, crate::io::Error> {

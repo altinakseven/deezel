@@ -5,7 +5,7 @@ use alloc::format;
 extern crate alloc;
 use crate::io::{self, BufRead};
 
-use byteorder::{BigEndian, WriteBytesExt};
+use crate::io::Write;
 use log::debug;
 use num_enum::{FromPrimitive, IntoPrimitive, TryFromPrimitive};
 
@@ -62,7 +62,7 @@ impl PacketLength {
         }
     }
 
-    pub fn to_writer_new<W: crate::io::Write>(&self, writer: &mut W) -> Result<()> {
+    pub fn to_writer_new<W: Write>(&self, writer: &mut W) -> Result<()> {
         match self {
             PacketLength::Fixed(len) => {
                 if *len < 192 {
@@ -72,7 +72,7 @@ impl PacketLength {
                     writer.write_u8(((len - 192) & 0xFF) as u8)?;
                 } else {
                     writer.write_u8(255)?;
-                    writer.write_u32::<BigEndian>(*len)?;
+                    writer.write_be_u32(*len)?;
                 }
             }
             PacketLength::Indeterminate => {
@@ -219,7 +219,7 @@ pub enum PacketHeaderVersion {
 }
 
 impl PacketHeaderVersion {
-    pub fn write_header(self, writer: &mut impl io::Write, tag: Tag, len: usize) -> Result<()> {
+    pub fn write_header(self, writer: &mut impl Write, tag: Tag, len: usize) -> Result<()> {
         debug!("write_header {:?} {:?} {}", self, tag, len);
         let tag: u8 = tag.into();
         match self {
@@ -231,11 +231,11 @@ impl PacketHeaderVersion {
                 } else if len < 65536 {
                     // two octets
                     writer.write_u8(0b1000_0001 | (tag << 2))?;
-                    writer.write_u16::<BigEndian>(len as u16)?;
+                    writer.write_all(&(len as u16).to_be_bytes())?;
                 } else {
                     // four octets
                     writer.write_u8(0b1000_0010 | (tag << 2))?;
-                    writer.write_u32::<BigEndian>(len as u32)?;
+                    writer.write_be_u32(len as u32)?;
                 }
             }
             PacketHeaderVersion::New => {
@@ -247,7 +247,7 @@ impl PacketHeaderVersion {
                     writer.write_u8(((len - 192) & 0xFF) as u8)?;
                 } else {
                     writer.write_u8(255)?;
-                    writer.write_u32::<BigEndian>(len as u32)?;
+                    writer.write_be_u32(len as u32)?;
                 }
             }
         }

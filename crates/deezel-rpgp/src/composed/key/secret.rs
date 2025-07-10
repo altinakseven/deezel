@@ -10,7 +10,8 @@ use rand::Rng;
 use crate::{
     composed::{KeyDetails, PublicSubkey, SignedSecretKey, SignedSecretSubKey},
     errors::Result,
-    packet::{self, KeyFlags, Signature},
+    packet,
+    packet::{KeyFlags, Signature},
     ser::Serialize,
     types::{Password, PublicKeyTrait, SecretKeyTrait},
 };

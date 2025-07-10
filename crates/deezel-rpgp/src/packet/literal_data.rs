@@ -4,9 +4,8 @@ use alloc::vec;
 use alloc::vec::Vec;
 use alloc::format;
 extern crate alloc;
-use crate::io::{self, BufRead};
-
-use byteorder::{BigEndian, WriteBytesExt};
+use crate::io::{self, BufRead, Write};
+use alloc::borrow::ToOwned;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use chrono::{DateTime, SubsecRound, TimeZone, Utc};
 use log::debug;
@@ -17,13 +16,15 @@ use proptest::prelude::*;
 use crate::{
     errors::{ensure, Result},
     line_writer::LineBreak,
-    normalize_lines::{normalize_lines, NormalizedReader},
     packet::{PacketHeader, PacketTrait},
     parsing_reader::BufReadParsing,
     ser::Serialize,
     types::{PacketHeaderVersion, PacketLength, Tag},
     util::fill_buffer,
 };
+
+#[cfg(feature = "std")]
+use crate::normalize_lines::{normalize_lines, NormalizedReader};
 
 /// Literal Data Packet
 /// <https://www.rfc-editor.org/rfc/rfc9580.html#name-literal-data-packet-type-id>
@@ -118,13 +119,16 @@ impl LiteralData {
     ///
     /// The data length combined with the header information must not be larger than `u32::MAX`.
     pub fn from_str(file_name: impl Into<Bytes>, raw_data: &str) -> Result<Self> {
+        #[cfg(feature = "std")]
         let data: Bytes = normalize_lines(raw_data, LineBreak::Crlf)
             .to_string()
             .into();
+        #[cfg(not(feature = "std"))]
+        let data: Bytes = raw_data.to_owned().into();
         let header = LiteralDataHeader {
             mode: DataMode::Utf8,
             file_name: file_name.into(),
-            created: Utc::now().trunc_subsecs(0),
+            created: Utc.timestamp_opt(0, 0).single().expect("invalid time"),
         };
         let len = header.write_len() + data.len();
         let packet_header = PacketHeader::new_fixed(Tag::LiteralData, len.try_into()?);
@@ -143,7 +147,7 @@ impl LiteralData {
         let header = LiteralDataHeader {
             mode: DataMode::Binary,
             file_name: file_name.into(),
-            created: Utc::now().trunc_subsecs(0),
+            created: Utc.timestamp_opt(0, 0).single().expect("invalid time"),
         };
         let len = header.write_len() + data.len();
         let packet_header = PacketHeader::new_fixed(Tag::LiteralData, len.try_into()?);
@@ -226,7 +230,7 @@ impl Serialize for LiteralDataHeader {
         writer.write_u8(self.mode.into())?;
         writer.write_u8(name.len().try_into()?)?;
         writer.write_all(name)?;
-        writer.write_u32::<BigEndian>(self.created.timestamp().try_into()?)?;
+        writer.write_be_u32(self.created.timestamp().try_into()?)?;
         Ok(())
     }
 
@@ -262,6 +266,7 @@ impl PacketTrait for LiteralData {
 
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum MaybeNormalizedReader<R: io::Read> {
+    #[cfg(feature = "std")]
     Normalized(NormalizedReader<R>),
     Raw(R),
 }
@@ -269,6 +274,7 @@ pub(crate) enum MaybeNormalizedReader<R: io::Read> {
 impl<R: io::Read> MaybeNormalizedReader<R> {
     pub(crate) fn into_inner(self) -> R {
         match self {
+            #[cfg(feature = "std")]
             Self::Normalized(s) => s.into_inner(),
             Self::Raw(s) => s,
         }
@@ -278,6 +284,7 @@ impl<R: io::Read> MaybeNormalizedReader<R> {
 impl<R: io::Read> io::Read for MaybeNormalizedReader<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
+            #[cfg(feature = "std")]
             Self::Normalized(r) => r.read(buf),
             Self::Raw(r) => r.read(buf),
         }
@@ -297,10 +304,19 @@ impl<R: io::Read> LiteralDataGenerator<R> {
         source_len: Option<u32>,
         chunk_size: u32,
     ) -> Result<Self> {
-        let source = if header.mode == DataMode::Utf8 {
-            MaybeNormalizedReader::Normalized(NormalizedReader::new(source, LineBreak::Crlf))
-        } else {
-            MaybeNormalizedReader::Raw(source)
+        let source = {
+            #[cfg(feature = "std")]
+            {
+                if header.mode == DataMode::Utf8 {
+                    MaybeNormalizedReader::Normalized(NormalizedReader::new(source, LineBreak::Crlf))
+                } else {
+                    MaybeNormalizedReader::Raw(source)
+                }
+            }
+            #[cfg(not(feature = "std"))]
+            {
+                MaybeNormalizedReader::Raw(source)
+            }
         };
 
         Self::from_normalized(header, source, source_len, chunk_size)
@@ -476,7 +492,7 @@ impl<R: io::Read> io::Read for LiteralDataPartialGenerator<R> {
                 self.is_fixed_emitted = true;
                 let len = (buf_size + self.header.write_len())
                     .try_into()
-                    .map_err(|_| io::Error::other("too large"))?;
+                    .map_err(|_| io::Error::new(io::ErrorKind::Other, "too large"))?;
                 PacketLength::Fixed(len)
             } else if buf_size == chunk_size {
                 // partial
@@ -488,7 +504,7 @@ impl<R: io::Read> io::Read for LiteralDataPartialGenerator<R> {
                 let len = data
                     .len()
                     .try_into()
-                    .map_err(|_| io::Error::other("too large"))?;
+                    .map_err(|_| io::Error::new(io::ErrorKind::Other, "too large"))?;
                 PacketLength::Fixed(len)
             };
 
@@ -503,11 +519,11 @@ impl<R: io::Read> io::Read for LiteralDataPartialGenerator<R> {
                 .expect("known construction");
                 packet_header
                     .to_writer(&mut writer)
-                    .map_err(io::Error::other)?;
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, "failed to write packet header"))?;
 
                 self.header
                     .to_writer(&mut writer)
-                    .map_err(io::Error::other)?;
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, "failed to write literal data header"))?;
 
                 debug!("first partial packet {:?}", packet_header);
                 self.is_first = false;
@@ -515,7 +531,7 @@ impl<R: io::Read> io::Read for LiteralDataPartialGenerator<R> {
                 // only length
                 packet_length
                     .to_writer_new(&mut writer)
-                    .map_err(io::Error::other)?;
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, "failed to write packet length"))?;
                 debug!("partial packet {:?}", packet_length);
             };
 
@@ -612,7 +628,7 @@ mod tests {
             let header = LiteralDataHeader {
                 file_name: "hello.txt".into(),
                 mode: DataMode::Binary,
-                created: Utc::now().trunc_subsecs(0),
+                created: Utc.timestamp_opt(0, 0).single().expect("invalid time"),
             };
 
             let mut generator =
@@ -651,7 +667,7 @@ mod tests {
             let header = LiteralDataHeader {
                 file_name: "hello.txt".into(),
                 mode: DataMode::Utf8,
-                created: Utc::now().trunc_subsecs(0),
+                created: Utc.timestamp_opt(0, 0).single().expect("invalid time"),
             };
 
             let s = random_string(&mut rng, file_size);

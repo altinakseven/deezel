@@ -46,7 +46,7 @@ impl Mpi {
     /// Parses the given reader as an MPI.
     ///
     /// The buffer is expected to be length-prefixed.
-    pub fn try_from_reader<B: BufRead>(mut i: B) -> Result<Self> {
+    pub fn try_from_reader<B: BufRead + BufReadParsing>(i: &mut B) -> Result<Self> {
         let len_bits = i.read_be_u16()?;
 
         if len_bits > MAX_EXTERN_MPI_BITS {
@@ -109,7 +109,7 @@ impl Serialize for Mpi {
     fn to_writer<W: io::Write>(&self, w: &mut W) -> Result<()> {
         let bytes = &self.0;
         let size = bit_size(bytes);
-        w.write_u16::<BigEndian>(size as u16)?;
+        w.write_all(&(size as u16).to_be_bytes())?;
         w.write_all(bytes)?;
 
         Ok(())

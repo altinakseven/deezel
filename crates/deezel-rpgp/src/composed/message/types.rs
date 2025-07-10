@@ -474,7 +474,7 @@ impl From<Esk> for Packet {
 }
 
 impl Serialize for Esk {
-    fn to_writer<W: crate::ser::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: crate::io::Write>(&self, writer: &mut W) -> Result<()> {
         match self {
             Esk::PublicKeyEncryptedSessionKey(k) => k.to_writer_with_header(writer),
             Esk::SymKeyEncryptedSessionKey(k) => k.to_writer_with_header(writer),

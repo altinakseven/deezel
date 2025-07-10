@@ -18,11 +18,11 @@ pub struct DsaPublicParams {
 impl Eq for DsaPublicParams {}
 
 impl DsaPublicParams {
-    pub fn try_from_reader<B: BufRead>(mut i: B) -> Result<Self> {
-        let p = Mpi::try_from_reader(&mut i)?;
-        let q = Mpi::try_from_reader(&mut i)?;
-        let g = Mpi::try_from_reader(&mut i)?;
-        let y = Mpi::try_from_reader(&mut i)?;
+    pub fn try_from_reader<B: BufRead>(i: &mut B) -> Result<Self> {
+        let p = Mpi::try_from_reader(i)?;
+        let q = Mpi::try_from_reader(i)?;
+        let g = Mpi::try_from_reader(i)?;
+        let y = Mpi::try_from_reader(i)?;
 
         let params = DsaPublicParams::try_from_mpi(p, q, g, y)?;
         Ok(params)

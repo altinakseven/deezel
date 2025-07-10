@@ -1,11 +1,11 @@
 use alloc::boxed::Box;
 use alloc::string::{String, ToString};
 use alloc::vec;
+use alloc::vec::Vec;
 use alloc::format;
 extern crate alloc;
 use crate::io::{self, BufRead};
 
-use byteorder::WriteBytesExt;
 use bytes::{Bytes, BytesMut};
 use log::debug;
 #[cfg(test)]
@@ -420,8 +420,8 @@ fn parse_v5<B: BufRead>(
     let sym_alg = i.read_u8().map(SymmetricKeyAlgorithm::from)?;
     let aead = i.read_u8().map(AeadAlgorithm::from)?;
     let s2k_len = i.read_u8()?;
-    let s2k_data = i.read_take(s2k_len.into());
-    let s2k = StringToKey::try_from_reader(s2k_data)?;
+    let mut s2k_data = i.read_take(s2k_len.into());
+    let s2k = StringToKey::try_from_reader(&mut s2k_data)?;
     let iv = i.take_bytes(aead.iv_size())?;
     let aead_tag_size = aead.tag_size().unwrap_or_default();
     let esk = i.rest()?;
@@ -460,8 +460,8 @@ fn parse_v6<B: BufRead>(
     let sym_alg = i.read_u8().map(SymmetricKeyAlgorithm::from)?;
     let aead = i.read_u8().map(AeadAlgorithm::from)?;
     let s2k_len = i.read_u8()?;
-    let s2k_data = i.read_take(s2k_len.into());
-    let s2k = StringToKey::try_from_reader(s2k_data)?;
+    let mut s2k_data = i.read_take(s2k_len.into());
+    let s2k = StringToKey::try_from_reader(&mut s2k_data)?;
     let iv = i.take_bytes(aead.iv_size())?;
     let aead_tag_size = aead.tag_size().unwrap_or_default();
     let esk = i.rest()?;

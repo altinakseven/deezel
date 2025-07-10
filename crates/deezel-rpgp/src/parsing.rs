@@ -27,18 +27,15 @@ pub enum Error {
         found: Bytes,
         context: &'static str,
         #[cfg(feature = "std")]
-        backtrace: Option<Backtrace>,
-        #[cfg(not(feature = "std"))]
-        backtrace: (),
+        #[snafu(backtrace)]
+        backtrace: Backtrace,
     },
-    #[snafu(transparent)]
+    #[snafu(display("Unexpected EOF: {source}"))]
     UnexpectedEof {
         source: crate::io::Error,
         #[cfg(feature = "std")]
         #[snafu(backtrace)]
-        backtrace: Option<Backtrace>,
-        #[cfg(not(feature = "std"))]
-        backtrace: (),
+        backtrace: Backtrace,
     },
 }
 
@@ -66,9 +63,8 @@ pub struct RemainingError {
     pub needed: usize,
     pub remaining: usize,
     #[cfg(feature = "std")]
-    backtrace: Option<Backtrace>,
-    #[cfg(not(feature = "std"))]
-    backtrace: (),
+    #[snafu(backtrace)]
+    backtrace: Backtrace,
 }
 
 #[derive(Debug)]
@@ -108,14 +104,11 @@ pub trait BufParsing: Buf + Sized {
 
     fn ensure_remaining(&self, size: usize) -> Result<(), RemainingError> {
         if self.remaining() < size {
-            return Err(RemainingError {
+            return Err(RemainingSnafu {
                 needed: size,
                 remaining: self.remaining(),
-                #[cfg(feature = "std")]
-                backtrace: snafu::GenerateImplicitData::generate(),
-                #[cfg(not(feature = "std"))]
-                backtrace: (),
-            });
+            }
+            .build());
         }
 
         Ok(())

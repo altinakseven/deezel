@@ -165,30 +165,36 @@ impl PacketHeader {
 }
 
 impl Serialize for PacketHeader {
-    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: Write + WriteBytesExt>(&self, writer: &mut W) -> Result<()> {
         debug!("writing packet header {:?}", self);
 
         match self {
             Self::New { header, length } => {
-                writer.write_u8(header.into_bits())?;
-                length.to_writer_new(writer)?;
+                crate::io::Write::write_u8(writer, header.into_bits())?;
+                length
+                    .to_writer_new(writer)
+                    .map_err(|e| crate::errors::Error::from(e.to_string()))?;
             }
             Self::Old { header, length } => match length {
                 PacketLength::Fixed(len) => {
-                    writer.write_u8(header.into_bits())?;
+                    crate::io::Write::write_u8(writer, header.into_bits())?;
                     if *len < 256 {
                         // one octet
-                        writer.write_u8(*len as u8)?;
+                        crate::io::Write::write_u8(writer, *len as u8)?;
                     } else if *len < 65536 {
                         // two octets
-                        writer.write_u16::<BigEndian>(*len as u16)?;
+                        writer
+                            .write_u16::<BigEndian>(*len as u16)
+                            .map_err(|e| crate::errors::Error::from(e.to_string()))?;
                     } else {
                         // four octets
-                        writer.write_u32::<BigEndian>(*len)?;
+                        writer
+                            .write_u32::<BigEndian>(*len)
+                            .map_err(|e| crate::errors::Error::from(e.to_string()))?;
                     }
                 }
                 PacketLength::Indeterminate => {
-                    writer.write_u8(header.into_bits())?;
+                    crate::io::Write::write_u8(writer, header.into_bits())?;
                 }
                 PacketLength::Partial(_) => {
                     unreachable!("invalid state: partial lengths for old style packet header");

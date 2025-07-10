@@ -3,6 +3,7 @@ use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::format;
 extern crate alloc;
+use alloc::borrow::ToOwned;
 use crate::io::{self, BufRead, Write};
 use alloc::vec::Vec;
 use core::hash::Hasher;
@@ -95,7 +96,7 @@ impl PlainSecretParams {
     }
 
     fn try_from_reader_inner<B: BufRead>(
-        mut i: B,
+        i: &mut B,
         alg: PublicKeyAlgorithm,
         public_params: &PublicParams,
     ) -> Result<Self> {
@@ -106,10 +107,10 @@ impl PlainSecretParams {
                 | PublicKeyAlgorithm::RSASign,
                 PublicParams::RSA(pub_params),
             ) => {
-                let d = Mpi::try_from_reader(&mut i)?;
-                let p = Mpi::try_from_reader(&mut i)?;
-                let q = Mpi::try_from_reader(&mut i)?;
-                let u = Mpi::try_from_reader(&mut i)?;
+                let d = Mpi::try_from_reader(i)?;
+                let p = Mpi::try_from_reader(i)?;
+                let q = Mpi::try_from_reader(i)?;
+                let u = Mpi::try_from_reader(i)?;
 
                 let key = crate::crypto::rsa::SecretKey::try_from_mpi(pub_params, d, p, q, u)?;
                 Self::RSA(key)
@@ -260,12 +261,12 @@ impl PlainSecretParams {
     }
 
     pub fn try_from_reader<B: BufRead>(
-        mut i: B,
+        i: &mut B,
         version: KeyVersion,
         alg: PublicKeyAlgorithm,
         public_params: &PublicParams,
     ) -> Result<Self> {
-        let params = Self::try_from_reader_inner(&mut i, alg, public_params)?;
+        let params = Self::try_from_reader_inner(i, alg, public_params)?;
         if version == KeyVersion::V3 || version == KeyVersion::V4 {
             let checksum = i.read_array::<2>()?;
             params.compare_checksum_simple(&checksum)?;

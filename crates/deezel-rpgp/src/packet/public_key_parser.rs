@@ -3,34 +3,27 @@ use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::format;
 extern crate alloc;
-use chrono::{DateTime, TimeZone, Utc};
 use log::debug;
 
 use crate::{
     crypto::public_key::PublicKeyAlgorithm,
     errors::{ensure, format_err, unsupported_err, Result},
+    io::BufRead,
     parsing_reader::BufReadParsing,
     types::{KeyVersion, PublicParams},
 };
 
-// This will be replaced with a no_std compatible trait
-pub trait BufRead {}
-impl BufRead for &[u8] {}
-
-fn public_key_parser_v4_v6<B: BufRead>(
+fn public_key_parser_v4_v6<B: BufReadParsing>(
     key_ver: &KeyVersion,
     mut i: B,
 ) -> Result<(
     KeyVersion,
     PublicKeyAlgorithm,
-    DateTime<Utc>,
+    u32,
     Option<u16>,
     PublicParams,
 )> {
-    let created_at = i
-        .read_be_u32()
-        .map(|v| Utc.timestamp_opt(i64::from(v), 0).single())?
-        .ok_or_else(|| format_err!("invalid created at timestamp"))?;
+    let created_at = i.read_be_u32()?;
     let alg = i.read_u8().map(PublicKeyAlgorithm::from)?;
 
     let pub_len = if *key_ver == KeyVersion::V6 {
@@ -51,20 +44,17 @@ fn public_key_parser_v4_v6<B: BufRead>(
     Ok((*key_ver, alg, created_at, None, params))
 }
 
-fn public_key_parser_v2_v3<B: BufRead>(
+fn public_key_parser_v2_v3<B: BufReadParsing>(
     key_ver: &KeyVersion,
     mut i: B,
 ) -> Result<(
     KeyVersion,
     PublicKeyAlgorithm,
-    DateTime<Utc>,
+    u32,
     Option<u16>,
     PublicParams,
 )> {
-    let created_at = i
-        .read_be_u32()
-        .map(|v| Utc.timestamp_opt(i64::from(v), 0).single())?
-        .ok_or_else(|| format_err!("invalid created at timestamp"))?;
+    let created_at = i.read_be_u32()?;
     let exp = i.read_be_u16()?;
     let alg = i.read_u8().map(PublicKeyAlgorithm::from)?;
     let params = PublicParams::try_from_reader(alg, None, &mut i)?;
@@ -75,12 +65,12 @@ fn public_key_parser_v2_v3<B: BufRead>(
 /// Parse a public key packet (Tag 6)
 /// Ref: https://www.rfc-editor.org/rfc/rfc9580.html#name-public-key-packet-type-id-6
 #[allow(clippy::type_complexity)]
-pub(crate) fn parse<B: BufRead>(
+pub(crate) fn parse<B: BufReadParsing>(
     mut i: B,
 ) -> Result<(
     KeyVersion,
     PublicKeyAlgorithm,
-    DateTime<Utc>,
+    u32,
     Option<u16>,
     PublicParams,
 )> {

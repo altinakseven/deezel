@@ -1,6 +1,6 @@
 use alloc::boxed::Box;
 use alloc::string::{String, ToString};
-use alloc::vec;
+use alloc::vec::{self, Vec};
 use alloc::format;
 extern crate alloc;
 use crate::io::{BufRead, Write};
@@ -37,7 +37,7 @@ impl SecretParams {
         alg: PublicKeyAlgorithm,
         params: &PublicParams,
     ) -> Result<Self> {
-        let params = parse_secret_fields(key_ver, alg, params, data)?;
+        let params = parse_secret_fields(key_ver, alg, params, &mut crate::io::Cursor::new(data))?;
 
         // Version 6 secret keys may only use "S2K Usage" 0, 253 or 254
         //
@@ -74,7 +74,14 @@ impl SecretParams {
     pub fn to_writer<W: Write>(&self, writer: &mut W, version: KeyVersion) -> Result<()> {
         match self {
             SecretParams::Plain(k) => {
+                #[cfg(feature = "std")]
+                {
+                    use byteorder::WriteBytesExt;
+                    writer.write_u8(k.string_to_key_id())?;
+                }
+                #[cfg(not(feature = "std"))]
                 writer.write_all(&[k.string_to_key_id()])?;
+
                 k.to_writer(writer, version)
             }
             SecretParams::Encrypted(k) => k.to_writer(writer, version),
@@ -98,7 +105,7 @@ fn parse_secret_fields<B: BufRead>(
     key_ver: KeyVersion,
     alg: PublicKeyAlgorithm,
     public_params: &PublicParams,
-    mut i: B,
+    i: &mut B,
 ) -> Result<SecretParams> {
     // We've already consumed the public fields, and have arrived at the private key-specific
     // part of this secret key packet
@@ -140,7 +147,7 @@ fn parse_secret_fields<B: BufRead>(
                 None
             };
 
-            let s2k = StringToKey::try_from_reader(&mut i)?;
+            let s2k = StringToKey::try_from_reader(i)?;
 
             // if we got a length field (in v6), check that it contained a consistent value
             if let Some(len) = len {
@@ -174,7 +181,7 @@ fn parse_secret_fields<B: BufRead>(
                 None
             };
 
-            let s2k = StringToKey::try_from_reader(&mut i)?;
+            let s2k = StringToKey::try_from_reader(i)?;
 
             // if we got a length field (in v6), check that it contained a consistent value
             if let Some(len) = len {
@@ -192,7 +199,7 @@ fn parse_secret_fields<B: BufRead>(
         }
         S2kUsage::MalleableCfb => {
             let sym_alg = i.read_u8().map(SymmetricKeyAlgorithm::from)?;
-            let s2k = StringToKey::try_from_reader(&mut i)?;
+            let s2k = StringToKey::try_from_reader(i)?;
             let iv = i.take_bytes(sym_alg.block_size())?.freeze();
 
             S2kParams::Cfb { sym_alg, s2k, iv }

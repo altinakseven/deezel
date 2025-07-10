@@ -5,7 +5,7 @@ use alloc::format;
 extern crate alloc;
 use crate::io::{BufRead, Write};
 
-use byteorder::WriteBytesExt;
+use byteorder::BigEndian;
 use bytes::Bytes;
 use elliptic_curve::sec1::ToEncodedPoint;
 
@@ -65,7 +65,7 @@ impl EcdsaPublicParams {
     }
 
     /// Ref: <https://www.rfc-editor.org/rfc/rfc9580.html#name-algorithm-specific-part-for-ec>
-    pub fn try_from_reader<B: BufRead>(mut i: B, len: Option<usize>) -> Result<Self> {
+    pub fn try_from_reader<B: BufRead>(i: &mut B, len: Option<usize>) -> Result<Self> {
         // a one-octet size of the following field
         let curve_len = i.read_u8()?;
         // octets representing a curve OID
@@ -74,7 +74,7 @@ impl EcdsaPublicParams {
 
         match curve {
             ECCCurve::P256 => {
-                let p = Mpi::try_from_reader(&mut i)?;
+                let p = Mpi::try_from_reader(i)?;
                 ensure!(p.len() <= 65, "invalid public key length");
                 let mut key = [0u8; 65];
                 key[..p.len()].copy_from_slice(p.as_ref());
@@ -83,7 +83,7 @@ impl EcdsaPublicParams {
                 Ok(EcdsaPublicParams::P256 { key: public })
             }
             ECCCurve::P384 => {
-                let p = Mpi::try_from_reader(&mut i)?;
+                let p = Mpi::try_from_reader(i)?;
                 ensure!(p.len() <= 97, "invalid public key length");
                 let mut key = [0u8; 97];
                 key[..p.len()].copy_from_slice(p.as_ref());
@@ -92,7 +92,7 @@ impl EcdsaPublicParams {
                 Ok(EcdsaPublicParams::P384 { key: public })
             }
             ECCCurve::P521 => {
-                let p = Mpi::try_from_reader(&mut i)?;
+                let p = Mpi::try_from_reader(i)?;
                 ensure!(p.len() <= 133, "invalid public key length");
                 let mut key = [0u8; 133];
                 key[..p.len()].copy_from_slice(p.as_ref());
@@ -101,7 +101,7 @@ impl EcdsaPublicParams {
                 Ok(EcdsaPublicParams::P521 { key: public })
             }
             ECCCurve::Secp256k1 => {
-                let p = Mpi::try_from_reader(&mut i)?;
+                let p = Mpi::try_from_reader(i)?;
                 ensure!(p.len() <= 65, "invalid public key length");
                 let mut key = [0u8; 65];
                 key[..p.len()].copy_from_slice(p.as_ref());
@@ -141,7 +141,13 @@ impl Serialize for EcdsaPublicParams {
             EcdsaPublicParams::Unsupported { curve, .. } => curve.oid(),
         };
 
-        writer.write_u8(oid.len().try_into()?)?;
+        #[cfg(feature = "std")]
+        {
+            use byteorder::WriteBytesExt;
+            writer.write_u8(oid.len().try_into()?)?;
+        }
+        #[cfg(not(feature = "std"))]
+        writer.write_all(&[oid.len().try_into()?])?;
         writer.write_all(&oid)?;
 
         match self {

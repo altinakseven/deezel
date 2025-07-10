@@ -5,8 +5,8 @@ use alloc::format;
 extern crate alloc;
 use crate::io::{BufRead, Write};
 
-use byteorder::{LittleEndian, WriteBytesExt};
 use bytes::Bytes;
+#[cfg(feature = "std")]
 use chrono::{SubsecRound, Utc};
 use log::debug;
 use num_enum::{FromPrimitive, IntoPrimitive};
@@ -138,7 +138,7 @@ impl Serialize for ImageHeader {
                 }
                 ImageHeaderV1::Unknown { format, data } => {
                     let len = (4 + data.len()).try_into()?;
-                    writer.write_u16::<LittleEndian>(len)?;
+                    writer.write_le_u16(len)?;
 
                     writer.write_u8(0x01)?; // Version
                     writer.write_u8(*format)?;
@@ -147,7 +147,7 @@ impl Serialize for ImageHeader {
             },
             Self::Unknown { version, data } => {
                 let len = (1 + data.len()).try_into()?;
-                writer.write_u16::<LittleEndian>(len)?;
+                writer.write_le_u16(len)?;
 
                 writer.write_u8(*version)?;
                 writer.write_all(data)?;
@@ -253,9 +253,12 @@ impl UserAttribute {
         P: SecretKeyTrait,
         K: PublicKeyTrait + Serialize,
     {
+        #[cfg(feature = "std")]
         let hashed_subpackets = vec![Subpacket::regular(SubpacketData::SignatureCreationTime(
             Utc::now().trunc_subsecs(0),
         ))?];
+        #[cfg(not(feature = "std"))]
+        let hashed_subpackets = vec![];
 
         let mut config = SignatureConfig::from_key(&mut rng, signer, SignatureType::CertGeneric)?;
 
