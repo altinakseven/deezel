@@ -445,17 +445,6 @@ impl SystemWallet for SystemDeezel {
                             println!();
                         }
                     }
-                    
-                    println!("💡 Usage examples:");
-                    println!("  deezel wallet addresses p2tr:0-10 p2wpkh:0-5");
-                    println!("  deezel wallet addresses -n dogecoin p2pkh:0-5");
-                    println!("  deezel wallet addresses -n testnet");
-                    println!("  deezel wallet addresses --all-networks");
-                    println!("  deezel wallet addresses --magic tb:6f:c4  # testnet magic bytes");
-                    println!("  deezel wallet addresses --magic dc:1e:16  # dogecoin magic bytes");
-                    if hd_path.is_none() {
-                        println!("  deezel wallet addresses --hd-path \"m/84'/0'/0'/0/0-10\"");
-                    }
                 }
                 Ok(())
             },
