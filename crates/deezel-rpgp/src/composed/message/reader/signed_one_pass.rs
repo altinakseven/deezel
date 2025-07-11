@@ -267,7 +267,7 @@ impl<'a> SignatureOnePassReader<'a> {
 
                         // reconstruct message source
                         let reader = packets.into_inner();
-                        let source = parts.into_message_readable(reader);
+                        let source = parts.into_message(reader);
 
                         *self = Self::Done {
                             signature,
@@ -355,11 +355,7 @@ impl BufRead for SignatureOnePassReader<'_> {
         match self {
             Self::Init { .. } => unreachable!("invalid state"),
             Self::Body { buffer, .. } => Ok(&buffer[..]),
-            Self::Done { source, .. } => {
-                // For Done state, try to read from the source message directly
-                // This handles the case where we have a reconstructed message from decrypted data
-                source.fill_buf()
-            },
+            Self::Done { .. } => Ok(&[][..]),
             Self::Error => Err(crate::io::Error::new(crate::io::ErrorKind::Other, "signed one pass reader error")),
         }
     }
@@ -370,10 +366,7 @@ impl BufRead for SignatureOnePassReader<'_> {
             Self::Body { buffer, .. } => {
                 buffer.advance(amt);
             }
-            Self::Done { source, .. } => {
-                // For Done state, consume from the source message directly
-                source.consume(amt);
-            }
+            Self::Done { .. } => {}
             Self::Error => panic!("SignatureOnePassReader errored"),
         }
     }

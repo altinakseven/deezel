@@ -343,11 +343,7 @@ impl<'a> BufRead for SignatureBodyReader<'a> {
         match self {
             Self::Init { .. } => unreachable!("invalid state"),
             Self::Body { buffer, .. } => Ok(&buffer[..]),
-            Self::Done { source, .. } => {
-                // For Done state, try to read from the source message directly
-                // This handles the case where we have a reconstructed message from decrypted data
-                source.fill_buf()
-            },
+            Self::Done { .. } => Ok(&[][..]),
             Self::Error => Err(crate::io::Error::new(crate::io::ErrorKind::Other, "signed reader error")),
         }
     }
@@ -358,10 +354,7 @@ impl<'a> BufRead for SignatureBodyReader<'a> {
             Self::Body { buffer, .. } => {
                 buffer.advance(amt);
             }
-            Self::Done { source, .. } => {
-                // For Done state, consume from the source message directly
-                source.consume(amt);
-            }
+            Self::Done { .. } => {}
             Self::Error => panic!("SignatureBodyReader errored"),
         }
     }
