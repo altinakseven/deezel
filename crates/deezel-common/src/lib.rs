@@ -183,6 +183,13 @@ impl From<bitcoin::address::ParseError> for DeezelError {
     }
 }
 
+impl From<bitcoin::address::FromScriptError> for DeezelError {
+    fn from(err: bitcoin::address::FromScriptError) -> Self {
+        DeezelError::AddressResolution(err.to_string())
+    }
+}
+
+
 impl From<bitcoin::sighash::TaprootError> for DeezelError {
     fn from(err: bitcoin::sighash::TaprootError) -> Self {
         DeezelError::Transaction(err.to_string())
@@ -219,6 +226,24 @@ impl From<std::io::Error> for DeezelError {
 
 impl From<hex::FromHexError> for DeezelError {
     fn from(err: hex::FromHexError) -> Self {
+        DeezelError::Hex(err.to_string())
+    }
+}
+
+impl From<bitcoin::bip32::Error> for DeezelError {
+    fn from(err: bitcoin::bip32::Error) -> Self {
+        DeezelError::Wallet(err.to_string())
+    }
+}
+
+impl From<bitcoin::secp256k1::Error> for DeezelError {
+    fn from(err: bitcoin::secp256k1::Error) -> Self {
+        DeezelError::Crypto(err.to_string())
+    }
+}
+
+impl From<bitcoin::hashes::hex::HexToArrayError> for DeezelError {
+    fn from(err: bitcoin::hashes::hex::HexToArrayError) -> Self {
         DeezelError::Hex(err.to_string())
     }
 }

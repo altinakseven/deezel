@@ -284,6 +284,8 @@ impl WalletProvider for MockProvider {
         let secret_key = SecretKey::from_slice(&[1; 32]).unwrap();
         Ok(bitcoin::secp256k1::Keypair::from_secret_key(&secp, &secret_key))
     }
+
+    fn set_passphrase(&mut self, _passphrase: Option<String>) {}
 }
 
 #[async_trait(?Send)]

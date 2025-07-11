@@ -96,3 +96,63 @@ async fn test_wallet_address_derivation() {
     assert_eq!(addresses.len(), 5);
     assert_eq!(addresses[0].address, address);
 }
+
+#[tokio::test]
+async fn test_wallet_send_transaction() {
+    use deezel_common::keystore::create_keystore;
+    use std::fs::File;
+    use std::io::Write;
+
+    // 1. Create a new keystore
+    let passphrase = "test_password";
+    let keystore = create_keystore(passphrase).unwrap();
+    let keystore_json = serde_json::to_string(&keystore).unwrap();
+
+    // 2. Save the keystore to a temporary file
+    let dir = tempfile::tempdir().unwrap();
+    let file_path = dir.path().join("test-wallet-send.keystore");
+    let mut file = File::create(&file_path).unwrap();
+    file.write_all(keystore_json.as_bytes()).unwrap();
+
+    // 3. Create a ConcreteProvider
+    let mut provider = ConcreteProvider::new(
+        "http://bitcoinrpc:bitcoinrpc@localhost:8332".to_string(),
+        "http://localhost:8080".to_string(),
+        "regtest".to_string(),
+        Some(file_path.clone()),
+    )
+    .await
+    .unwrap();
+    provider.set_passphrase(Some(passphrase.to_string()));
+
+    // 4. Fund the wallet by generating blocks to a known regtest address
+    let funding_address = "bcrt1qsdtedxkv2mdgtstsv9we0w6843p962x50s925h";
+    provider.generate_to_address(101, funding_address).await.unwrap();
+
+    // 5. Create a recipient address (Taproot, from the wallet)
+    let recipient_address = provider.get_addresses(2).await.unwrap().pop().unwrap().address;
+
+    // 6. Send a transaction
+    let send_params = SendParams {
+        address: recipient_address.clone(),
+        amount: 10000, // sats
+        fee_rate: Some(1.0),
+        send_all: false,
+        from_address: None,
+        change_address: None,
+        auto_confirm: true,
+    };
+    let txid = provider.send(send_params).await.unwrap();
+    assert!(!txid.is_empty());
+
+    // 7. Mine a block to confirm the transaction
+    provider.generate_to_address(1, funding_address).await.unwrap();
+
+    // 8. Verify the recipient has the funds
+    let recipient_utxos = provider.get_address_utxo(&recipient_address).await.unwrap();
+    let recipient_balance = recipient_utxos.as_array().unwrap().iter()
+        .map(|utxo| utxo["value"].as_u64().unwrap())
+        .sum::<u64>();
+    
+    assert_eq!(recipient_balance, 10000);
+}

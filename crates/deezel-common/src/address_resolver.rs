@@ -647,6 +647,9 @@ impl BitcoinRpcProvider for StandaloneAddressResolver {
     async fn trace_transaction(&self, _txid: &str, _vout: u32, _block: Option<&str>, _tx: Option<&str>) -> Result<serde_json::Value> {
         Err(DeezelError::NotImplemented("trace_transaction not implemented for StandaloneAddressResolver".to_string()))
     }
+    async fn get_new_address(&self) -> Result<serde_json::Value> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoin RPC".to_string()))
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]

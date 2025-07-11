@@ -531,6 +531,9 @@ pub trait BitcoinRpcProvider {
     
     /// Generate blocks to address (regtest only)
     async fn generate_to_address(&self, nblocks: u32, address: &str) -> Result<JsonValue>;
+
+    /// Get a new address from the node's wallet
+    async fn get_new_address(&self) -> Result<JsonValue>;
     
     /// Get transaction hex
     async fn get_transaction_hex(&self, txid: &str) -> Result<String>;
@@ -1283,6 +1286,9 @@ impl<T: DeezelProvider + ?Sized> BitcoinRpcProvider for Box<T> {
    }
    async fn generate_to_address(&self, nblocks: u32, address: &str) -> Result<serde_json::Value> {
        (**self).generate_to_address(nblocks, address).await
+   }
+   async fn get_new_address(&self) -> Result<JsonValue> {
+       (**self).get_new_address().await
    }
    async fn get_transaction_hex(&self, txid: &str) -> Result<String> {
        (**self).get_transaction_hex(txid).await

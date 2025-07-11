@@ -4,7 +4,7 @@
 //! using deezel-rpgp for PGP operations and other concrete implementations.
 
 use crate::traits::*;
-use crate::{Result, DeezelError};
+use crate::{Result, DeezelError, JsonValue};
 use async_trait::async_trait;
 use std::path::PathBuf;
 use std::fs;
@@ -31,10 +31,9 @@ use bitcoin::Network;
 use bip39::{Mnemonic, MnemonicType, Seed};
 
 // Additional imports for wallet functionality
-use hex;
+use hex::{self, FromHex};
 use bitcoin::{
     Address, Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
-    psbt::{Input as PsbtInput, Psbt},
     secp256k1::{Secp256k1, All},
     sighash::{self, SighashCache, Prevouts},
     bip32::{DerivationPath, Xpriv},
@@ -137,36 +136,47 @@ impl ConcreteProvider {
             expiration_time: key.expires_at().map(|t| t.timestamp() as u64),
             algorithm,
         })
-        fn select_coins(&self, mut utxos: Vec<UtxoInfo>, target_amount: Amount) -> Result<(Vec<UtxoInfo>, Amount)> {
-            utxos.sort_by(|a, b| b.amount.cmp(&a.amount)); // Largest-first
-    
-            let mut selected_utxos = Vec::new();
-            let mut total_input_amount = Amount::ZERO;
-    
-            for utxo in utxos {
-                if total_input_amount >= target_amount {
-                    break;
-                }
-                total_input_amount += Amount::from_sat(utxo.amount);
-                selected_utxos.push(utxo);
+    }
+
+    fn select_coins(&self, mut utxos: Vec<UtxoInfo>, target_amount: Amount) -> Result<(Vec<UtxoInfo>, Amount)> {
+        utxos.sort_by(|a, b| b.amount.cmp(&a.amount)); // Largest-first
+
+        let mut selected_utxos = Vec::new();
+        let mut total_input_amount = Amount::ZERO;
+
+        for utxo in utxos {
+            if total_input_amount >= target_amount {
+                break;
             }
-    
-            if total_input_amount < target_amount {
-                return Err(DeezelError::Wallet("Insufficient funds".to_string()));
-            }
-    
-            Ok((selected_utxos, total_input_amount))
+            total_input_amount += Amount::from_sat(utxo.amount);
+            selected_utxos.push(utxo);
         }
-    
-        fn estimate_tx_vsize(&self, tx: &Transaction, num_inputs: usize) -> u64 {
-            // This is a rough estimation for P2TR inputs and P2TR outputs.
-            // A more accurate estimation would require knowing the exact script types.
-            let base_vsize = 10;
-            let input_vsize = 58; // P2TR input
-            let output_vsize = 43; // P2TR output
-    
-            base_vsize + (input_vsize * num_inputs) as u64 + (output_vsize * tx.output.len() as u64)
+
+        if total_input_amount < target_amount {
+            return Err(DeezelError::Wallet("Insufficient funds".to_string()));
         }
+
+        Ok((selected_utxos, total_input_amount))
+    }
+
+    fn estimate_tx_vsize(&self, tx: &Transaction, num_inputs: usize) -> u64 {
+        // This is a rough estimation for P2TR inputs and P2TR outputs.
+        // A more accurate estimation would require knowing the exact script types.
+        let base_vsize = 10;
+        let input_vsize = 58; // P2TR input
+        let output_vsize = 43; // P2TR output
+
+        base_vsize + (input_vsize * num_inputs) as u64 + (output_vsize * tx.output.len() as u64)
+    }
+}
+
+impl ConcreteProvider {
+    fn find_address_info<'a>(&self, keystore: &'a Keystore, address: &Address, network: Network) -> Result<&'a crate::keystore::AddressInfo> {
+        keystore
+            .addresses
+            .get(&network.to_string())
+            .and_then(|addrs| addrs.iter().find(|a| a.address == address.to_string()))
+            .ok_or_else(|| DeezelError::Wallet(format!("Address {} not found in keystore", address)))
     }
 }
 
@@ -569,8 +579,15 @@ impl WalletProvider for ConcreteProvider {
         Ok(addresses)
     }
     
-    async fn send(&self, _params: SendParams) -> Result<String> {
-        unimplemented!()
+    async fn send(&self, params: SendParams) -> Result<String> {
+        // 1. Create the transaction
+        let tx_hex = self.create_transaction(params).await?;
+
+        // 2. Sign the transaction
+        let signed_tx_hex = self.sign_transaction(tx_hex).await?;
+
+        // 3. Broadcast the transaction
+        self.broadcast_transaction(signed_tx_hex).await
     }
     
     async fn get_utxos(&self, _include_frozen: bool, addresses: Option<Vec<String>>) -> Result<Vec<UtxoInfo>> {
@@ -650,69 +667,133 @@ impl WalletProvider for ConcreteProvider {
     }
     
     async fn create_transaction(&self, params: SendParams) -> Result<String> {
-        // 1. Get all addresses from the keystore
-        let all_addresses = self.get_addresses(100).await?; // Get a reasonable number of addresses
+        // 1. Get all addresses from the keystore to find UTXOs
+        let all_addresses = self.get_addresses(100).await?; // A reasonable number for a simple wallet
         let address_strings: Vec<String> = all_addresses.iter().map(|a| a.address.clone()).collect();
 
-        // 2. Get UTXOs for all addresses
+        // 2. Get UTXOs for all our addresses
         let utxos = self.get_utxos(false, Some(address_strings)).await?;
 
         // 3. Perform coin selection
         let target_amount = Amount::from_sat(params.amount);
-        let fee_rate = params.fee_rate.unwrap_or(1.0); // sats/vbyte
+        let fee_rate = params.fee_rate.unwrap_or(1.0); // Default to 1 sat/vbyte
 
         let (selected_utxos, total_input_amount) = self.select_coins(utxos, target_amount)?;
 
-        // 4. Build the transaction
-        let mut tx_builder = Transaction {
-            version: 2,
+        // 4. Build the transaction skeleton
+        let mut tx = Transaction {
+            version: bitcoin::transaction::Version(2),
             lock_time: bitcoin::absolute::LockTime::ZERO,
             input: Vec::new(),
             output: Vec::new(),
         };
 
-        // Add inputs
+        // Add inputs from selected UTXOs
         for utxo in &selected_utxos {
-            tx_builder.input.push(TxIn {
+            tx.input.push(TxIn {
                 previous_output: OutPoint {
                     txid: bitcoin::Txid::from_str(&utxo.txid)?,
                     vout: utxo.vout,
                 },
-                script_sig: ScriptBuf::new(),
+                script_sig: ScriptBuf::new(), // Empty for SegWit
                 sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
-                witness: Witness::new(),
+                witness: Witness::new(), // Empty for now, will be added during signing
             });
         }
 
-        // Add recipient output
+        // Add the recipient's output
         let recipient_address = Address::from_str(&params.address)?.assume_checked();
-        tx_builder.output.push(TxOut {
-            value: target_amount.to_sat(),
+        tx.output.push(TxOut {
+            value: target_amount,
             script_pubkey: recipient_address.script_pubkey(),
         });
 
-        // 5. Calculate fee and add change output
-        let estimated_vsize = self.estimate_tx_vsize(&tx_builder, selected_utxos.len());
-        let fee = Amount::from_sat((estimated_vsize as f32 * fee_rate) as u64);
+        // 5. Calculate fee and add change output if necessary
+        let estimated_vsize = self.estimate_tx_vsize(&tx, selected_utxos.len());
+        let fee = Amount::from_sat((estimated_vsize as f32 * fee_rate).ceil() as u64);
 
-        let change_amount = total_input_amount - target_amount - fee;
+        let change_amount = total_input_amount.checked_sub(target_amount).and_then(|a| a.checked_sub(fee));
 
-        if change_amount > Amount::ZERO {
-            // Use the first address as the change address for simplicity
-            let change_address = Address::from_str(&all_addresses[0].address)?.assume_checked();
-            tx_builder.output.push(TxOut {
-                value: change_amount.to_sat(),
-                script_pubkey: change_address.script_pubkey(),
-            });
+        if let Some(change) = change_amount {
+            if change > bitcoin::Amount::from_sat(546) { // Dust limit
+                // Use the first address as the change address for simplicity
+                let change_address = Address::from_str(&all_addresses[0].address)?.assume_checked();
+                tx.output.push(TxOut {
+                    value: change,
+                    script_pubkey: change_address.script_pubkey(),
+                });
+            }
         }
 
-        // 6. Serialize the transaction to hex
-        let tx_hex = bitcoin::consensus::encode::serialize_hex(&tx_builder);
-        Ok(tx_hex)
+        // 6. Serialize the unsigned transaction to hex
+        Ok(bitcoin::consensus::encode::serialize_hex(&tx))
     }
-    
-    async fn sign_transaction(&self, _tx_hex: String) -> Result<String> {
-        unimplemented!()
+
+    async fn sign_transaction(&self, tx_hex: String) -> Result<String> {
+        // 1. Deserialize the transaction
+        let hex_bytes = hex::decode(tx_hex)?;
+        let mut tx: Transaction = bitcoin::consensus::deserialize(&hex_bytes)?;
+
+        // 2. Get the seed and keystore
+        let wallet_path = self.get_wallet_path().ok_or_else(|| DeezelError::Wallet("Wallet path not set".to_string()))?;
+        let keystore_data = fs::read(wallet_path)?;
+        let keystore: Keystore = serde_json::from_slice(&keystore_data)?;
+        let passphrase = self.passphrase.as_deref().ok_or_else(|| DeezelError::Wallet("Passphrase not set for signing".to_string()))?;
+        let seed = crate::keystore::decrypt_seed(&keystore, passphrase)?;
+        let network = self.get_network();
+        let secp: Secp256k1<All> = Secp256k1::new();
+
+        // 3. Fetch the previous transaction outputs (prevouts) for signing
+        let mut prevouts = Vec::new();
+        for input in &tx.input {
+            let tx_info = self.get_tx(&input.previous_output.txid.to_string()).await?;
+            let vout_info = tx_info["vout"].get(input.previous_output.vout as usize)
+                .ok_or_else(|| DeezelError::Wallet(format!("Vout {} not found for tx {}", input.previous_output.vout, input.previous_output.txid)))?;
+            
+            let amount = vout_info["value"].as_u64()
+                .ok_or_else(|| DeezelError::Wallet("UTXO value not found".to_string()))?;
+            let script_pubkey_hex = vout_info["scriptpubkey"].as_str()
+                .ok_or_else(|| DeezelError::Wallet("UTXO script pubkey not found".to_string()))?;
+            
+            let script_pubkey = ScriptBuf::from(Vec::from_hex(script_pubkey_hex)?);
+            prevouts.push(TxOut { value: Amount::from_sat(amount), script_pubkey });
+        }
+
+        // 4. Sign each input
+        let mut sighash_cache = SighashCache::new(&mut tx);
+        for i in 0..prevouts.len() {
+            let prev_txout = &prevouts[i];
+            
+            // Find the address and its derivation path from our keystore
+            let address = Address::from_script(&prev_txout.script_pubkey, network)?;
+            let addr_info = self.find_address_info(&keystore, &address, network)?;
+            let path = DerivationPath::from_str(&addr_info.path)?;
+
+            // Derive the private key for this input
+            let root_key = Xpriv::new_master(network, seed.as_bytes())?;
+            let derived_xpriv = root_key.derive_priv(&secp, &path)?;
+            let keypair = derived_xpriv.to_keypair(&secp);
+
+            // Create the sighash
+            let sighash = sighash_cache.taproot_key_spend_signature_hash(
+                i,
+                &Prevouts::All(&prevouts),
+                sighash::TapSighashType::Default,
+            )?;
+
+            // Sign the sighash
+            let msg = bitcoin::secp256k1::Message::from(sighash);
+            let signature = secp.sign_schnorr(&msg, &keypair);
+
+            // Add the signature to the witness
+            let mut witness = Witness::new();
+            witness.push(signature.as_ref());
+            sighash_cache.witness_mut(i).unwrap().clone_from(&witness);
+        }
+
+        // 5. Serialize the signed transaction
+        let signed_tx = sighash_cache.into_transaction();
+        Ok(bitcoin::consensus::encode::serialize_hex(&signed_tx))
     }
     
     async fn broadcast_transaction(&self, tx_hex: String) -> Result<String> {
@@ -814,6 +895,10 @@ impl BitcoinRpcProvider for ConcreteProvider {
     async fn generate_to_address(&self, nblocks: u32, address: &str) -> Result<serde_json::Value> {
         let params = serde_json::json!([nblocks, address]);
         self.call(&self.bitcoin_rpc_url, "generatetoaddress", params, 1).await
+    }
+
+    async fn get_new_address(&self) -> Result<JsonValue> {
+        self.call(&self.bitcoin_rpc_url, "getnewaddress", serde_json::Value::Null, 1).await
     }
     
     async fn get_transaction_hex(&self, txid: &str) -> Result<String> {
@@ -1181,74 +1266,15 @@ impl AlkanesProvider for ConcreteProvider {
         self.call(&self.metashrew_rpc_url, "metashrew_view", params, 1).await
     }
     
-    async fn inspect(&self, target: &str, config: AlkanesInspectConfig) -> Result<AlkanesInspectResult> {
-        let params = serde_json::json!(["inspect", target, config, "latest"]);
-        let result = self.call(&self.metashrew_rpc_url, "metashrew_view", params, 1).await?;
-        serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
-    }
-    
-    async fn get_bytecode(&self, alkane_id: &str) -> Result<String> {
-        let parts: Vec<&str> = alkane_id.split(':').collect();
-        if parts.len() != 2 {
-            return Err(DeezelError::Other("Invalid alkane ID format. Expected 'block:tx'".to_string()));
-        }
-        let block = parts[0];
-        let tx = parts[1];
-        <Self as JsonRpcProvider>::get_bytecode(self, block, tx).await
-    }
-    
-    async fn simulate(&self, contract_id: &str, params: Option<&str>) -> Result<serde_json::Value> {
-        let p = params.unwrap_or("");
-        let params = serde_json::json!(["simulate", contract_id, p, "latest"]);
-        self.call(&self.metashrew_rpc_url, "metashrew_view", params, 1).await
-    }
-}
-
-#[async_trait(?Send)]
-impl MonitorProvider for ConcreteProvider {
-    async fn monitor_blocks(&self, _start: Option<u64>) -> Result<()> {
+    async fn inspect(&self, _target: &str, _config: AlkanesInspectConfig) -> Result<AlkanesInspectResult> {
         unimplemented!()
     }
-    
-    async fn get_block_events(&self, _height: u64) -> Result<Vec<BlockEvent>> {
+
+    async fn get_bytecode(&self, _alkane_id: &str) -> Result<String> {
         unimplemented!()
     }
-}
 
-#[async_trait(?Send)]
-impl KeystoreProvider for ConcreteProvider {
-    async fn derive_addresses(&self, _master_public_key: &str, _network: bitcoin::Network, _script_types: &[&str], _start_index: u32, _count: u32) -> Result<Vec<KeystoreAddress>> {
-        Err(DeezelError::NotImplemented("KeystoreProvider derive_addresses not yet implemented".to_string()))
-    }
-    
-    async fn get_default_addresses(&self, _master_public_key: &str, _network: bitcoin::Network) -> Result<Vec<KeystoreAddress>> {
-        Err(DeezelError::NotImplemented("KeystoreProvider get_default_addresses not yet implemented".to_string()))
-    }
-    
-    fn parse_address_range(&self, _range_spec: &str) -> Result<(String, u32, u32)> {
-        Err(DeezelError::NotImplemented("KeystoreProvider parse_address_range not yet implemented".to_string()))
-    }
-    
-    async fn get_keystore_info(&self, _master_public_key: &str, _master_fingerprint: &str, _created_at: u64, _version: &str) -> Result<KeystoreInfo> {
-        Err(DeezelError::NotImplemented("KeystoreProvider get_keystore_info not yet implemented".to_string()))
-    }
-}
-
-#[async_trait(?Send)]
-impl DeezelProvider for ConcreteProvider {
-    fn provider_name(&self) -> &str {
-        "ConcreteProvider"
-    }
-
-    fn clone_box(&self) -> Box<dyn DeezelProvider> {
-        Box::new(self.clone())
-    }
-    
-    async fn initialize(&self) -> Result<()> {
-        Ok(())
-    }
-    
-    async fn shutdown(&self) -> Result<()> {
-        Ok(())
+    async fn simulate(&self, _contract_id: &str, _params: Option<&str>) -> Result<JsonValue> {
+        unimplemented!()
     }
 }
