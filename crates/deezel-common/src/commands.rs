@@ -291,6 +291,14 @@ pub enum MetashrewCommands {
 /// Alkanes smart contract subcommands
 #[derive(Subcommand, Debug, Clone)]
 pub enum AlkanesCommands {
+    /// Get bytecode for an alkanes contract
+    Getbytecode {
+        /// Alkane ID (format: block:tx)
+        alkane_id: String,
+        /// Show raw JSON output
+        #[arg(long)]
+        raw: bool,
+    },
     /// Execute alkanes smart contract with commit/reveal pattern
     Execute {
         /// Input requirements (format: "B:amount" for Bitcoin, "block:tx:amount" for alkanes)
@@ -373,14 +381,6 @@ pub enum AlkanesCommands {
         /// Compute and display codehash
         #[arg(long)]
         codehash: bool,
-    },
-    /// Get bytecode for an alkanes contract
-    Getbytecode {
-        /// Alkane ID (format: block:tx)
-        alkane_id: String,
-        /// Show raw JSON output
-        #[arg(long)]
-        raw: bool,
     },
     /// Simulate alkanes execution
     Simulate {

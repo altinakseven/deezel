@@ -131,16 +131,75 @@ impl ConcreteProvider {
 impl JsonRpcProvider for ConcreteProvider {
     async fn call(
         &self,
-        _url: &str,
-        _method: &str,
-        _params: serde_json::Value,
-        _id: u64,
+        url: &str,
+        method: &str,
+        params: serde_json::Value,
+        id: u64,
     ) -> Result<serde_json::Value> {
-        unimplemented!()
+        use crate::rpc::{RpcRequest, RpcResponse};
+        let request = RpcRequest::new(method, params, id);
+        let client = reqwest::Client::new();
+        let response = client
+            .post(url)
+            .json(&request)
+            .send()
+            .await
+            .map_err(|e| DeezelError::Network(e.to_string()))?;
+        let rpc_response: RpcResponse = response
+            .json()
+            .await
+            .map_err(|e| DeezelError::Network(e.to_string()))?;
+        if let Some(error) = rpc_response.error {
+            return Err(DeezelError::RpcError(format!("{}: {}", error.code, error.message)));
+        }
+        rpc_response.result.ok_or_else(|| DeezelError::RpcError("No result in RPC response".to_string()))
     }
     
-    async fn get_bytecode(&self, _block: &str, _tx: &str) -> Result<String> {
-        unimplemented!()
+    async fn get_bytecode(&self, block: &str, tx: &str) -> Result<String> {
+        use crate::rpc::{StandaloneRpcClient, RpcConfig};
+        use alkanes_support::proto::alkanes::{BytecodeRequest, AlkaneId, Uint128};
+        use protobuf::Message;
+
+        let rpc_config = RpcConfig {
+            bitcoin_rpc_url: self.bitcoin_rpc_url.clone(),
+            metashrew_rpc_url: self.metashrew_rpc_url.clone(),
+            sandshrew_rpc_url: self.metashrew_rpc_url.clone(), // sandshrew_rpc_url is the same as metashrew
+            timeout_seconds: 600,
+        };
+
+        let rpc_client = StandaloneRpcClient::new(rpc_config);
+        
+        let mut bytecode_request = BytecodeRequest::new();
+        let mut alkane_id = AlkaneId::new();
+
+        let block_u128 = block.parse::<u128>().map_err(|e| DeezelError::Other(e.to_string()))?;
+        let tx_u128 = tx.parse::<u128>().map_err(|e| DeezelError::Other(e.to_string()))?;
+
+        let mut block_uint128 = Uint128::new();
+        block_uint128.lo = (block_u128 & 0xFFFFFFFFFFFFFFFF) as u64;
+        block_uint128.hi = (block_u128 >> 64) as u64;
+
+        let mut tx_uint128 = Uint128::new();
+        tx_uint128.lo = (tx_u128 & 0xFFFFFFFFFFFFFFFF) as u64;
+        tx_uint128.hi = (tx_u128 >> 64) as u64;
+
+        alkane_id.block = protobuf::MessageField::some(block_uint128);
+        alkane_id.tx = protobuf::MessageField::some(tx_uint128);
+
+        bytecode_request.id = protobuf::MessageField::some(alkane_id);
+
+        let encoded_bytes = bytecode_request.write_to_bytes().map_err(|e| DeezelError::Other(e.to_string()))?;
+        let hex_input = format!("0x{}", hex::encode(encoded_bytes));
+
+        let result = rpc_client.http_call(
+            &self.metashrew_rpc_url,
+            "metashrew_view",
+            serde_json::json!(["getbytecode", hex_input, "latest"])
+        ).await?;
+
+        result.as_str()
+            .ok_or_else(|| DeezelError::RpcError("Invalid bytecode response".to_string()))
+            .map(|s| s.to_string())
     }
 }
 
@@ -748,8 +807,14 @@ impl AlkanesProvider for ConcreteProvider {
         unimplemented!()
     }
     
-    async fn get_bytecode(&self, _alkane_id: &str) -> Result<String> {
-        unimplemented!()
+    async fn get_bytecode(&self, alkane_id: &str) -> Result<String> {
+        let parts: Vec<&str> = alkane_id.split(':').collect();
+        if parts.len() != 2 {
+            return Err(DeezelError::Other("Invalid alkane ID format. Expected 'block:tx'".to_string()));
+        }
+        let block = parts[0];
+        let tx = parts[1];
+        <Self as JsonRpcProvider>::get_bytecode(self, block, tx).await
     }
     
     async fn simulate(&self, _contract_id: &str, _params: Option<&str>) -> Result<serde_json::Value> {

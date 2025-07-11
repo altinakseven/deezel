@@ -1127,6 +1127,36 @@ impl SystemAlkanes for SystemDeezel {
                }
                Ok(())
            },
+           AlkanesCommands::Getbytecode { alkane_id, raw } => {
+              let bytecode = <ConcreteProvider as AlkanesProvider>::get_bytecode(provider, &alkane_id).await?;
+              
+              if raw {
+                  let json_result = serde_json::json!({
+                      "alkane_id": alkane_id,
+                      "bytecode": bytecode
+                  });
+                  println!("{}", serde_json::to_string_pretty(&json_result)?);
+              } else {
+                  println!("🔍 Alkanes Contract Bytecode");
+                  println!("═══════════════════════════");
+                  println!("🏷️  Alkane ID: {}", alkane_id);
+                  
+                  if bytecode.is_empty() || bytecode == "0x" {
+                      println!("❌ No bytecode found for this contract");
+                  } else {
+                      let clean_bytecode = bytecode.strip_prefix("0x").unwrap_or(&bytecode);
+                      
+                      println!("💾 Bytecode:");
+                      println!("   Length: {} bytes", clean_bytecode.len() / 2);
+                      println!("   Hex: {}", bytecode);
+                      
+                      if clean_bytecode.len() >= 8 {
+                          println!("   First 4 bytes: {}", &clean_bytecode[..8]);
+                      }
+                  }
+              }
+              Ok(())
+          },
        };
        res.map_err(|e| DeezelError::Wallet(e.to_string()))
    }

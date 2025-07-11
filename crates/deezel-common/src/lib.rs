@@ -91,6 +91,7 @@ pub enum DeezelError {
     Parse(String),
     Pgp(String),
     NotImplemented(String),
+    Other(String),
 }
 
 impl core::fmt::Display for DeezelError {
@@ -114,6 +115,7 @@ impl core::fmt::Display for DeezelError {
             DeezelError::Parse(msg) => write!(f, "Parse error: {}", msg),
             DeezelError::Pgp(msg) => write!(f, "PGP error: {}", msg),
             DeezelError::NotImplemented(msg) => write!(f, "Not implemented: {}", msg),
+            DeezelError::Other(msg) => write!(f, "Other error: {}", msg),
         }
     }
 }

@@ -175,7 +175,40 @@ impl<P: DeezelProvider> RpcClient<P> {
     
     /// Get bytecode for an alkane contract
     pub async fn get_bytecode(&self, block: &str, tx: &str) -> Result<String> {
-        JsonRpcProvider::get_bytecode(&self.provider, block, tx).await
+        use alkanes_support::proto::alkanes::{BytecodeRequest, AlkaneId, Uint128};
+        use protobuf::Message;
+        use crate::DeezelError;
+
+        let mut bytecode_request = BytecodeRequest::new();
+        let mut alkane_id = AlkaneId::new();
+
+        let block_u128 = block.parse::<u128>().map_err(|e| DeezelError::Other(e.to_string()))?;
+        let tx_u128 = tx.parse::<u128>().map_err(|e| DeezelError::Other(e.to_string()))?;
+
+        let mut block_uint128 = Uint128::new();
+        block_uint128.lo = (block_u128 & 0xFFFFFFFFFFFFFFFF) as u64;
+        block_uint128.hi = (block_u128 >> 64) as u64;
+
+        let mut tx_uint128 = Uint128::new();
+        tx_uint128.lo = (tx_u128 & 0xFFFFFFFFFFFFFFFF) as u64;
+        tx_uint128.hi = (tx_u128 >> 64) as u64;
+
+        alkane_id.block = protobuf::MessageField::some(block_uint128);
+        alkane_id.tx = protobuf::MessageField::some(tx_uint128);
+
+        bytecode_request.id = protobuf::MessageField::some(alkane_id);
+
+        let encoded_bytes = bytecode_request.write_to_bytes().map_err(|e| DeezelError::Other(e.to_string()))?;
+        let hex_input = format!("0x{}", hex::encode(encoded_bytes));
+
+        let result = self.sandshrew_call(
+            "metashrew_view",
+            serde_json::json!(["getbytecode", hex_input, "latest"])
+        ).await?;
+
+        result.as_str()
+            .ok_or_else(|| DeezelError::RpcError("Invalid bytecode response".to_string()))
+            .map(|s| s.to_string())
     }
     
     /// Get contract metadata
