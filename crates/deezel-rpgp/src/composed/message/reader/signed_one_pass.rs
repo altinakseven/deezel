@@ -134,7 +134,41 @@ impl<'a> SignatureOnePassReader<'a> {
                     buffer.truncate(read);
 
                     if read == 0 {
-                        return Err(crate::io::Error::new(crate::io::ErrorKind::UnexpectedEof, "unexpected end of file"));
+                        debug!("SignatureOnePassReader: source returned 0 bytes on init, checking if source has more data");
+                        
+                        // Before giving up, check if the source has any data available
+                        // This handles reconstructed messages where the first read might return 0
+                        loop {
+                            match source.fill_buf() {
+                                Ok(buf) if buf.is_empty() => {
+                                    debug!("SignatureOnePassReader: source is truly empty on init");
+                                    return Err(crate::io::Error::new(crate::io::ErrorKind::UnexpectedEof, "unexpected end of file"));
+                                }
+                                Ok(buf) => {
+                                    debug!("SignatureOnePassReader: source has {} bytes available after 0-byte read", buf.len());
+                                    let len = buf.len().min(1024);
+                                    buffer.clear();
+                                    buffer.extend_from_slice(&buf[..len]);
+                                    
+                                    if let Some(ref mut hasher) = norm_hasher {
+                                        hasher.hash_buf(&buffer[..len]);
+                                    }
+                                    
+                                    source.consume(len);
+                                    
+                                    *self = Self::Body {
+                                        norm_hasher,
+                                        source,
+                                        buffer,
+                                    };
+                                    return Ok(());
+                                }
+                                Err(e) => {
+                                    debug!("SignatureOnePassReader: error reading from source on init: {:?}", e);
+                                    return Err(e);
+                                }
+                            }
+                        }
                     }
 
                     if let Some(ref mut hasher) = norm_hasher {
@@ -173,6 +207,29 @@ impl<'a> SignatureOnePassReader<'a> {
 
                     if read == 0 {
                         debug!("SignatureOnePassReader finish");
+
+                        // Before processing signature, ensure all data from source is consumed
+                        // This is critical for reconstructed messages where the PacketBodyReader may still have data
+                        loop {
+                            match source.fill_buf() {
+                                Ok(buf) if buf.is_empty() => {
+                                    debug!("SignatureOnePassReader: source is truly empty, proceeding with signature processing");
+                                    break;
+                                }
+                                Ok(buf) => {
+                                    debug!("SignatureOnePassReader: source still has {} bytes, consuming them", buf.len());
+                                    let len = buf.len();
+                                    if let Some(ref mut hasher) = norm_hasher {
+                                        hasher.hash_buf(buf);
+                                    }
+                                    source.consume(len);
+                                }
+                                Err(e) => {
+                                    debug!("SignatureOnePassReader: error reading from source: {:?}", e);
+                                    return Err(e);
+                                }
+                            }
+                        }
 
                         let hasher = norm_hasher.map(|h| h.done());
 

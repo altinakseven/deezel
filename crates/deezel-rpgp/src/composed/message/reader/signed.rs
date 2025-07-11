@@ -143,7 +143,30 @@ impl<'a> SignatureBodyReader<'a> {
 
                     if read == 0 {
                         // Handle case where source is already done (e.g., reconstructed from decrypted data)
-                        debug!("SignatureReader: source returned 0 bytes, transitioning to Done state");
+                        debug!("SignatureReader: source returned 0 bytes, checking if source is truly done");
+                        
+                        // Before transitioning to Done, ensure the underlying source is properly consumed
+                        // This is critical for reconstructed messages where the PacketBodyReader may still have data
+                        loop {
+                            match source.fill_buf() {
+                                Ok(buf) if buf.is_empty() => {
+                                    debug!("SignatureReader: source is truly empty, transitioning to Done state");
+                                    break;
+                                }
+                                Ok(buf) => {
+                                    debug!("SignatureReader: source still has {} bytes, consuming them", buf.len());
+                                    let len = buf.len();
+                                    if let Some(ref mut hasher) = norm_hasher {
+                                        hasher.hash_buf(buf);
+                                    }
+                                    source.consume(len);
+                                }
+                                Err(e) => {
+                                    debug!("SignatureReader: error reading from source: {:?}", e);
+                                    return Err(e);
+                                }
+                            }
+                        }
                         
                         let hash = if let Some(norm_hasher) = norm_hasher {
                             let mut hasher = norm_hasher.done();
