@@ -115,7 +115,7 @@ impl SystemWallet for SystemDeezel {
                     mnemonic: mnemonic.clone(),
                     passphrase: passphrase.clone(),
                     network: provider.get_network(),
-                    address_count: 10, // Generate 10 addresses per script type
+                    address_count: 5, // This parameter is now unused but kept for compatibility
                 };
                 
                 // Create the keystore
@@ -136,23 +136,29 @@ impl SystemWallet for SystemDeezel {
                 // Save keystore to file
                 self.keystore_manager.save_keystore(&keystore, &wallet_file).await?;
                 
-                // Get first address for display
-                let first_address = self.keystore_manager.get_addresses(&keystore, Some("P2WPKH"))
-                    .first()
+                // Get first P2WPKH address for display using dynamic derivation
+                let default_addresses = KeystoreManager::get_default_addresses(&self.keystore_manager, &keystore, provider.get_network())?;
+                let first_p2wpkh = default_addresses.iter()
+                    .find(|addr| addr.script_type == "p2wpkh" && addr.index == 0)
                     .map(|addr| addr.address.clone())
-                    .unwrap_or_else(|| "No addresses generated".to_string());
+                    .unwrap_or_else(|| "No P2WPKH address generated".to_string());
                 
                 println!("✅ Wallet keystore created successfully!");
                 println!("📁 Keystore saved to: {}", wallet_file);
                 println!("🔑 Mnemonic: {}", mnemonic_phrase);
                 println!("⚠️  IMPORTANT: Save this mnemonic phrase in a secure location!");
-                println!("🏠 First P2WPKH address: {}", first_address);
+                println!("🏠 First {} P2WPKH address: {}", network_name, first_p2wpkh);
                 println!("🔐 Keystore is encrypted with PGP using your passphrase");
                 
                 // Show keystore info
                 let info = self.keystore_manager.get_keystore_info(&keystore);
-                println!("📊 Total addresses generated: {}", info.total_addresses);
-                println!("🏷️  Script types: {}", info.script_types.join(", "));
+                println!("🔑 Master Public Key: {}", info.master_public_key);
+                println!("🔍 Master Fingerprint: {}", info.master_fingerprint);
+                println!("📅 Created: {}", info.created_at);
+                println!("🏷️  Version: {}", info.version);
+                
+                println!("\n💡 Use 'deezel wallet addresses' to see all address types");
+                println!("💡 Use 'deezel wallet addresses p2tr:0-10' for specific ranges");
                 
                 Ok(())
             },
@@ -205,30 +211,88 @@ impl SystemWallet for SystemDeezel {
                }
                Ok(())
            },
-           WalletCommands::Addresses { count, raw } => {
-               let addresses = provider.get_addresses(count).await?;
-               
-               if raw {
-                   // Convert to serializable format
-                   let serializable_addresses: Vec<serde_json::Value> = addresses.iter().map(|addr| {
-                       serde_json::json!({
-                           "address": addr.address,
-                           "script_type": addr.script_type,
-                           "derivation_path": addr.derivation_path,
-                           "index": addr.index
-                       })
-                   }).collect();
-                   println!("{}", serde_json::to_string_pretty(&serializable_addresses)?);
-               } else {
-                   println!("🏠 Wallet Addresses");
-                   println!("═════════════════");
-                   for addr in addresses {
-                       println!("{}. {} ({})", addr.index, addr.address, addr.script_type);
-                       println!("   Path: {}", addr.derivation_path);
-                   }
-               }
-               Ok(())
-           },
+           WalletCommands::Addresses { ranges, hd_path, raw } => {
+                // Load keystore to get master public key
+                let network_name = match provider.get_network() {
+                    bitcoin::Network::Bitcoin => "mainnet",
+                    bitcoin::Network::Testnet => "testnet",
+                    bitcoin::Network::Signet => "signet",
+                    bitcoin::Network::Regtest => "regtest",
+                    _ => "regtest",
+                };
+                
+                let wallet_file = expand_tilde(&format!("~/.deezel/{}.keystore.json", network_name))?;
+                
+                // Check if keystore exists
+                if !std::path::Path::new(&wallet_file).exists() {
+                    println!("❌ No keystore found. Please create a wallet first using 'deezel wallet create'");
+                    return Ok(());
+                }
+                
+                // Load keystore (using placeholder passphrase for now)
+                let (keystore, _) = self.keystore_manager.load_keystore_from_file(&wallet_file, "demo-passphrase").await?;
+                
+                let addresses = if let Some(range_specs) = ranges {
+                    // Parse and derive addresses for specified ranges
+                    let mut all_addresses = Vec::new();
+                    
+                    for range_spec in range_specs {
+                        let (script_type, start_index, count) = KeystoreManager::parse_address_range(&self.keystore_manager, &range_spec)?;
+                        let script_types = [script_type.as_str()];
+                        let derived = KeystoreManager::derive_addresses(&self.keystore_manager, &keystore, provider.get_network(), &script_types, start_index, count)?;
+                        all_addresses.extend(derived);
+                    }
+                    
+                    all_addresses
+                } else {
+                    // Default behavior: show first 5 addresses of each type for current network
+                    KeystoreManager::get_default_addresses(&self.keystore_manager, &keystore, provider.get_network())?
+                };
+                
+                if raw {
+                    // Convert to serializable format
+                    let serializable_addresses: Vec<serde_json::Value> = addresses.iter().map(|addr| {
+                        serde_json::json!({
+                            "address": addr.address,
+                            "script_type": addr.script_type,
+                            "derivation_path": addr.derivation_path,
+                            "index": addr.index
+                        })
+                    }).collect();
+                    println!("{}", serde_json::to_string_pretty(&serializable_addresses)?);
+                } else {
+                    println!("🏠 Wallet Addresses ({})", network_name);
+                    println!("═════════════════════════════");
+                    
+                    if let Some(ref hd_path_custom) = hd_path {
+                        println!("🛤️  Custom HD Path: {}", hd_path_custom);
+                        println!();
+                    }
+                    
+                    // Group addresses by script type for better display
+                    let mut grouped_addresses: std::collections::HashMap<String, Vec<&deezel_common::traits::KeystoreAddress>> = std::collections::HashMap::new();
+                    for addr in &addresses {
+                        grouped_addresses.entry(addr.script_type.clone()).or_insert_with(Vec::new).push(addr);
+                    }
+                    
+                    for (script_type, addrs) in grouped_addresses {
+                        println!("📋 {} Addresses:", script_type.to_uppercase());
+                        for addr in addrs {
+                            println!("  {}. {} (index: {})", addr.index, addr.address, addr.index);
+                            println!("     Path: {}", addr.derivation_path);
+                        }
+                        println!();
+                    }
+                    
+                    println!("💡 Usage examples:");
+                    println!("  deezel wallet addresses p2tr:0-10 p2wpkh:0-5");
+                    println!("  deezel wallet addresses p2sh:100-200");
+                    if hd_path.is_none() {
+                        println!("  deezel wallet addresses --hd-path \"m/84'/0'/0'/0/0-10\"");
+                    }
+                }
+                Ok(())
+            },
            WalletCommands::Send { address, amount, fee_rate, send_all, from, change, yes } => {
                // Resolve address identifiers
                let resolved_address = resolve_address_identifiers(&address, provider).await?;

@@ -1,6 +1,6 @@
 [package]
 name = "deezel-rpgp"
-version = "0.16.0"
+version = "0.1.0"
 authors = ["Deezel Team"]
 description = "OpenPGP implementation in Rust"
 license = "MIT OR Apache-2.0"

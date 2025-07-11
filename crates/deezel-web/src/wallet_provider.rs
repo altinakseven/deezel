@@ -1407,6 +1407,80 @@ impl MonitorProvider for BrowserWalletProvider {
 }
 
 #[async_trait(?Send)]
+#[async_trait(?Send)]
+impl KeystoreProvider for BrowserWalletProvider {
+    async fn derive_addresses(&self, _master_public_key: &str, _network: Network, _script_types: &[&str], _start_index: u32, _count: u32) -> Result<Vec<KeystoreAddress>> {
+        Err(DeezelError::NotImplemented("Keystore operations not implemented for browser wallet provider".to_string()))
+    }
+    
+    async fn get_default_addresses(&self, _master_public_key: &str, _network: Network) -> Result<Vec<KeystoreAddress>> {
+        Err(DeezelError::NotImplemented("Keystore operations not implemented for browser wallet provider".to_string()))
+    }
+    
+    fn parse_address_range(&self, _range_spec: &str) -> Result<(String, u32, u32)> {
+        Err(DeezelError::NotImplemented("Keystore operations not implemented for browser wallet provider".to_string()))
+    }
+    
+    async fn get_keystore_info(&self, _master_public_key: &str, _master_fingerprint: &str, _created_at: u64, _version: &str) -> Result<KeystoreInfo> {
+        Err(DeezelError::NotImplemented("Keystore operations not implemented for browser wallet provider".to_string()))
+    }
+}
+
+#[async_trait(?Send)]
+impl PgpProvider for BrowserWalletProvider {
+    async fn generate_keypair(&self, _user_id: &str, _passphrase: Option<&str>) -> Result<PgpKeyPair> {
+        Err(DeezelError::NotImplemented("PGP operations not implemented for browser wallet provider".to_string()))
+    }
+    
+    async fn import_key(&self, _armored_key: &str) -> Result<PgpKey> {
+        Err(DeezelError::NotImplemented("PGP operations not implemented for browser wallet provider".to_string()))
+    }
+    
+    async fn export_key(&self, _key: &PgpKey, _include_private: bool) -> Result<String> {
+        Err(DeezelError::NotImplemented("PGP operations not implemented for browser wallet provider".to_string()))
+    }
+    
+    async fn encrypt(&self, _data: &[u8], _recipient_keys: &[PgpKey], _armor: bool) -> Result<Vec<u8>> {
+        Err(DeezelError::NotImplemented("PGP operations not implemented for browser wallet provider".to_string()))
+    }
+    
+    async fn decrypt(&self, _encrypted_data: &[u8], _private_key: &PgpKey, _passphrase: Option<&str>) -> Result<Vec<u8>> {
+        Err(DeezelError::NotImplemented("PGP operations not implemented for browser wallet provider".to_string()))
+    }
+    
+    async fn sign(&self, _data: &[u8], _private_key: &PgpKey, _passphrase: Option<&str>, _armor: bool) -> Result<Vec<u8>> {
+        Err(DeezelError::NotImplemented("PGP operations not implemented for browser wallet provider".to_string()))
+    }
+    
+    async fn verify(&self, _data: &[u8], _signature: &[u8], _public_key: &PgpKey) -> Result<bool> {
+        Err(DeezelError::NotImplemented("PGP operations not implemented for browser wallet provider".to_string()))
+    }
+    
+    async fn encrypt_and_sign(&self, _data: &[u8], _recipient_keys: &[PgpKey], _signing_key: &PgpKey, _passphrase: Option<&str>, _armor: bool) -> Result<Vec<u8>> {
+        Err(DeezelError::NotImplemented("PGP operations not implemented for browser wallet provider".to_string()))
+    }
+    
+    async fn decrypt_and_verify(&self, _encrypted_data: &[u8], _private_key: &PgpKey, _sender_public_key: &PgpKey, _passphrase: Option<&str>) -> Result<PgpDecryptResult> {
+        Err(DeezelError::NotImplemented("PGP operations not implemented for browser wallet provider".to_string()))
+    }
+    
+    async fn list_pgp_keys(&self) -> Result<Vec<PgpKeyInfo>> {
+        Err(DeezelError::NotImplemented("PGP operations not implemented for browser wallet provider".to_string()))
+    }
+    
+    async fn get_key(&self, _identifier: &str) -> Result<Option<PgpKey>> {
+        Err(DeezelError::NotImplemented("PGP operations not implemented for browser wallet provider".to_string()))
+    }
+    
+    async fn delete_key(&self, _identifier: &str) -> Result<()> {
+        Err(DeezelError::NotImplemented("PGP operations not implemented for browser wallet provider".to_string()))
+    }
+    
+    async fn change_passphrase(&self, _key: &PgpKey, _old_passphrase: Option<&str>, _new_passphrase: Option<&str>) -> Result<PgpKey> {
+        Err(DeezelError::NotImplemented("PGP operations not implemented for browser wallet provider".to_string()))
+    }
+}
+
 impl DeezelProvider for BrowserWalletProvider {
     fn provider_name(&self) -> &str {
         "browser_wallet"

@@ -116,11 +116,15 @@ pub enum WalletCommands {
     },
     /// Show wallet information
     Info,
-    /// List wallet addresses
+    /// List wallet addresses with flexible range specification
     Addresses {
-        /// Number of addresses to show
-        #[arg(short = 'n', long, default_value = "10")]
-        count: u32,
+        /// Address range specifications (e.g., "p2tr:0-1000", "p2sh:0-500")
+        /// If not provided, shows first 5 addresses of each type for current network
+        #[arg(value_delimiter = ' ')]
+        ranges: Option<Vec<String>>,
+        /// Custom HD derivation path (overrides default paths)
+        #[arg(long)]
+        hd_path: Option<String>,
         /// Show raw JSON output
         #[arg(long)]
         raw: bool,

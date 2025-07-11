@@ -979,7 +979,7 @@ dependencies = [
 
 [[package]]
 name = "deezel-rpgp"
-version = "0.16.0"
+version = "0.1.0"
 dependencies = [
  "aead",
  "aes",
@@ -1105,6 +1105,7 @@ dependencies = [
  "deezel-common",
  "futures",
  "getrandom 0.2.15",
+ "gloo-timers",
  "hex",
  "js-sys",
  "log",

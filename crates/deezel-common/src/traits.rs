@@ -480,6 +480,44 @@ pub trait AddressResolver {
     async fn list_identifiers(&self) -> Result<Vec<String>>;
 }
 
+/// Trait for dynamic address derivation from master public keys
+#[async_trait(?Send)]
+pub trait KeystoreProvider {
+    /// Derive addresses dynamically from master public key
+    async fn derive_addresses(&self, master_public_key: &str, network: Network, script_types: &[&str], start_index: u32, count: u32) -> Result<Vec<KeystoreAddress>>;
+    
+    /// Get default addresses for display (first 5 of each type for given network)
+    async fn get_default_addresses(&self, master_public_key: &str, network: Network) -> Result<Vec<KeystoreAddress>>;
+    
+    /// Parse address range specification (e.g., "p2tr:0-1000", "p2sh:0-500")
+    fn parse_address_range(&self, range_spec: &str) -> Result<(String, u32, u32)>;
+    
+    /// Get keystore info from master public key
+    async fn get_keystore_info(&self, master_public_key: &str, master_fingerprint: &str, created_at: u64, version: &str) -> Result<KeystoreInfo>;
+}
+
+/// Address information for keystore operations
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct KeystoreAddress {
+    /// The Bitcoin address
+    pub address: String,
+    /// Derivation path used to generate this address
+    pub derivation_path: String,
+    /// Index in the derivation sequence
+    pub index: u32,
+    /// Script type (P2WPKH, P2TR, etc.)
+    pub script_type: String,
+}
+
+/// Summary information about a keystore
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct KeystoreInfo {
+    pub master_public_key: String,
+    pub master_fingerprint: String,
+    pub created_at: u64,
+    pub version: String,
+}
+
 /// Trait for Bitcoin Core RPC operations
 #[async_trait(?Send)]
 pub trait BitcoinRpcProvider {
@@ -980,7 +1018,8 @@ pub trait DeezelProvider:
     EsploraProvider +
     RunestoneProvider +
     AlkanesProvider +
-    MonitorProvider
+    MonitorProvider +
+    KeystoreProvider
 {
     /// Get provider name/type
     fn provider_name(&self) -> &str;
@@ -1427,6 +1466,22 @@ impl<T: DeezelProvider + ?Sized> MonitorProvider for Box<T> {
    }
    async fn get_block_events(&self, height: u64) -> Result<Vec<BlockEvent>> {
        (**self).get_block_events(height).await
+   }
+}
+
+#[async_trait(?Send)]
+impl<T: DeezelProvider + ?Sized> KeystoreProvider for Box<T> {
+   async fn derive_addresses(&self, master_public_key: &str, network: Network, script_types: &[&str], start_index: u32, count: u32) -> Result<Vec<KeystoreAddress>> {
+       (**self).derive_addresses(master_public_key, network, script_types, start_index, count).await
+   }
+   async fn get_default_addresses(&self, master_public_key: &str, network: Network) -> Result<Vec<KeystoreAddress>> {
+       (**self).get_default_addresses(master_public_key, network).await
+   }
+   fn parse_address_range(&self, range_spec: &str) -> Result<(String, u32, u32)> {
+       (**self).parse_address_range(range_spec)
+   }
+   async fn get_keystore_info(&self, master_public_key: &str, master_fingerprint: &str, created_at: u64, version: &str) -> Result<KeystoreInfo> {
+       (**self).get_keystore_info(master_public_key, master_fingerprint, created_at, version).await
    }
 }
 

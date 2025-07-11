@@ -58,6 +58,9 @@ thiserror = { workspace = true }
 # Logging
 log = { workspace = true }
 
+# Web-specific dependencies
+gloo-timers = { version = "0.3", features = ["futures"] }
+
 # Utilities
 hex = { workspace = true }
 async-trait = { workspace = true }

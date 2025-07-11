@@ -819,6 +819,26 @@ impl MonitorProvider for StandaloneAddressResolver {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+#[async_trait(?Send)]
+impl KeystoreProvider for StandaloneAddressResolver {
+    async fn derive_addresses(&self, _master_public_key: &str, _network: bitcoin::Network, _script_types: &[&str], _start_index: u32, _count: u32) -> Result<Vec<KeystoreAddress>> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support keystore operations".to_string()))
+    }
+    
+    async fn get_default_addresses(&self, _master_public_key: &str, _network: bitcoin::Network) -> Result<Vec<KeystoreAddress>> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support keystore operations".to_string()))
+    }
+    
+    fn parse_address_range(&self, _range_spec: &str) -> Result<(String, u32, u32)> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support keystore operations".to_string()))
+    }
+    
+    async fn get_keystore_info(&self, _master_public_key: &str, _master_fingerprint: &str, _created_at: u64, _version: &str) -> Result<KeystoreInfo> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support keystore operations".to_string()))
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 impl Clone for StandaloneAddressResolver {
     fn clone(&self) -> Self {
         Self {

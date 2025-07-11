@@ -5,40 +5,45 @@
 
 use anyhow::{anyhow, Context, Result as AnyhowResult};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use bitcoin::Network;
+use bitcoin::{
+    Network,
+    bip32::{DerivationPath, Xpriv},
+    secp256k1::Secp256k1,
+    Address,
+    bip32::Xpub,
+    CompressedPublicKey,
+    PublicKey,
+    ScriptBuf,
+};
 use bip39::{Mnemonic, MnemonicType, Seed};
+use std::str::FromStr;
+use deezel_rpgp::{
+    composed::{ArmorOptions, MessageBuilder},
+    crypto::{sym::SymmetricKeyAlgorithm, hash::HashAlgorithm},
+    types::{Password, StringToKey},
+};
+use rand::{rngs::OsRng, RngCore};
 
-use deezel_common::traits::PgpProvider;
 use crate::pgp::DeezelPgpProvider;
+use deezel_common::traits::{KeystoreProvider, KeystoreAddress, KeystoreInfo};
+use deezel_common::{Result as CommonResult, DeezelError};
+use async_trait::async_trait;
 
-/// Keystore structure that contains encrypted seed and derived addresses
+/// Keystore structure that contains encrypted seed and master public key
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Keystore {
-    /// Encrypted seed data (PGP encrypted)
+    /// PGP ASCII armored encrypted seed data
     pub encrypted_seed: String,
-    /// Network this keystore is for
-    pub network: String,
-    /// Derived addresses for different script types
-    pub addresses: HashMap<String, Vec<KeystoreAddress>>,
+    /// Master public key for address derivation (hex encoded)
+    pub master_public_key: String,
+    /// Master fingerprint for identification
+    pub master_fingerprint: String,
     /// Creation timestamp
     pub created_at: u64,
     /// Version of the keystore format
     pub version: String,
 }
 
-/// Address information in the keystore
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct KeystoreAddress {
-    /// The Bitcoin address
-    pub address: String,
-    /// Derivation path used to generate this address
-    pub derivation_path: String,
-    /// Index in the derivation sequence
-    pub index: u32,
-    /// Script type (P2WPKH, P2TR, etc.)
-    pub script_type: String,
-}
 
 /// Parameters for creating a new keystore
 pub struct KeystoreCreateParams {
@@ -64,7 +69,7 @@ impl KeystoreManager {
         }
     }
 
-    /// Create a new keystore with PGP-encrypted seed
+    /// Create a new keystore with PGP-encrypted seed and master public key
     pub async fn create_keystore(&self, params: KeystoreCreateParams) -> AnyhowResult<(Keystore, String)> {
         // Generate or use provided mnemonic
         let mnemonic = if let Some(mnemonic_str) = params.mnemonic {
@@ -76,58 +81,79 @@ impl KeystoreManager {
 
         let mnemonic_str = mnemonic.to_string();
 
-        // For now, use a simple hex encoding instead of PGP encryption
-        // In a real implementation, this would use proper PGP encryption
-        let encrypted_seed_str = format!("ENCRYPTED_WITH_PASSPHRASE:{}:{}",
-            params.passphrase,
-            hex::encode(mnemonic_str.as_bytes()));
-
-        // Derive addresses for different script types
-        let mut addresses = HashMap::new();
-        
         // Generate seed from mnemonic
         let seed = Seed::new(&mnemonic, "");
+        let secp = Secp256k1::new();
         
-        // Derive addresses for different script types
-        let script_types = vec![
-            ("P2WPKH", "m/84'/0'/0'/0"), // Native SegWit
-            ("P2TR", "m/86'/0'/0'/0"),   // Taproot
-        ];
+        // Encrypt the mnemonic using PGP with ASCII armoring
+        let encrypted_seed = self.encrypt_seed_with_pgp(&mnemonic_str, &params.passphrase)?;
 
-        for (script_type, base_path) in script_types {
-            let mut script_addresses = Vec::new();
-            
-            for i in 0..params.address_count {
-                let derivation_path = format!("{}/{}", base_path, i);
-                
-                // For now, generate placeholder addresses
-                // In a real implementation, you would derive actual addresses from the seed
-                let address = match script_type {
-                    "P2WPKH" => format!("bc1q{:040x}", i), // Placeholder Bech32 address
-                    "P2TR" => format!("bc1p{:062x}", i),   // Placeholder Bech32m address
-                    _ => format!("placeholder_{}", i),
-                };
-
-                script_addresses.push(KeystoreAddress {
-                    address,
-                    derivation_path,
-                    index: i,
-                    script_type: script_type.to_string(),
-                });
-            }
-            
-            addresses.insert(script_type.to_string(), script_addresses);
-        }
+        // Create master key (always use Bitcoin mainnet for the master key to ensure compatibility)
+        let master_key = Xpriv::new_master(Network::Bitcoin, seed.as_bytes())
+            .context("Failed to create master key from seed")?;
+        
+        // Get master public key
+        let master_public_key = Xpub::from_priv(&secp, &master_key);
+        
+        // Get master fingerprint
+        let master_fingerprint = master_key.fingerprint(&secp);
 
         let keystore = Keystore {
-            encrypted_seed: encrypted_seed_str,
-            network: format!("{:?}", params.network).to_lowercase(),
-            addresses,
+            encrypted_seed,
+            master_public_key: master_public_key.to_string(),
+            master_fingerprint: master_fingerprint.to_string(),
             created_at: chrono::Utc::now().timestamp() as u64,
-            version: "1.0.0".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
         };
 
         Ok((keystore, mnemonic_str))
+    }
+
+    /// Encrypt the seed using PGP with ASCII armoring
+    fn encrypt_seed_with_pgp(&self, mnemonic: &str, passphrase: &str) -> AnyhowResult<String> {
+        // Set up PGP encryption parameters
+        let iterations = 100_000;
+        let mut salt = [0u8; 8];
+        OsRng.fill_bytes(&mut salt);
+        let count = Self::encode_count(iterations);
+        let s2k = StringToKey::IteratedAndSalted {
+            hash_alg: HashAlgorithm::Sha256,
+            salt,
+            count,
+        };
+        
+        let sym_key_algo = SymmetricKeyAlgorithm::AES256;
+
+        // Encrypt and armor the mnemonic
+        let message = MessageBuilder::from_reader("deezel-keystore", mnemonic.as_bytes());
+        let mut enc_builder = message.seipd_v1(&mut OsRng, sym_key_algo);
+        enc_builder.encrypt_with_password(s2k, &Password::from(passphrase))
+            .context("Failed to encrypt seed with PGP")?;
+
+        let armored_message = enc_builder.to_armored_string(OsRng, ArmorOptions::default())
+            .context("Failed to create ASCII armored message")?;
+
+        Ok(armored_message)
+    }
+
+    /// Encode count for PGP S2K (from RFC 4880)
+    fn encode_count(iterations: u32) -> u8 {
+        if iterations >= 65011712 {
+            return 255;
+        }
+        if iterations == 0 {
+            return 0;
+        }
+
+        let mut c = iterations;
+        let mut e = 0;
+        while c > 32 {
+            c = (c + 15) / 16;
+            e += 1;
+        }
+        c -= 16;
+
+        (e << 4) | c as u8
     }
 
     /// Load and decrypt a keystore
@@ -166,53 +192,190 @@ impl KeystoreManager {
         self.load_keystore(&keystore_data, passphrase).await
     }
 
-    /// Get addresses from keystore by script type
-    pub fn get_addresses<'a>(&self, keystore: &'a Keystore, script_type: Option<&str>) -> Vec<&'a KeystoreAddress> {
-        if let Some(script_type) = script_type {
-            keystore.addresses.get(script_type)
-                .map(|addrs| addrs.iter().collect())
-                .unwrap_or_default()
-        } else {
-            // Return all addresses
-            keystore.addresses.values()
-                .flat_map(|addrs| addrs.iter())
-                .collect()
+    /// Derive addresses dynamically from master public key
+    pub fn derive_addresses(&self, keystore: &Keystore, network: Network, script_types: &[&str], start_index: u32, count: u32) -> AnyhowResult<Vec<KeystoreAddress>> {
+        let master_xpub = Xpub::from_str(&keystore.master_public_key)
+            .context("Failed to parse master public key")?;
+        
+        let secp = Secp256k1::new();
+        let mut addresses = Vec::new();
+        
+        for script_type in script_types {
+            for index in start_index..(start_index + count) {
+                let address = self.derive_single_address(&master_xpub, &secp, network, script_type, index)?;
+                addresses.push(address);
+            }
         }
+        
+        Ok(addresses)
     }
-
-    /// Get a specific address by script type and index
-    pub fn get_address_by_index<'a>(&self, keystore: &'a Keystore, script_type: &str, index: u32) -> Option<&'a KeystoreAddress> {
-        keystore.addresses.get(script_type)?
-            .iter()
-            .find(|addr| addr.index == index)
+    
+    /// Derive a single address from master public key
+    fn derive_single_address(&self, master_xpub: &Xpub, secp: &Secp256k1<bitcoin::secp256k1::All>, network: Network, script_type: &str, index: u32) -> AnyhowResult<KeystoreAddress> {
+        // Get the correct coin type for the network
+        let coin_type = match network {
+            Network::Bitcoin => "0",      // Bitcoin mainnet
+            Network::Testnet => "1",      // Bitcoin testnet
+            Network::Signet => "1",       // Bitcoin signet (uses testnet coin type)
+            Network::Regtest => "1",      // Bitcoin regtest (uses testnet coin type)
+            _ => "0",                     // Default to mainnet
+        };
+        
+        // Define derivation paths for different script types
+        // Note: We can only derive non-hardened paths from public keys
+        let (derivation_path, address) = match script_type {
+            "p2pkh" => {
+                let path_str = format!("m/44/{}/0/0/{}", coin_type, index);
+                let path = DerivationPath::from_str(&path_str)
+                    .context("Failed to create P2PKH derivation path")?;
+                let derived_key = master_xpub.derive_pub(secp, &path)
+                    .with_context(|| format!("Failed to derive public key for path: {}", path))?;
+                let bitcoin_pubkey = PublicKey::new(derived_key.public_key);
+                let compressed_pubkey = CompressedPublicKey::try_from(bitcoin_pubkey)
+                    .context("Failed to create compressed public key")?;
+                let address = Address::p2pkh(compressed_pubkey, network);
+                (path.to_string(), address.to_string())
+            },
+            "p2sh" => {
+                let path = DerivationPath::from_str(&format!("m/49/{}/0/0/{}", coin_type, index))
+                    .context("Failed to create P2SH derivation path")?;
+                let derived_key = master_xpub.derive_pub(secp, &path)
+                    .context("Failed to derive public key")?;
+                let bitcoin_pubkey = PublicKey::new(derived_key.public_key);
+                let compressed_pubkey = CompressedPublicKey::try_from(bitcoin_pubkey)
+                    .context("Failed to create compressed public key")?;
+                let wpkh_script = ScriptBuf::new_p2wpkh(&compressed_pubkey.wpubkey_hash());
+                let address = Address::p2sh(&wpkh_script, network)
+                    .context("Failed to create P2SH address")?;
+                (path.to_string(), address.to_string())
+            },
+            "p2wpkh" => {
+                let path = DerivationPath::from_str(&format!("m/84/{}/0/0/{}", coin_type, index))
+                    .context("Failed to create P2WPKH derivation path")?;
+                let derived_key = master_xpub.derive_pub(secp, &path)
+                    .context("Failed to derive public key")?;
+                let bitcoin_pubkey = PublicKey::new(derived_key.public_key);
+                let compressed_pubkey = CompressedPublicKey::try_from(bitcoin_pubkey)
+                    .context("Failed to create compressed public key")?;
+                let address = Address::p2wpkh(&compressed_pubkey, network);
+                (path.to_string(), address.to_string())
+            },
+            "p2wsh" => {
+                let path = DerivationPath::from_str(&format!("m/84/{}/0/0/{}", coin_type, index))
+                    .context("Failed to create P2WSH derivation path")?;
+                let derived_key = master_xpub.derive_pub(secp, &path)
+                    .context("Failed to derive public key")?;
+                let bitcoin_pubkey = PublicKey::new(derived_key.public_key);
+                let compressed_pubkey = CompressedPublicKey::try_from(bitcoin_pubkey)
+                    .context("Failed to create compressed public key")?;
+                // Create a simple P2WPKH script for P2WSH wrapping
+                let script = ScriptBuf::new_p2wpkh(&compressed_pubkey.wpubkey_hash());
+                let address = Address::p2wsh(&script, network);
+                (path.to_string(), address.to_string())
+            },
+            "p2tr" => {
+                let path = DerivationPath::from_str(&format!("m/86/{}/0/0/{}", coin_type, index))
+                    .context("Failed to create P2TR derivation path")?;
+                let derived_key = master_xpub.derive_pub(secp, &path)
+                    .context("Failed to derive public key")?;
+                let internal_key = bitcoin::key::UntweakedPublicKey::from(derived_key.public_key);
+                let address = Address::p2tr(secp, internal_key, None, network);
+                (path.to_string(), address.to_string())
+            },
+            _ => return Err(anyhow!("Unsupported script type: {}", script_type)),
+        };
+        
+        Ok(KeystoreAddress {
+            address,
+            derivation_path,
+            index,
+            script_type: script_type.to_string(),
+        })
+    }
+    
+    /// Get default addresses for display (first 5 of each type for given network)
+    pub fn get_default_addresses(&self, keystore: &Keystore, network: Network) -> AnyhowResult<Vec<KeystoreAddress>> {
+        let script_types = ["p2pkh", "p2sh", "p2wpkh", "p2wsh", "p2tr"];
+        self.derive_addresses(keystore, network, &script_types, 0, 5)
     }
 
     /// Create a keystore info summary
     pub fn get_keystore_info(&self, keystore: &Keystore) -> KeystoreInfo {
-        let total_addresses: usize = keystore.addresses.values()
-            .map(|addrs| addrs.len())
-            .sum();
-
-        let script_types: Vec<String> = keystore.addresses.keys().cloned().collect();
-
         KeystoreInfo {
-            network: keystore.network.clone(),
-            total_addresses,
-            script_types,
+            master_public_key: keystore.master_public_key.clone(),
+            master_fingerprint: keystore.master_fingerprint.clone(),
             created_at: keystore.created_at,
             version: keystore.version.clone(),
         }
     }
+    
+    /// Parse address range specification (e.g., "p2tr:0-1000", "p2sh:0-500")
+    pub fn parse_address_range(&self, range_spec: &str) -> AnyhowResult<(String, u32, u32)> {
+        let parts: Vec<&str> = range_spec.split(':').collect();
+        if parts.len() != 2 {
+            return Err(anyhow!("Invalid range specification. Expected format: script_type:start-end"));
+        }
+        
+        let script_type = parts[0].to_string();
+        let range_parts: Vec<&str> = parts[1].split('-').collect();
+        if range_parts.len() != 2 {
+            return Err(anyhow!("Invalid range format. Expected format: start-end"));
+        }
+        
+        let start_index: u32 = range_parts[0].parse()
+            .map_err(|_| anyhow!("Invalid start index: {}", range_parts[0]))?;
+        let end_index: u32 = range_parts[1].parse()
+            .map_err(|_| anyhow!("Invalid end index: {}", range_parts[1]))?;
+            
+        if end_index <= start_index {
+            return Err(anyhow!("End index must be greater than start index"));
+        }
+        
+        Ok((script_type, start_index, end_index - start_index))
+    }
 }
 
-/// Summary information about a keystore
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct KeystoreInfo {
-    pub network: String,
-    pub total_addresses: usize,
-    pub script_types: Vec<String>,
-    pub created_at: u64,
-    pub version: String,
+/// Implementation of KeystoreProvider trait for KeystoreManager
+#[async_trait(?Send)]
+impl KeystoreProvider for KeystoreManager {
+    async fn derive_addresses(&self, master_public_key: &str, network: Network, script_types: &[&str], start_index: u32, count: u32) -> CommonResult<Vec<KeystoreAddress>> {
+        let master_xpub = Xpub::from_str(master_public_key)
+            .map_err(|e| DeezelError::Crypto(format!("Failed to parse master public key: {}", e)))?;
+        
+        let secp = Secp256k1::new();
+        let mut addresses = Vec::new();
+        
+        for script_type in script_types {
+            for index in start_index..(start_index + count) {
+                let address = self.derive_single_address(&master_xpub, &secp, network, script_type, index)
+                    .map_err(|e| DeezelError::Crypto(format!("Failed to derive address: {}", e)))?;
+                addresses.push(address);
+            }
+        }
+        
+        Ok(addresses)
+    }
+    
+    async fn get_default_addresses(&self, master_public_key: &str, network: Network) -> CommonResult<Vec<KeystoreAddress>> {
+        let script_types = ["p2pkh", "p2sh", "p2wpkh", "p2wsh", "p2tr"];
+        // Call the trait method, not the struct method
+        KeystoreProvider::derive_addresses(self, master_public_key, network, &script_types, 0, 5).await
+    }
+    
+    fn parse_address_range(&self, range_spec: &str) -> CommonResult<(String, u32, u32)> {
+        // Call the struct method directly to avoid infinite recursion
+        KeystoreManager::parse_address_range(self, range_spec)
+            .map_err(|e| DeezelError::Parse(format!("Failed to parse address range: {}", e)))
+    }
+    
+    async fn get_keystore_info(&self, master_public_key: &str, master_fingerprint: &str, created_at: u64, version: &str) -> CommonResult<KeystoreInfo> {
+        Ok(KeystoreInfo {
+            master_public_key: master_public_key.to_string(),
+            master_fingerprint: master_fingerprint.to_string(),
+            created_at,
+            version: version.to_string(),
+        })
+    }
 }
 
 /// Create a keystore with the given parameters
