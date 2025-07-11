@@ -265,6 +265,9 @@ pub trait WalletProvider {
     
     /// Get keypair for wallet
     async fn get_keypair(&self) -> Result<bitcoin::secp256k1::Keypair>;
+
+    /// Set the passphrase for the wallet
+    fn set_passphrase(&mut self, passphrase: Option<String>);
 }
 
 /// Wallet configuration
@@ -1251,6 +1254,9 @@ impl<T: DeezelProvider + ?Sized> WalletProvider for Box<T> {
    }
    async fn get_keypair(&self) -> Result<bitcoin::secp256k1::Keypair> {
        (**self).get_keypair().await
+   }
+   fn set_passphrase(&mut self, passphrase: Option<String>) {
+       (**self).set_passphrase(passphrase)
    }
 }
 

@@ -79,6 +79,7 @@ pub enum DeezelError {
     Network(String),
     Wallet(String),
     Alkanes(String),
+    Runestone(String),
     Serialization(String),
     Validation(String),
     Configuration(String),
@@ -90,6 +91,7 @@ pub enum DeezelError {
     Io(String),
     Parse(String),
     Pgp(String),
+    Hex(String),
     NotImplemented(String),
     Other(String),
 }
@@ -103,6 +105,7 @@ impl core::fmt::Display for DeezelError {
             DeezelError::Network(msg) => write!(f, "Network error: {}", msg),
             DeezelError::Wallet(msg) => write!(f, "Wallet error: {}", msg),
             DeezelError::Alkanes(msg) => write!(f, "Alkanes error: {}", msg),
+            DeezelError::Runestone(msg) => write!(f, "Runestone error: {}", msg),
             DeezelError::Serialization(msg) => write!(f, "Serialization error: {}", msg),
             DeezelError::Validation(msg) => write!(f, "Validation error: {}", msg),
             DeezelError::Configuration(msg) => write!(f, "Configuration error: {}", msg),
@@ -114,6 +117,7 @@ impl core::fmt::Display for DeezelError {
             DeezelError::Io(msg) => write!(f, "I/O error: {}", msg),
             DeezelError::Parse(msg) => write!(f, "Parse error: {}", msg),
             DeezelError::Pgp(msg) => write!(f, "PGP error: {}", msg),
+            DeezelError::Hex(msg) => write!(f, "Hex error: {}", msg),
             DeezelError::NotImplemented(msg) => write!(f, "Not implemented: {}", msg),
             DeezelError::Other(msg) => write!(f, "Other error: {}", msg),
         }
@@ -212,6 +216,12 @@ impl From<std::io::Error> for DeezelError {
     }
 }
 
+
+impl From<hex::FromHexError> for DeezelError {
+    fn from(err: hex::FromHexError) -> Self {
+        DeezelError::Hex(err.to_string())
+    }
+}
 
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

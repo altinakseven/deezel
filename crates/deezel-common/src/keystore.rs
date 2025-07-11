@@ -129,7 +129,7 @@ pub fn create_keystore(passphrase: &str) -> Result<Keystore> {
     let sym_key_algo = SymmetricKeyAlgorithm::AES256;
 
     // 4. Encrypt and armor the message
-    let message = MessageBuilder::from_reader("deezel-keystore", seed.as_bytes());
+    let message = MessageBuilder::from_reader("deezel-keystore", &entropy[..]);
     let mut enc_builder = message.seipd_v1(&mut OsRng, sym_key_algo);
     enc_builder.encrypt_with_password(s2k, &Password::from(passphrase))
         .map_err(|e| DeezelError::Crypto(e.to_string()))?;
@@ -171,6 +171,38 @@ fn encode_count(iterations: u32) -> u8 {
     (e << 4) | c as u8
 }
 
+/// Decrypts the seed from a keystore using the provided passphrase.
+pub fn decrypt_seed(keystore: &Keystore, passphrase: &str) -> Result<Seed> {
+    let (message, _headers) = deezel_rpgp::composed::Message::from_armor(keystore.encrypted_seed.as_bytes())
+        .map_err(|e| DeezelError::Crypto(format!("Failed to parse armored message: {}", e)))?;
+
+    let mut decryptor = message.decrypt_with_password(&Password::from(passphrase))
+        .map_err(|e| {
+            DeezelError::Crypto(format!("Failed to create decryptor: {}", e))
+        })?;
+
+    let decrypted_bytes = decryptor.as_data_vec()
+        .map_err(|e| DeezelError::Crypto(format!("Failed to get decrypted data: {}", e)))?;
+        
+    let mnemonic = Mnemonic::from_entropy(&decrypted_bytes, Language::English)
+        .map_err(|e| DeezelError::Wallet(format!("Failed to create mnemonic from decrypted seed: {:?}", e)))?;
+
+    Ok(Seed::new(&mnemonic, ""))
+}
+
+/// Derives a Bitcoin address from a seed, derivation path, and network.
+pub fn derive_address(seed: &Seed, path: &DerivationPath, network: BitcoinNetwork) -> Result<Address> {
+    let secp = Secp256k1::new();
+    let root_key = Xpriv::new_master(network, seed.as_bytes())
+        .map_err(|e| DeezelError::Crypto(e.to_string()))?;
+    
+    let child_key = root_key.derive_priv(&secp, path)
+        .map_err(|e| DeezelError::Crypto(e.to_string()))?;
+        
+    let (internal_key, _) = Xpub::from_priv(&secp, &child_key).public_key.x_only_public_key();
+    Ok(Address::p2tr(&secp, internal_key, None, network))
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -206,6 +238,35 @@ mod tests {
             assert_eq!(p2tr_count, 10, "Network {} should have 10 P2TR addresses", network);
         }
     }
+    
+    #[test]
+    fn test_symmetric_encryption_roundtrip() {
+        let passphrase = "test_password";
+        let data = "hello world";
+    
+        // Encrypt
+        let iterations = 100_000;
+        let mut salt = [0u8; 8];
+        OsRng.fill_bytes(&mut salt);
+        let count = encode_count(iterations);
+        let s2k = StringToKey::IteratedAndSalted {
+            hash_alg: HashAlgorithm::Sha256,
+            salt,
+            count,
+        };
+        let sym_key_algo = SymmetricKeyAlgorithm::AES256;
+        let message = MessageBuilder::from_reader("test", data.as_bytes());
+        let mut enc_builder = message.seipd_v1(&mut OsRng, sym_key_algo);
+        enc_builder.encrypt_with_password(s2k, &Password::from(passphrase)).unwrap();
+        let armored_message = enc_builder.to_armored_string(OsRng, ArmorOptions::default()).unwrap();
+    
+        // Decrypt
+        let (decrypted_message, _headers) = deezel_rpgp::composed::Message::from_armor(armored_message.as_bytes()).unwrap();
+        let mut decryptor = decrypted_message.decrypt_with_password(&Password::from(passphrase)).unwrap();
+        let decrypted_bytes = decryptor.as_data_vec().unwrap();
+    
+        assert_eq!(data.as_bytes(), decrypted_bytes.as_slice());
+    }
 
     #[test]
     fn test_decrypt_keystore() {
@@ -215,8 +276,8 @@ mod tests {
         // Create a keystore
         let keystore = create_keystore(passphrase).expect("Failed to create keystore");
         
-        // TODO: Add decryption test once we implement the decrypt_keystore function
-        // For now, just verify the keystore was created successfully
+        let decrypted_seed = decrypt_seed(&keystore, passphrase);
+        assert!(decrypted_seed.is_ok());
         assert!(!keystore.encrypted_seed.is_empty());
         assert!(keystore.encrypted_seed.contains("-----BEGIN PGP MESSAGE-----"));
         assert!(keystore.encrypted_seed.contains("-----END PGP MESSAGE-----"));

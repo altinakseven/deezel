@@ -84,6 +84,7 @@ tokio = { workspace = true, features = ["sync", "time"], optional = true }
 reqwest = { workspace = true, features = ["json"], optional = true }
 url = { version = "2.5.0", optional = true }
 clap = { workspace = true, features = ["derive"] }
+ord = "0.23.2"
 
 [features]
 default = ["wasm-inspection", "native-deps"]

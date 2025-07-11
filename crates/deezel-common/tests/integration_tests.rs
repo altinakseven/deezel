@@ -686,6 +686,30 @@ impl PgpProvider for MockProvider {
 }
 
 #[async_trait(?Send)]
+impl KeystoreProvider for MockProvider {
+    async fn derive_addresses(&self, _master_public_key: &str, _network: Network, _script_types: &[&str], _start_index: u32, _count: u32) -> Result<Vec<KeystoreAddress>> {
+        Ok(vec![])
+    }
+    
+    async fn get_default_addresses(&self, _master_public_key: &str, _network: Network) -> Result<Vec<KeystoreAddress>> {
+        Ok(vec![])
+    }
+    
+    fn parse_address_range(&self, _range_spec: &str) -> Result<(String, u32, u32)> {
+        Ok(("p2tr".to_string(), 0, 10))
+    }
+    
+    async fn get_keystore_info(&self, _master_public_key: &str, _master_fingerprint: &str, _created_at: u64, _version: &str) -> Result<KeystoreInfo> {
+        Ok(KeystoreInfo {
+            master_public_key: "mock_mpk".to_string(),
+            master_fingerprint: "mock_fingerprint".to_string(),
+            created_at: 0,
+            version: "1".to_string(),
+        })
+    }
+}
+
+#[async_trait(?Send)]
 impl DeezelProvider for MockProvider {
     fn provider_name(&self) -> &str {
         "mock"

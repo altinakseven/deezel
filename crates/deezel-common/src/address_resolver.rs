@@ -592,6 +592,9 @@ impl WalletProvider for StandaloneAddressResolver {
     async fn get_keypair(&self) -> Result<bitcoin::secp256k1::Keypair> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support wallet operations".to_string()))
     }
+    fn set_passphrase(&mut self, _passphrase: Option<String>) {
+        // No-op for StandaloneAddressResolver
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]

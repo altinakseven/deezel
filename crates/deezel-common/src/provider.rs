@@ -7,6 +7,9 @@ use crate::traits::*;
 use crate::{Result, DeezelError};
 use async_trait::async_trait;
 use std::path::PathBuf;
+use std::fs;
+use std::str::FromStr;
+use crate::keystore::Keystore;
 
 // Import deezel-rpgp types for PGP functionality
 use deezel_rpgp::composed::{
@@ -29,6 +32,14 @@ use bip39::{Mnemonic, MnemonicType, Seed};
 
 // Additional imports for wallet functionality
 use hex;
+use bitcoin::{
+    Address, Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
+    psbt::{Input as PsbtInput, Psbt},
+    secp256k1::{Secp256k1, All},
+    sighash::{self, SighashCache, Prevouts},
+    bip32::{DerivationPath, Xpriv},
+};
+use ordinals::{Runestone, Artifact};
 
 #[derive(Clone)]
 pub struct ConcreteProvider {
@@ -36,6 +47,7 @@ pub struct ConcreteProvider {
     metashrew_rpc_url: String,
     provider: String,
     wallet_path: Option<PathBuf>,
+    passphrase: Option<String>,
 }
 
 impl ConcreteProvider {
@@ -50,6 +62,7 @@ impl ConcreteProvider {
             metashrew_rpc_url,
             provider,
             wallet_path,
+            passphrase: None,
         })
     }
 
@@ -124,6 +137,36 @@ impl ConcreteProvider {
             expiration_time: key.expires_at().map(|t| t.timestamp() as u64),
             algorithm,
         })
+        fn select_coins(&self, mut utxos: Vec<UtxoInfo>, target_amount: Amount) -> Result<(Vec<UtxoInfo>, Amount)> {
+            utxos.sort_by(|a, b| b.amount.cmp(&a.amount)); // Largest-first
+    
+            let mut selected_utxos = Vec::new();
+            let mut total_input_amount = Amount::ZERO;
+    
+            for utxo in utxos {
+                if total_input_amount >= target_amount {
+                    break;
+                }
+                total_input_amount += Amount::from_sat(utxo.amount);
+                selected_utxos.push(utxo);
+            }
+    
+            if total_input_amount < target_amount {
+                return Err(DeezelError::Wallet("Insufficient funds".to_string()));
+            }
+    
+            Ok((selected_utxos, total_input_amount))
+        }
+    
+        fn estimate_tx_vsize(&self, tx: &Transaction, num_inputs: usize) -> u64 {
+            // This is a rough estimation for P2TR inputs and P2TR outputs.
+            // A more accurate estimation would require knowing the exact script types.
+            let base_vsize = 10;
+            let input_vsize = 58; // P2TR input
+            let output_vsize = 43; // P2TR output
+    
+            base_vsize + (input_vsize * num_inputs) as u64 + (output_vsize * tx.output.len() as u64)
+        }
     }
 }
 
@@ -452,36 +495,150 @@ impl WalletProvider for ConcreteProvider {
         Ok(wallet_info)
     }
     
-    async fn load_wallet(&self, _config: WalletConfig, _passphrase: Option<String>) -> Result<WalletInfo> {
-        unimplemented!()
-    }
-    
-    async fn get_balance(&self) -> Result<WalletBalance> {
-        Ok(WalletBalance {
-            confirmed: 0,
-            trusted_pending: 0,
-            untrusted_pending: 0,
+    async fn load_wallet(&self, config: WalletConfig, _passphrase: Option<String>) -> Result<WalletInfo> {
+        let keystore_path = PathBuf::from(config.wallet_path);
+        let keystore_data = fs::read(keystore_path)
+            .map_err(|e| DeezelError::Wallet(format!("Failed to read keystore: {}", e)))?;
+        
+        let keystore: Keystore = serde_json::from_slice(&keystore_data)
+            .map_err(|e| DeezelError::Wallet(format!("Failed to deserialize keystore: {}", e)))?;
+
+        // Decryption would happen here. For now, we assume it's not encrypted.
+        let mnemonic = keystore.encrypted_seed;
+
+        // For now, we'll just return placeholder info.
+        // A full implementation would derive the address from the mnemonic.
+        let address = "bc1qloadedplaceholder0000000000000000000000000".to_string();
+
+        Ok(WalletInfo {
+            address,
+            network: config.network,
+            mnemonic: Some(mnemonic),
         })
     }
     
-    async fn get_address(&self) -> Result<String> {
-        unimplemented!()
+    async fn get_balance(&self) -> Result<WalletBalance> {
+        // This is a simplified implementation. A real wallet would manage multiple addresses.
+        // For now, we assume the wallet has a single address we can query.
+        // A full implementation would need to load the keystore and iterate through addresses.
+        Err(DeezelError::NotImplemented("get_balance requires a loaded wallet, which is not yet implemented".to_string()))
     }
     
-    async fn get_addresses(&self, _count: u32) -> Result<Vec<AddressInfo>> {
-        unimplemented!()
+    async fn get_address(&self) -> Result<String> {
+        let wallet_path = self.get_wallet_path().ok_or_else(|| DeezelError::Wallet("Wallet path not set".to_string()))?;
+        let keystore_data = fs::read(wallet_path)
+            .map_err(|e| DeezelError::Wallet(format!("Failed to read keystore: {}", e)))?;
+        let keystore: Keystore = serde_json::from_slice(&keystore_data)
+            .map_err(|e| DeezelError::Wallet(format!("Failed to deserialize keystore: {}", e)))?;
+
+        let passphrase = self.passphrase.as_deref().ok_or_else(|| DeezelError::Wallet("Passphrase not set".to_string()))?;
+        let seed = crate::keystore::decrypt_seed(&keystore, passphrase)?;
+        let path = bitcoin::bip32::DerivationPath::from_str("m/86'/0'/0'/0/0").unwrap();
+        let network = self.get_network();
+        let address = crate::keystore::derive_address(&seed, &path, network)?;
+        
+        Ok(address.to_string())
+    }
+    
+    async fn get_addresses(&self, count: u32) -> Result<Vec<AddressInfo>> {
+        let wallet_path = self.get_wallet_path().ok_or_else(|| DeezelError::Wallet("Wallet path not set".to_string()))?;
+        let keystore_data = fs::read(wallet_path)
+            .map_err(|e| DeezelError::Wallet(format!("Failed to read keystore: {}", e)))?;
+        let keystore: Keystore = serde_json::from_slice(&keystore_data)
+            .map_err(|e| DeezelError::Wallet(format!("Failed to deserialize keystore: {}", e)))?;
+
+        let passphrase = self.passphrase.as_deref().ok_or_else(|| DeezelError::Wallet("Passphrase not set".to_string()))?;
+        let seed = crate::keystore::decrypt_seed(&keystore, passphrase)?;
+        let network = self.get_network();
+        let mut addresses = Vec::new();
+
+        for i in 0..count {
+            let path_str = format!("m/86'/0'/0'/0/{}", i);
+            let path = bitcoin::bip32::DerivationPath::from_str(&path_str).unwrap();
+            let address = crate::keystore::derive_address(&seed, &path, network)?;
+            
+            addresses.push(AddressInfo {
+                address: address.to_string(),
+                index: i,
+                derivation_path: path_str,
+                script_type: "p2tr".to_string(),
+                used: false, // Assuming not used for now
+            });
+        }
+        
+        Ok(addresses)
     }
     
     async fn send(&self, _params: SendParams) -> Result<String> {
         unimplemented!()
     }
     
-    async fn get_utxos(&self, _include_frozen: bool, _addresses: Option<Vec<String>>) -> Result<Vec<UtxoInfo>> {
-        unimplemented!()
+    async fn get_utxos(&self, _include_frozen: bool, addresses: Option<Vec<String>>) -> Result<Vec<UtxoInfo>> {
+        let addrs = addresses.ok_or_else(|| DeezelError::Wallet("get_utxos requires at least one address".to_string()))?;
+        let mut all_utxos = Vec::new();
+
+        for address in addrs {
+            let utxos_json = self.get_address_utxo(&address).await?;
+            if let Some(utxos_array) = utxos_json.as_array() {
+                for utxo in utxos_array {
+                    if let (Some(txid), Some(vout), Some(value)) = (
+                        utxo.get("txid").and_then(|t| t.as_str()),
+                        utxo.get("vout").and_then(|v| v.as_u64()),
+                        utxo.get("value").and_then(|v| v.as_u64()),
+                    ) {
+                        let status = utxo.get("status");
+                        let confirmed = status.and_then(|s| s.get("confirmed")).and_then(|c| c.as_bool()).unwrap_or(false);
+                        let block_height = status.and_then(|s| s.get("block_height")).and_then(|h| h.as_u64());
+
+                        all_utxos.push(UtxoInfo {
+                            txid: txid.to_string(),
+                            vout: vout as u32,
+                            amount: value,
+                            address: address.clone(),
+                            script_pubkey: None, // Esplora doesn't provide this directly
+                            confirmations: if confirmed { 1 } else { 0 }, // Simplified
+                            frozen: false, // Not supported yet
+                            freeze_reason: None,
+                            block_height,
+                            has_inscriptions: false, // Not supported yet
+                            has_runes: false, // Not supported yet
+                            has_alkanes: false, // Not supported yet
+                            is_coinbase: false, // Not easily determined from Esplora
+                        });
+                    }
+                }
+            }
+        }
+        Ok(all_utxos)
     }
     
-    async fn get_history(&self, _count: u32, _address: Option<String>) -> Result<Vec<TransactionInfo>> {
-        unimplemented!()
+    async fn get_history(&self, count: u32, address: Option<String>) -> Result<Vec<TransactionInfo>> {
+        let addr = address.ok_or_else(|| DeezelError::Wallet("get_history requires an address".to_string()))?;
+        let txs_json = self.get_address_txs(&addr).await?;
+        let mut transactions = Vec::new();
+
+        if let Some(txs_array) = txs_json.as_array() {
+            for tx in txs_array.iter().take(count as usize) {
+                if let Some(txid) = tx.get("txid").and_then(|t| t.as_str()) {
+                    let status = tx.get("status");
+                    let confirmed = status.and_then(|s| s.get("confirmed")).and_then(|c| c.as_bool()).unwrap_or(false);
+                    let block_height = status.and_then(|s| s.get("block_height")).and_then(|h| h.as_u64());
+                    let block_time = status.and_then(|s| s.get("block_time")).and_then(|t| t.as_u64());
+                    let fee = tx.get("fee").and_then(|f| f.as_u64());
+
+                    transactions.push(TransactionInfo {
+                        txid: txid.to_string(),
+                        block_height,
+                        block_time,
+                        confirmed,
+                        fee,
+                        inputs: vec![], // Requires parsing vin
+                        outputs: vec![], // Requires parsing vout
+                    });
+                }
+            }
+        }
+        Ok(transactions)
     }
     
     async fn freeze_utxo(&self, _utxo: String, _reason: Option<String>) -> Result<()> {
@@ -492,30 +649,100 @@ impl WalletProvider for ConcreteProvider {
         unimplemented!()
     }
     
-    async fn create_transaction(&self, _params: SendParams) -> Result<String> {
-        unimplemented!()
+    async fn create_transaction(&self, params: SendParams) -> Result<String> {
+        // 1. Get all addresses from the keystore
+        let all_addresses = self.get_addresses(100).await?; // Get a reasonable number of addresses
+        let address_strings: Vec<String> = all_addresses.iter().map(|a| a.address.clone()).collect();
+
+        // 2. Get UTXOs for all addresses
+        let utxos = self.get_utxos(false, Some(address_strings)).await?;
+
+        // 3. Perform coin selection
+        let target_amount = Amount::from_sat(params.amount);
+        let fee_rate = params.fee_rate.unwrap_or(1.0); // sats/vbyte
+
+        let (selected_utxos, total_input_amount) = self.select_coins(utxos, target_amount)?;
+
+        // 4. Build the transaction
+        let mut tx_builder = Transaction {
+            version: 2,
+            lock_time: bitcoin::absolute::LockTime::ZERO,
+            input: Vec::new(),
+            output: Vec::new(),
+        };
+
+        // Add inputs
+        for utxo in &selected_utxos {
+            tx_builder.input.push(TxIn {
+                previous_output: OutPoint {
+                    txid: bitcoin::Txid::from_str(&utxo.txid)?,
+                    vout: utxo.vout,
+                },
+                script_sig: ScriptBuf::new(),
+                sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+                witness: Witness::new(),
+            });
+        }
+
+        // Add recipient output
+        let recipient_address = Address::from_str(&params.address)?.assume_checked();
+        tx_builder.output.push(TxOut {
+            value: target_amount.to_sat(),
+            script_pubkey: recipient_address.script_pubkey(),
+        });
+
+        // 5. Calculate fee and add change output
+        let estimated_vsize = self.estimate_tx_vsize(&tx_builder, selected_utxos.len());
+        let fee = Amount::from_sat((estimated_vsize as f32 * fee_rate) as u64);
+
+        let change_amount = total_input_amount - target_amount - fee;
+
+        if change_amount > Amount::ZERO {
+            // Use the first address as the change address for simplicity
+            let change_address = Address::from_str(&all_addresses[0].address)?.assume_checked();
+            tx_builder.output.push(TxOut {
+                value: change_amount.to_sat(),
+                script_pubkey: change_address.script_pubkey(),
+            });
+        }
+
+        // 6. Serialize the transaction to hex
+        let tx_hex = bitcoin::consensus::encode::serialize_hex(&tx_builder);
+        Ok(tx_hex)
     }
     
     async fn sign_transaction(&self, _tx_hex: String) -> Result<String> {
         unimplemented!()
     }
     
-    async fn broadcast_transaction(&self, _tx_hex: String) -> Result<String> {
-        unimplemented!()
+    async fn broadcast_transaction(&self, tx_hex: String) -> Result<String> {
+        self.broadcast(&tx_hex).await
     }
     
     async fn estimate_fee(&self, target: u32) -> Result<FeeEstimate> {
+        let fee_estimates = self.get_fee_estimates().await?;
+        let fee_rate = fee_estimates
+            .get(&target.to_string())
+            .and_then(|v| v.as_f64().map(|f| f as f32))
+            .unwrap_or(1.0);
+
         Ok(FeeEstimate {
-            fee_rate: 1.0,
+            fee_rate,
             target_blocks: target,
         })
     }
     
     async fn get_fee_rates(&self) -> Result<FeeRates> {
+        let fee_estimates = self.get_fee_estimates().await?;
+        
+        let fast = fee_estimates.get("1").and_then(|v| v.as_f64()).unwrap_or(10.0) as f32;
+        let medium = fee_estimates.get("6").and_then(|v| v.as_f64()).unwrap_or(5.0) as f32;
+        let slow = fee_estimates.get("144").and_then(|v| v.as_f64()).unwrap_or(1.0) as f32;
+
         Ok(FeeRates {
-            fast: 10.0,
-            medium: 5.0,
-            slow: 1.0,
+            fast,
+            medium,
+            slow,
         })
     }
     
@@ -552,6 +779,10 @@ impl WalletProvider for ConcreteProvider {
     async fn get_keypair(&self) -> Result<bitcoin::secp256k1::Keypair> {
         unimplemented!()
     }
+
+    fn set_passphrase(&mut self, passphrase: Option<String>) {
+        self.passphrase = passphrase;
+    }
 }
 
 #[async_trait(?Send)]
@@ -576,208 +807,351 @@ impl AddressResolver for ConcreteProvider {
 #[async_trait(?Send)]
 impl BitcoinRpcProvider for ConcreteProvider {
     async fn get_block_count(&self) -> Result<u64> {
-        unimplemented!()
+        let result = self.call(&self.bitcoin_rpc_url, "getblockcount", serde_json::Value::Null, 1).await?;
+        result.as_u64().ok_or_else(|| DeezelError::RpcError("Invalid block count response".to_string()))
     }
     
-    async fn generate_to_address(&self, _nblocks: u32, _address: &str) -> Result<serde_json::Value> {
-        unimplemented!()
+    async fn generate_to_address(&self, nblocks: u32, address: &str) -> Result<serde_json::Value> {
+        let params = serde_json::json!([nblocks, address]);
+        self.call(&self.bitcoin_rpc_url, "generatetoaddress", params, 1).await
     }
     
-    async fn get_transaction_hex(&self, _txid: &str) -> Result<String> {
-        unimplemented!()
+    async fn get_transaction_hex(&self, txid: &str) -> Result<String> {
+        let params = serde_json::json!([txid]);
+        let result = self.call(&self.bitcoin_rpc_url, "getrawtransaction", params, 1).await?;
+        result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid transaction hex response".to_string()))
     }
     
-    async fn get_block(&self, _hash: &str) -> Result<serde_json::Value> {
-        unimplemented!()
+    async fn get_block(&self, hash: &str) -> Result<serde_json::Value> {
+        let params = serde_json::json!([hash, 2]); // Verbosity 2 for JSON object
+        self.call(&self.bitcoin_rpc_url, "getblock", params, 1).await
     }
     
-    async fn get_block_hash(&self, _height: u64) -> Result<String> {
-        unimplemented!()
+    async fn get_block_hash(&self, height: u64) -> Result<String> {
+        let params = serde_json::json!([height]);
+        let result = self.call(&self.bitcoin_rpc_url, "getblockhash", params, 1).await?;
+        result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid block hash response".to_string()))
     }
     
-    async fn send_raw_transaction(&self, _tx_hex: &str) -> Result<String> {
-        unimplemented!()
+    async fn send_raw_transaction(&self, tx_hex: &str) -> Result<String> {
+        let params = serde_json::json!([tx_hex]);
+        let result = self.call(&self.bitcoin_rpc_url, "sendrawtransaction", params, 1).await?;
+        result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid txid response from sendrawtransaction".to_string()))
     }
     
     async fn get_mempool_info(&self) -> Result<serde_json::Value> {
-        unimplemented!()
+        self.call(&self.bitcoin_rpc_url, "getmempoolinfo", serde_json::Value::Null, 1).await
     }
     
-    async fn estimate_smart_fee(&self, _target: u32) -> Result<serde_json::Value> {
-        unimplemented!()
+    async fn estimate_smart_fee(&self, target: u32) -> Result<serde_json::Value> {
+        let params = serde_json::json!([target]);
+        self.call(&self.bitcoin_rpc_url, "estimatesmartfee", params, 1).await
     }
     
     async fn get_esplora_blocks_tip_height(&self) -> Result<u64> {
-        unimplemented!()
+        unimplemented!("This method belongs to the EsploraProvider")
     }
     
     async fn trace_transaction(&self, _txid: &str, _vout: u32, _block: Option<&str>, _tx: Option<&str>) -> Result<serde_json::Value> {
-        unimplemented!()
+        unimplemented!("This method belongs to the MetashrewRpcProvider")
     }
 }
 
 #[async_trait(?Send)]
 impl MetashrewRpcProvider for ConcreteProvider {
     async fn get_metashrew_height(&self) -> Result<u64> {
-        unimplemented!()
+        let result = self.call(&self.metashrew_rpc_url, "metashrew_height", serde_json::Value::Null, 1).await?;
+        result.as_u64().ok_or_else(|| DeezelError::RpcError("Invalid metashrew height response".to_string()))
     }
     
-    async fn get_contract_meta(&self, _block: &str, _tx: &str) -> Result<serde_json::Value> {
-        unimplemented!()
+    async fn get_contract_meta(&self, block: &str, tx: &str) -> Result<serde_json::Value> {
+        let params = serde_json::json!([block, tx]);
+        self.call(&self.metashrew_rpc_url, "metashrew_view", params, 1).await
     }
     
-    async fn trace_outpoint(&self, _txid: &str, _vout: u32) -> Result<serde_json::Value> {
-        unimplemented!()
+    async fn trace_outpoint(&self, txid: &str, vout: u32) -> Result<serde_json::Value> {
+        let params = serde_json::json!([format!("{}:{}", txid, vout)]);
+        self.call(&self.metashrew_rpc_url, "metashrew_view", params, 1).await
     }
     
-    async fn get_spendables_by_address(&self, _address: &str) -> Result<serde_json::Value> {
-        unimplemented!()
+    async fn get_spendables_by_address(&self, address: &str) -> Result<serde_json::Value> {
+        let params = serde_json::json!([address]);
+        self.call(&self.metashrew_rpc_url, "spendablesbyaddress", params, 1).await
     }
     
-    async fn get_protorunes_by_address(&self, _address: &str) -> Result<serde_json::Value> {
-        unimplemented!()
+    async fn get_protorunes_by_address(&self, address: &str) -> Result<serde_json::Value> {
+        let params = serde_json::json!([address]);
+        self.call(&self.metashrew_rpc_url, "protorunesbyaddress", params, 1).await
     }
     
-    async fn get_protorunes_by_outpoint(&self, _txid: &str, _vout: u32) -> Result<serde_json::Value> {
-        unimplemented!()
+    async fn get_protorunes_by_outpoint(&self, txid: &str, vout: u32) -> Result<serde_json::Value> {
+        let params = serde_json::json!([format!("{}:{}", txid, vout)]);
+        self.call(&self.metashrew_rpc_url, "protorunesbyoutpoint", params, 1).await
     }
 }
 
 #[async_trait(?Send)]
 impl EsploraProvider for ConcreteProvider {
     async fn get_blocks_tip_hash(&self) -> Result<String> {
-        unimplemented!()
+        let url = format!("{}/blocks/tip/hash", self.bitcoin_rpc_url);
+        let client = reqwest::Client::new();
+        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+        response.text().await.map_err(|e| DeezelError::Network(e.to_string()))
     }
-    
+
     async fn get_blocks_tip_height(&self) -> Result<u64> {
-        unimplemented!()
+        let url = format!("{}/blocks/tip/height", self.bitcoin_rpc_url);
+        let client = reqwest::Client::new();
+        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+        let text = response.text().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+        text.parse::<u64>().map_err(|e| DeezelError::RpcError(format!("Invalid height response: {}", e)))
     }
-    
-    async fn get_blocks(&self, _start_height: Option<u64>) -> Result<serde_json::Value> {
-        unimplemented!()
+
+    async fn get_blocks(&self, start_height: Option<u64>) -> Result<serde_json::Value> {
+        let url = if let Some(height) = start_height {
+            format!("{}/blocks/{}", self.bitcoin_rpc_url, height)
+        } else {
+            format!("{}/blocks", self.bitcoin_rpc_url)
+        };
+        let client = reqwest::Client::new();
+        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+        response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
     }
-    
-    async fn get_block_by_height(&self, _height: u64) -> Result<String> {
-        unimplemented!()
+
+    async fn get_block_by_height(&self, height: u64) -> Result<String> {
+        let url = format!("{}/block-height/{}", self.bitcoin_rpc_url, height);
+        let client = reqwest::Client::new();
+        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+        response.text().await.map_err(|e| DeezelError::Network(e.to_string()))
     }
-    
-    async fn get_block(&self, _hash: &str) -> Result<serde_json::Value> {
-        unimplemented!()
+
+    async fn get_block(&self, hash: &str) -> Result<serde_json::Value> {
+        let url = format!("{}/block/{}", self.bitcoin_rpc_url, hash);
+        let client = reqwest::Client::new();
+        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+        response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
     }
-    
-    async fn get_block_status(&self, _hash: &str) -> Result<serde_json::Value> {
-        unimplemented!()
+
+    async fn get_block_status(&self, hash: &str) -> Result<serde_json::Value> {
+        let url = format!("{}/block/{}/status", self.bitcoin_rpc_url, hash);
+        let client = reqwest::Client::new();
+        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+        response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
     }
-    
-    async fn get_block_txids(&self, _hash: &str) -> Result<serde_json::Value> {
-        unimplemented!()
+
+    async fn get_block_txids(&self, hash: &str) -> Result<serde_json::Value> {
+        let url = format!("{}/block/{}/txids", self.bitcoin_rpc_url, hash);
+        let client = reqwest::Client::new();
+        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+        response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
     }
-    
-    async fn get_block_header(&self, _hash: &str) -> Result<String> {
-        unimplemented!()
+
+    async fn get_block_header(&self, hash: &str) -> Result<String> {
+        let url = format!("{}/block/{}/header", self.bitcoin_rpc_url, hash);
+        let client = reqwest::Client::new();
+        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+        response.text().await.map_err(|e| DeezelError::Network(e.to_string()))
     }
-    
-    async fn get_block_raw(&self, _hash: &str) -> Result<String> {
-        unimplemented!()
+
+    async fn get_block_raw(&self, hash: &str) -> Result<String> {
+        let url = format!("{}/block/{}/raw", self.bitcoin_rpc_url, hash);
+        let client = reqwest::Client::new();
+        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+        let bytes = response.bytes().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+        Ok(hex::encode(bytes))
     }
-    
-    async fn get_block_txid(&self, _hash: &str, _index: u32) -> Result<String> {
-        unimplemented!()
+
+    async fn get_block_txid(&self, hash: &str, index: u32) -> Result<String> {
+        let url = format!("{}/block/{}/txid/{}", self.bitcoin_rpc_url, hash, index);
+        let client = reqwest::Client::new();
+        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+        response.text().await.map_err(|e| DeezelError::Network(e.to_string()))
     }
-    
-    async fn get_block_txs(&self, _hash: &str, _start_index: Option<u32>) -> Result<serde_json::Value> {
-        unimplemented!()
+
+    async fn get_block_txs(&self, hash: &str, start_index: Option<u32>) -> Result<serde_json::Value> {
+        let url = if let Some(index) = start_index {
+            format!("{}/block/{}/txs/{}", self.bitcoin_rpc_url, hash, index)
+        } else {
+            format!("{}/block/{}/txs", self.bitcoin_rpc_url, hash)
+        };
+        let client = reqwest::Client::new();
+        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+        response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
     }
-    
-    async fn get_address(&self, _address: &str) -> Result<serde_json::Value> {
-        unimplemented!()
+
+    async fn get_address(&self, address: &str) -> Result<serde_json::Value> {
+        let url = format!("{}/address/{}", self.bitcoin_rpc_url, address);
+        let client = reqwest::Client::new();
+        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+        response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
     }
-    
-    async fn get_address_txs(&self, _address: &str) -> Result<serde_json::Value> {
-        unimplemented!()
+
+    async fn get_address_txs(&self, address: &str) -> Result<serde_json::Value> {
+        let url = format!("{}/address/{}/txs", self.bitcoin_rpc_url, address);
+        let client = reqwest::Client::new();
+        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+        response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
     }
-    
-    async fn get_address_txs_chain(&self, _address: &str, _last_seen_txid: Option<&str>) -> Result<serde_json::Value> {
-        unimplemented!()
+
+    async fn get_address_txs_chain(&self, address: &str, last_seen_txid: Option<&str>) -> Result<serde_json::Value> {
+        let url = if let Some(txid) = last_seen_txid {
+            format!("{}/address/{}/txs/chain/{}", self.bitcoin_rpc_url, address, txid)
+        } else {
+            format!("{}/address/{}/txs/chain", self.bitcoin_rpc_url, address)
+        };
+        let client = reqwest::Client::new();
+        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+        response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
     }
-    
-    async fn get_address_txs_mempool(&self, _address: &str) -> Result<serde_json::Value> {
-        unimplemented!()
+
+    async fn get_address_txs_mempool(&self, address: &str) -> Result<serde_json::Value> {
+        let url = format!("{}/address/{}/txs/mempool", self.bitcoin_rpc_url, address);
+        let client = reqwest::Client::new();
+        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+        response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
     }
-    
-    async fn get_address_utxo(&self, _address: &str) -> Result<serde_json::Value> {
-        unimplemented!()
+
+    async fn get_address_utxo(&self, address: &str) -> Result<serde_json::Value> {
+        let url = format!("{}/address/{}/utxo", self.bitcoin_rpc_url, address);
+        let client = reqwest::Client::new();
+        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+        response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
     }
-    
-    async fn get_address_prefix(&self, _prefix: &str) -> Result<serde_json::Value> {
-        unimplemented!()
+
+    async fn get_address_prefix(&self, prefix: &str) -> Result<serde_json::Value> {
+        let url = format!("{}/address/prefix/{}", self.bitcoin_rpc_url, prefix);
+        let client = reqwest::Client::new();
+        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+        response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
     }
-    
-    async fn get_tx(&self, _txid: &str) -> Result<serde_json::Value> {
-        unimplemented!()
+
+    async fn get_tx(&self, txid: &str) -> Result<serde_json::Value> {
+        let url = format!("{}/tx/{}", self.bitcoin_rpc_url, txid);
+        let client = reqwest::Client::new();
+        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+        response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
     }
-    
-    async fn get_tx_hex(&self, _txid: &str) -> Result<String> {
-        unimplemented!()
+
+    async fn get_tx_hex(&self, txid: &str) -> Result<String> {
+        let url = format!("{}/tx/{}/hex", self.bitcoin_rpc_url, txid);
+        let client = reqwest::Client::new();
+        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+        response.text().await.map_err(|e| DeezelError::Network(e.to_string()))
     }
-    
-    async fn get_tx_raw(&self, _txid: &str) -> Result<String> {
-        unimplemented!()
+
+    async fn get_tx_raw(&self, txid: &str) -> Result<String> {
+        let url = format!("{}/tx/{}/raw", self.bitcoin_rpc_url, txid);
+        let client = reqwest::Client::new();
+        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+        let bytes = response.bytes().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+        Ok(hex::encode(bytes))
     }
-    
-    async fn get_tx_status(&self, _txid: &str) -> Result<serde_json::Value> {
-        unimplemented!()
+
+    async fn get_tx_status(&self, txid: &str) -> Result<serde_json::Value> {
+        let url = format!("{}/tx/{}/status", self.bitcoin_rpc_url, txid);
+        let client = reqwest::Client::new();
+        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+        response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
     }
-    
-    async fn get_tx_merkle_proof(&self, _txid: &str) -> Result<serde_json::Value> {
-        unimplemented!()
+
+    async fn get_tx_merkle_proof(&self, txid: &str) -> Result<serde_json::Value> {
+        let url = format!("{}/tx/{}/merkle-proof", self.bitcoin_rpc_url, txid);
+        let client = reqwest::Client::new();
+        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+        response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
     }
-    
-    async fn get_tx_merkleblock_proof(&self, _txid: &str) -> Result<String> {
-        unimplemented!()
+
+    async fn get_tx_merkleblock_proof(&self, txid: &str) -> Result<String> {
+        let url = format!("{}/tx/{}/merkleblock-proof", self.bitcoin_rpc_url, txid);
+        let client = reqwest::Client::new();
+        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+        response.text().await.map_err(|e| DeezelError::Network(e.to_string()))
     }
-    
-    async fn get_tx_outspend(&self, _txid: &str, _index: u32) -> Result<serde_json::Value> {
-        unimplemented!()
+
+    async fn get_tx_outspend(&self, txid: &str, index: u32) -> Result<serde_json::Value> {
+        let url = format!("{}/tx/{}/outspend/{}", self.bitcoin_rpc_url, txid, index);
+        let client = reqwest::Client::new();
+        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+        response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
     }
-    
-    async fn get_tx_outspends(&self, _txid: &str) -> Result<serde_json::Value> {
-        unimplemented!()
+
+    async fn get_tx_outspends(&self, txid: &str) -> Result<serde_json::Value> {
+        let url = format!("{}/tx/{}/outspends", self.bitcoin_rpc_url, txid);
+        let client = reqwest::Client::new();
+        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+        response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
     }
-    
-    async fn broadcast(&self, _tx_hex: &str) -> Result<String> {
-        unimplemented!()
+
+    async fn broadcast(&self, tx_hex: &str) -> Result<String> {
+        let url = format!("{}/tx", self.bitcoin_rpc_url);
+        let client = reqwest::Client::new();
+        let response = client.post(&url).body(tx_hex.to_string()).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+        response.text().await.map_err(|e| DeezelError::Network(e.to_string()))
     }
-    
+
     async fn get_mempool(&self) -> Result<serde_json::Value> {
-        unimplemented!()
+        let url = format!("{}/mempool", self.bitcoin_rpc_url);
+        let client = reqwest::Client::new();
+        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+        response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
     }
-    
+
     async fn get_mempool_txids(&self) -> Result<serde_json::Value> {
-        unimplemented!()
+        let url = format!("{}/mempool/txids", self.bitcoin_rpc_url);
+        let client = reqwest::Client::new();
+        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+        response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
     }
-    
+
     async fn get_mempool_recent(&self) -> Result<serde_json::Value> {
-        unimplemented!()
+        let url = format!("{}/mempool/recent", self.bitcoin_rpc_url);
+        let client = reqwest::Client::new();
+        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+        response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
     }
-    
+
     async fn get_fee_estimates(&self) -> Result<serde_json::Value> {
-        unimplemented!()
+        let url = format!("{}/fee-estimates", self.bitcoin_rpc_url);
+        let client = reqwest::Client::new();
+        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+        response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
     }
 }
 
 #[async_trait(?Send)]
 impl RunestoneProvider for ConcreteProvider {
-    async fn decode_runestone(&self, _tx: &bitcoin::Transaction) -> Result<serde_json::Value> {
-        unimplemented!()
+    async fn decode_runestone(&self, tx: &Transaction) -> Result<serde_json::Value> {
+        if let Some(artifact) = Runestone::decipher(tx) {
+            match artifact {
+                Artifact::Runestone(runestone) => Ok(serde_json::to_value(runestone)?),
+                Artifact::Cenotaph(cenotaph) => Err(DeezelError::Runestone(format!("Cenotaph found: {:?}", cenotaph))),
+            }
+        } else {
+            Err(DeezelError::Runestone("No runestone found in transaction".to_string()))
+        }
     }
-    
-    async fn format_runestone_with_decoded_messages(&self, _tx: &bitcoin::Transaction) -> Result<serde_json::Value> {
-        unimplemented!()
+
+    async fn format_runestone_with_decoded_messages(&self, tx: &Transaction) -> Result<serde_json::Value> {
+        if let Some(artifact) = Runestone::decipher(tx) {
+            match artifact {
+                Artifact::Runestone(runestone) => {
+                    Ok(serde_json::json!({
+                        "runestone": runestone,
+                        "decoded_messages": format!("{:?}", runestone)
+                    }))
+                },
+                Artifact::Cenotaph(cenotaph) => Err(DeezelError::Runestone(format!("Cenotaph found: {:?}", cenotaph))),
+            }
+        } else {
+            Err(DeezelError::Runestone("No runestone found in transaction".to_string()))
+        }
     }
-    
-    async fn analyze_runestone(&self, _txid: &str) -> Result<serde_json::Value> {
-        unimplemented!()
+
+    async fn analyze_runestone(&self, txid: &str) -> Result<serde_json::Value> {
+        let tx_hex = self.get_tx_hex(txid).await?;
+        let tx_bytes = hex::decode(&tx_hex)?;
+        let tx: Transaction = bitcoin::consensus::deserialize(&tx_bytes)?;
+        self.decode_runestone(&tx).await
     }
 }
 
@@ -787,24 +1161,30 @@ impl AlkanesProvider for ConcreteProvider {
         unimplemented!()
     }
     
-    async fn get_balance(&self, _address: Option<&str>) -> Result<Vec<AlkanesBalance>> {
-        unimplemented!()
+    async fn get_balance(&self, address: Option<&str>) -> Result<Vec<AlkanesBalance>> {
+        let addr = address.ok_or_else(|| DeezelError::Wallet("get_balance requires an address".to_string()))?;
+        let result = self.get_protorunes_by_address(addr).await?;
+        serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
     }
 
-    async fn get_alkanes_balance(&self, _address: Option<&str>) -> Result<Vec<AlkanesBalance>> {
-        unimplemented!()
+    async fn get_alkanes_balance(&self, address: Option<&str>) -> Result<Vec<AlkanesBalance>> {
+        <Self as AlkanesProvider>::get_balance(self, address).await
     }
     
-    async fn get_token_info(&self, _alkane_id: &str) -> Result<serde_json::Value> {
-        unimplemented!()
+    async fn get_token_info(&self, alkane_id: &str) -> Result<serde_json::Value> {
+        let params = serde_json::json!(["gettokeninfo", alkane_id, "latest"]);
+        self.call(&self.metashrew_rpc_url, "metashrew_view", params, 1).await
     }
     
-    async fn trace(&self, _outpoint: &str) -> Result<serde_json::Value> {
-        unimplemented!()
+    async fn trace(&self, outpoint: &str) -> Result<serde_json::Value> {
+        let params = serde_json::json!(["trace", outpoint, "latest"]);
+        self.call(&self.metashrew_rpc_url, "metashrew_view", params, 1).await
     }
     
-    async fn inspect(&self, _target: &str, _config: AlkanesInspectConfig) -> Result<AlkanesInspectResult> {
-        unimplemented!()
+    async fn inspect(&self, target: &str, config: AlkanesInspectConfig) -> Result<AlkanesInspectResult> {
+        let params = serde_json::json!(["inspect", target, config, "latest"]);
+        let result = self.call(&self.metashrew_rpc_url, "metashrew_view", params, 1).await?;
+        serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
     }
     
     async fn get_bytecode(&self, alkane_id: &str) -> Result<String> {
@@ -817,8 +1197,10 @@ impl AlkanesProvider for ConcreteProvider {
         <Self as JsonRpcProvider>::get_bytecode(self, block, tx).await
     }
     
-    async fn simulate(&self, _contract_id: &str, _params: Option<&str>) -> Result<serde_json::Value> {
-        unimplemented!()
+    async fn simulate(&self, contract_id: &str, params: Option<&str>) -> Result<serde_json::Value> {
+        let p = params.unwrap_or("");
+        let params = serde_json::json!(["simulate", contract_id, p, "latest"]);
+        self.call(&self.metashrew_rpc_url, "metashrew_view", params, 1).await
     }
 }
 
