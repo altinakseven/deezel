@@ -302,6 +302,51 @@ impl NetworkParams {
         }
     }
     
+    /// Create network parameters for Dogecoin
+    pub fn dogecoin() -> Self {
+        Self {
+            network: Network::Bitcoin, // Use Bitcoin network type for compatibility
+            magic: 0xc0c0c0c0, // Dogecoin magic bytes
+            bech32_prefix: "dc".to_string(),
+            p2pkh_prefix: 0x1e,
+            p2sh_prefix: 0x16,
+            bitcoin_rpc_url: "http://dogeuser:dogepass@localhost:22555".to_string(),
+            metashrew_rpc_url: "http://localhost:8080".to_string(),
+            esplora_url: None,
+            custom_params: HashMap::new(),
+        }
+    }
+    
+    /// Create network parameters for Luckycoin
+    pub fn luckycoin() -> Self {
+        Self {
+            network: Network::Bitcoin, // Use Bitcoin network type for compatibility
+            magic: 0xfbc0b6db, // Luckycoin magic bytes
+            bech32_prefix: "lky".to_string(),
+            p2pkh_prefix: 0x2f,
+            p2sh_prefix: 0x05,
+            bitcoin_rpc_url: "http://luckyuser:luckypass@localhost:9332".to_string(),
+            metashrew_rpc_url: "http://localhost:8080".to_string(),
+            esplora_url: None,
+            custom_params: HashMap::new(),
+        }
+    }
+    
+    /// Create network parameters for Bellscoin
+    pub fn bellscoin() -> Self {
+        Self {
+            network: Network::Bitcoin, // Use Bitcoin network type for compatibility
+            magic: 0xbeb4d9f9, // Bellscoin magic bytes
+            bech32_prefix: "bel".to_string(),
+            p2pkh_prefix: 0x19,
+            p2sh_prefix: 0x05,
+            bitcoin_rpc_url: "http://belluser:bellpass@localhost:19332".to_string(),
+            metashrew_rpc_url: "http://localhost:8080".to_string(),
+            esplora_url: None,
+            custom_params: HashMap::new(),
+        }
+    }
+    
     /// Create custom network parameters
     pub fn custom(
         network: Network,
@@ -332,8 +377,94 @@ impl NetworkParams {
             "testnet" => Ok(Self::testnet()),
             "signet" => Ok(Self::signet()),
             "regtest" => Ok(Self::regtest()),
+            "dogecoin" | "doge" => Ok(Self::dogecoin()),
+            "luckycoin" | "lucky" => Ok(Self::luckycoin()),
+            "bellscoin" | "bells" => Ok(Self::bellscoin()),
             _ => Err(DeezelError::Parse(format!("Unknown network: {}", network_str))),
         }
+    }
+    
+    /// Parse custom magic bytes from string format "bech32_hrp:p2pkh_prefix:p2sh_prefix" or "p2pkh_prefix,p2sh_prefix,bech32_hrp"
+    pub fn from_magic_str(magic_str: &str) -> Result<(u8, u8, String)> {
+        // Support both formats: "tb:6f:c4" and "0x6f,0xc4,tb"
+        let parts: Vec<&str> = if magic_str.contains(':') {
+            magic_str.split(':').collect()
+        } else {
+            magic_str.split(',').collect()
+        };
+        
+        if parts.len() != 3 {
+            return Err(DeezelError::Parse(
+                "Magic bytes must be in format: bech32_hrp:p2pkh_prefix:p2sh_prefix (e.g., 'tb:6f:c4') or p2pkh_prefix,p2sh_prefix,bech32_hrp (e.g., '0x6f,0xc4,tb')".to_string()
+            ));
+        }
+        
+        let (p2pkh_prefix, p2sh_prefix, bech32_hrp) = if magic_str.contains(':') {
+            // New format: "tb:6f:c4"
+            let bech32_hrp = parts[0].trim().to_string();
+            if bech32_hrp.is_empty() {
+                return Err(DeezelError::Parse("Bech32 HRP cannot be empty".to_string()));
+            }
+            
+            let p2pkh_prefix = u8::from_str_radix(parts[1].trim_start_matches("0x"), 16)
+                .map_err(|_| DeezelError::Parse(format!("Invalid p2pkh prefix: {}", parts[1])))?;
+            
+            let p2sh_prefix = u8::from_str_radix(parts[2].trim_start_matches("0x"), 16)
+                .map_err(|_| DeezelError::Parse(format!("Invalid p2sh prefix: {}", parts[2])))?;
+            
+            (p2pkh_prefix, p2sh_prefix, bech32_hrp)
+        } else {
+            // Legacy format: "0x6f,0xc4,tb"
+            let p2pkh_prefix = u8::from_str_radix(parts[0].trim_start_matches("0x"), 16)
+                .map_err(|_| DeezelError::Parse(format!("Invalid p2pkh prefix: {}", parts[0])))?;
+            
+            let p2sh_prefix = u8::from_str_radix(parts[1].trim_start_matches("0x"), 16)
+                .map_err(|_| DeezelError::Parse(format!("Invalid p2sh prefix: {}", parts[1])))?;
+            
+            let bech32_hrp = parts[2].trim().to_string();
+            if bech32_hrp.is_empty() {
+                return Err(DeezelError::Parse("Bech32 HRP cannot be empty".to_string()));
+            }
+            
+            (p2pkh_prefix, p2sh_prefix, bech32_hrp)
+        };
+        
+        Ok((p2pkh_prefix, p2sh_prefix, bech32_hrp))
+    }
+    
+    /// Create network parameters with custom magic bytes
+    pub fn with_custom_magic(
+        base_network: Network,
+        p2pkh_prefix: u8,
+        p2sh_prefix: u8,
+        bech32_prefix: String,
+    ) -> Self {
+        let mut params = match base_network {
+            Network::Bitcoin => Self::mainnet(),
+            Network::Testnet => Self::testnet(),
+            Network::Signet => Self::signet(),
+            Network::Regtest => Self::regtest(),
+            _ => Self::mainnet(),
+        };
+        
+        params.p2pkh_prefix = p2pkh_prefix;
+        params.p2sh_prefix = p2sh_prefix;
+        params.bech32_prefix = bech32_prefix;
+        
+        params
+    }
+    
+    /// Get all supported network names
+    pub fn supported_networks() -> Vec<&'static str> {
+        vec![
+            "mainnet", "bitcoin",
+            "testnet",
+            "signet",
+            "regtest",
+            "dogecoin", "doge",
+            "luckycoin", "lucky",
+            "bellscoin", "bells",
+        ]
     }
     
     /// Convert to protorune-support NetworkParams
@@ -453,6 +584,9 @@ mod tests {
         assert!(NetworkParams::from_network_str("testnet").is_ok());
         assert!(NetworkParams::from_network_str("signet").is_ok());
         assert!(NetworkParams::from_network_str("regtest").is_ok());
+        assert!(NetworkParams::from_network_str("dogecoin").is_ok());
+        assert!(NetworkParams::from_network_str("luckycoin").is_ok());
+        assert!(NetworkParams::from_network_str("bellscoin").is_ok());
         assert!(NetworkParams::from_network_str("invalid").is_err());
     }
     
@@ -481,5 +615,87 @@ mod tests {
         assert_eq!(NetworkParams::testnet().default_rpc_port(), 18332);
         assert_eq!(NetworkParams::signet().default_rpc_port(), 38332);
         assert_eq!(NetworkParams::regtest().default_rpc_port(), 18443);
+    }
+    
+    #[test]
+    fn test_altcoin_networks() {
+        let dogecoin = NetworkParams::dogecoin();
+        assert_eq!(dogecoin.p2pkh_prefix, 0x1e);
+        assert_eq!(dogecoin.p2sh_prefix, 0x16);
+        assert_eq!(dogecoin.bech32_prefix, "dc");
+        
+        let luckycoin = NetworkParams::luckycoin();
+        assert_eq!(luckycoin.p2pkh_prefix, 0x2f);
+        assert_eq!(luckycoin.p2sh_prefix, 0x05);
+        assert_eq!(luckycoin.bech32_prefix, "lky");
+        
+        let bellscoin = NetworkParams::bellscoin();
+        assert_eq!(bellscoin.p2pkh_prefix, 0x19);
+        assert_eq!(bellscoin.p2sh_prefix, 0x05);
+        assert_eq!(bellscoin.bech32_prefix, "bel");
+    }
+    
+    #[test]
+    fn test_magic_bytes_parsing() {
+        // Test legacy format: "p2pkh,p2sh,bech32"
+        let result = NetworkParams::from_magic_str("0x00,0x05,bc");
+        assert!(result.is_ok());
+        let (p2pkh, p2sh, hrp) = result.unwrap();
+        assert_eq!(p2pkh, 0x00);
+        assert_eq!(p2sh, 0x05);
+        assert_eq!(hrp, "bc");
+        
+        // Test without 0x prefix
+        let result = NetworkParams::from_magic_str("6f,c4,tb");
+        assert!(result.is_ok());
+        let (p2pkh, p2sh, hrp) = result.unwrap();
+        assert_eq!(p2pkh, 0x6f);
+        assert_eq!(p2sh, 0xc4);
+        assert_eq!(hrp, "tb");
+        
+        // Test new format: "bech32:p2pkh:p2sh"
+        let result = NetworkParams::from_magic_str("tb:6f:c4");
+        assert!(result.is_ok());
+        let (p2pkh, p2sh, hrp) = result.unwrap();
+        assert_eq!(p2pkh, 0x6f);
+        assert_eq!(p2sh, 0xc4);
+        assert_eq!(hrp, "tb");
+        
+        // Test dogecoin format
+        let result = NetworkParams::from_magic_str("dc:1e:16");
+        assert!(result.is_ok());
+        let (p2pkh, p2sh, hrp) = result.unwrap();
+        assert_eq!(p2pkh, 0x1e);
+        assert_eq!(p2sh, 0x16);
+        assert_eq!(hrp, "dc");
+        
+        // Test invalid format
+        assert!(NetworkParams::from_magic_str("invalid").is_err());
+        assert!(NetworkParams::from_magic_str("00,05").is_err());
+        assert!(NetworkParams::from_magic_str("xx,05,bc").is_err());
+        assert!(NetworkParams::from_magic_str("tb:xx:c4").is_err());
+    }
+    
+    #[test]
+    fn test_custom_magic_bytes() {
+        let params = NetworkParams::with_custom_magic(
+            Network::Bitcoin,
+            0x1e,
+            0x16,
+            "dc".to_string()
+        );
+        assert_eq!(params.p2pkh_prefix, 0x1e);
+        assert_eq!(params.p2sh_prefix, 0x16);
+        assert_eq!(params.bech32_prefix, "dc");
+        assert!(matches!(params.network, Network::Bitcoin));
+    }
+    
+    #[test]
+    fn test_supported_networks() {
+        let networks = NetworkParams::supported_networks();
+        assert!(networks.contains(&"mainnet"));
+        assert!(networks.contains(&"dogecoin"));
+        assert!(networks.contains(&"luckycoin"));
+        assert!(networks.contains(&"bellscoin"));
     }
 }

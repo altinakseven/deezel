@@ -30,17 +30,40 @@ pub struct SystemDeezel {
 impl SystemDeezel {
     pub async fn new(args: &Args) -> anyhow::Result<Self> {
         // Determine network parameters based on provider and magic flags
-        let network_params = if let Some(_magic) = args.magic.as_ref() {
-            // For now, default to regtest when magic is provided
-            // TODO: Implement proper magic parsing
-            deezel_common::network::NetworkParams::regtest()
+        let network_params = if let Some(magic_str) = args.magic.as_ref() {
+            // Parse custom magic bytes
+            match deezel_common::network::NetworkParams::from_magic_str(magic_str) {
+                Ok((p2pkh_prefix, p2sh_prefix, bech32_hrp)) => {
+                    // Use the base network from provider and apply custom magic bytes
+                    let base_network = match args.provider.as_str() {
+                        "mainnet" => bitcoin::Network::Bitcoin,
+                        "testnet" => bitcoin::Network::Testnet,
+                        "signet" => bitcoin::Network::Signet,
+                        "regtest" => bitcoin::Network::Regtest,
+                        _ => bitcoin::Network::Regtest,
+                    };
+                    deezel_common::network::NetworkParams::with_custom_magic(
+                        base_network,
+                        p2pkh_prefix,
+                        p2sh_prefix,
+                        bech32_hrp,
+                    )
+                },
+                Err(e) => {
+                    eprintln!("⚠️  Invalid magic bytes format: {}", e);
+                    eprintln!("💡 Expected format: p2pkh_prefix,p2sh_prefix,bech32_hrp (e.g., '0x00,0x05,bc')");
+                    return Err(anyhow!("Invalid magic bytes: {}", e));
+                }
+            }
         } else {
-            match args.provider.as_str() {
-                "mainnet" => deezel_common::network::NetworkParams::mainnet(),
-                "testnet" => deezel_common::network::NetworkParams::testnet(),
-                "signet" => deezel_common::network::NetworkParams::signet(),
-                "regtest" => deezel_common::network::NetworkParams::regtest(),
-                _ => deezel_common::network::NetworkParams::regtest(), // Default to regtest
+            // Use predefined network parameters
+            match deezel_common::network::NetworkParams::from_network_str(&args.provider) {
+                Ok(params) => params,
+                Err(_) => {
+                    eprintln!("⚠️  Unknown network: {}", args.provider);
+                    eprintln!("💡 Supported networks: {}", deezel_common::network::NetworkParams::supported_networks().join(", "));
+                    deezel_common::network::NetworkParams::regtest() // Default fallback
+                }
             }
         };
 
@@ -223,7 +246,7 @@ impl SystemWallet for SystemDeezel {
                }
                Ok(())
            },
-           WalletCommands::Addresses { ranges, hd_path, raw } => {
+           WalletCommands::Addresses { ranges, hd_path, network, all_networks, magic, raw } => {
                 // FIXED: Use the wallet file path from provider (which respects --wallet-file argument)
                 let wallet_file = provider.get_wallet_path()
                     .ok_or_else(|| anyhow!("No wallet file path configured"))?
@@ -236,81 +259,174 @@ impl SystemWallet for SystemDeezel {
                     return Ok(());
                 }
                 
-                // FIXED: Get passphrase securely from user input or CLI argument
-                let passphrase = if let Some(ref pass) = self.args.passphrase {
-                    pass.clone()
-                } else {
-                    // Prompt for passphrase securely using TUI
-                    KeystoreManager::prompt_for_passphrase("Enter passphrase to decrypt keystore", false)?
-                };
+                // ENHANCED: Load keystore metadata without requiring passphrase (addresses command only needs master public key)
+                let keystore_metadata = self.keystore_manager.load_keystore_metadata_from_file(&wallet_file).await?;
                 
-                // Load keystore with proper passphrase
-                let (keystore, _) = self.keystore_manager.load_keystore_from_file(&wallet_file, &passphrase).await?;
-                
-                // Get network name for display
-                let network_name = match provider.get_network() {
-                    bitcoin::Network::Bitcoin => "mainnet",
-                    bitcoin::Network::Testnet => "testnet",
-                    bitcoin::Network::Signet => "signet",
-                    bitcoin::Network::Regtest => "regtest",
-                    _ => "regtest",
-                };
-                
-                let addresses = if let Some(range_specs) = ranges {
-                    // Parse and derive addresses for specified ranges
-                    let mut all_addresses = Vec::new();
-                    
-                    for range_spec in range_specs {
-                        let (script_type, start_index, count) = KeystoreManager::parse_address_range(&self.keystore_manager, &range_spec)?;
-                        let script_types = [script_type.as_str()];
-                        let derived = KeystoreManager::derive_addresses(&self.keystore_manager, &keystore, provider.get_network(), &script_types, start_index, count)?;
-                        all_addresses.extend(derived);
+                // Determine which networks to show addresses for
+                let networks_to_show = if all_networks {
+                    // Show addresses for all supported networks
+                    vec![
+                        bitcoin::Network::Bitcoin,
+                        bitcoin::Network::Testnet,
+                        bitcoin::Network::Signet,
+                        bitcoin::Network::Regtest,
+                    ]
+                } else if let Some(ref network_name) = network {
+                    // Show addresses for specific network
+                    match deezel_common::network::NetworkParams::from_network_str(&network_name) {
+                        Ok(params) => vec![params.network],
+                        Err(e) => {
+                            println!("❌ Invalid network '{}': {}", network_name, e);
+                            println!("💡 Supported networks: {}", deezel_common::network::NetworkParams::supported_networks().join(", "));
+                            return Ok(());
+                        }
                     }
-                    
-                    all_addresses
                 } else {
-                    // Default behavior: show first 5 addresses of each type for current network
-                    KeystoreManager::get_default_addresses(&self.keystore_manager, &keystore, provider.get_network())?
+                    // Default: show addresses for current provider network
+                    vec![provider.get_network()]
                 };
+                
+                // Handle custom magic bytes if provided
+                let custom_network_params = if let Some(ref magic_str) = magic {
+                    match deezel_common::network::NetworkParams::from_magic_str(&magic_str) {
+                        Ok((p2pkh_prefix, p2sh_prefix, bech32_hrp)) => {
+                            Some(deezel_common::network::NetworkParams::with_custom_magic(
+                                provider.get_network(),
+                                p2pkh_prefix,
+                                p2sh_prefix,
+                                bech32_hrp,
+                            ))
+                        },
+                        Err(e) => {
+                            println!("❌ Invalid magic bytes format: {}", e);
+                            return Ok(());
+                        }
+                    }
+                } else {
+                    None
+                };
+                
+                let mut all_addresses = Vec::new();
+                
+                for network in networks_to_show {
+                    let network_name = match network {
+                        bitcoin::Network::Bitcoin => "mainnet",
+                        bitcoin::Network::Testnet => "testnet",
+                        bitcoin::Network::Signet => "signet",
+                        bitcoin::Network::Regtest => "regtest",
+                        _ => "custom",
+                    };
+                    
+                    let addresses = if let Some(range_specs) = &ranges {
+                        // Parse and derive addresses for specified ranges
+                        let mut network_addresses = Vec::new();
+                        
+                        for range_spec in range_specs {
+                            let (script_type, start_index, count) = KeystoreManager::parse_address_range(&self.keystore_manager, &range_spec)?;
+                            let script_types = [script_type.as_str()];
+                            let derived = KeystoreManager::derive_addresses_from_metadata(&self.keystore_manager, &keystore_metadata, network, &script_types, start_index, count, custom_network_params.as_ref())?;
+                            network_addresses.extend(derived);
+                        }
+                        
+                        network_addresses
+                    } else {
+                        // Default behavior: show first 5 addresses of each type for current network
+                        KeystoreManager::get_default_addresses_from_metadata(&self.keystore_manager, &keystore_metadata, network, custom_network_params.as_ref())?
+                    };
+                    
+                    // Add network information to each address
+                    for mut addr in addresses {
+                        addr.network = Some(network_name.to_string());
+                        all_addresses.push(addr);
+                    }
+                }
                 
                 if raw {
                     // Convert to serializable format
-                    let serializable_addresses: Vec<serde_json::Value> = addresses.iter().map(|addr| {
+                    let serializable_addresses: Vec<serde_json::Value> = all_addresses.iter().map(|addr| {
                         serde_json::json!({
                             "address": addr.address,
                             "script_type": addr.script_type,
                             "derivation_path": addr.derivation_path,
-                            "index": addr.index
+                            "index": addr.index,
+                            "network": addr.network
                         })
                     }).collect();
                     println!("{}", serde_json::to_string_pretty(&serializable_addresses)?);
                 } else {
-                    println!("🏠 Wallet Addresses ({})", network_name);
+                    if all_networks {
+                        println!("🏠 Wallet Addresses (All Networks)");
+                    } else if let Some(network_name) = &network {
+                        println!("🏠 Wallet Addresses ({})", network_name);
+                    } else {
+                        let current_network_name = match provider.get_network() {
+                            bitcoin::Network::Bitcoin => "mainnet",
+                            bitcoin::Network::Testnet => "testnet",
+                            bitcoin::Network::Signet => "signet",
+                            bitcoin::Network::Regtest => "regtest",
+                            _ => "custom",
+                        };
+                        println!("🏠 Wallet Addresses ({})", current_network_name);
+                    }
                     println!("═════════════════════════════");
+                    
+                    // Display network magic bytes when a specific network is selected
+                    if let Some(ref network_name) = network {
+                        if let Ok(network_params) = deezel_common::network::NetworkParams::from_network_str(network_name) {
+                            println!("🔮 Network Magic Bytes:");
+                            println!("   Bech32 HRP: {}", network_params.bech32_prefix);
+                            println!("   P2PKH Prefix: 0x{:02x}", network_params.p2pkh_prefix);
+                            println!("   P2SH Prefix: 0x{:02x}", network_params.p2sh_prefix);
+                            println!("   Format: {}:{:02x}:{:02x}", network_params.bech32_prefix, network_params.p2pkh_prefix, network_params.p2sh_prefix);
+                            println!();
+                        }
+                    }
                     
                     if let Some(ref hd_path_custom) = hd_path {
                         println!("🛤️  Custom HD Path: {}", hd_path_custom);
                         println!();
                     }
                     
-                    // Group addresses by script type for better display
-                    let mut grouped_addresses: std::collections::HashMap<String, Vec<&deezel_common::traits::KeystoreAddress>> = std::collections::HashMap::new();
-                    for addr in &addresses {
-                        grouped_addresses.entry(addr.script_type.clone()).or_insert_with(Vec::new).push(addr);
+                    if let Some(ref magic_str) = magic {
+                        println!("🔮 Custom Magic Bytes: {}", magic_str);
+                        println!();
                     }
                     
-                    for (script_type, addrs) in grouped_addresses {
-                        println!("📋 {} Addresses:", script_type.to_uppercase());
-                        for addr in addrs {
-                            println!("  {}. {} (index: {})", addr.index, addr.address, addr.index);
-                            println!("     Path: {}", addr.derivation_path);
+                    // Group addresses by network and script type for better display
+                    let mut grouped_addresses: std::collections::HashMap<String, std::collections::HashMap<String, Vec<&deezel_common::traits::KeystoreAddress>>> = std::collections::HashMap::new();
+                    for addr in &all_addresses {
+                        let network_key = addr.network.as_ref().unwrap_or(&"unknown".to_string()).clone();
+                        grouped_addresses.entry(network_key).or_insert_with(std::collections::HashMap::new)
+                            .entry(addr.script_type.clone()).or_insert_with(Vec::new).push(addr);
+                    }
+                    
+                    for (network_name, script_types) in grouped_addresses {
+                        if all_networks {
+                            println!("🌐 Network: {}", network_name.to_uppercase());
+                            println!("─────────────────────");
                         }
-                        println!();
+                        
+                        for (script_type, addrs) in script_types {
+                            println!("📋 {} Addresses:", script_type.to_uppercase());
+                            for addr in addrs {
+                                println!("  {}. {} (index: {})", addr.index, addr.address, addr.index);
+                                println!("     Path: {}", addr.derivation_path);
+                            }
+                            println!();
+                        }
+                        
+                        if all_networks {
+                            println!();
+                        }
                     }
                     
                     println!("💡 Usage examples:");
                     println!("  deezel wallet addresses p2tr:0-10 p2wpkh:0-5");
-                    println!("  deezel wallet addresses p2sh:100-200");
+                    println!("  deezel wallet addresses -n dogecoin p2pkh:0-5");
+                    println!("  deezel wallet addresses -n testnet");
+                    println!("  deezel wallet addresses --all-networks");
+                    println!("  deezel wallet addresses --magic tb:6f:c4  # testnet magic bytes");
+                    println!("  deezel wallet addresses --magic dc:1e:16  # dogecoin magic bytes");
                     if hd_path.is_none() {
                         println!("  deezel wallet addresses --hd-path \"m/84'/0'/0'/0/0-10\"");
                     }

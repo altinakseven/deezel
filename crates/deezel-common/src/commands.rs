@@ -125,6 +125,15 @@ pub enum WalletCommands {
         /// Custom HD derivation path (overrides default paths)
         #[arg(long)]
         hd_path: Option<String>,
+        /// Network to derive addresses for (overrides global -p flag)
+        #[arg(short = 'n', long)]
+        network: Option<String>,
+        /// Show addresses for all networks (mainnet, testnet, signet, regtest)
+        #[arg(long)]
+        all_networks: bool,
+        /// Custom magic bytes in format "p2pkh_prefix,p2sh_prefix,bech32_hrp"
+        #[arg(long)]
+        magic: Option<String>,
         /// Show raw JSON output
         #[arg(long)]
         raw: bool,

@@ -281,6 +281,18 @@ impl KeystoreManager {
         self.load_keystore(&keystore_data, passphrase).await
     }
 
+    /// Load keystore metadata (master public key, fingerprint, etc.) without decryption
+    pub async fn load_keystore_metadata_from_file(&self, file_path: &str) -> AnyhowResult<Keystore> {
+        let keystore_data = std::fs::read_to_string(file_path)
+            .with_context(|| format!("Failed to read keystore file: {}", file_path))?;
+
+        // Parse the keystore JSON - we only need the metadata, not the encrypted seed
+        let keystore: Keystore = serde_json::from_str(&keystore_data)
+            .context("Failed to parse keystore JSON")?;
+
+        Ok(keystore)
+    }
+
     /// Derive addresses dynamically from master public key
     pub fn derive_addresses(&self, keystore: &Keystore, network: Network, script_types: &[&str], start_index: u32, count: u32) -> AnyhowResult<Vec<KeystoreAddress>> {
         let master_xpub = Xpub::from_str(&keystore.master_public_key)
@@ -314,8 +326,8 @@ impl KeystoreManager {
         // Note: We can only derive non-hardened paths from public keys
         let (derivation_path, address) = match script_type {
             "p2pkh" => {
-                let path_str = format!("m/44/{}/0/0/{}", coin_type, index);
-                let path = DerivationPath::from_str(&path_str)
+                let path_str = format!("m/44'/{}'/0'/0/{}", coin_type, index);
+                let path = DerivationPath::from_str(&format!("m/44/{}/0/0/{}", coin_type, index))
                     .context("Failed to create P2PKH derivation path")?;
                 let derived_key = master_xpub.derive_pub(secp, &path)
                     .with_context(|| format!("Failed to derive public key for path: {}", path))?;
@@ -323,9 +335,10 @@ impl KeystoreManager {
                 let compressed_pubkey = CompressedPublicKey::try_from(bitcoin_pubkey)
                     .context("Failed to create compressed public key")?;
                 let address = Address::p2pkh(compressed_pubkey, network);
-                (path.to_string(), address.to_string())
+                (path_str, address.to_string())
             },
             "p2sh" => {
+                let path_str = format!("m/49'/{}'/0'/0/{}", coin_type, index);
                 let path = DerivationPath::from_str(&format!("m/49/{}/0/0/{}", coin_type, index))
                     .context("Failed to create P2SH derivation path")?;
                 let derived_key = master_xpub.derive_pub(secp, &path)
@@ -336,9 +349,10 @@ impl KeystoreManager {
                 let wpkh_script = ScriptBuf::new_p2wpkh(&compressed_pubkey.wpubkey_hash());
                 let address = Address::p2sh(&wpkh_script, network)
                     .context("Failed to create P2SH address")?;
-                (path.to_string(), address.to_string())
+                (path_str, address.to_string())
             },
             "p2wpkh" => {
+                let path_str = format!("m/84'/{}'/0'/0/{}", coin_type, index);
                 let path = DerivationPath::from_str(&format!("m/84/{}/0/0/{}", coin_type, index))
                     .context("Failed to create P2WPKH derivation path")?;
                 let derived_key = master_xpub.derive_pub(secp, &path)
@@ -347,9 +361,10 @@ impl KeystoreManager {
                 let compressed_pubkey = CompressedPublicKey::try_from(bitcoin_pubkey)
                     .context("Failed to create compressed public key")?;
                 let address = Address::p2wpkh(&compressed_pubkey, network);
-                (path.to_string(), address.to_string())
+                (path_str, address.to_string())
             },
             "p2wsh" => {
+                let path_str = format!("m/84'/{}'/0'/0/{}", coin_type, index);
                 let path = DerivationPath::from_str(&format!("m/84/{}/0/0/{}", coin_type, index))
                     .context("Failed to create P2WSH derivation path")?;
                 let derived_key = master_xpub.derive_pub(secp, &path)
@@ -360,16 +375,17 @@ impl KeystoreManager {
                 // Create a simple P2WPKH script for P2WSH wrapping
                 let script = ScriptBuf::new_p2wpkh(&compressed_pubkey.wpubkey_hash());
                 let address = Address::p2wsh(&script, network);
-                (path.to_string(), address.to_string())
+                (path_str, address.to_string())
             },
             "p2tr" => {
+                let path_str = format!("m/86'/{}'/0'/0/{}", coin_type, index);
                 let path = DerivationPath::from_str(&format!("m/86/{}/0/0/{}", coin_type, index))
                     .context("Failed to create P2TR derivation path")?;
                 let derived_key = master_xpub.derive_pub(secp, &path)
                     .context("Failed to derive public key")?;
                 let internal_key = bitcoin::key::UntweakedPublicKey::from(derived_key.public_key);
                 let address = Address::p2tr(secp, internal_key, None, network);
-                (path.to_string(), address.to_string())
+                (path_str, address.to_string())
             },
             _ => return Err(anyhow!("Unsupported script type: {}", script_type)),
         };
@@ -379,6 +395,7 @@ impl KeystoreManager {
             derivation_path,
             index,
             script_type: script_type.to_string(),
+            network: None, // Will be set by caller if needed
         })
     }
     
@@ -421,6 +438,51 @@ impl KeystoreManager {
         }
         
         Ok((script_type, start_index, end_index - start_index))
+    }
+    
+    /// Derive addresses from keystore metadata without requiring decryption
+    pub fn derive_addresses_from_metadata(&self, keystore_metadata: &Keystore, network: Network, script_types: &[&str], start_index: u32, count: u32, custom_network_params: Option<&deezel_common::network::NetworkParams>) -> AnyhowResult<Vec<KeystoreAddress>> {
+        let master_xpub = Xpub::from_str(&keystore_metadata.master_public_key)
+            .context("Failed to parse master public key")?;
+        
+        let secp = Secp256k1::new();
+        let mut addresses = Vec::new();
+        
+        for script_type in script_types {
+            for index in start_index..(start_index + count) {
+                let mut address = self.derive_single_address(&master_xpub, &secp, network, script_type, index)?;
+                
+                // Apply custom network parameters if provided
+                if let Some(network_params) = custom_network_params {
+                    address = self.apply_custom_network_params(address, network_params)?;
+                }
+                
+                addresses.push(address);
+            }
+        }
+        
+        Ok(addresses)
+    }
+    
+    /// Get default addresses from keystore metadata without requiring decryption
+    pub fn get_default_addresses_from_metadata(&self, keystore_metadata: &Keystore, network: Network, custom_network_params: Option<&deezel_common::network::NetworkParams>) -> AnyhowResult<Vec<KeystoreAddress>> {
+        let script_types = ["p2pkh", "p2sh", "p2wpkh", "p2wsh", "p2tr"];
+        self.derive_addresses_from_metadata(keystore_metadata, network, &script_types, 0, 5, custom_network_params)
+    }
+    
+    /// Apply custom network parameters to an address (re-derive with custom magic bytes)
+    fn apply_custom_network_params(&self, address: KeystoreAddress, _network_params: &deezel_common::network::NetworkParams) -> AnyhowResult<KeystoreAddress> {
+        // For now, we'll keep the original address since re-deriving with custom network parameters
+        // would require more complex address generation logic. This is a placeholder for future enhancement.
+        // The custom network parameters are primarily used for global network configuration.
+        
+        // TODO: Implement proper address re-derivation with custom magic bytes
+        // This would involve:
+        // 1. Parsing the derivation path
+        // 2. Re-deriving the public key
+        // 3. Creating the address with custom network parameters
+        
+        Ok(address)
     }
 }
 

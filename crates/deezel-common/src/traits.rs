@@ -507,6 +507,8 @@ pub struct KeystoreAddress {
     pub index: u32,
     /// Script type (P2WPKH, P2TR, etc.)
     pub script_type: String,
+    /// Network name (optional, for display purposes)
+    pub network: Option<String>,
 }
 
 /// Summary information about a keystore
