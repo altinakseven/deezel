@@ -286,8 +286,9 @@ impl SystemWallet for SystemDeezel {
                     vec![provider.get_network()]
                 };
                 
-                // Handle custom magic bytes if provided
+                // Handle custom magic bytes if provided, OR use global magic bytes from args
                 let custom_network_params = if let Some(ref magic_str) = magic {
+                    // Local --magic flag takes precedence
                     match deezel_common::network::NetworkParams::from_magic_str(&magic_str) {
                         Ok((p2pkh_prefix, p2sh_prefix, bech32_hrp)) => {
                             Some(deezel_common::network::NetworkParams::with_custom_magic(
@@ -301,6 +302,31 @@ impl SystemWallet for SystemDeezel {
                             println!("❌ Invalid magic bytes format: {}", e);
                             return Ok(());
                         }
+                    }
+                } else if let Some(ref global_magic_str) = self.args.magic {
+                    // Use global -p flag magic bytes if no local --magic specified
+                    match deezel_common::network::NetworkParams::from_magic_str(&global_magic_str) {
+                        Ok((p2pkh_prefix, p2sh_prefix, bech32_hrp)) => {
+                            Some(deezel_common::network::NetworkParams::with_custom_magic(
+                                provider.get_network(),
+                                p2pkh_prefix,
+                                p2sh_prefix,
+                                bech32_hrp,
+                            ))
+                        },
+                        Err(_) => {
+                            // If global magic parsing fails, try to get network params from provider string
+                            match deezel_common::network::NetworkParams::from_network_str(&self.args.provider) {
+                                Ok(params) => Some(params),
+                                Err(_) => None,
+                            }
+                        }
+                    }
+                } else if self.args.provider != "regtest" {
+                    // Use network params from provider if it's not the default regtest
+                    match deezel_common::network::NetworkParams::from_network_str(&self.args.provider) {
+                        Ok(params) => Some(params),
+                        Err(_) => None,
                     }
                 } else {
                     None

@@ -471,16 +471,32 @@ impl KeystoreManager {
     }
     
     /// Apply custom network parameters to an address (re-derive with custom magic bytes)
-    fn apply_custom_network_params(&self, address: KeystoreAddress, _network_params: &deezel_common::network::NetworkParams) -> AnyhowResult<KeystoreAddress> {
-        // For now, we'll keep the original address since re-deriving with custom network parameters
-        // would require more complex address generation logic. This is a placeholder for future enhancement.
-        // The custom network parameters are primarily used for global network configuration.
+    fn apply_custom_network_params(&self, mut address: KeystoreAddress, network_params: &deezel_common::network::NetworkParams) -> AnyhowResult<KeystoreAddress> {
+        // Re-derive the address using the custom network parameters
+        // This is needed for networks like dogecoin that have different magic bytes
         
-        // TODO: Implement proper address re-derivation with custom magic bytes
-        // This would involve:
-        // 1. Parsing the derivation path
-        // 2. Re-deriving the public key
-        // 3. Creating the address with custom network parameters
+        // For bech32 addresses (P2WPKH, P2WSH, P2TR), we need to manually construct the address
+        // with the custom HRP (Human Readable Part)
+        match address.script_type.as_str() {
+            "p2wpkh" | "p2wsh" | "p2tr" => {
+                // For bech32 addresses, replace the HRP prefix
+                if address.address.contains('1') {
+                    // Find the separator and replace the HRP
+                    if let Some(separator_pos) = address.address.find('1') {
+                        let data_part = &address.address[separator_pos..];
+                        address.address = format!("{}{}", network_params.bech32_prefix, data_part);
+                    }
+                }
+            },
+            "p2pkh" | "p2sh" => {
+                // For legacy addresses, we would need to re-encode with custom version bytes
+                // This is complex and requires parsing the address, so for now we'll keep the original
+                // TODO: Implement proper legacy address re-encoding with custom version bytes
+            },
+            _ => {
+                // For unknown script types, keep the original address
+            }
+        }
         
         Ok(address)
     }
