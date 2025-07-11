@@ -62,6 +62,7 @@ async-trait = { workspace = true }
 base64 = { workspace = true }
 regex = { workspace = true }
 chrono = { workspace = true }
+smallvec = { workspace = true }
 
 # Alkanes-rs crates
 alkanes-support = { workspace = true }

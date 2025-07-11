@@ -28,13 +28,21 @@ impl<'a> Any<'a> {
     /// Parse armored ascii data.
     pub fn from_armor(bytes: &'a [u8]) -> Result<(Self, armor::Headers)> {
         let (typ, headers, decoded) = armor::decode(bytes)?;
+        
+        log::debug!("Decoded armor data length: {}", decoded.len());
+        log::debug!("First 32 bytes: {:?}", &decoded[..decoded.len().min(32)]);
+        
         let packets = crate::packet::PacketParser::new(Cursor::new(&decoded));
 
         let first = match typ {
             BlockType::PublicKey => {
-                let key = SignedPublicKey::from_packets(packets.peekable())
-                    .next()
-                    .ok_or_else(|| format_err!("unable to parse public key"))??;
+                log::debug!("Parsing public key");
+                let mut parser = SignedPublicKey::from_packets(packets.peekable());
+                let key_result = parser.next();
+                log::debug!("Parser result: {:?}", key_result.is_some());
+                
+                let key = key_result
+                    .ok_or_else(|| format_err!("no matching packet found"))??;
                 Self::PublicKey(key)
             }
             BlockType::PrivateKey => {

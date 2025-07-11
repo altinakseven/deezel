@@ -36,7 +36,7 @@ use crate::{
         CompressionAlgorithm, Fingerprint, KeyId, KeyVersion, PacketHeaderVersion, PacketLength,
         Password, SecretKeyTrait, StringToKey, Tag,
     },
-    util::TeeWriter,
+    util::{TeeWriter, fill_buffer},
 };
 
 #[cfg(feature = "std")]
@@ -598,6 +598,9 @@ impl<'a, R: Read, E: Encryption> Builder<'a, R, E> {
             } else {
                 self.to_writer(rng, &mut enc)?;
             }
+            
+            // CRITICAL: Flush the base64 encoder to actually write the encoded data
+            enc.flush()?;
         }
 
         // write footer
@@ -863,24 +866,63 @@ fn encrypt_write<R: Read, W: Write>(
     );
     match len {
         None => {
-            let mut buf = [0u8; 4096];
+            let config_len = config.write_len();
+            let partial_chunk_size = partial_chunk_size as usize;
+
+            // headers are written only in the first chunk
+            // the partial length be a power of two, so subtract the overhead
+            let first_chunk_size = partial_chunk_size - config_len;
+
+            let mut buffer = vec![0u8; partial_chunk_size];
+
+            let mut is_first = true;
+
             loop {
-                let read = encrypted.read(&mut buf)?;
-                if read == 0 {
-                    break;
+                let (length, buf) = if is_first {
+                    let read = fill_buffer(&mut encrypted, &mut buffer, Some(first_chunk_size))?;
+                    if read < first_chunk_size {
+                        // finished reading, all data fits into a single chunk
+                        let size = (read + config_len).try_into()?;
+                        debug!("single chunk of size {}", size);
+                        (PacketLength::Fixed(size), &buffer[..read])
+                    } else {
+                        (
+                            PacketLength::Partial(partial_chunk_size.try_into()?),
+                            &buffer[..read],
+                        )
+                    }
+                } else {
+                    let read = fill_buffer(&mut encrypted, &mut buffer, Some(partial_chunk_size))?;
+                    if read < partial_chunk_size {
+                        // last chunk
+                        (PacketLength::Fixed(read.try_into()?), &buffer[..read])
+                    } else {
+                        (
+                            PacketLength::Partial(partial_chunk_size.try_into()?),
+                            &buffer[..read],
+                        )
+                    }
+                };
+
+                if is_first {
+                    let packet_header =
+                        PacketHeader::from_parts(PacketHeaderVersion::New, tag, length)?;
+                    debug!("first packet {:?}", packet_header);
+
+                    packet_header.to_writer(&mut out)?;
+                    config.to_writer(&mut out)?;
+                    is_first = false;
+                } else {
+                    debug!("partial packet {:?}", length);
+                    length.to_writer_new(&mut out)?;
                 }
 
-                let len = PacketLength::Partial(read.try_into()?);
-                let packet_header =
-                    PacketHeader::from_parts(PacketHeaderVersion::New, tag, len)?;
-                packet_header.to_writer(&mut out)?;
-                out.write_all(&buf[..read])?;
-            }
+                out.write_all(buf)?;
 
-            // write empty packet to signal end
-            let packet_header =
-                PacketHeader::from_parts(PacketHeaderVersion::New, tag, PacketLength::Partial(0))?;
-            packet_header.to_writer(&mut out)?;
+                if matches!(length, PacketLength::Fixed(_)) {
+                    break;
+                }
+            }
         }
         Some(in_size) => {
             // calculate expected encrypted file size

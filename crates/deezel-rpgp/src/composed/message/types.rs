@@ -317,27 +317,51 @@ impl<'a> Message<'a> {
 
 impl MessageParts {
     pub(crate) fn into_message(self, reader: MessageReader<'_>) -> Message<'_> {
+        self.into_message_with_mode(reader, false)
+    }
+
+    /// Create a message from parts with option to create readable readers
+    pub(crate) fn into_message_readable(self, reader: MessageReader<'_>) -> Message<'_> {
+        self.into_message_with_mode(reader, true)
+    }
+
+    fn into_message_with_mode(self, reader: MessageReader<'_>, readable: bool) -> Message<'_> {
         match self {
             MessageParts::Literal {
                 packet_header,
                 header,
                 is_nested,
-            } => Message::Literal {
-                reader: LiteralDataReader::new_done(
-                    PacketBodyReader::new_done(packet_header, reader),
-                    header,
-                ),
-                is_nested,
+            } => {
+                log::debug!("Reconstructing Literal message from MessageParts (readable={})", readable);
+                Message::Literal {
+                    reader: LiteralDataReader::new_done(
+                        PacketBodyReader::new_done(packet_header, reader),
+                        header,
+                    ),
+                    is_nested,
+                }
             },
             MessageParts::Compressed {
                 packet_header,
                 is_nested,
-            } => Message::Compressed {
-                reader: CompressedDataReader::new_done(PacketBodyReader::new_done(
-                    packet_header,
-                    reader,
-                )),
-                is_nested,
+            } => {
+                if readable {
+                    Message::Compressed {
+                        reader: CompressedDataReader::new(PacketBodyReader::new(
+                            packet_header,
+                            reader,
+                        ).expect("packet body reader creation"), true).expect("compressed data reader creation"),
+                        is_nested,
+                    }
+                } else {
+                    Message::Compressed {
+                        reader: CompressedDataReader::new_done(PacketBodyReader::new_done(
+                            packet_header,
+                            reader,
+                        )),
+                        is_nested,
+                    }
+                }
             },
             MessageParts::Signed {
                 signature,
@@ -345,14 +369,23 @@ impl MessageParts {
                 hash,
                 is_nested,
             } => {
-                let source = parts.into_message(reader);
-                Message::Signed {
-                    reader: SignatureBodyReader::Done {
-                        source: Box::new(source),
-                        hash,
-                        signature,
-                    },
-                    is_nested,
+                let source = parts.into_message_with_mode(reader, readable);
+                if readable {
+                    // For readable mode, create a new SignatureBodyReader that will be in Init state
+                    Message::Signed {
+                        reader: SignatureBodyReader::new(signature, Box::new(source)).expect("signature body reader creation"),
+                        is_nested,
+                    }
+                } else {
+                    // For done mode, create a Done state reader directly
+                    Message::Signed {
+                        reader: SignatureBodyReader::Done {
+                            source: Box::new(source),
+                            hash,
+                            signature,
+                        },
+                        is_nested,
+                    }
                 }
             }
             MessageParts::SignedOnePass {
@@ -362,15 +395,31 @@ impl MessageParts {
                 parts,
                 is_nested,
             } => {
-                let source = parts.into_message(reader);
-                Message::SignedOnePass {
-                    one_pass_signature,
-                    reader: SignatureOnePassReader::Done {
-                        hash,
-                        source: Box::new(source),
-                        signature,
-                    },
-                    is_nested,
+                let source = parts.into_message_with_mode(reader, readable);
+                if readable {
+                    // For readable mode, we can't easily create a new SignatureOnePassReader
+                    // because we would need to consume the source message. Instead, we'll
+                    // create a Done state reader but ensure the source is readable
+                    log::debug!("Creating readable SignedOnePass with Done state reader but readable source");
+                    Message::SignedOnePass {
+                        one_pass_signature,
+                        reader: SignatureOnePassReader::Done {
+                            hash,
+                            source: Box::new(source),
+                            signature,
+                        },
+                        is_nested,
+                    }
+                } else {
+                    Message::SignedOnePass {
+                        one_pass_signature,
+                        reader: SignatureOnePassReader::Done {
+                            hash,
+                            source: Box::new(source),
+                            signature,
+                        },
+                        is_nested,
+                    }
                 }
             }
             MessageParts::Encrypted {
@@ -379,12 +428,21 @@ impl MessageParts {
                 config,
                 is_nested,
             } => {
-                let reader = PacketBodyReader::new_done(packet_header, reader);
-                let edata = if let Some(config) = config {
-                    let reader = SymEncryptedProtectedDataReader::new_done(config, reader);
-                    Edata::SymEncryptedProtectedData { reader }
+                let reader = if readable {
+                    PacketBodyReader::new(packet_header, reader).expect("packet body reader creation")
                 } else {
-                    let reader = SymEncryptedDataReader::new(reader).expect("used before");
+                    PacketBodyReader::new_done(packet_header, reader)
+                };
+                let edata = if let Some(config) = config {
+                    if readable {
+                        let reader = SymEncryptedProtectedDataReader::new(reader).expect("sym encrypted protected data reader creation");
+                        Edata::SymEncryptedProtectedData { reader }
+                    } else {
+                        let reader = SymEncryptedProtectedDataReader::new_done(config, reader);
+                        Edata::SymEncryptedProtectedData { reader }
+                    }
+                } else {
+                    let reader = SymEncryptedDataReader::new(reader).expect("sym encrypted data reader creation");
                     Edata::SymEncryptedData { reader }
                 };
                 Message::Encrypted {
@@ -600,21 +658,46 @@ pub enum VerificationResult {
 }
 
 impl<'a> Message<'a> {
-    /// Create a message from compressed data reader
-    pub fn from_compressed(reader: CompressedDataReader<MessageReader<'a>>, is_nested: bool) -> Result<Self> {
-        Ok(Message::Compressed { reader, is_nested })
-    }
-
     /// Create a message from encrypted data
     pub fn from_edata(edata: Edata<'a>, is_nested: bool) -> Result<Self> {
-        // This should parse the decrypted content as a new message
-        // For now, we'll create a simple literal message wrapper
-        // TODO: This might need more sophisticated parsing
-        Ok(Message::Encrypted {
-            esk: Vec::new(),
-            edata,
-            is_nested
-        })
+        let source = MessageReader::Edata(Box::new(edata));
+        Self::internal_from_bytes(source, is_nested)
+    }
+
+    /// Create a readable message from encrypted data (for decrypted content)
+    pub fn from_edata_readable(edata: Edata<'a>, is_nested: bool) -> Result<Self> {
+        let source = MessageReader::Edata(Box::new(edata));
+        Self::internal_from_bytes_readable(source, is_nested)
+    }
+
+    /// Create a message from compressed data reader
+    pub fn from_compressed(reader: CompressedDataReader<MessageReader<'a>>, is_nested: bool) -> Result<Self> {
+        let source = MessageReader::Compressed(Box::new(reader));
+        Self::internal_from_bytes(source, is_nested)
+    }
+
+    fn internal_from_bytes(source: MessageReader<'a>, is_nested: bool) -> Result<Self> {
+        let packets = crate::packet::PacketParser::new(source);
+        match super::parser::next(packets, is_nested)? {
+            Some(message) => Ok(message),
+            None => {
+                bail!("no valid OpenPGP message found");
+            }
+        }
+    }
+
+    /// Internal method for creating readable messages from decrypted content
+    fn internal_from_bytes_readable(source: MessageReader<'a>, is_nested: bool) -> Result<Self> {
+        // Use the same parsing logic as internal_from_bytes, but the key difference
+        // is that when this is called from decrypt_the_ring, the MessageParts will
+        // be reconstructed using into_message_readable() instead of into_message()
+        let packets = crate::packet::PacketParser::new(source);
+        match super::parser::next(packets, is_nested)? {
+            Some(message) => Ok(message),
+            None => {
+                bail!("no valid OpenPGP message found");
+            }
+        }
     }
 
     /// Decompresses the data if compressed.
@@ -891,7 +974,7 @@ impl<'a> Message<'a> {
                 } else {
                     edata.decrypt(&session_key)?;
                 }
-                let message = Message::from_edata(edata, is_nested)?;
+                let message = Message::from_edata_readable(edata, is_nested)?;
                 Ok((message, result))
             }
         }
@@ -943,6 +1026,15 @@ impl<'a> Message<'a> {
 
     /// Consumes the reader and reads into a vec.
     pub fn as_data_vec(&mut self) -> crate::io::Result<Vec<u8>> {
+        // Special handling for signed messages that may be reconstructed from decrypted data
+        if let Message::Signed { reader, .. } = self {
+            if reader.is_done() {
+                // For done signed readers, try to extract data directly from the source message
+                log::debug!("Extracting data from done SignatureBodyReader via source message");
+                return reader.get_mut().as_data_vec();
+            }
+        }
+        
         let mut out = Vec::new();
         self.read_to_end(&mut out)?;
         Ok(out)

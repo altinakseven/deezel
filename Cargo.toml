@@ -55,6 +55,7 @@ tempfile = "3.8"
 chrono = { version = "0.4", features = ["serde"] }
 spin = "0.9.8"
 url = "2.5.0"
+smallvec = "1.13"
 
 # Alkanes-rs crates
 alkanes-support = { git = "https://github.com/kungfuflex/alkanes-rs" }

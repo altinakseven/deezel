@@ -96,12 +96,28 @@ pub(crate) fn write_header(
 }
 
 fn write_body(
-    _writer: &mut impl Write,
-    _source: &impl Serialize,
-    _crc_hasher: Option<&mut Crc24Hasher>,
+    writer: &mut impl Write,
+    source: &impl Serialize,
+    crc_hasher: Option<&mut Crc24Hasher>,
 ) -> Result<()> {
-    // This function needs a major refactor to work without crate::io.
-    // For now, it is a no-op.
+    // Serialize the source to a buffer first
+    let mut buffer = alloc::vec::Vec::new();
+    source.to_writer(&mut buffer)?;
+    
+    // Update CRC if needed
+    if let Some(hasher) = crc_hasher {
+        hasher.write(&buffer);
+    }
+    
+    // Encode to base64 and write in chunks
+    let encoded = base64::engine::general_purpose::STANDARD.encode(&buffer);
+    
+    // Write in 64-character lines as per RFC
+    for chunk in encoded.as_bytes().chunks(64) {
+        writer.write_all(chunk)?;
+        writer.write_all(b"\n")?;
+    }
+    
     Ok(())
 }
 

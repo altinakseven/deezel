@@ -34,14 +34,21 @@ impl<'a, R: BufRead> Iterator for PacketParser<R> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.is_done {
+            debug!("PacketParser is done");
             return None;
         }
 
+        debug!("PacketParser: attempting to read header");
         let header = match PacketHeader::try_from_reader(&mut self.reader) {
-            Ok(header) => header,
+            Ok(header) => {
+                debug!("PacketParser: successfully read header: {header:?}");
+                header
+            },
             Err(err) => {
+                debug!("PacketParser: failed to read header: {:?}", err);
                 self.is_done = true;
                 if err.kind() == crate::io::ErrorKind::UnexpectedEof {
+                    debug!("PacketParser: EOF reached");
                     return None;
                 }
 

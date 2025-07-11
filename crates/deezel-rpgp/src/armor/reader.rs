@@ -296,14 +296,65 @@ fn hash_header_line(i: &[u8]) -> IResult<&[u8], Vec<String>> {
 }
 
 pub fn decode(i: &[u8]) -> Result<(BlockType, Headers, Vec<u8>)> {
-    let (i, (typ, headers)) = armor_header(i).map_err(|e: nom::Err<nom::error::Error<_>>| {
+    let (remaining, (typ, headers)) = armor_header(i).map_err(|e: nom::Err<nom::error::Error<_>>| {
         crate::errors::Error::from(e.to_string())
     })?;
 
-    // TODO: should not be a BufReader here
-    let mut reader = Base64Reader::new(BufReader::new(Cursor::new(i)));
+    // Skip the blank line after headers
+    let remaining = if remaining.starts_with(b"\r\n") {
+        &remaining[2..]
+    } else if remaining.starts_with(b"\n") {
+        &remaining[1..]
+    } else {
+        remaining
+    };
+
+    // Find the footer and extract the base64 content
+    let footer_start = if let Some(pos) = find_footer_start(remaining) {
+        pos
+    } else {
+        return Err(crate::errors::Error::from("armor footer not found".to_string()));
+    };
+
+    let base64_content = &remaining[..footer_start];
+    
+    // Clean up the base64 content by removing line endings and whitespace
+    let cleaned_base64: Vec<u8> = base64_content
+        .iter()
+        .filter(|&&b| !matches!(b, b'\r' | b'\n' | b' ' | b'\t'))
+        .copied()
+        .collect();
+
+    // Decode the base64 content
+    let mut reader = Base64Reader::new(BufReader::new(Cursor::new(&cleaned_base64)));
     let mut decoded = Vec::new();
     reader.read_to_end(&mut decoded)?;
 
     Ok((typ, headers, decoded))
+}
+
+// Helper function to find the start of the armor footer
+fn find_footer_start(data: &[u8]) -> Option<usize> {
+    // Look for patterns like "=XXXX\n-----END" or "\n-----END" or "-----END"
+    let mut i = 0;
+    while i < data.len() {
+        if data[i..].starts_with(b"-----END") {
+            return Some(i);
+        }
+        if data[i] == b'=' {
+            // Look for checksum pattern like "=XXXX\n-----END"
+            let mut j = i + 1;
+            while j < data.len() && j < i + 10 {
+                if data[j] == b'\n' || data[j] == b'\r' {
+                    if data[j..].starts_with(b"\n-----END") || data[j..].starts_with(b"\r\n-----END") {
+                        return Some(i);
+                    }
+                    break;
+                }
+                j += 1;
+            }
+        }
+        i += 1;
+    }
+    None
 }

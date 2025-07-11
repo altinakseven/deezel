@@ -43,10 +43,21 @@ impl<R: BufRead> LiteralDataReader<R> {
     }
 
     pub(crate) fn new_done(source: PacketBodyReader<R>, header: LiteralDataHeader) -> Self {
-        Self::Done {
-            source,
-            header,
-            buffer: BytesMut::new(),
+        // Try to create a readable Body state instead of Done state for better compatibility
+        // This helps with SignatureBodyReader which expects to be able to read from the source
+        if !source.is_done() {
+            log::debug!("Creating readable LiteralDataReader instead of done state");
+            Self::Body {
+                source,
+                header,
+                buffer: BytesMut::with_capacity(1024),
+            }
+        } else {
+            Self::Done {
+                source,
+                header,
+                buffer: BytesMut::new(),
+            }
         }
     }
 

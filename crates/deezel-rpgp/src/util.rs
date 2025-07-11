@@ -20,7 +20,14 @@ pub(crate) fn fill_buffer<R: Read>(
 
     while read < chunk_size {
         match source.read(&mut buffer[read..]) {
-            Ok(0) => break,
+            Ok(0) => {
+                if read == 0 {
+                    // Distinguish between EOF and uninitialized reader
+                    // This helps debug cases where readers are not properly initialized
+                    log::debug!("fill_buffer: reader returned 0 bytes on first read - possibly uninitialized or EOF");
+                }
+                break;
+            }
             Ok(n) => {
                 read += n;
                 chunk_size -= n;

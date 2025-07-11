@@ -366,8 +366,8 @@ mod no_std_io {
     impl<'a, T: AsRef<[u8]>> BufRead for Cursor<T> {
         fn fill_buf(&mut self) -> Result<&[u8]> {
             let len = self.inner.as_ref().len() as u64;
-            let end = core::cmp::min(self.pos, len);
-            Ok(&self.inner.as_ref()[(end as usize)..])
+            let start = core::cmp::min(self.pos, len) as usize;
+            Ok(&self.inner.as_ref()[start..])
         }
 
         fn consume(&mut self, amt: usize) {
