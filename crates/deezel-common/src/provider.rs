@@ -53,6 +53,11 @@ impl ConcreteProvider {
         })
     }
 
+    /// Get the wallet path
+    pub fn get_wallet_path(&self) -> Option<&PathBuf> {
+        self.wallet_path.as_ref()
+    }
+
     /// Convert a SignedSecretKey to our PgpKey format
     fn convert_signed_secret_key_to_pgp_key(key: &SignedSecretKey) -> Result<PgpKey> {
         // Serialize the key to armored format

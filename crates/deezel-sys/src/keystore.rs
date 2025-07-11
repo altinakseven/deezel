@@ -23,6 +23,7 @@ use deezel_rpgp::{
     types::{Password, StringToKey},
 };
 use rand::{rngs::OsRng, RngCore};
+use hex;
 
 use crate::pgp::DeezelPgpProvider;
 use deezel_common::traits::{KeystoreProvider, KeystoreAddress, KeystoreInfo};
@@ -42,6 +43,19 @@ pub struct Keystore {
     pub created_at: u64,
     /// Version of the keystore format
     pub version: String,
+    /// PBKDF2 parameters for key derivation
+    pub pbkdf2_params: PbkdfParams,
+}
+
+/// PBKDF2 parameters for secure key derivation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PbkdfParams {
+    /// Salt used for PBKDF2 (hex encoded)
+    pub salt: String,
+    /// Number of iterations
+    pub iterations: u32,
+    /// Hash algorithm used
+    pub hash_algorithm: String,
 }
 
 
@@ -86,7 +100,7 @@ impl KeystoreManager {
         let secp = Secp256k1::new();
         
         // Encrypt the mnemonic using PGP with ASCII armoring
-        let encrypted_seed = self.encrypt_seed_with_pgp(&mnemonic_str, &params.passphrase)?;
+        let (encrypted_seed, pbkdf2_params) = self.encrypt_seed_with_pgp(&mnemonic_str, &params.passphrase)?;
 
         // Create master key (always use Bitcoin mainnet for the master key to ensure compatibility)
         let master_key = Xpriv::new_master(Network::Bitcoin, seed.as_bytes())
@@ -104,13 +118,14 @@ impl KeystoreManager {
             master_fingerprint: master_fingerprint.to_string(),
             created_at: chrono::Utc::now().timestamp() as u64,
             version: env!("CARGO_PKG_VERSION").to_string(),
+            pbkdf2_params,
         };
 
         Ok((keystore, mnemonic_str))
     }
 
     /// Encrypt the seed using PGP with ASCII armoring
-    fn encrypt_seed_with_pgp(&self, mnemonic: &str, passphrase: &str) -> AnyhowResult<String> {
+    fn encrypt_seed_with_pgp(&self, mnemonic: &str, passphrase: &str) -> AnyhowResult<(String, PbkdfParams)> {
         // Set up PGP encryption parameters
         let iterations = 100_000;
         let mut salt = [0u8; 8];
@@ -133,7 +148,57 @@ impl KeystoreManager {
         let armored_message = enc_builder.to_armored_string(OsRng, ArmorOptions::default())
             .context("Failed to create ASCII armored message")?;
 
-        Ok(armored_message)
+        // Store PBKDF2 parameters for later decryption
+        let pbkdf2_params = PbkdfParams {
+            salt: hex::encode(salt),
+            iterations,
+            hash_algorithm: "SHA256".to_string(),
+        };
+
+        Ok((armored_message, pbkdf2_params))
+    }
+
+    /// Prompt for passphrase securely using a TUI
+    pub fn prompt_for_passphrase(prompt: &str, confirm: bool) -> AnyhowResult<String> {
+        use dialoguer::Password;
+        
+        if confirm {
+            // For new passphrases, require confirmation
+            loop {
+                let passphrase = Password::new()
+                    .with_prompt(prompt)
+                    .interact()
+                    .context("Failed to read passphrase")?;
+                
+                if passphrase.is_empty() {
+                    println!("❌ Passphrase cannot be empty. Please try again.");
+                    continue;
+                }
+                
+                let confirm_passphrase = Password::new()
+                    .with_prompt("Confirm passphrase")
+                    .interact()
+                    .context("Failed to read passphrase confirmation")?;
+                
+                if passphrase == confirm_passphrase {
+                    return Ok(passphrase);
+                } else {
+                    println!("❌ Passphrases do not match. Please try again.");
+                }
+            }
+        } else {
+            // For existing passphrases, just prompt once
+            let passphrase = Password::new()
+                .with_prompt(prompt)
+                .interact()
+                .context("Failed to read passphrase")?;
+            
+            if passphrase.is_empty() {
+                return Err(anyhow!("Passphrase cannot be empty"));
+            }
+            
+            Ok(passphrase)
+        }
     }
 
     /// Encode count for PGP S2K (from RFC 4880)
@@ -157,20 +222,44 @@ impl KeystoreManager {
     }
 
     /// Load and decrypt a keystore
-    pub async fn load_keystore(&self, keystore_data: &str, _passphrase: &str) -> AnyhowResult<(Keystore, String)> {
+    pub async fn load_keystore(&self, keystore_data: &str, passphrase: &str) -> AnyhowResult<(Keystore, String)> {
         // Parse the keystore JSON
         let keystore: Keystore = serde_json::from_str(keystore_data)
             .context("Failed to parse keystore JSON")?;
 
-        // For now, return a placeholder mnemonic since we don't have the private key stored
-        // In a real implementation, you would:
-        // 1. Load the corresponding private key from secure storage
-        // 2. Decrypt the encrypted_seed using the private key and passphrase
-        // 3. Return the decrypted mnemonic
+        // Decrypt the mnemonic using PGP
+        let mnemonic = self.decrypt_seed_with_pgp(&keystore.encrypted_seed, passphrase, &keystore.pbkdf2_params)?;
         
-        let placeholder_mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about".to_string();
+        Ok((keystore, mnemonic))
+    }
+    
+    /// Decrypt the seed using PGP with stored PBKDF2 parameters
+    fn decrypt_seed_with_pgp(&self, encrypted_seed: &str, passphrase: &str, pbkdf2_params: &PbkdfParams) -> AnyhowResult<String> {
+        // Decode hex salt back to bytes
+        let _salt = hex::decode(&pbkdf2_params.salt)
+            .map_err(|e| anyhow::anyhow!("Failed to decode salt from hex: {}", e))?;
         
-        Ok((keystore, placeholder_mnemonic))
+        // Note: The PBKDF2 parameters are stored for future use, but the current PGP implementation
+        // handles the key derivation internally. In a more advanced implementation, we would
+        // use these parameters to derive the key manually and then decrypt.
+        
+        // For now, we use the PGP library's built-in password-based decryption
+        // which should handle the S2K parameters that were used during encryption
+        use deezel_rpgp::composed::Message;
+        
+        let (message, _headers) = Message::from_string(encrypted_seed)
+            .context("Failed to parse armored PGP message")?;
+            
+        let mut decrypted_message = message.decrypt_with_password(&Password::from(passphrase))
+            .context("Failed to decrypt PGP message with passphrase")?;
+            
+        let decrypted_data = decrypted_message.as_data_vec()
+            .context("Failed to read decrypted data")?;
+            
+        let mnemonic = String::from_utf8(decrypted_data)
+            .context("Failed to convert decrypted data to UTF-8 string")?;
+            
+        Ok(mnemonic)
     }
 
     /// Save keystore to file

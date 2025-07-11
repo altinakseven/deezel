@@ -24,6 +24,7 @@ pub struct SystemDeezel {
     provider: ConcreteProvider,
     pgp_provider: DeezelPgpProvider,
     keystore_manager: KeystoreManager,
+    args: Args,
 }
 
 impl SystemDeezel {
@@ -43,7 +44,7 @@ impl SystemDeezel {
             }
         };
 
-        // Generate network-specific wallet file path
+        // FIXED: Use user-specified wallet file path or generate default
         let wallet_file = if let Some(ref path) = args.wallet_file {
             expand_tilde(path)?
         } else {
@@ -54,8 +55,8 @@ impl SystemDeezel {
                 bitcoin::Network::Regtest => "regtest",
                 _ => "custom",
             };
-            // Default to GPG-encrypted .asc extension
-            expand_tilde(&format!("~/.deezel/{}.json.asc", network_name))?
+            // Default to keystore.json extension (not .asc since we handle encryption internally)
+            expand_tilde(&format!("~/.deezel/{}.keystore.json", network_name))?
         };
         
         // Create wallet directory if it doesn't exist
@@ -85,7 +86,12 @@ impl SystemDeezel {
         // Create keystore manager
         let keystore_manager = KeystoreManager::new();
 
-        Ok(Self { provider, pgp_provider, keystore_manager })
+        Ok(Self {
+            provider,
+            pgp_provider,
+            keystore_manager,
+            args: args.clone(),
+        })
     }
 }
 
@@ -102,39 +108,36 @@ impl SystemWallet for SystemDeezel {
    async fn execute_wallet_command(&self, command: WalletCommands) -> deezel_common::Result<()> {
        let provider = &self.provider;
        let res: anyhow::Result<()> = match command {
-            WalletCommands::Create { mnemonic } => {
-                println!("🔐 Creating wallet with PGP-encrypted keystore...");
-                
-                // Get passphrase for keystore encryption
-                // In a real implementation, you would prompt for passphrase securely
-                println!("⚠️  Using default passphrase for demo (in production, prompt user securely)");
-                let passphrase = "demo-passphrase".to_string();
-                
-                // Create keystore parameters
-                let keystore_params = KeystoreCreateParams {
-                    mnemonic: mnemonic.clone(),
-                    passphrase: passphrase.clone(),
-                    network: provider.get_network(),
-                    address_count: 5, // This parameter is now unused but kept for compatibility
-                };
-                
-                // Create the keystore
-                let (keystore, mnemonic_phrase) = self.keystore_manager.create_keystore(keystore_params).await?;
-                
-                // Determine wallet file path
-                let network_name = match provider.get_network() {
-                    bitcoin::Network::Bitcoin => "mainnet",
-                    bitcoin::Network::Testnet => "testnet",
-                    bitcoin::Network::Signet => "signet",
-                    bitcoin::Network::Regtest => "regtest",
-                    _ => "custom",
-                };
-                
-                // Use default wallet file path for keystore
-                let wallet_file = expand_tilde(&format!("~/.deezel/{}.keystore.json", network_name))?;
-                
-                // Save keystore to file
-                self.keystore_manager.save_keystore(&keystore, &wallet_file).await?;
+           WalletCommands::Create { mnemonic } => {
+               println!("🔐 Creating wallet with PGP-encrypted keystore...");
+               
+               // FIXED: Get passphrase securely from user input or CLI argument
+               let passphrase = if let Some(ref pass) = self.args.passphrase {
+                   pass.clone()
+               } else {
+                   // Prompt for passphrase securely using TUI
+                   KeystoreManager::prompt_for_passphrase("Enter passphrase for keystore encryption", true)?
+               };
+               
+               // Create keystore parameters
+               let keystore_params = KeystoreCreateParams {
+                   mnemonic: mnemonic.clone(),
+                   passphrase: passphrase.clone(),
+                   network: provider.get_network(),
+                   address_count: 5, // This parameter is now unused but kept for compatibility
+               };
+               
+               // Create the keystore
+               let (keystore, mnemonic_phrase) = self.keystore_manager.create_keystore(keystore_params).await?;
+               
+               // FIXED: Use the wallet file path from provider (which respects --wallet-file argument)
+               let wallet_file = provider.get_wallet_path()
+                   .ok_or_else(|| anyhow!("No wallet file path configured"))?
+                   .to_string_lossy()
+                   .to_string();
+               
+               // Save keystore to file
+               self.keystore_manager.save_keystore(&keystore, &wallet_file).await?;
                 
                 // Get first P2WPKH address for display using dynamic derivation
                 let default_addresses = KeystoreManager::get_default_addresses(&self.keystore_manager, &keystore, provider.get_network())?;
@@ -142,6 +145,15 @@ impl SystemWallet for SystemDeezel {
                     .find(|addr| addr.script_type == "p2wpkh" && addr.index == 0)
                     .map(|addr| addr.address.clone())
                     .unwrap_or_else(|| "No P2WPKH address generated".to_string());
+                
+                // Get network name for display
+                let network_name = match provider.get_network() {
+                    bitcoin::Network::Bitcoin => "mainnet",
+                    bitcoin::Network::Testnet => "testnet",
+                    bitcoin::Network::Signet => "signet",
+                    bitcoin::Network::Regtest => "regtest",
+                    _ => "custom",
+                };
                 
                 println!("✅ Wallet keystore created successfully!");
                 println!("📁 Keystore saved to: {}", wallet_file);
@@ -212,16 +224,11 @@ impl SystemWallet for SystemDeezel {
                Ok(())
            },
            WalletCommands::Addresses { ranges, hd_path, raw } => {
-                // Load keystore to get master public key
-                let network_name = match provider.get_network() {
-                    bitcoin::Network::Bitcoin => "mainnet",
-                    bitcoin::Network::Testnet => "testnet",
-                    bitcoin::Network::Signet => "signet",
-                    bitcoin::Network::Regtest => "regtest",
-                    _ => "regtest",
-                };
-                
-                let wallet_file = expand_tilde(&format!("~/.deezel/{}.keystore.json", network_name))?;
+                // FIXED: Use the wallet file path from provider (which respects --wallet-file argument)
+                let wallet_file = provider.get_wallet_path()
+                    .ok_or_else(|| anyhow!("No wallet file path configured"))?
+                    .to_string_lossy()
+                    .to_string();
                 
                 // Check if keystore exists
                 if !std::path::Path::new(&wallet_file).exists() {
@@ -229,8 +236,25 @@ impl SystemWallet for SystemDeezel {
                     return Ok(());
                 }
                 
-                // Load keystore (using placeholder passphrase for now)
-                let (keystore, _) = self.keystore_manager.load_keystore_from_file(&wallet_file, "demo-passphrase").await?;
+                // FIXED: Get passphrase securely from user input or CLI argument
+                let passphrase = if let Some(ref pass) = self.args.passphrase {
+                    pass.clone()
+                } else {
+                    // Prompt for passphrase securely using TUI
+                    KeystoreManager::prompt_for_passphrase("Enter passphrase to decrypt keystore", false)?
+                };
+                
+                // Load keystore with proper passphrase
+                let (keystore, _) = self.keystore_manager.load_keystore_from_file(&wallet_file, &passphrase).await?;
+                
+                // Get network name for display
+                let network_name = match provider.get_network() {
+                    bitcoin::Network::Bitcoin => "mainnet",
+                    bitcoin::Network::Testnet => "testnet",
+                    bitcoin::Network::Signet => "signet",
+                    bitcoin::Network::Regtest => "regtest",
+                    _ => "regtest",
+                };
                 
                 let addresses = if let Some(range_specs) = ranges {
                     // Parse and derive addresses for specified ranges

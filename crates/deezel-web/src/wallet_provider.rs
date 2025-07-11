@@ -1481,6 +1481,7 @@ impl PgpProvider for BrowserWalletProvider {
     }
 }
 
+#[async_trait(?Send)]
 impl DeezelProvider for BrowserWalletProvider {
     fn provider_name(&self) -> &str {
         "browser_wallet"

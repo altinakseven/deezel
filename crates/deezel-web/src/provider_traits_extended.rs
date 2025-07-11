@@ -337,6 +337,7 @@ impl PgpProvider for WebProvider {
     }
 }
 
+#[async_trait(?Send)]
 impl DeezelProvider for WebProvider {
     fn provider_name(&self) -> &str {
         "WebProvider"

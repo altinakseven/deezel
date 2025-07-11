@@ -23,3 +23,5 @@ reqwest = { workspace = true, features = ["json"] }
 bip39 = { workspace = true }
 chrono = { workspace = true }
 smallvec = "1.11"
+rpassword = "7.3"
+dialoguer = "0.11"
