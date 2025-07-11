@@ -1097,10 +1097,8 @@ impl EsploraProvider for ConcreteProvider {
     }
 
     async fn get_address_utxo(&self, address: &str) -> Result<serde_json::Value> {
-        let url = format!("{}/address/{}/utxo", self.bitcoin_rpc_url, address);
-        let client = reqwest::Client::new();
-        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-        response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
+        let params = serde_json::json!([address]);
+        self.call(&self.bitcoin_rpc_url, "esplora_address::utxo", params, 1).await
     }
 
     async fn get_address_prefix(&self, prefix: &str) -> Result<serde_json::Value> {
@@ -1111,10 +1109,8 @@ impl EsploraProvider for ConcreteProvider {
     }
 
     async fn get_tx(&self, txid: &str) -> Result<serde_json::Value> {
-        let url = format!("{}/tx/{}", self.bitcoin_rpc_url, txid);
-        let client = reqwest::Client::new();
-        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-        response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
+        let params = serde_json::json!([txid]);
+        self.call(&self.bitcoin_rpc_url, "esplora_tx", params, 1).await
     }
 
     async fn get_tx_hex(&self, txid: &str) -> Result<String> {
@@ -1168,10 +1164,9 @@ impl EsploraProvider for ConcreteProvider {
     }
 
     async fn broadcast(&self, tx_hex: &str) -> Result<String> {
-        let url = format!("{}/tx", self.bitcoin_rpc_url);
-        let client = reqwest::Client::new();
-        let response = client.post(&url).body(tx_hex.to_string()).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-        response.text().await.map_err(|e| DeezelError::Network(e.to_string()))
+        // Broadcasting is a standard bitcoind RPC call, not an Esplora-specific one.
+        // Delegate to the BitcoinRpcProvider implementation.
+        self.send_raw_transaction(tx_hex).await
     }
 
     async fn get_mempool(&self) -> Result<serde_json::Value> {

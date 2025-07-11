@@ -196,6 +196,12 @@ impl From<bitcoin::sighash::TaprootError> for DeezelError {
     }
 }
 
+impl From<bitcoin::sighash::P2wpkhError> for DeezelError {
+    fn from(err: bitcoin::sighash::P2wpkhError) -> Self {
+        DeezelError::Transaction(err.to_string())
+    }
+}
+
 /// Convert bitcoin::consensus::encode::Error to DeezelError
 impl From<bitcoin::consensus::encode::Error> for DeezelError {
     fn from(err: bitcoin::consensus::encode::Error) -> Self {
@@ -226,6 +232,12 @@ impl From<std::io::Error> for DeezelError {
 
 impl From<hex::FromHexError> for DeezelError {
     fn from(err: hex::FromHexError) -> Self {
+        DeezelError::Hex(err.to_string())
+    }
+}
+
+impl From<bitcoin::hashes::hex::HexToBytesError> for DeezelError {
+    fn from(err: bitcoin::hashes::hex::HexToBytesError) -> Self {
         DeezelError::Hex(err.to_string())
     }
 }

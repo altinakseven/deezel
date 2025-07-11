@@ -150,6 +150,73 @@ pub fn create_keystore(passphrase: &str) -> Result<Keystore> {
     })
 }
 
+/// Creates a new encrypted keystore from a given mnemonic.
+pub fn new_from_mnemonic(passphrase: &str, mnemonic_str: &str, network: BitcoinNetwork) -> Result<Keystore> {
+    let secp = Secp256k1::new();
+    
+    // 1. Use provided mnemonic and generate seed
+    let mnemonic = Mnemonic::from_phrase(mnemonic_str, Language::English)
+        .map_err(|e| DeezelError::Wallet(format!("Invalid mnemonic: {:?}", e)))?;
+    let seed = Seed::new(&mnemonic, "");
+
+    // 2. Derive addresses for the specified network
+    let root_key = Xpriv::new_master(network, seed.as_bytes())
+        .map_err(|e| DeezelError::Crypto(e.to_string()))?;
+    
+    let mut addresses = HashMap::new();
+    let mut address_infos = Vec::new();
+
+    // P2WPKH
+    let path_str = "m/84'/1'/0'/0/0".to_string();
+    let path = DerivationPath::from_str(&path_str).unwrap();
+    let child_key = root_key.derive_priv(&secp, &path).unwrap();
+    let keypair = child_key.to_keypair(&secp);
+    let pubkey = keypair.public_key();
+    let compressed_pubkey = CompressedPublicKey(pubkey);
+    let address = Address::p2wpkh(&compressed_pubkey, network);
+    address_infos.push(AddressInfo {
+        path: path_str,
+        address: address.to_string(),
+        address_type: "p2wpkh".to_string(),
+    });
+    
+    addresses.insert(network.to_string(), address_infos);
+
+    // 3. Prepare PGP symmetric encryption
+    let iterations = 100_000;
+    let mut salt = [0u8; 8];
+    OsRng.fill_bytes(&mut salt);
+    let count = encode_count(iterations);
+    let s2k = StringToKey::IteratedAndSalted {
+        hash_alg: HashAlgorithm::Sha256,
+        salt,
+        count,
+    };
+    
+    let sym_key_algo = SymmetricKeyAlgorithm::AES256;
+
+    // 4. Encrypt and armor the seed's entropy
+    let message = MessageBuilder::from_reader("deezel-keystore", mnemonic.entropy());
+    let mut enc_builder = message.seipd_v1(&mut OsRng, sym_key_algo);
+    enc_builder.encrypt_with_password(s2k, &Password::from(passphrase))
+        .map_err(|e| DeezelError::Crypto(e.to_string()))?;
+
+    let armored_message = enc_builder.to_armored_string(OsRng, ArmorOptions::default())
+        .map_err(|e| DeezelError::Crypto(e.to_string()))?;
+
+    // 5. Populate Keystore struct
+    Ok(Keystore {
+        encrypted_seed: armored_message,
+        pbkdf2_params: Pbkdf2Params {
+            salt: hex::encode(salt),
+            iterations,
+            algorithm: format!("{:?}", sym_key_algo),
+        },
+        addresses,
+        version: 1,
+    })
+}
+
 // This is a reimplementation of the logic in deezel-rpgp, as it is not public.
 // https://www.rfc-editor.org/rfc/rfc4880#section-3.7.1.3
 fn encode_count(iterations: u32) -> u8 {

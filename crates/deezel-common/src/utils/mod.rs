@@ -3,6 +3,7 @@
 //! This module contains various utility functions and types used throughout the deezel-common crate.
 
 pub mod protostone;
+pub mod hex;
 
 pub use protostone::*;
 
