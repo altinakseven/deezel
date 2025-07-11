@@ -24,11 +24,7 @@
 //!
 //! async fn example() -> Result<()> {
 //!     // Create a web provider instance
-//!     let provider = WebProvider::new(
-//!         "http://localhost:8332".to_string(),
-//!         "http://localhost:8080".to_string(),
-//!         "regtest".to_string(),
-//!     ).await?;
+//!     let provider = WebProvider::new("regtest".to_string()).await?;
 //!
 //!     // Use any deezel-common functionality
 //!     let balance = WalletProvider::get_balance(&provider).await?;

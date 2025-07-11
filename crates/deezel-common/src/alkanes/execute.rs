@@ -864,113 +864,74 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
 
     /// Construct runestone with protostones using proper alkanes-rs ordinals crate
     fn construct_runestone(&self, protostones: &[ProtostoneSpec], _num_outputs: usize) -> Result<bitcoin::ScriptBuf> {
-        info!("Constructing runestone with {} protostones using alkanes-rs ordinals crate", protostones.len());
-        
-        use protorune_support::protostone::Protostone;
-        
-        // Convert our ProtostoneSpec to proper Protostone structures
-        let mut proper_protostones = Vec::<Protostone>::new();
-        
-        for (i, protostone_spec) in protostones.iter().enumerate() {
-            info!("Converting protostone spec {} to proper Protostone", i);
-            
-            // Create the message field from cellpack if present
-            let message = if let Some(cellpack) = &protostone_spec.cellpack {
+        info!("Constructing runestone with {} protostones", protostones.len());
+
+        let mut all_edicts = Vec::new();
+        let mut protocol_data_parts = Vec::new();
+
+        for (i, spec) in protostones.iter().enumerate() {
+            // Handle cellpacks -> protocol data
+            if let Some(cellpack) = &spec.cellpack {
                 info!("⚡ EXECUTION: Encoding cellpack for protostone {}: target={}:{}, inputs={:?}",
                       i, cellpack.target.block, cellpack.target.tx, cellpack.inputs);
-                
-                // Use Cellpack::encipher() to get LEB128 encoded Vec<u8> for the message field
                 let cellpack_bytes = cellpack.encipher();
                 info!("Cellpack encoded to {} bytes for message field", cellpack_bytes.len());
-                cellpack_bytes
-            } else {
-                info!("🚀 DEPLOYMENT: Empty message field for protostone {} (contract deployment)", i);
-                Vec::new()
-            };
-            
-            // Create the Protostone with proper structure
-            let protostone = Protostone {
-                burn: None, // Burn functionality not implemented yet
-                message,
-                edicts: Vec::new(), // Edict conversion not implemented yet
-                refund: Some(0), // Default refund to output 0
-                pointer: Some(0), // Default pointer to output 0
-                from: None,
-                protocol_tag: 1, // ALKANES protocol tag
-            };
-            
-            proper_protostones.push(protostone);
-            
-            // Log warnings for unimplemented features
-            if !protostone_spec.edicts.is_empty() {
-                warn!("Protostone {} has {} edicts - these are not yet implemented in proper ordinals crate integration",
-                      i, protostone_spec.edicts.len());
+                protocol_data_parts.extend(cellpack_bytes);
             }
-            
-            if protostone_spec.bitcoin_transfer.is_some() {
-                warn!("Protostone {} has Bitcoin transfer - this is not yet implemented in proper ordinals crate integration", i);
-            }
-        }
-        
-        // CRITICAL FIX: Based on search results, protostones should be stored in tag 16383 within the Runestone
-        // The alkanes indexer looks for protostones in the protocol field (tag 16383) of a Runestone
-        
-        use crate::utils::protostone::Protostones;
-        let mut protostones_collection = Protostones::new();
-        
-        // Convert our ProtostoneSpec to our internal Protostone format and add to collection
-        for protostone in &proper_protostones {
-            let internal_protostone = crate::utils::protostone::Protostone::new(
-                protostone.protocol_tag,
-                protostone.message.clone()
-            );
-            protostones_collection.add(internal_protostone);
-        }
-        
-        // Encode protostones to bytes using our encipher method
-        let encoded_protostones = protostones_collection.encipher();
-        
-        // Convert bytes to Vec<u128> for the Runestone protocol field
-        // The protocol field expects LEB128 encoded values
-        let mut protocol_data = Vec::new();
-        let mut pos = 0;
-        while pos < encoded_protostones.len() {
-            // Read LEB128 encoded values from the encoded protostones
-            match crate::utils::protostone::decode_varint(&encoded_protostones[pos..]) {
-                Ok((value, consumed)) => {
-                    protocol_data.push(value);
-                    pos += consumed;
-                },
-                Err(_) => break,
-            }
-        }
-        
-        let protocol_data_result: Result<Vec<u128>, anyhow::Error> = Ok(protocol_data);
-        
-        match protocol_data_result {
-            Ok(protocol_data) => {
-                info!("✅ Successfully encoded {} protostones into protocol data: {} values",
-                      proper_protostones.len(), protocol_data.len());
-                
-                // Create a Runestone with the protostones in the protocol field (tag 16383)
-                let runestone = Runestone {
-                    etching: None,
-                    pointer: None,
-                    edicts: vec![],
-                    mint: None,
-                    protocol: Some(protocol_data), // CRITICAL: Put protostones in tag 16383
+
+            // Handle edicts -> runestone.edicts
+            for edict_spec in &spec.edicts {
+                let edict = ordinals::Edict {
+                    id: ordinals::RuneId {
+                        block: edict_spec.alkane_id.block,
+                        tx: edict_spec.alkane_id.tx as u32,
+                    },
+                    amount: edict_spec.amount as u128,
+                    output: match edict_spec.target {
+                        OutputTarget::Output(v) => v,
+                        _ => 0, // Default to output 0 for other targets
+                    },
                 };
-                
-                let runestone_script = runestone.encipher();
-                info!("✅ Successfully created runestone script with protostones in protocol field: {} bytes",
-                      runestone_script.len());
-                
-                Ok(runestone_script)
-            },
-            Err(e) => {
-                Err(anyhow!("Failed to encode protostones: {}", e))
+                all_edicts.push(edict);
+            }
+
+            if spec.bitcoin_transfer.is_some() {
+                warn!("Protostone {} has Bitcoin transfer - this is not yet implemented", i);
             }
         }
+
+        // Convert raw protocol bytes to LEB128 u128 values
+        let mut protocol_data = Vec::new();
+        if !protocol_data_parts.is_empty() {
+            let mut pos = 0;
+            while pos < protocol_data_parts.len() {
+                match crate::utils::protostone::decode_varint(&protocol_data_parts[pos..]) {
+                    Ok((value, consumed)) => {
+                        protocol_data.push(value);
+                        pos += consumed;
+                    },
+                    Err(_) => break,
+                }
+            }
+        }
+
+        info!("✅ Successfully processed {} protostone specs.", protostones.len());
+        info!("  - Edicts created: {}", all_edicts.len());
+        info!("  - Protocol data values: {}", protocol_data.len());
+
+        // Create the final Runestone
+        let runestone = Runestone {
+            etching: None,
+            pointer: None,
+            edicts: all_edicts,
+            mint: None,
+            protocol: if protocol_data.is_empty() { None } else { Some(protocol_data) },
+        };
+
+        let runestone_script = runestone.encipher();
+        info!("✅ Successfully created runestone script: {} bytes", runestone_script.len());
+
+        Ok(runestone_script)
     }
 
     /// Build and sign transaction
@@ -3448,56 +3409,7 @@ fn split_respecting_brackets(input: &str, delimiter: char) -> Result<Vec<String>
 
 /// Split complex protostone specification while respecting nested brackets
 fn split_complex_protostone(input: &str) -> Result<Vec<String>> {
-    // Handle complex format like: [3,797,101]:v0:v0:[4:797:1:p1]:[4:797:2:p2],v1:v1,v2:v2
-    // We need to split by colon but respect brackets for both cellpacks and edicts
-    
-    let mut parts = Vec::new();
-    let mut current = String::new();
-    let mut bracket_depth = 0;
-    let chars = input.chars().peekable();
-    
-    for ch in chars {
-        match ch {
-            '[' => {
-                bracket_depth += 1;
-                current.push(ch);
-            },
-            ']' => {
-                bracket_depth -= 1;
-                current.push(ch);
-                if bracket_depth < 0 {
-                    return Err(anyhow!("Unmatched closing bracket"));
-                }
-            },
-            ':' if bracket_depth == 0 => {
-                // Split on colon only when not inside brackets
-                if !current.trim().is_empty() {
-                    parts.push(current.trim().to_string());
-                }
-                current.clear();
-            },
-            ',' if bracket_depth == 0 => {
-                // Also split on comma when not inside brackets (for multiple edicts)
-                if !current.trim().is_empty() {
-                    parts.push(current.trim().to_string());
-                }
-                current.clear();
-            },
-            _ => {
-                current.push(ch);
-            }
-        }
-    }
-    
-    if bracket_depth != 0 {
-        return Err(anyhow!("Unmatched opening bracket"));
-    }
-    
-    if !current.trim().is_empty() {
-        parts.push(current.trim().to_string());
-    }
-    
-    Ok(parts)
+    split_respecting_brackets(input, ':')
 }
 
 #[cfg(test)]

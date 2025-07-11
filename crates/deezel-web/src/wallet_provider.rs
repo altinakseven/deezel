@@ -35,8 +35,6 @@
 //!     if let Some(wallet_info) = available_wallets.first() {
 //!         let provider = BrowserWalletProvider::connect(
 //!             wallet_info.clone(),
-//!             "http://localhost:8332".to_string(),
-//!             "http://localhost:8080".to_string(),
 //!             "mainnet".to_string(),
 //!         ).await?;
 //!         

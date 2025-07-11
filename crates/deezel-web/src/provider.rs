@@ -29,11 +29,7 @@
 //!
 //! async fn example() -> Result<()> {
 //!     // Create a web provider for mainnet
-//!     let provider = WebProvider::new(
-//!         "https://bitcoin-rpc.example.com".to_string(),
-//!         "https://metashrew.example.com".to_string(),
-//!         "mainnet".to_string(),
-//!     ).await?;
+//!     let provider = WebProvider::new("mainnet".to_string()).await?;
 //!
 //!     // Initialize the provider
 //!     provider.initialize().await?;
@@ -89,11 +85,7 @@ use crate::logging::WebLogger;
 /// use deezel_common::*;
 ///
 /// async fn create_provider() -> Result<WebProvider> {
-///     let provider = WebProvider::new(
-///         "https://bitcoin-rpc.example.com".to_string(),
-///         "https://metashrew.example.com".to_string(),
-///         "mainnet".to_string(),
-///     ).await?;
+///     let provider = WebProvider::new("mainnet".to_string()).await?;
 ///
 ///     provider.initialize().await?;
 ///     Ok(provider)
@@ -137,11 +129,7 @@ impl WebProvider {
     /// use deezel_web::WebProvider;
     ///
     /// async fn setup_mainnet() -> Result<WebProvider, Box<dyn std::error::Error>> {
-    ///     let provider = WebProvider::new(
-    ///         "https://bitcoin-rpc.example.com".to_string(),
-    ///         "https://metashrew.example.com".to_string(),
-    ///         "mainnet".to_string(),
-    ///     ).await?;
+    ///     let provider = WebProvider::new("mainnet".to_string()).await?;
     ///     Ok(provider)
     /// }
     /// ```
