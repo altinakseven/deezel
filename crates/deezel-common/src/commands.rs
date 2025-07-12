@@ -147,6 +147,9 @@ pub enum WalletCommands {
         /// Show raw JSON output
         #[arg(long)]
         raw: bool,
+        /// Optional comma-separated list of addresses or identifiers to check balance for
+        #[arg(long)]
+        addresses: Option<String>,
     },
     /// Send Bitcoin to an address
     Send {

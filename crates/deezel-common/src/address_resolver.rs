@@ -535,7 +535,7 @@ impl WalletProvider for StandaloneAddressResolver {
     async fn load_wallet(&self, _config: WalletConfig, _passphrase: Option<String>) -> Result<WalletInfo> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support wallet operations".to_string()))
     }
-    async fn get_balance(&self) -> Result<WalletBalance> {
+    async fn get_balance(&self, _addresses: Option<Vec<String>>) -> Result<WalletBalance> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support wallet operations".to_string()))
     }
     async fn get_address(&self) -> Result<String> {

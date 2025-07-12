@@ -145,13 +145,8 @@ impl<P: DeezelProvider> WalletManager<P> {
     }
     
     /// Get wallet balance
-    pub async fn get_balance(&self) -> Result<Balance> {
-        let balance = crate::traits::WalletProvider::get_balance(&self.provider).await?;
-        Ok(Balance {
-            confirmed: balance.confirmed,
-            trusted_pending: balance.trusted_pending,
-            untrusted_pending: balance.untrusted_pending,
-        })
+    pub async fn get_balance(&self) -> Result<WalletBalance> {
+        crate::traits::WalletProvider::get_balance(&self.provider, None).await
     }
     
     /// Get wallet address
@@ -366,25 +361,6 @@ impl<P: DeezelProvider> WalletManager<P> {
     }
 }
 
-/// Wallet balance information
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Balance {
-    pub confirmed: u64,
-    pub trusted_pending: u64,
-    pub untrusted_pending: u64,
-}
-
-impl Balance {
-    /// Get total balance
-    pub fn total(&self) -> u64 {
-        self.confirmed + self.trusted_pending + self.untrusted_pending
-    }
-    
-    /// Get spendable balance (confirmed + trusted pending)
-    pub fn spendable(&self) -> u64 {
-        self.confirmed + self.trusted_pending
-    }
-}
 
 /// Send transaction parameters
 #[derive(Debug, Clone)]
@@ -595,14 +571,13 @@ mod tests {
     
     #[test]
     fn test_balance_calculations() {
-        let balance = Balance {
+        let balance = WalletBalance {
             confirmed: 100000,
-            trusted_pending: 50000,
-            untrusted_pending: 25000,
+            pending: 75000,
         };
         
-        assert_eq!(balance.total(), 175000);
-        assert_eq!(balance.spendable(), 150000);
+        assert_eq!(balance.confirmed, 100000);
+        assert_eq!(balance.pending, 75000);
     }
     
     #[test]

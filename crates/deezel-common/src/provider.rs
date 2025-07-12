@@ -123,6 +123,14 @@ impl ConcreteProvider {
         &self.wallet_state
     }
 
+    /// Get the loaded keystore, if any
+    pub fn get_keystore(&self) -> Option<&Keystore> {
+        match &self.wallet_state {
+            WalletState::Locked(keystore) | WalletState::Unlocked { keystore, .. } => Some(keystore),
+            WalletState::None => None,
+        }
+    }
+
     /// Convert a SignedSecretKey to our PgpKey format
     fn convert_signed_secret_key_to_pgp_key(key: &SignedSecretKey) -> Result<PgpKey> {
         // Serialize the key to armored format
@@ -609,11 +617,44 @@ impl WalletProvider for ConcreteProvider {
         }
     }
     
-    async fn get_balance(&self) -> Result<WalletBalance> {
-        // This is a simplified implementation. A real wallet would manage multiple addresses.
-        // For now, we assume the wallet has a single address we can query.
-        // A full implementation would need to load the keystore and iterate through addresses.
-        Err(DeezelError::NotImplemented("get_balance requires a loaded wallet, which is not yet implemented".to_string()))
+    async fn get_balance(&self, addresses: Option<Vec<String>>) -> Result<WalletBalance> {
+        let addrs_to_check = if let Some(provided_addresses) = addresses {
+            provided_addresses
+        } else {
+            // If no addresses are provided, derive the first 20 from the public key.
+            let derived_infos = self.get_addresses(20).await?;
+            derived_infos.into_iter().map(|info| info.address).collect()
+        };
+
+        if addrs_to_check.is_empty() {
+            return Ok(WalletBalance { confirmed: 0, pending: 0 });
+        }
+
+        let mut total_confirmed_balance = 0_u64;
+        let mut total_pending_balance = 0_i64;
+
+        for address in addrs_to_check {
+            let info = self.get_address_info(&address).await?;
+
+            // Confirmed balance
+            if let Some(chain_stats) = info.get("chain_stats") {
+                let funded = chain_stats.get("funded_txo_sum").and_then(|v| v.as_u64()).unwrap_or(0);
+                let spent = chain_stats.get("spent_txo_sum").and_then(|v| v.as_u64()).unwrap_or(0);
+                total_confirmed_balance += funded.saturating_sub(spent);
+            }
+
+            // Pending balance (can be negative)
+            if let Some(mempool_stats) = info.get("mempool_stats") {
+                let funded = mempool_stats.get("funded_txo_sum").and_then(|v| v.as_i64()).unwrap_or(0);
+                let spent = mempool_stats.get("spent_txo_sum").and_then(|v| v.as_i64()).unwrap_or(0);
+                total_pending_balance += funded - spent;
+            }
+        }
+
+        Ok(WalletBalance {
+            confirmed: total_confirmed_balance,
+            pending: total_pending_balance,
+        })
     }
     
     async fn get_address(&self) -> Result<String> {

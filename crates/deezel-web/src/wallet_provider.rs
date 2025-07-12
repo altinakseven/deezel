@@ -838,41 +838,40 @@ impl WalletProvider for BrowserWalletProvider {
         self.create_wallet(config, None, None).await
     }
     
-    async fn get_balance(&self) -> Result<WalletBalance> {
+    async fn get_balance(&self, addresses: Option<Vec<String>>) -> Result<WalletBalance> {
         // Use our sandshrew RPC to get accurate balance information
         // rather than relying on the wallet's potentially limited balance API
-        if let Some(account) = &self.current_account {
-            // Use Esplora API through our web provider for accurate balance
-            let address_info = EsploraProvider::get_address(&self.web_provider, &account.address).await?;
-            
-            let confirmed = address_info.get("chain_stats")
-                .and_then(|stats| stats.get("funded_txo_sum"))
-                .and_then(|sum| sum.as_u64())
-                .unwrap_or(0);
-            
-            let spent = address_info.get("chain_stats")
-                .and_then(|stats| stats.get("spent_txo_sum"))
-                .and_then(|sum| sum.as_u64())
-                .unwrap_or(0);
-            
-            let mempool_funded = address_info.get("mempool_stats")
-                .and_then(|stats| stats.get("funded_txo_sum"))
-                .and_then(|sum| sum.as_u64())
-                .unwrap_or(0);
-            
-            let mempool_spent = address_info.get("mempool_stats")
-                .and_then(|stats| stats.get("spent_txo_sum"))
-                .and_then(|sum| sum.as_u64())
-                .unwrap_or(0);
-            
-            Ok(WalletBalance {
-                confirmed: confirmed.saturating_sub(spent),
-                trusted_pending: mempool_funded,
-                untrusted_pending: mempool_spent,
-            })
+        let addrs_to_check = if let Some(provided_addresses) = addresses {
+            provided_addresses
+        } else if let Some(account) = &self.current_account {
+            vec![account.address.clone()]
         } else {
-            Err(DeezelError::Wallet("No wallet connected".to_string()))
+            return Err(DeezelError::Wallet("No wallet connected and no addresses provided".to_string()));
+        };
+
+        let mut total_confirmed = 0;
+        let mut total_pending = 0_i64;
+
+        for address in addrs_to_check {
+            let address_info = EsploraProvider::get_address_info(&self.web_provider, &address).await?;
+            
+            if let Some(chain_stats) = address_info.get("chain_stats") {
+                let funded = chain_stats.get("funded_txo_sum").and_then(|v| v.as_u64()).unwrap_or(0);
+                let spent = chain_stats.get("spent_txo_sum").and_then(|v| v.as_u64()).unwrap_or(0);
+                total_confirmed += funded.saturating_sub(spent);
+            }
+
+            if let Some(mempool_stats) = address_info.get("mempool_stats") {
+                let funded = mempool_stats.get("funded_txo_sum").and_then(|v| v.as_i64()).unwrap_or(0);
+                let spent = mempool_stats.get("spent_txo_sum").and_then(|v| v.as_i64()).unwrap_or(0);
+                total_pending += funded - spent;
+            }
         }
+        
+        Ok(WalletBalance {
+            confirmed: total_confirmed,
+            pending: total_pending,
+        })
     }
     
     async fn get_address(&self) -> Result<String> {

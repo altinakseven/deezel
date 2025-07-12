@@ -237,34 +237,33 @@ impl SystemWallet for SystemDeezel {
            },
            WalletCommands::Info => {
                let address = WalletProvider::get_address(&provider).await?;
-               let balance = WalletProvider::get_balance(&provider).await?;
+               let balance = WalletProvider::get_balance(&provider, None).await?;
                let network = provider.get_network();
                
                println!("💼 Wallet Information");
                println!("═══════════════════");
                println!("🏠 Address: {}", address);
-               println!("💰 Balance: {} sats", balance.confirmed + balance.trusted_pending + balance.untrusted_pending);
+               println!("💰 Balance: {} sats", balance.confirmed as i64 + balance.pending);
                println!("🌐 Network: {:?}", network);
                Ok(())
            },
-           WalletCommands::Balance { raw } => {
-               let balance = WalletProvider::get_balance(&provider).await?;
+           WalletCommands::Balance { raw, addresses } => {
+                let address_list = if let Some(addr_str) = addresses {
+                    Some(resolve_addresses(&addr_str, &provider).await?)
+                } else {
+                    None
+                };
+
+               let balance = WalletProvider::get_balance(&provider, address_list).await?;
                
                if raw {
-                   let balance_json = serde_json::json!({
-                       "confirmed": balance.confirmed,
-                       "trusted_pending": balance.trusted_pending,
-                       "untrusted_pending": balance.untrusted_pending,
-                       "total": balance.confirmed + balance.trusted_pending + balance.untrusted_pending
-                   });
-                   println!("{}", serde_json::to_string_pretty(&balance_json)?);
+                   println!("{}", serde_json::to_string_pretty(&balance)?);
                } else {
                    println!("💰 Wallet Balance");
                    println!("═══════════════");
                    println!("✅ Confirmed: {} sats", balance.confirmed);
-                   println!("⏳ Trusted pending: {} sats", balance.trusted_pending);
-                   println!("❓ Untrusted pending: {} sats", balance.untrusted_pending);
-                   println!("📊 Total: {} sats", balance.confirmed + balance.trusted_pending + balance.untrusted_pending);
+                   println!("⏳ Pending:   {} sats", balance.pending);
+                   println!("📊 Total:     {} sats", (balance.confirmed as i64 + balance.pending));
                }
                Ok(())
            },
@@ -792,13 +791,13 @@ impl SystemWallet for SystemDeezel {
     async fn execute_walletinfo_command(&self, raw: bool) -> deezel_common::Result<()> {
        let provider = &self.provider;
        let address = WalletProvider::get_address(provider).await.map_err(|e| DeezelError::Wallet(e.to_string()))?;
-       let balance = WalletProvider::get_balance(provider).await.map_err(|e| DeezelError::Wallet(e.to_string()))?;
+       let balance = WalletProvider::get_balance(provider, None).await.map_err(|e| DeezelError::Wallet(e.to_string()))?;
        let network = provider.get_network();
        
        if raw {
            let info = serde_json::json!({
                "address": address,
-               "balance": balance.confirmed + balance.trusted_pending + balance.untrusted_pending,
+               "balance": balance.confirmed as i64 + balance.pending,
                "network": format!("{:?}", network),
            });
            println!("{}", serde_json::to_string_pretty(&info).unwrap());
@@ -806,12 +805,47 @@ impl SystemWallet for SystemDeezel {
            println!("💼 Wallet Information");
            println!("═══════════════════");
            println!("🏠 Address: {}", address);
-           println!("💰 Balance: {} sats", balance.confirmed + balance.trusted_pending + balance.untrusted_pending);
+           println!("💰 Balance: {} sats", balance.confirmed as i64 + balance.pending);
            println!("🌐 Network: {:?}", network);
        }
        
        Ok(())
    }
+}
+
+/// Resolves a comma-separated string of addresses and identifiers into a list of concrete addresses.
+async fn resolve_addresses(
+    addr_str: &str,
+    provider: &ConcreteProvider,
+) -> anyhow::Result<Vec<String>> {
+    let mut resolved_addresses = Vec::new();
+    let keystore = provider.get_keystore().ok_or_else(|| anyhow!("Keystore not loaded"))?;
+
+    for part in addr_str.split(',') {
+        let trimmed_part = part.trim();
+        if trimmed_part.starts_with("[self:") {
+            // It's an identifier with a range, e.g., [self:p2tr:0-10]
+            let inner = trimmed_part.strip_prefix("[self:").and_then(|s| s.strip_suffix("]")).ok_or_else(|| anyhow!("Invalid identifier format: {}", trimmed_part))?;
+            let (script_type, start, count) = KeystoreManager::parse_address_range(&KeystoreManager::new(), inner)?;
+            let derived = KeystoreManager::derive_addresses(&KeystoreManager::new(), keystore, provider.get_network(), &[&script_type], start, count)?;
+            resolved_addresses.extend(derived.into_iter().map(|a| a.address));
+        } else if trimmed_part.starts_with("self:") {
+            // It's a single identifier, e.g., self:p2tr:50
+            let inner = trimmed_part.strip_prefix("self:").ok_or_else(|| anyhow!("Invalid identifier format: {}", trimmed_part))?;
+             let (script_type, start, count) = KeystoreManager::parse_address_range(&KeystoreManager::new(), inner)?;
+             if count != 1 {
+                 return Err(anyhow!("Single identifier format should not contain a range: {}", trimmed_part));
+             }
+            let derived = KeystoreManager::derive_addresses(&KeystoreManager::new(), keystore, provider.get_network(), &[&script_type], start, count)?;
+            if let Some(addr) = derived.into_iter().next() {
+                resolved_addresses.push(addr.address);
+            }
+        } else {
+            // It's a concrete address
+            resolved_addresses.push(trimmed_part.to_string());
+        }
+    }
+    Ok(resolved_addresses)
 }
 
 #[async_trait(?Send)]

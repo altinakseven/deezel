@@ -207,7 +207,7 @@ pub trait WalletProvider {
     async fn load_wallet(&self, config: WalletConfig, passphrase: Option<String>) -> Result<WalletInfo>;
     
     /// Get wallet balance
-    async fn get_balance(&self) -> Result<WalletBalance>;
+    async fn get_balance(&self, addresses: Option<Vec<String>>) -> Result<WalletBalance>;
     
     /// Get wallet address
     async fn get_address(&self) -> Result<String>;
@@ -289,11 +289,10 @@ pub struct WalletInfo {
 }
 
 /// Wallet balance information
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct WalletBalance {
     pub confirmed: u64,
-    pub trusted_pending: u64,
-    pub untrusted_pending: u64,
+    pub pending: i64,
 }
 
 /// Address information
@@ -1199,8 +1198,8 @@ impl<T: DeezelProvider + ?Sized> WalletProvider for Box<T> {
    async fn load_wallet(&self, config: WalletConfig, passphrase: Option<String>) -> Result<WalletInfo> {
        (**self).load_wallet(config, passphrase).await
    }
-   async fn get_balance(&self) -> Result<WalletBalance> {
-       <Self as WalletProvider>::get_balance(self).await
+   async fn get_balance(&self, addresses: Option<Vec<String>>) -> Result<WalletBalance> {
+       WalletProvider::get_balance(&**self, addresses).await
    }
    async fn get_address(&self) -> Result<String> {
        <Self as WalletProvider>::get_address(self).await

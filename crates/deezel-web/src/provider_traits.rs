@@ -88,15 +88,27 @@ impl WalletProvider for WebProvider {
         }
     }
 
-    async fn get_balance(&self) -> Result<WalletBalance> {
-        let address = WalletProvider::get_address(self).await?;
-        let utxos = WalletProvider::get_utxos(self, true, Some(vec![address])).await?;
-        let confirmed = utxos.iter().filter(|u| u.confirmations > 0).map(|u| u.amount).sum();
-        let unconfirmed = utxos.iter().filter(|u| u.confirmations == 0).map(|u| u.amount).sum();
+    async fn get_balance(&self, addresses: Option<Vec<String>>) -> Result<WalletBalance> {
+        let addrs_to_check = if let Some(provided_addresses) = addresses {
+            provided_addresses
+        } else {
+            vec![WalletProvider::get_address(self).await?]
+        };
+
+        let mut total_confirmed = 0;
+        let mut total_pending = 0_i64;
+
+        for address in addrs_to_check {
+            let utxos = WalletProvider::get_utxos(self, true, Some(vec![address])).await?;
+            let confirmed: u64 = utxos.iter().filter(|u| u.confirmations > 0).map(|u| u.amount).sum();
+            let pending: i64 = utxos.iter().filter(|u| u.confirmations == 0).map(|u| u.amount as i64).sum();
+            total_confirmed += confirmed;
+            total_pending += pending;
+        }
+
         Ok(WalletBalance {
-            confirmed,
-            trusted_pending: unconfirmed,
-            untrusted_pending: 0,
+            confirmed: total_confirmed,
+            pending: total_pending,
         })
     }
 

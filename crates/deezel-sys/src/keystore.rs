@@ -403,29 +403,39 @@ impl KeystoreManager {
         }
     }
     
-    /// Parse address range specification (e.g., "p2tr:0-1000", "p2sh:0-500")
+    /// Parse address range specification (e.g., "p2tr:0-1000", "p2sh:0-500", "p2tr:50")
     pub fn parse_address_range(&self, range_spec: &str) -> AnyhowResult<(String, u32, u32)> {
         let parts: Vec<&str> = range_spec.split(':').collect();
         if parts.len() != 2 {
-            return Err(anyhow!("Invalid range specification. Expected format: script_type:start-end"));
+            return Err(anyhow!("Invalid range specification. Expected format: script_type:start-end or script_type:index"));
         }
         
         let script_type = parts[0].to_string();
-        let range_parts: Vec<&str> = parts[1].split('-').collect();
-        if range_parts.len() != 2 {
-            return Err(anyhow!("Invalid range format. Expected format: start-end"));
-        }
-        
-        let start_index: u32 = range_parts[0].parse()
-            .map_err(|_| anyhow!("Invalid start index: {}", range_parts[0]))?;
-        let end_index: u32 = range_parts[1].parse()
-            .map_err(|_| anyhow!("Invalid end index: {}", range_parts[1]))?;
+        let range_str = parts[1];
+
+        if range_str.contains('-') {
+            // Handle range format: start-end
+            let range_parts: Vec<&str> = range_str.split('-').collect();
+            if range_parts.len() != 2 {
+                return Err(anyhow!("Invalid range format. Expected format: start-end"));
+            }
             
-        if end_index <= start_index {
-            return Err(anyhow!("End index must be greater than start index"));
+            let start_index: u32 = range_parts[0].parse()
+                .map_err(|_| anyhow!("Invalid start index: {}", range_parts[0]))?;
+            let end_index: u32 = range_parts[1].parse()
+                .map_err(|_| anyhow!("Invalid end index: {}", range_parts[1]))?;
+                
+            if end_index < start_index {
+                return Err(anyhow!("End index must be greater than or equal to start index"));
+            }
+            
+            Ok((script_type, start_index, (end_index - start_index) + 1))
+        } else {
+            // Handle single index format
+            let index: u32 = range_str.parse()
+                .map_err(|_| anyhow!("Invalid index: {}", range_str))?;
+            Ok((script_type, index, 1))
         }
-        
-        Ok((script_type, start_index, end_index - start_index))
     }
     
     /// Derive addresses from keystore metadata without requiring decryption
