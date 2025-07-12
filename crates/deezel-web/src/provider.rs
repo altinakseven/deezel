@@ -548,6 +548,10 @@ impl EsploraProvider for WebProvider {
         self.call(&self.esplora_rpc_url, esplora::EsploraJsonRpcMethods::BLOCK_TXS, esplora::params::optional_dual(hash, start_index), 1).await
     }
 
+    async fn get_address_info(&self, address: &str) -> Result<serde_json::Value> {
+        self.call(&self.esplora_rpc_url, esplora::EsploraJsonRpcMethods::ADDRESS, esplora::params::single(address), 1).await
+    }
+
     async fn get_address(&self, address: &str) -> Result<serde_json::Value> {
         self.call(&self.esplora_rpc_url, esplora::EsploraJsonRpcMethods::ADDRESS, esplora::params::single(address), 1).await
     }

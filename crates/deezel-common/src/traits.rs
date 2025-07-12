@@ -619,6 +619,7 @@ pub trait EsploraProvider {
     async fn get_block_txs(&self, hash: &str, start_index: Option<u32>) -> Result<JsonValue>;
     
     /// Get address information
+    async fn get_address_info(&self, address: &str) -> Result<JsonValue>;
     async fn get_address(&self, address: &str) -> Result<JsonValue>;
     
     /// Get address transactions
@@ -1375,6 +1376,9 @@ impl<T: DeezelProvider + ?Sized> EsploraProvider for Box<T> {
    }
    async fn get_address(&self, address: &str) -> Result<serde_json::Value> {
        <Self as EsploraProvider>::get_address(self, address).await
+   }
+   async fn get_address_info(&self, address: &str) -> Result<serde_json::Value> {
+       (**self).get_address_info(address).await
    }
    async fn get_address_txs(&self, address: &str) -> Result<serde_json::Value> {
        (**self).get_address_txs(address).await

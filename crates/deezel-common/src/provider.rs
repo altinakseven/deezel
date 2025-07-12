@@ -42,30 +42,75 @@ use ordinals::{Runestone, Artifact};
 #[cfg(feature = "native-deps")]
 use std::fs;
 
+/// Represents the state of the wallet within the provider
+#[derive(Clone)]
+pub enum WalletState {
+    /// No wallet is loaded
+    None,
+    /// Keystore is loaded but locked (only public information is available)
+    Locked(Keystore),
+    /// Wallet is unlocked, with access to the decrypted mnemonic
+    Unlocked {
+        keystore: Keystore,
+        mnemonic: String,
+    },
+}
+
 #[derive(Clone)]
 pub struct ConcreteProvider {
     bitcoin_rpc_url: String,
     metashrew_rpc_url: String,
+    esplora_url: Option<String>,
     provider: String,
     wallet_path: Option<PathBuf>,
     passphrase: Option<String>,
+    wallet_state: WalletState,
 }
 
 impl ConcreteProvider {
     pub async fn new(
         bitcoin_rpc_url: String,
         metashrew_rpc_url: String,
+        esplora_url: Option<String>,
         provider: String,
         wallet_path: Option<PathBuf>,
     ) -> Result<Self> {
-        Ok(Self {
-            bitcoin_rpc_url,
-            metashrew_rpc_url,
-            provider,
-            wallet_path,
-            passphrase: None,
-        })
-    }
+       let mut new_self = Self {
+           bitcoin_rpc_url,
+           metashrew_rpc_url,
+           esplora_url,
+           provider,
+           wallet_path: wallet_path.clone(),
+           passphrase: None,
+           wallet_state: WalletState::None,
+       };
+
+       // Try to load the keystore metadata if a path is provided
+       if let Some(path) = wallet_path {
+           if path.exists() {
+               match Keystore::from_file(&path) {
+                   Ok(keystore) => new_self.wallet_state = WalletState::Locked(keystore),
+                   Err(e) => log::warn!("Failed to load keystore metadata: {}", e),
+               }
+           }
+       }
+
+       Ok(new_self)
+   }
+
+   /// Unlock the wallet by decrypting the seed
+   pub async fn unlock_wallet(&mut self, passphrase: &str) -> Result<()> {
+       if let WalletState::Locked(keystore) = &self.wallet_state {
+           let mnemonic = keystore.decrypt_seed(passphrase)?;
+           self.wallet_state = WalletState::Unlocked {
+               keystore: keystore.clone(),
+               mnemonic,
+           };
+           Ok(())
+       } else {
+           Err(DeezelError::Wallet("Wallet is not in a locked state".to_string()))
+       }
+   }
 
     /// Get the wallet path
     pub fn get_wallet_path(&self) -> Option<&PathBuf> {
@@ -180,6 +225,10 @@ impl ConcreteProvider {
             .and_then(|addrs| addrs.iter().find(|a| a.address == address.to_string()))
             .ok_or_else(|| DeezelError::Wallet(format!("Address {} not found in keystore", address)))
     }
+
+    fn get_esplora_url(&self) -> &str {
+        self.esplora_url.as_deref().unwrap_or(&self.metashrew_rpc_url)
+    }
 }
 
 #[async_trait(?Send)]
@@ -202,14 +251,23 @@ impl JsonRpcProvider for ConcreteProvider {
                 .send()
                 .await
                 .map_err(|e| DeezelError::Network(e.to_string()))?;
-            let rpc_response: RpcResponse = response
-                .json()
-                .await
-                .map_err(|e| DeezelError::Network(e.to_string()))?;
-            if let Some(error) = rpc_response.error {
-                return Err(DeezelError::RpcError(format!("{}: {}", error.code, error.message)));
+            let response_text = response.text().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            
+            // First, try to parse as a standard RpcResponse
+            if let Ok(rpc_response) = serde_json::from_str::<RpcResponse>(&response_text) {
+                if let Some(error) = rpc_response.error {
+                    return Err(DeezelError::RpcError(format!("{}: {}", error.code, error.message)));
+                }
+                return rpc_response.result.ok_or_else(|| DeezelError::RpcError("No result in RPC response".to_string()));
             }
-            rpc_response.result.ok_or_else(|| DeezelError::RpcError("No result in RPC response".to_string()))
+
+            // If that fails, try to parse as a raw JsonValue (for non-compliant servers)
+            if let Ok(raw_result) = serde_json::from_str::<serde_json::Value>(&response_text) {
+                return Ok(raw_result);
+            }
+
+            // If both fail, return a generic error
+            Err(DeezelError::Network("Failed to decode RPC response".to_string()))
         }
         #[cfg(not(feature = "native-deps"))]
         {
@@ -880,7 +938,10 @@ impl WalletProvider for ConcreteProvider {
     }
     
     async fn get_mnemonic(&self) -> Result<Option<String>> {
-        unimplemented!()
+        match &self.wallet_state {
+            WalletState::Unlocked { mnemonic, .. } => Ok(Some(mnemonic.clone())),
+            _ => Ok(None),
+        }
     }
     
     fn get_network(&self) -> bitcoin::Network {
@@ -910,24 +971,6 @@ impl WalletProvider for ConcreteProvider {
     }
 }
 
-#[async_trait(?Send)]
-impl AddressResolver for ConcreteProvider {
-    async fn resolve_all_identifiers(&self, _input: &str) -> Result<String> {
-        unimplemented!()
-    }
-    
-    fn contains_identifiers(&self, _input: &str) -> bool {
-        unimplemented!()
-    }
-    
-    async fn get_address(&self, _address_type: &str, _index: u32) -> Result<String> {
-        unimplemented!()
-    }
-    
-    async fn list_identifiers(&self) -> Result<Vec<String>> {
-        unimplemented!()
-    }
-}
 
 #[async_trait(?Send)]
 impl BitcoinRpcProvider for ConcreteProvider {
@@ -1022,133 +1065,400 @@ impl MetashrewRpcProvider for ConcreteProvider {
 #[async_trait(?Send)]
 impl EsploraProvider for ConcreteProvider {
     async fn get_blocks_tip_hash(&self) -> Result<String> {
-        let result = self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCKS_TIP_HASH, crate::esplora::params::empty(), 1).await?;
+        #[cfg(feature = "native-deps")]
+        if let Some(esplora_url) = &self.esplora_url {
+            let url = format!("{}/blocks/tip/hash", esplora_url);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            return response.text().await.map_err(|e| DeezelError::Network(e.to_string()));
+        }
+
+        let result = self.call(self.get_esplora_url(), crate::esplora::EsploraJsonRpcMethods::BLOCKS_TIP_HASH, crate::esplora::params::empty(), 1).await?;
         result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid tip hash response".to_string()))
     }
 
     async fn get_blocks_tip_height(&self) -> Result<u64> {
-        let result = self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCKS_TIP_HEIGHT, crate::esplora::params::empty(), 1).await?;
+        #[cfg(feature = "native-deps")]
+        if let Some(esplora_url) = &self.esplora_url {
+            let url = format!("{}/blocks/tip/height", esplora_url);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            let text = response.text().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            return text.parse::<u64>().map_err(|e| DeezelError::RpcError(format!("Invalid tip height response from REST API: {}", e)));
+        }
+        
+        let result = self.call(self.get_esplora_url(), crate::esplora::EsploraJsonRpcMethods::BLOCKS_TIP_HEIGHT, crate::esplora::params::empty(), 1).await?;
         result.as_u64().ok_or_else(|| DeezelError::RpcError("Invalid tip height response".to_string()))
     }
 
     async fn get_blocks(&self, start_height: Option<u64>) -> Result<serde_json::Value> {
-        self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCKS, crate::esplora::params::optional_single(start_height), 1).await
+        #[cfg(feature = "native-deps")]
+        if let Some(esplora_url) = &self.esplora_url {
+            let url = if let Some(height) = start_height {
+                format!("{}/blocks/{}", esplora_url, height)
+            } else {
+                format!("{}/blocks", esplora_url)
+            };
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
+        }
+        
+        self.call(self.get_esplora_url(), crate::esplora::EsploraJsonRpcMethods::BLOCKS, crate::esplora::params::optional_single(start_height), 1).await
     }
 
     async fn get_block_by_height(&self, height: u64) -> Result<String> {
-        let result = self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCK_HEIGHT, crate::esplora::params::single(height), 1).await?;
+        #[cfg(feature = "native-deps")]
+        if let Some(esplora_url) = &self.esplora_url {
+            let url = format!("{}/block-height/{}", esplora_url, height);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            return response.text().await.map_err(|e| DeezelError::Network(e.to_string()));
+        }
+        
+        let result = self.call(self.get_esplora_url(), crate::esplora::EsploraJsonRpcMethods::BLOCK_HEIGHT, crate::esplora::params::single(height), 1).await?;
         result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid block hash response".to_string()))
     }
 
     async fn get_block(&self, hash: &str) -> Result<serde_json::Value> {
-        self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCK, crate::esplora::params::single(hash), 1).await
+        #[cfg(feature = "native-deps")]
+        if let Some(esplora_url) = &self.esplora_url {
+            let url = format!("{}/block/{}", esplora_url, hash);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
+        }
+        
+        self.call(self.get_esplora_url(), crate::esplora::EsploraJsonRpcMethods::BLOCK, crate::esplora::params::single(hash), 1).await
     }
 
     async fn get_block_status(&self, hash: &str) -> Result<serde_json::Value> {
-        self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCK_STATUS, crate::esplora::params::single(hash), 1).await
+        #[cfg(feature = "native-deps")]
+        if let Some(esplora_url) = &self.esplora_url {
+            let url = format!("{}/block/{}/status", esplora_url, hash);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
+        }
+        
+        self.call(self.get_esplora_url(), crate::esplora::EsploraJsonRpcMethods::BLOCK_STATUS, crate::esplora::params::single(hash), 1).await
     }
 
     async fn get_block_txids(&self, hash: &str) -> Result<serde_json::Value> {
-        self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCK_TXIDS, crate::esplora::params::single(hash), 1).await
+        #[cfg(feature = "native-deps")]
+        if let Some(esplora_url) = &self.esplora_url {
+            let url = format!("{}/block/{}/txids", esplora_url, hash);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
+        }
+        
+        self.call(self.get_esplora_url(), crate::esplora::EsploraJsonRpcMethods::BLOCK_TXIDS, crate::esplora::params::single(hash), 1).await
     }
 
     async fn get_block_header(&self, hash: &str) -> Result<String> {
-        let result = self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCK_HEADER, crate::esplora::params::single(hash), 1).await?;
+        #[cfg(feature = "native-deps")]
+        if let Some(esplora_url) = &self.esplora_url {
+            let url = format!("{}/block/{}/header", esplora_url, hash);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            return response.text().await.map_err(|e| DeezelError::Network(e.to_string()));
+        }
+        
+        let result = self.call(self.get_esplora_url(), crate::esplora::EsploraJsonRpcMethods::BLOCK_HEADER, crate::esplora::params::single(hash), 1).await?;
         result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid block header response".to_string()))
     }
 
     async fn get_block_raw(&self, hash: &str) -> Result<String> {
-        let result = self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCK_RAW, crate::esplora::params::single(hash), 1).await?;
+        #[cfg(feature = "native-deps")]
+        if let Some(esplora_url) = &self.esplora_url {
+            let url = format!("{}/block/{}/raw", esplora_url, hash);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            let bytes = response.bytes().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            return Ok(hex::encode(bytes));
+        }
+        
+        let result = self.call(self.get_esplora_url(), crate::esplora::EsploraJsonRpcMethods::BLOCK_RAW, crate::esplora::params::single(hash), 1).await?;
         result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid raw block response".to_string()))
     }
 
     async fn get_block_txid(&self, hash: &str, index: u32) -> Result<String> {
-        let result = self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCK_TXID, crate::esplora::params::dual(hash, index), 1).await?;
+        #[cfg(feature = "native-deps")]
+        if let Some(esplora_url) = &self.esplora_url {
+            let url = format!("{}/block/{}/txid/{}", esplora_url, hash, index);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            return response.text().await.map_err(|e| DeezelError::Network(e.to_string()));
+        }
+        
+        let result = self.call(self.get_esplora_url(), crate::esplora::EsploraJsonRpcMethods::BLOCK_TXID, crate::esplora::params::dual(hash, index), 1).await?;
         result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid txid response".to_string()))
     }
 
-    async fn get_block_txs(&self, _hash: &str, start_index: Option<u32>) -> Result<serde_json::Value> {
-        self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCK_TXS, crate::esplora::params::optional_single(start_index), 1).await
+    async fn get_block_txs(&self, hash: &str, start_index: Option<u32>) -> Result<serde_json::Value> {
+        #[cfg(feature = "native-deps")]
+        if let Some(esplora_url) = &self.esplora_url {
+            let url = if let Some(index) = start_index {
+                format!("{}/block/{}/txs/{}", esplora_url, hash, index)
+            } else {
+                format!("{}/block/{}/txs", esplora_url, hash)
+            };
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
+        }
+        
+        self.call(self.get_esplora_url(), crate::esplora::EsploraJsonRpcMethods::BLOCK_TXS, crate::esplora::params::optional_dual(hash, start_index), 1).await
     }
 
     async fn get_address(&self, address: &str) -> Result<serde_json::Value> {
-        self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::ADDRESS, crate::esplora::params::single(address), 1).await
+        #[cfg(feature = "native-deps")]
+        if let Some(esplora_url) = &self.esplora_url {
+            let url = format!("{}/address/{}", esplora_url, address);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
+        }
+        
+        self.call(self.get_esplora_url(), crate::esplora::EsploraJsonRpcMethods::ADDRESS, crate::esplora::params::single(address), 1).await
+    }
+
+    async fn get_address_info(&self, address: &str) -> Result<serde_json::Value> {
+        #[cfg(feature = "native-deps")]
+        if let Some(esplora_url) = &self.esplora_url {
+            let url = format!("{}/address/{}", esplora_url, address);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
+        }
+        
+        self.call(self.get_esplora_url(), crate::esplora::EsploraJsonRpcMethods::ADDRESS, crate::esplora::params::single(address), 1).await
     }
 
     async fn get_address_txs(&self, address: &str) -> Result<serde_json::Value> {
-        self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::ADDRESS_TXS, crate::esplora::params::single(address), 1).await
+        #[cfg(feature = "native-deps")]
+        if let Some(esplora_url) = &self.esplora_url {
+            let url = format!("{}/address/{}/txs", esplora_url, address);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
+        }
+        
+        self.call(self.get_esplora_url(), crate::esplora::EsploraJsonRpcMethods::ADDRESS_TXS, crate::esplora::params::single(address), 1).await
     }
 
     async fn get_address_txs_chain(&self, address: &str, last_seen_txid: Option<&str>) -> Result<serde_json::Value> {
-        self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::ADDRESS_TXS_CHAIN, crate::esplora::params::optional_dual(address, last_seen_txid), 1).await
+        #[cfg(feature = "native-deps")]
+        if let Some(esplora_url) = &self.esplora_url {
+            let url = if let Some(txid) = last_seen_txid {
+                format!("{}/address/{}/txs/chain/{}", esplora_url, address, txid)
+            } else {
+                format!("{}/address/{}/txs/chain", esplora_url, address)
+            };
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
+        }
+        
+        self.call(self.get_esplora_url(), crate::esplora::EsploraJsonRpcMethods::ADDRESS_TXS_CHAIN, crate::esplora::params::optional_dual(address, last_seen_txid), 1).await
     }
 
     async fn get_address_txs_mempool(&self, address: &str) -> Result<serde_json::Value> {
-        self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::ADDRESS_TXS_MEMPOOL, crate::esplora::params::single(address), 1).await
+        #[cfg(feature = "native-deps")]
+        if let Some(esplora_url) = &self.esplora_url {
+            let url = format!("{}/address/{}/txs/mempool", esplora_url, address);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
+        }
+        
+        self.call(self.get_esplora_url(), crate::esplora::EsploraJsonRpcMethods::ADDRESS_TXS_MEMPOOL, crate::esplora::params::single(address), 1).await
     }
 
     async fn get_address_utxo(&self, address: &str) -> Result<serde_json::Value> {
-        self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::ADDRESS_UTXO, crate::esplora::params::single(address), 1).await
+        #[cfg(feature = "native-deps")]
+        if let Some(esplora_url) = &self.esplora_url {
+            let url = format!("{}/address/{}/utxo", esplora_url, address);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
+        }
+        
+        self.call(self.get_esplora_url(), crate::esplora::EsploraJsonRpcMethods::ADDRESS_UTXO, crate::esplora::params::single(address), 1).await
     }
 
     async fn get_address_prefix(&self, prefix: &str) -> Result<serde_json::Value> {
-        self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::ADDRESS_PREFIX, crate::esplora::params::single(prefix), 1).await
+        #[cfg(feature = "native-deps")]
+        if let Some(esplora_url) = &self.esplora_url {
+            let url = format!("{}/address-prefix/{}", esplora_url, prefix);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
+        }
+        
+        self.call(self.get_esplora_url(), crate::esplora::EsploraJsonRpcMethods::ADDRESS_PREFIX, crate::esplora::params::single(prefix), 1).await
     }
 
     async fn get_tx(&self, txid: &str) -> Result<serde_json::Value> {
-        self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::TX, crate::esplora::params::single(txid), 1).await
+        #[cfg(feature = "native-deps")]
+        if let Some(esplora_url) = &self.esplora_url {
+            let url = format!("{}/tx/{}", esplora_url, txid);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
+        }
+        
+        self.call(self.get_esplora_url(), crate::esplora::EsploraJsonRpcMethods::TX, crate::esplora::params::single(txid), 1).await
     }
 
     async fn get_tx_hex(&self, txid: &str) -> Result<String> {
-        let result = self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::TX_HEX, crate::esplora::params::single(txid), 1).await?;
+        #[cfg(feature = "native-deps")]
+        if let Some(esplora_url) = &self.esplora_url {
+            let url = format!("{}/tx/{}/hex", esplora_url, txid);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            return response.text().await.map_err(|e| DeezelError::Network(e.to_string()));
+        }
+        
+        let result = self.call(self.get_esplora_url(), crate::esplora::EsploraJsonRpcMethods::TX_HEX, crate::esplora::params::single(txid), 1).await?;
         result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid tx hex response".to_string()))
     }
 
     async fn get_tx_raw(&self, txid: &str) -> Result<String> {
-        let result = self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::TX_RAW, crate::esplora::params::single(txid), 1).await?;
+        #[cfg(feature = "native-deps")]
+        if let Some(esplora_url) = &self.esplora_url {
+            let url = format!("{}/tx/{}/raw", esplora_url, txid);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            let bytes = response.bytes().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            return Ok(hex::encode(bytes));
+        }
+        
+        let result = self.call(self.get_esplora_url(), crate::esplora::EsploraJsonRpcMethods::TX_RAW, crate::esplora::params::single(txid), 1).await?;
         result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid raw tx response".to_string()))
     }
 
     async fn get_tx_status(&self, txid: &str) -> Result<serde_json::Value> {
-        self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::TX_STATUS, crate::esplora::params::single(txid), 1).await
+        #[cfg(feature = "native-deps")]
+        if let Some(esplora_url) = &self.esplora_url {
+            let url = format!("{}/tx/{}/status", esplora_url, txid);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
+        }
+        
+        self.call(self.get_esplora_url(), crate::esplora::EsploraJsonRpcMethods::TX_STATUS, crate::esplora::params::single(txid), 1).await
     }
 
     async fn get_tx_merkle_proof(&self, txid: &str) -> Result<serde_json::Value> {
-        self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::TX_MERKLE_PROOF, crate::esplora::params::single(txid), 1).await
+        #[cfg(feature = "native-deps")]
+        if let Some(esplora_url) = &self.esplora_url {
+            let url = format!("{}/tx/{}/merkle-proof", esplora_url, txid);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
+        }
+        
+        self.call(self.get_esplora_url(), crate::esplora::EsploraJsonRpcMethods::TX_MERKLE_PROOF, crate::esplora::params::single(txid), 1).await
     }
 
     async fn get_tx_merkleblock_proof(&self, txid: &str) -> Result<String> {
-        let result = self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::TX_MERKLEBLOCK_PROOF, crate::esplora::params::single(txid), 1).await?;
+        #[cfg(feature = "native-deps")]
+        if let Some(esplora_url) = &self.esplora_url {
+            let url = format!("{}/tx/{}/merkleblock-proof", esplora_url, txid);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            return response.text().await.map_err(|e| DeezelError::Network(e.to_string()));
+        }
+        
+        let result = self.call(self.get_esplora_url(), crate::esplora::EsploraJsonRpcMethods::TX_MERKLEBLOCK_PROOF, crate::esplora::params::single(txid), 1).await?;
         result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid merkleblock proof response".to_string()))
     }
 
     async fn get_tx_outspend(&self, txid: &str, index: u32) -> Result<serde_json::Value> {
-        self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::TX_OUTSPEND, crate::esplora::params::dual(txid, index), 1).await
+        #[cfg(feature = "native-deps")]
+        if let Some(esplora_url) = &self.esplora_url {
+            let url = format!("{}/tx/{}/outspend/{}", esplora_url, txid, index);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
+        }
+        
+        self.call(self.get_esplora_url(), crate::esplora::EsploraJsonRpcMethods::TX_OUTSPEND, crate::esplora::params::dual(txid, index), 1).await
     }
 
     async fn get_tx_outspends(&self, txid: &str) -> Result<serde_json::Value> {
-        self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::TX_OUTSPENDS, crate::esplora::params::single(txid), 1).await
+        #[cfg(feature = "native-deps")]
+        if let Some(esplora_url) = &self.esplora_url {
+            let url = format!("{}/tx/{}/outspends", esplora_url, txid);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
+        }
+        
+        self.call(self.get_esplora_url(), crate::esplora::EsploraJsonRpcMethods::TX_OUTSPENDS, crate::esplora::params::single(txid), 1).await
     }
 
     async fn broadcast(&self, tx_hex: &str) -> Result<String> {
-        let result = self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::BROADCAST, crate::esplora::params::single(tx_hex), 1).await?;
+        #[cfg(feature = "native-deps")]
+        if let Some(esplora_url) = &self.esplora_url {
+            let url = format!("{}/tx", esplora_url);
+            let client = reqwest::Client::new();
+            let response = client.post(&url).body(tx_hex.to_string()).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            return response.text().await.map_err(|e| DeezelError::Network(e.to_string()));
+        }
+        
+        let result = self.call(self.get_esplora_url(), crate::esplora::EsploraJsonRpcMethods::BROADCAST, crate::esplora::params::single(tx_hex), 1).await?;
         result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid broadcast response".to_string()))
     }
 
     async fn get_mempool(&self) -> Result<serde_json::Value> {
-        self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::MEMPOOL, crate::esplora::params::empty(), 1).await
+        #[cfg(feature = "native-deps")]
+        if let Some(esplora_url) = &self.esplora_url {
+            let url = format!("{}/mempool", esplora_url);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
+        }
+        
+        self.call(self.get_esplora_url(), crate::esplora::EsploraJsonRpcMethods::MEMPOOL, crate::esplora::params::empty(), 1).await
     }
 
     async fn get_mempool_txids(&self) -> Result<serde_json::Value> {
-        self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::MEMPOOL_TXIDS, crate::esplora::params::empty(), 1).await
+        #[cfg(feature = "native-deps")]
+        if let Some(esplora_url) = &self.esplora_url {
+            let url = format!("{}/mempool/txids", esplora_url);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
+        }
+        
+        self.call(self.get_esplora_url(), crate::esplora::EsploraJsonRpcMethods::MEMPOOL_TXIDS, crate::esplora::params::empty(), 1).await
     }
 
     async fn get_mempool_recent(&self) -> Result<serde_json::Value> {
-        self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::MEMPOOL_RECENT, crate::esplora::params::empty(), 1).await
+        #[cfg(feature = "native-deps")]
+        if let Some(esplora_url) = &self.esplora_url {
+            let url = format!("{}/mempool/recent", esplora_url);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
+        }
+        
+        self.call(self.get_esplora_url(), crate::esplora::EsploraJsonRpcMethods::MEMPOOL_RECENT, crate::esplora::params::empty(), 1).await
     }
 
     async fn get_fee_estimates(&self) -> Result<serde_json::Value> {
-        self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::FEE_ESTIMATES, crate::esplora::params::empty(), 1).await
+        #[cfg(feature = "native-deps")]
+        if let Some(esplora_url) = &self.esplora_url {
+            let url = format!("{}/fee-estimates", esplora_url);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
+        }
+        
+        self.call(self.get_esplora_url(), crate::esplora::EsploraJsonRpcMethods::FEE_ESTIMATES, crate::esplora::params::empty(), 1).await
     }
 }
 
@@ -1229,6 +1539,34 @@ impl AlkanesProvider for ConcreteProvider {
 }
 
 // Implement DeezelProvider trait for ConcreteProvider
+#[async_trait(?Send)]
+impl AddressResolver for ConcreteProvider {
+    async fn resolve_all_identifiers(&self, input: &str) -> Result<String> {
+        let mut resolver = crate::address_resolver::AddressResolver::new(self.clone());
+        resolver.resolve_all_identifiers(input).await
+    }
+
+    fn contains_identifiers(&self, input: &str) -> bool {
+        let resolver = crate::address_resolver::AddressResolver::new(self.clone());
+        resolver.contains_identifiers(input)
+    }
+
+    async fn get_address(&self, address_type: &str, index: u32) -> Result<String> {
+        if address_type != "p2tr" {
+            return Err(DeezelError::Wallet("Only p2tr addresses are supported".to_string()));
+        }
+        let addresses = WalletProvider::get_addresses(self, index + 1).await?;
+        addresses.get(index as usize)
+            .map(|a| a.address.clone())
+            .ok_or_else(|| DeezelError::Wallet(format!("Address with index {} not found", index)))
+    }
+
+    async fn list_identifiers(&self) -> Result<Vec<String>> {
+        // This is a placeholder. A real implementation would inspect the wallet.
+        Ok(vec!["[self:p2tr:0]".to_string(), "[self:p2tr:1]".to_string()])
+    }
+}
+
 #[async_trait(?Send)]
 impl DeezelProvider for ConcreteProvider {
     fn provider_name(&self) -> &str {

@@ -9,6 +9,7 @@ use deezel_web::{web_info, web_error, web_log};
 // This is the main entry point for the WASM module
 #[wasm_bindgen]
 #[allow(clippy::main_recursion)]
+#[cfg(not(test))]
 pub fn main() {
     wasm_bindgen_futures::spawn_local(async_main());
 }

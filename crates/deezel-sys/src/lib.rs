@@ -93,12 +93,17 @@ impl SystemDeezel {
             .unwrap_or_else(|| get_rpc_url(&args.provider));
         
         // Create provider with unified endpoint
-        let provider = ConcreteProvider::new(
+        let mut provider = ConcreteProvider::new(
             sandshrew_rpc_url.clone(),  // Use Sandshrew for Bitcoin RPC calls
             sandshrew_rpc_url.clone(),  // Use Sandshrew for Metashrew RPC calls
+            args.esplora_url.clone(),   // Pass the new Esplora URL
             args.provider.clone(),
             Some(std::path::PathBuf::from(&wallet_file)),
         ).await?;
+
+        if let Some(passphrase) = &args.passphrase {
+            provider.set_passphrase(Some(passphrase.clone()));
+        }
 
         // Initialize provider
         provider.initialize().await?;
@@ -129,7 +134,24 @@ impl System for SystemDeezel {
 #[async_trait(?Send)]
 impl SystemWallet for SystemDeezel {
    async fn execute_wallet_command(&self, command: WalletCommands) -> deezel_common::Result<()> {
-       let provider = &self.provider;
+        let mut provider = self.provider.clone(); // Clone to allow mutation for unlocking
+
+        // Conditionally load wallet based on command requirements
+        if command.requires_signing() {
+            // For signing commands, ensure the full wallet is loaded, prompting for passphrase if needed
+            if let deezel_common::provider::WalletState::Locked(_) = provider.wallet_state {
+                let passphrase = if let Some(ref pass) = self.args.passphrase {
+                    pass.clone()
+                } else {
+                    KeystoreManager::prompt_for_passphrase("Enter passphrase to unlock keystore for signing", false)
+                        .map_err(|e| DeezelError::Wallet(format!("Failed to get passphrase: {}", e)))?
+                };
+                provider.unlock_wallet(&passphrase).await?;
+            } else if let deezel_common::provider::WalletState::None = provider.wallet_state {
+                 return Err(DeezelError::Wallet("No wallet found. Please create or specify a wallet file.".to_string()));
+            }
+        }
+
        let res: anyhow::Result<()> = match command {
            WalletCommands::Create { mnemonic } => {
                println!("🔐 Creating wallet with PGP-encrypted keystore...");

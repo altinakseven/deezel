@@ -19,6 +19,10 @@ pub struct Args {
     #[arg(long)]
     pub sandshrew_rpc_url: Option<String>,
 
+    /// Esplora API URL (overrides Sandshrew for Esplora calls)
+    #[arg(long)]
+    pub esplora_url: Option<String>,
+
     /// Network provider
     #[arg(short = 'p', long, default_value = "regtest")]
     pub provider: String,
@@ -265,6 +269,20 @@ pub enum WalletCommands {
     Backup,
     /// List address identifiers
     ListIdentifiers,
+}
+
+impl WalletCommands {
+    /// Check if the command requires signing and thus a decrypted private key
+    pub fn requires_signing(&self) -> bool {
+        matches!(
+            self,
+            WalletCommands::Send { .. } |
+            WalletCommands::SendAll { .. } |
+            WalletCommands::CreateTx { .. } |
+            WalletCommands::SignTx { .. } |
+            WalletCommands::BroadcastTx { .. }
+        )
+    }
 }
 
 /// Bitcoin Core RPC subcommands

@@ -6,6 +6,8 @@
 use deezel_common::keystore::create_keystore;
 use serde_json;
 
+#[cfg(not(test))]
+#[cfg(not(test))]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔐 Deezel Keystore Generation Demo");
     println!("==================================\n");
@@ -19,7 +21,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Display basic information
     println!("\n📊 Keystore Summary:");
     println!("├─ Version: {}", keystore.version);
-    println!("├─ PBKDF2 Algorithm: {}", keystore.pbkdf2_params.algorithm);
+    println!("├─ PBKDF2 Algorithm: {:?}", keystore.pbkdf2_params.algorithm);
     println!("├─ PBKDF2 Iterations: {}", keystore.pbkdf2_params.iterations);
     println!("├─ Salt Length: {} bytes", keystore.pbkdf2_params.salt.len() / 2);
     println!("├─ Encrypted Seed Length: {} characters", keystore.encrypted_seed.len());

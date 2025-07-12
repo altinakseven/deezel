@@ -21,6 +21,7 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/deezel-team/deezel"
 keywords = ["bitcoin", "alkanes", "smart-contracts", "wallet", "wasm", "web"]
 categories = ["cryptography::cryptocurrencies", "web-programming", "wasm"]
+autobins = false
 
 [lib]
 name = "deezel_web"

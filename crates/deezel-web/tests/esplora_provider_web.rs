@@ -97,7 +97,7 @@ async fn setup() -> Result<WebProvider> {
 }
 
 #[wasm_bindgen_test]
-async fn test_get_blocks_tip_hash_web() {
+pub async fn test_get_blocks_tip_hash_web() {
     let mock = FetchMock::new();
     let provider = setup().await.unwrap();
 
@@ -122,7 +122,7 @@ async fn test_get_blocks_tip_hash_web() {
 }
 
 #[wasm_bindgen_test]
-async fn test_get_blocks_tip_height_web() {
+pub async fn test_get_blocks_tip_height_web() {
     let mock = FetchMock::new();
     let provider = setup().await.unwrap();
 
@@ -145,7 +145,7 @@ async fn test_get_blocks_tip_height_web() {
 }
 
 #[wasm_bindgen_test]
-async fn test_get_block_by_hash_web() {
+pub async fn test_get_block_by_hash_web() {
     let mock = FetchMock::new();
     let provider = setup().await.unwrap();
     let hash = "0000000000000000000abcde".to_string();
@@ -182,7 +182,7 @@ async fn test_get_block_by_hash_web() {
 }
 
 #[wasm_bindgen_test]
-async fn test_get_block_by_height_web() {
+pub async fn test_get_block_by_height_web() {
     let mock = FetchMock::new();
     let provider = setup().await.unwrap();
     let height = 123;
@@ -206,7 +206,7 @@ async fn test_get_block_by_height_web() {
 }
 
 #[wasm_bindgen_test]
-async fn test_get_transaction_web() {
+pub async fn test_get_transaction_web() {
     let mock = FetchMock::new();
     let provider = setup().await.unwrap();
     let txid = "abcdef1234567890".to_string();
@@ -245,7 +245,7 @@ async fn test_get_transaction_web() {
 }
 
 #[wasm_bindgen_test]
-async fn test_get_transaction_status_web() {
+pub async fn test_get_transaction_status_web() {
     let mock = FetchMock::new();
     let provider = setup().await.unwrap();
     let txid = "abcdef1234567890".to_string();
@@ -274,7 +274,7 @@ async fn test_get_transaction_status_web() {
 }
 
 #[wasm_bindgen_test]
-async fn test_get_merkle_proof_web() {
+pub async fn test_get_merkle_proof_web() {
     let mock = FetchMock::new();
     let provider = setup().await.unwrap();
     let txid = "abcdef1234567890".to_string();
@@ -302,7 +302,7 @@ async fn test_get_merkle_proof_web() {
 }
 
 #[wasm_bindgen_test]
-async fn test_get_fee_estimates_web() {
+pub async fn test_get_fee_estimates_web() {
     let mock = FetchMock::new();
     let provider = setup().await.unwrap();
 
@@ -328,7 +328,7 @@ async fn test_get_fee_estimates_web() {
 }
 
 #[wasm_bindgen_test]
-async fn test_broadcast_transaction_web() {
+pub async fn test_broadcast_transaction_web() {
     let mock = FetchMock::new();
     let provider = setup().await.unwrap();
     let tx_hex = "0100000001...".to_string();
@@ -349,4 +349,81 @@ async fn test_broadcast_transaction_web() {
     let body: serde_json::Value = serde_json::from_str(&mock.last_request_body()).unwrap();
     assert_eq!(body["method"], "esplora_broadcast");
     assert_eq!(body["params"], json!([tx_hex]));
+}
+
+#[wasm_bindgen_test]
+pub async fn test_get_address_utxo_web() {
+    let mock = FetchMock::new();
+    let provider = setup().await.unwrap();
+    let address = "bc1q...";
+
+    let mock_utxos: serde_json::Value = json!([
+        {
+            "txid": "abcdef1234567890",
+            "vout": 0,
+            "status": {
+                "confirmed": true,
+                "block_height": 123,
+                "block_hash": "0000000000000000000abcde",
+                "block_time": 1234567890
+            },
+            "value": 10000
+        }
+    ]);
+    let rpc_response = json!({
+        "jsonrpc": "2.0",
+        "result": mock_utxos,
+        "id": 1
+    });
+    mock.set_response(&rpc_response);
+
+    let result = provider.get_address_utxo(address).await;
+
+    assert!(result.is_ok(), "get_address_utxo failed: {:?}", result.err());
+    assert_eq!(result.unwrap(), mock_utxos);
+
+    let body: serde_json::Value = serde_json::from_str(&mock.last_request_body()).unwrap();
+    assert_eq!(body["method"], "esplora_address:utxo");
+    assert_eq!(body["params"], json!([address]));
+}
+
+#[wasm_bindgen_test]
+pub async fn test_get_address_info_web() {
+    let mock = FetchMock::new();
+    let provider = setup().await.unwrap();
+    let address = "bc1q_test_address";
+
+    let mock_info = json!({
+        "address": address,
+        "chain_stats": {
+            "funded_txo_count": 10,
+            "funded_txo_sum": 500000,
+            "spent_txo_count": 5,
+            "spent_txo_sum": 250000,
+            "tx_count": 15
+        },
+        "mempool_stats": {
+            "funded_txo_count": 1,
+            "funded_txo_sum": 10000,
+            "spent_txo_count": 0,
+            "spent_txo_sum": 0,
+            "tx_count": 1
+        }
+    });
+
+    let rpc_response = json!({
+        "jsonrpc": "2.0",
+        "result": mock_info,
+        "id": 1
+    });
+    mock.set_response(&rpc_response);
+
+    let result = provider.get_address_info(address).await;
+
+    assert!(result.is_ok(), "get_address_info failed: {:?}", result.err());
+    assert_eq!(result.unwrap(), mock_info);
+
+    let body: serde_json::Value = serde_json::from_str(&mock.last_request_body()).unwrap();
+    assert_eq!(body["method"], "esplora_address");
+    assert_eq!(body["params"], json!([address]));
 }

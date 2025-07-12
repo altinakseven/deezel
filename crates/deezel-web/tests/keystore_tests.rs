@@ -11,7 +11,7 @@ use serde_json;
 wasm_bindgen_test_configure!(run_in_browser);
 
 #[wasm_bindgen_test]
-fn test_keystore_creation_basic() {
+pub fn test_keystore_creation_basic() {
     let passphrase = "test_passphrase_123";
     let keystore_result = create_keystore(passphrase);
     
@@ -20,13 +20,13 @@ fn test_keystore_creation_basic() {
     let keystore = keystore_result.unwrap();
     
     // Verify basic structure
-    assert_eq!(keystore.version, 1);
+    assert_eq!(keystore.version, "1");
     assert!(keystore.encrypted_seed.starts_with("-----BEGIN PGP MESSAGE-----"));
     assert!(keystore.encrypted_seed.ends_with("-----END PGP MESSAGE-----\n"));
     
     // Verify PBKDF2 parameters
     assert_eq!(keystore.pbkdf2_params.iterations, 100_000);
-    assert_eq!(keystore.pbkdf2_params.algorithm, "AES256");
+    assert_eq!(keystore.pbkdf2_params.algorithm, Some("AES256".to_string()));
     assert_eq!(keystore.pbkdf2_params.salt.len(), 16); // 8 bytes = 16 hex chars
     
     // Verify networks
@@ -49,7 +49,7 @@ fn test_keystore_creation_basic() {
 }
 
 #[wasm_bindgen_test]
-fn test_keystore_json_serialization() {
+pub fn test_keystore_json_serialization() {
     let passphrase = "demo_passphrase_456";
     let keystore = create_keystore(passphrase).unwrap();
     
@@ -79,7 +79,7 @@ fn test_keystore_json_serialization() {
 }
 
 #[wasm_bindgen_test]
-fn test_keystore_address_formats() {
+pub fn test_keystore_address_formats() {
     let passphrase = "address_test_789";
     let keystore = create_keystore(passphrase).unwrap();
     
@@ -123,7 +123,7 @@ fn test_keystore_address_formats() {
 }
 
 #[wasm_bindgen_test]
-fn test_keystore_encryption_uniqueness() {
+pub fn test_keystore_encryption_uniqueness() {
     let passphrase = "uniqueness_test";
     
     // Create two keystores with same passphrase
@@ -143,7 +143,7 @@ fn test_keystore_encryption_uniqueness() {
 /// Example function to demonstrate keystore JSON output
 /// This is not a test but shows the actual JSON structure
 #[wasm_bindgen_test]
-fn demonstrate_keystore_json_output() {
+pub fn demonstrate_keystore_json_output() {
     let passphrase = "example_demo_passphrase";
     let keystore = create_keystore(passphrase).unwrap();
     

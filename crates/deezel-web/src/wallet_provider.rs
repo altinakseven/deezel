@@ -1279,6 +1279,10 @@ impl EsploraProvider for BrowserWalletProvider {
         EsploraProvider::get_address(&self.web_provider, address).await
     }
     
+    async fn get_address_info(&self, address: &str) -> Result<JsonValue> {
+        self.web_provider.get_address_info(address).await
+    }
+    
     async fn get_address_txs(&self, address: &str) -> Result<JsonValue> {
         self.web_provider.get_address_txs(address).await
     }

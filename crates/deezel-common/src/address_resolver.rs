@@ -714,6 +714,9 @@ impl EsploraProvider for StandaloneAddressResolver {
     async fn get_address(&self, _address: &str) -> Result<serde_json::Value> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Esplora API".to_string()))
     }
+    async fn get_address_info(&self, _address: &str) -> Result<serde_json::Value> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Esplora API".to_string()))
+    }
     async fn get_address_txs(&self, _address: &str) -> Result<serde_json::Value> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Esplora API".to_string()))
     }

@@ -357,6 +357,7 @@ pub async fn demonstrate_psbt_signing() {
 
 #[allow(dead_code, clippy::main_recursion)]
 #[wasm_bindgen]
+#[cfg(not(test))]
 pub fn main() {
     wasm_bindgen_futures::spawn_local(run_browser_wallet_example());
 }
