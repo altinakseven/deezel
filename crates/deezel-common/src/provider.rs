@@ -1022,413 +1022,133 @@ impl MetashrewRpcProvider for ConcreteProvider {
 #[async_trait(?Send)]
 impl EsploraProvider for ConcreteProvider {
     async fn get_blocks_tip_hash(&self) -> Result<String> {
-        #[cfg(feature = "native-deps")]
-        {
-            let url = format!("{}/blocks/tip/hash", self.bitcoin_rpc_url);
-            let client = reqwest::Client::new();
-            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            response.text().await.map_err(|e| DeezelError::Network(e.to_string()))
-        }
-        #[cfg(not(feature = "native-deps"))]
-        {
-            let _ = self; // Suppress unused parameter warning
-            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
-        }
+        let result = self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCKS_TIP_HASH, crate::esplora::params::empty(), 1).await?;
+        result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid tip hash response".to_string()))
     }
 
     async fn get_blocks_tip_height(&self) -> Result<u64> {
-        #[cfg(feature = "native-deps")]
-        {
-            let url = format!("{}/blocks/tip/height", self.bitcoin_rpc_url);
-            let client = reqwest::Client::new();
-            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            let text = response.text().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            text.parse::<u64>().map_err(|e| DeezelError::RpcError(format!("Invalid height response: {}", e)))
-        }
-        #[cfg(not(feature = "native-deps"))]
-        {
-            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
-        }
+        let result = self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCKS_TIP_HEIGHT, crate::esplora::params::empty(), 1).await?;
+        result.as_u64().ok_or_else(|| DeezelError::RpcError("Invalid tip height response".to_string()))
     }
 
     async fn get_blocks(&self, start_height: Option<u64>) -> Result<serde_json::Value> {
-        #[cfg(feature = "native-deps")]
-        {
-            let url = if let Some(height) = start_height {
-                format!("{}/blocks/{}", self.bitcoin_rpc_url, height)
-            } else {
-                format!("{}/blocks", self.bitcoin_rpc_url)
-            };
-            let client = reqwest::Client::new();
-            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
-        }
-        #[cfg(not(feature = "native-deps"))]
-        {
-            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
-        }
+        self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCKS, crate::esplora::params::optional_single(start_height), 1).await
     }
 
     async fn get_block_by_height(&self, height: u64) -> Result<String> {
-        #[cfg(feature = "native-deps")]
-        {
-            let url = format!("{}/block-height/{}", self.bitcoin_rpc_url, height);
-            let client = reqwest::Client::new();
-            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            response.text().await.map_err(|e| DeezelError::Network(e.to_string()))
-        }
-        #[cfg(not(feature = "native-deps"))]
-        {
-            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
-        }
+        let result = self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCK_HEIGHT, crate::esplora::params::single(height), 1).await?;
+        result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid block hash response".to_string()))
     }
 
     async fn get_block(&self, hash: &str) -> Result<serde_json::Value> {
-        #[cfg(feature = "native-deps")]
-        {
-            let url = format!("{}/block/{}", self.bitcoin_rpc_url, hash);
-            let client = reqwest::Client::new();
-            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
-        }
-        #[cfg(not(feature = "native-deps"))]
-        {
-            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
-        }
+        self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCK, crate::esplora::params::single(hash), 1).await
     }
 
     async fn get_block_status(&self, hash: &str) -> Result<serde_json::Value> {
-        #[cfg(feature = "native-deps")]
-        {
-            let url = format!("{}/block/{}/status", self.bitcoin_rpc_url, hash);
-            let client = reqwest::Client::new();
-            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
-        }
-        #[cfg(not(feature = "native-deps"))]
-        {
-            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
-        }
+        self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCK_STATUS, crate::esplora::params::single(hash), 1).await
     }
 
     async fn get_block_txids(&self, hash: &str) -> Result<serde_json::Value> {
-        #[cfg(feature = "native-deps")]
-        {
-            let url = format!("{}/block/{}/txids", self.bitcoin_rpc_url, hash);
-            let client = reqwest::Client::new();
-            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
-        }
-        #[cfg(not(feature = "native-deps"))]
-        {
-            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
-        }
+        self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCK_TXIDS, crate::esplora::params::single(hash), 1).await
     }
 
     async fn get_block_header(&self, hash: &str) -> Result<String> {
-        #[cfg(feature = "native-deps")]
-        {
-            let url = format!("{}/block/{}/header", self.bitcoin_rpc_url, hash);
-            let client = reqwest::Client::new();
-            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            response.text().await.map_err(|e| DeezelError::Network(e.to_string()))
-        }
-        #[cfg(not(feature = "native-deps"))]
-        {
-            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
-        }
+        let result = self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCK_HEADER, crate::esplora::params::single(hash), 1).await?;
+        result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid block header response".to_string()))
     }
 
     async fn get_block_raw(&self, hash: &str) -> Result<String> {
-        #[cfg(feature = "native-deps")]
-        {
-            let url = format!("{}/block/{}/raw", self.bitcoin_rpc_url, hash);
-            let client = reqwest::Client::new();
-            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            let bytes = response.bytes().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            Ok(hex::encode(bytes))
-        }
-        #[cfg(not(feature = "native-deps"))]
-        {
-            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
-        }
+        let result = self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCK_RAW, crate::esplora::params::single(hash), 1).await?;
+        result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid raw block response".to_string()))
     }
 
     async fn get_block_txid(&self, hash: &str, index: u32) -> Result<String> {
-        #[cfg(feature = "native-deps")]
-        {
-            let url = format!("{}/block/{}/txid/{}", self.bitcoin_rpc_url, hash, index);
-            let client = reqwest::Client::new();
-            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            response.text().await.map_err(|e| DeezelError::Network(e.to_string()))
-        }
-        #[cfg(not(feature = "native-deps"))]
-        {
-            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
-        }
+        let result = self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCK_TXID, crate::esplora::params::dual(hash, index), 1).await?;
+        result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid txid response".to_string()))
     }
 
-    async fn get_block_txs(&self, hash: &str, start_index: Option<u32>) -> Result<serde_json::Value> {
-        #[cfg(feature = "native-deps")]
-        {
-            let url = if let Some(index) = start_index {
-                format!("{}/block/{}/txs/{}", self.bitcoin_rpc_url, hash, index)
-            } else {
-                format!("{}/block/{}/txs", self.bitcoin_rpc_url, hash)
-            };
-            let client = reqwest::Client::new();
-            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
-        }
-        #[cfg(not(feature = "native-deps"))]
-        {
-            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
-        }
+    async fn get_block_txs(&self, _hash: &str, start_index: Option<u32>) -> Result<serde_json::Value> {
+        self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCK_TXS, crate::esplora::params::optional_single(start_index), 1).await
     }
 
     async fn get_address(&self, address: &str) -> Result<serde_json::Value> {
-        #[cfg(feature = "native-deps")]
-        {
-            let url = format!("{}/address/{}", self.bitcoin_rpc_url, address);
-            let client = reqwest::Client::new();
-            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
-        }
-        #[cfg(not(feature = "native-deps"))]
-        {
-            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
-        }
+        self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::ADDRESS, crate::esplora::params::single(address), 1).await
     }
 
     async fn get_address_txs(&self, address: &str) -> Result<serde_json::Value> {
-        #[cfg(feature = "native-deps")]
-        {
-            let url = format!("{}/address/{}/txs", self.bitcoin_rpc_url, address);
-            let client = reqwest::Client::new();
-            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
-        }
-        #[cfg(not(feature = "native-deps"))]
-        {
-            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
-        }
+        self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::ADDRESS_TXS, crate::esplora::params::single(address), 1).await
     }
 
     async fn get_address_txs_chain(&self, address: &str, last_seen_txid: Option<&str>) -> Result<serde_json::Value> {
-        #[cfg(feature = "native-deps")]
-        {
-            let url = if let Some(txid) = last_seen_txid {
-                format!("{}/address/{}/txs/chain/{}", self.bitcoin_rpc_url, address, txid)
-            } else {
-                format!("{}/address/{}/txs/chain", self.bitcoin_rpc_url, address)
-            };
-            let client = reqwest::Client::new();
-            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
-        }
-        #[cfg(not(feature = "native-deps"))]
-        {
-            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
-        }
+        self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::ADDRESS_TXS_CHAIN, crate::esplora::params::optional_dual(address, last_seen_txid), 1).await
     }
 
     async fn get_address_txs_mempool(&self, address: &str) -> Result<serde_json::Value> {
-        #[cfg(feature = "native-deps")]
-        {
-            let url = format!("{}/address/{}/txs/mempool", self.bitcoin_rpc_url, address);
-            let client = reqwest::Client::new();
-            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
-        }
-        #[cfg(not(feature = "native-deps"))]
-        {
-            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
-        }
+        self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::ADDRESS_TXS_MEMPOOL, crate::esplora::params::single(address), 1).await
     }
 
     async fn get_address_utxo(&self, address: &str) -> Result<serde_json::Value> {
-        let params = serde_json::json!([address]);
-        self.call(&self.bitcoin_rpc_url, "esplora_address::utxo", params, 1).await
+        self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::ADDRESS_UTXO, crate::esplora::params::single(address), 1).await
     }
 
     async fn get_address_prefix(&self, prefix: &str) -> Result<serde_json::Value> {
-        #[cfg(feature = "native-deps")]
-        {
-            let url = format!("{}/address/prefix/{}", self.bitcoin_rpc_url, prefix);
-            let client = reqwest::Client::new();
-            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
-        }
-        #[cfg(not(feature = "native-deps"))]
-        {
-            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
-        }
+        self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::ADDRESS_PREFIX, crate::esplora::params::single(prefix), 1).await
     }
 
     async fn get_tx(&self, txid: &str) -> Result<serde_json::Value> {
-        let params = serde_json::json!([txid]);
-        self.call(&self.bitcoin_rpc_url, "esplora_tx", params, 1).await
+        self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::TX, crate::esplora::params::single(txid), 1).await
     }
 
     async fn get_tx_hex(&self, txid: &str) -> Result<String> {
-        #[cfg(feature = "native-deps")]
-        {
-            let url = format!("{}/tx/{}/hex", self.bitcoin_rpc_url, txid);
-            let client = reqwest::Client::new();
-            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            response.text().await.map_err(|e| DeezelError::Network(e.to_string()))
-        }
-        #[cfg(not(feature = "native-deps"))]
-        {
-            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
-        }
+        let result = self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::TX_HEX, crate::esplora::params::single(txid), 1).await?;
+        result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid tx hex response".to_string()))
     }
 
     async fn get_tx_raw(&self, txid: &str) -> Result<String> {
-        #[cfg(feature = "native-deps")]
-        {
-            let url = format!("{}/tx/{}/raw", self.bitcoin_rpc_url, txid);
-            let client = reqwest::Client::new();
-            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            let bytes = response.bytes().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            Ok(hex::encode(bytes))
-        }
-        #[cfg(not(feature = "native-deps"))]
-        {
-            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
-        }
+        let result = self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::TX_RAW, crate::esplora::params::single(txid), 1).await?;
+        result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid raw tx response".to_string()))
     }
 
     async fn get_tx_status(&self, txid: &str) -> Result<serde_json::Value> {
-        #[cfg(feature = "native-deps")]
-        {
-            let url = format!("{}/tx/{}/status", self.bitcoin_rpc_url, txid);
-            let client = reqwest::Client::new();
-            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
-        }
-        #[cfg(not(feature = "native-deps"))]
-        {
-            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
-        }
+        self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::TX_STATUS, crate::esplora::params::single(txid), 1).await
     }
 
     async fn get_tx_merkle_proof(&self, txid: &str) -> Result<serde_json::Value> {
-        #[cfg(feature = "native-deps")]
-        {
-            let url = format!("{}/tx/{}/merkle-proof", self.bitcoin_rpc_url, txid);
-            let client = reqwest::Client::new();
-            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
-        }
-        #[cfg(not(feature = "native-deps"))]
-        {
-            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
-        }
+        self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::TX_MERKLE_PROOF, crate::esplora::params::single(txid), 1).await
     }
 
     async fn get_tx_merkleblock_proof(&self, txid: &str) -> Result<String> {
-        #[cfg(feature = "native-deps")]
-        {
-            let url = format!("{}/tx/{}/merkleblock-proof", self.bitcoin_rpc_url, txid);
-            let client = reqwest::Client::new();
-            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            response.text().await.map_err(|e| DeezelError::Network(e.to_string()))
-        }
-        #[cfg(not(feature = "native-deps"))]
-        {
-            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
-        }
+        let result = self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::TX_MERKLEBLOCK_PROOF, crate::esplora::params::single(txid), 1).await?;
+        result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid merkleblock proof response".to_string()))
     }
 
     async fn get_tx_outspend(&self, txid: &str, index: u32) -> Result<serde_json::Value> {
-        #[cfg(feature = "native-deps")]
-        {
-            let url = format!("{}/tx/{}/outspend/{}", self.bitcoin_rpc_url, txid, index);
-            let client = reqwest::Client::new();
-            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
-        }
-        #[cfg(not(feature = "native-deps"))]
-        {
-            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
-        }
+        self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::TX_OUTSPEND, crate::esplora::params::dual(txid, index), 1).await
     }
 
     async fn get_tx_outspends(&self, txid: &str) -> Result<serde_json::Value> {
-        #[cfg(feature = "native-deps")]
-        {
-            let url = format!("{}/tx/{}/outspends", self.bitcoin_rpc_url, txid);
-            let client = reqwest::Client::new();
-            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
-        }
-        #[cfg(not(feature = "native-deps"))]
-        {
-            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
-        }
+        self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::TX_OUTSPENDS, crate::esplora::params::single(txid), 1).await
     }
 
     async fn broadcast(&self, tx_hex: &str) -> Result<String> {
-        // Broadcasting is a standard bitcoind RPC call, not an Esplora-specific one.
-        // Delegate to the BitcoinRpcProvider implementation.
-        self.send_raw_transaction(tx_hex).await
+        let result = self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::BROADCAST, crate::esplora::params::single(tx_hex), 1).await?;
+        result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid broadcast response".to_string()))
     }
 
     async fn get_mempool(&self) -> Result<serde_json::Value> {
-        #[cfg(feature = "native-deps")]
-        {
-            let url = format!("{}/mempool", self.bitcoin_rpc_url);
-            let client = reqwest::Client::new();
-            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
-        }
-        #[cfg(not(feature = "native-deps"))]
-        {
-            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
-        }
+        self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::MEMPOOL, crate::esplora::params::empty(), 1).await
     }
 
     async fn get_mempool_txids(&self) -> Result<serde_json::Value> {
-        #[cfg(feature = "native-deps")]
-        {
-            let url = format!("{}/mempool/txids", self.bitcoin_rpc_url);
-            let client = reqwest::Client::new();
-            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
-        }
-        #[cfg(not(feature = "native-deps"))]
-        {
-            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
-        }
+        self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::MEMPOOL_TXIDS, crate::esplora::params::empty(), 1).await
     }
 
     async fn get_mempool_recent(&self) -> Result<serde_json::Value> {
-        #[cfg(feature = "native-deps")]
-        {
-            let url = format!("{}/mempool/recent", self.bitcoin_rpc_url);
-            let client = reqwest::Client::new();
-            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
-        }
-        #[cfg(not(feature = "native-deps"))]
-        {
-            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
-        }
+        self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::MEMPOOL_RECENT, crate::esplora::params::empty(), 1).await
     }
 
     async fn get_fee_estimates(&self) -> Result<serde_json::Value> {
-        #[cfg(feature = "native-deps")]
-        {
-            let url = format!("{}/fee-estimates", self.bitcoin_rpc_url);
-            let client = reqwest::Client::new();
-            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
-        }
-        #[cfg(not(feature = "native-deps"))]
-        {
-            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
-        }
+        self.call(&self.bitcoin_rpc_url, crate::esplora::EsploraJsonRpcMethods::FEE_ESTIMATES, crate::esplora::params::empty(), 1).await
     }
 }
 
@@ -1567,5 +1287,882 @@ impl MonitorProvider for ConcreteProvider {
 
     async fn get_block_events(&self, _height: u64) -> Result<Vec<BlockEvent>> {
         Err(DeezelError::NotImplemented("MonitorProvider get_block_events not yet implemented".to_string()))
+    }
+}
+
+#[cfg(all(test, feature = "native-deps"))]
+mod esplora_provider_tests {
+    use super::*;
+    use wiremock::matchers::{method, body_json};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+    use serde_json::json;
+
+    async fn setup() -> (MockServer, ConcreteProvider) {
+        let server = MockServer::start().await;
+        let provider = ConcreteProvider::new(
+            server.uri(),
+            server.uri(),
+            "regtest".to_string(),
+            None,
+        ).await.unwrap();
+        (server, provider)
+    }
+
+    #[tokio::test]
+    async fn test_get_blocks_tip_hash() {
+        // Arrange
+        let (server, provider) = setup().await;
+        let mock_hash = "0000000000000000000abcde".to_string();
+
+        let rpc_response = json!({
+            "jsonrpc": "2.0",
+            "result": mock_hash,
+            "id": 1
+        });
+
+        Mock::given(method("POST"))
+            .and(body_json(json!({
+                "jsonrpc": "2.0",
+                "method": "esplora_blocks:tip:hash",
+                "params": [],
+                "id": 1
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+            .mount(&server)
+            .await;
+
+        // Act
+        let result = provider.get_blocks_tip_hash().await;
+
+        // Assert
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), mock_hash);
+    }
+
+    #[tokio::test]
+    async fn test_get_blocks_tip_height() {
+        // Arrange
+        let (server, provider) = setup().await;
+        let mock_height = 800000;
+
+        let rpc_response = json!({
+            "jsonrpc": "2.0",
+            "result": mock_height,
+            "id": 1
+        });
+
+        Mock::given(method("POST"))
+            .and(body_json(json!({
+                "jsonrpc": "2.0",
+                "method": "esplora_blocks:tip:height",
+                "params": [],
+                "id": 1
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+            .mount(&server)
+            .await;
+
+        // Act
+        let result = provider.get_blocks_tip_height().await;
+
+        // Assert
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), mock_height);
+    }
+
+    #[tokio::test]
+    async fn test_get_block_by_height() {
+        // Arrange
+        let (server, provider) = setup().await;
+        let mock_height = 800000;
+        let mock_hash = "0000000000000000000abcde".to_string();
+
+        let rpc_response = json!({
+            "jsonrpc": "2.0",
+            "result": mock_hash,
+            "id": 1
+        });
+
+        Mock::given(method("POST"))
+            .and(body_json(json!({
+                "jsonrpc": "2.0",
+                "method": "esplora_block:height",
+                "params": [mock_height],
+                "id": 1
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+            .mount(&server)
+            .await;
+
+        // Act
+        let result = provider.get_block_by_height(mock_height).await;
+
+        // Assert
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "0000000000000000000abcde");
+    }
+
+    #[tokio::test]
+    async fn test_get_block() {
+        // Arrange
+        let (server, provider) = setup().await;
+        let mock_hash = "00000000000000000001c7b8332e01ab8802397082a1f29f2e7e07e4f8a2a4b7";
+        let mock_block = json!({
+            "id": mock_hash,
+            "height": 700000,
+            "version": 536870912,
+            "timestamp": 1629886679,
+            "tx_count": 2500,
+            "size": 1369315,
+            "weight": 3992260,
+            "merkle_root": "f35e359ac01426b654b33389d739dfe4288634029348a84a169e210d862289c9",
+            "previousblockhash": "00000000000000000003a3b2b3b4b5b6b7b8b9bacbdcedfefe010203",
+            "nonce": 1234567890,
+            "bits": 402793003,
+            "difficulty": 17899999999999.99
+        });
+
+        let rpc_response = json!({
+            "jsonrpc": "2.0",
+            "result": mock_block,
+            "id": 1
+        });
+
+        Mock::given(method("POST"))
+            .and(body_json(json!({
+                "jsonrpc": "2.0",
+                "method": "esplora_block",
+                "params": [mock_hash],
+                "id": 1
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+            .mount(&server)
+            .await;
+
+        // Act
+        let result = EsploraProvider::get_block(&provider, mock_hash).await;
+
+        // Assert
+        assert!(result.is_ok());
+        let block_val = result.unwrap();
+        assert_eq!(block_val, mock_block);
+    }
+
+    #[tokio::test]
+    async fn test_get_block_status() {
+        // Arrange
+        let (server, provider) = setup().await;
+        let mock_hash = "00000000000000000001c7b8332e01ab8802397082a1f29f2e7e07e4f8a2a4b7";
+        let mock_status = json!({
+            "in_best_chain": true,
+            "height": 700000,
+            "next_best": "00000000000000000002a3b2b3b4b5b6b7b8b9bacbdcedfefe010203"
+        });
+
+        let rpc_response = json!({
+            "jsonrpc": "2.0",
+            "result": mock_status,
+            "id": 1
+        });
+
+        Mock::given(method("POST"))
+            .and(body_json(json!({
+                "jsonrpc": "2.0",
+                "method": "esplora_block:status",
+                "params": [mock_hash],
+                "id": 1
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+            .mount(&server)
+            .await;
+
+        // Act
+        let result = provider.get_block_status(mock_hash).await;
+
+        // Assert
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), mock_status);
+    }
+
+    #[tokio::test]
+    async fn test_get_block_txids() {
+        // Arrange
+        let (server, provider) = setup().await;
+        let mock_hash = "00000000000000000001c7b8332e01ab8802397082a1f29f2e7e07e4f8a2a4b7";
+        let mock_txids = json!([
+            "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+            "f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3b2a1f6e5"
+        ]);
+
+        let rpc_response = json!({
+            "jsonrpc": "2.0",
+            "result": mock_txids,
+            "id": 1
+        });
+
+        Mock::given(method("POST"))
+            .and(body_json(json!({
+                "jsonrpc": "2.0",
+                "method": "esplora_block:txids",
+                "params": [mock_hash],
+                "id": 1
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+            .mount(&server)
+            .await;
+
+        // Act
+        let result = provider.get_block_txids(mock_hash).await;
+
+        // Assert
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), mock_txids);
+    }
+
+    #[tokio::test]
+    async fn test_get_block_txid() {
+        // Arrange
+        let (server, provider) = setup().await;
+        let mock_hash = "00000000000000000001c7b8332e01ab8802397082a1f29f2e7e07e4f8a2a4b7";
+        let mock_index = 5;
+        let mock_txid = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2";
+
+        let rpc_response = json!({
+            "jsonrpc": "2.0",
+            "result": mock_txid,
+            "id": 1
+        });
+
+        Mock::given(method("POST"))
+            .and(body_json(json!({
+                "jsonrpc": "2.0",
+                "method": "esplora_block:txid",
+                "params": [mock_hash, mock_index],
+                "id": 1
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+            .mount(&server)
+            .await;
+
+        // Act
+        let result = provider.get_block_txid(mock_hash, mock_index).await;
+
+        // Assert
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), mock_txid);
+    }
+
+    #[tokio::test]
+    async fn test_get_tx() {
+        // Arrange
+        let (server, provider) = setup().await;
+        let mock_txid = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2";
+        let mock_tx = json!({
+            "txid": mock_txid,
+            "version": 2,
+            "locktime": 0,
+            "vin": [],
+            "vout": [],
+            "size": 100,
+            "weight": 400,
+            "fee": 1000,
+            "status": {
+                "confirmed": true,
+                "block_height": 700000,
+                "block_hash": "00000000000000000001c7b8332e01ab8802397082a1f29f2e7e07e4f8a2a4b7",
+                "block_time": 1629886679
+            }
+        });
+
+        let rpc_response = json!({
+            "jsonrpc": "2.0",
+            "result": mock_tx,
+            "id": 1
+        });
+
+        Mock::given(method("POST"))
+            .and(body_json(json!({
+                "jsonrpc": "2.0",
+                "method": "esplora_tx",
+                "params": [mock_txid],
+                "id": 1
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+            .mount(&server)
+            .await;
+
+        // Act
+        let result = provider.get_tx(mock_txid).await;
+
+        // Assert
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), mock_tx);
+    }
+
+    #[tokio::test]
+    async fn test_get_tx_status() {
+        // Arrange
+        let (server, provider) = setup().await;
+        let mock_txid = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2";
+        let mock_status = json!({
+            "confirmed": true,
+            "block_height": 700000,
+            "block_hash": "00000000000000000001c7b8332e01ab8802397082a1f29f2e7e07e4f8a2a4b7",
+            "block_time": 1629886679
+        });
+
+        let rpc_response = json!({
+            "jsonrpc": "2.0",
+            "result": mock_status,
+            "id": 1
+        });
+
+        Mock::given(method("POST"))
+            .and(body_json(json!({
+                "jsonrpc": "2.0",
+                "method": "esplora_tx:status",
+                "params": [mock_txid],
+                "id": 1
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+            .mount(&server)
+            .await;
+
+        // Act
+        let result = provider.get_tx_status(mock_txid).await;
+
+        // Assert
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), mock_status);
+    }
+
+    #[tokio::test]
+    async fn test_get_tx_hex() {
+        // Arrange
+        let (server, provider) = setup().await;
+        let mock_txid = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2";
+        let mock_hex = "02000000000101...";
+
+        let rpc_response = json!({
+            "jsonrpc": "2.0",
+            "result": mock_hex,
+            "id": 1
+        });
+
+        Mock::given(method("POST"))
+            .and(body_json(json!({
+                "jsonrpc": "2.0",
+                "method": "esplora_tx:hex",
+                "params": [mock_txid],
+                "id": 1
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+            .mount(&server)
+            .await;
+
+        // Act
+        let result = provider.get_tx_hex(mock_txid).await;
+
+        // Assert
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), mock_hex);
+    }
+
+    #[tokio::test]
+    async fn test_get_tx_raw() {
+        // Arrange
+        let (server, provider) = setup().await;
+        let mock_txid = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2";
+        let mock_raw = "02000000000101..."; // Using hex as placeholder for raw bytes string
+
+        let rpc_response = json!({
+            "jsonrpc": "2.0",
+            "result": mock_raw,
+            "id": 1
+        });
+
+        Mock::given(method("POST"))
+            .and(body_json(json!({
+                "jsonrpc": "2.0",
+                "method": "esplora_tx:raw",
+                "params": [mock_txid],
+                "id": 1
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+            .mount(&server)
+            .await;
+
+        // Act
+        let result = provider.get_tx_raw(mock_txid).await;
+
+        // Assert
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), mock_raw);
+    }
+
+    #[tokio::test]
+    async fn test_get_tx_merkle_proof() {
+        // Arrange
+        let (server, provider) = setup().await;
+        let mock_txid = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2";
+        let mock_proof = json!({
+            "block_height": 700000,
+            "merkle": [
+                "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+            ],
+            "pos": 123
+        });
+
+        let rpc_response = json!({
+            "jsonrpc": "2.0",
+            "result": mock_proof,
+            "id": 1
+        });
+
+        Mock::given(method("POST"))
+            .and(body_json(json!({
+                "jsonrpc": "2.0",
+                "method": "esplora_tx:merkle-proof",
+                "params": [mock_txid],
+                "id": 1
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+            .mount(&server)
+            .await;
+
+        // Act
+        let result = provider.get_tx_merkle_proof(mock_txid).await;
+
+        // Assert
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), mock_proof);
+    }
+
+    #[tokio::test]
+    async fn test_get_tx_outspend() {
+        // Arrange
+        let (server, provider) = setup().await;
+        let mock_txid = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2";
+        let mock_index = 0;
+        let mock_outspend = json!({
+            "spent": true,
+            "txid": "f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3b2a1f6e5",
+            "vin": 0,
+            "status": {
+                "confirmed": true,
+                "block_height": 700001,
+                "block_hash": "00000000000000000002a3b2b3b4b5b6b7b8b9bacbdcedfefe010203",
+                "block_time": 1629886779
+            }
+        });
+
+        let rpc_response = json!({
+            "jsonrpc": "2.0",
+            "result": mock_outspend,
+            "id": 1
+        });
+
+        Mock::given(method("POST"))
+            .and(body_json(json!({
+                "jsonrpc": "2.0",
+                "method": "esplora_tx:outspend",
+                "params": [mock_txid, mock_index],
+                "id": 1
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+            .mount(&server)
+            .await;
+
+        // Act
+        let result = provider.get_tx_outspend(mock_txid, mock_index).await;
+
+        // Assert
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), mock_outspend);
+    }
+
+    #[tokio::test]
+    async fn test_get_tx_outspends() {
+        // Arrange
+        let (server, provider) = setup().await;
+        let mock_txid = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2";
+        let mock_outspends = json!([
+            {
+                "spent": true,
+                "txid": "f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3b2a1f6e5",
+                "vin": 0,
+                "status": {
+                    "confirmed": true,
+                    "block_height": 700001,
+                    "block_hash": "00000000000000000002a3b2b3b4b5b6b7b8b9bacbdcedfefe010203",
+                    "block_time": 1629886779
+                }
+            },
+            {
+                "spent": false
+            }
+        ]);
+
+        let rpc_response = json!({
+            "jsonrpc": "2.0",
+            "result": mock_outspends,
+            "id": 1
+        });
+
+        Mock::given(method("POST"))
+            .and(body_json(json!({
+                "jsonrpc": "2.0",
+                "method": "esplora_tx:outspends",
+                "params": [mock_txid],
+                "id": 1
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+            .mount(&server)
+            .await;
+
+        // Act
+        let result = provider.get_tx_outspends(mock_txid).await;
+
+        // Assert
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), mock_outspends);
+    }
+
+    #[tokio::test]
+    async fn test_get_address() {
+        // Arrange
+        let (server, provider) = setup().await;
+        let mock_address = "bc1q...";
+        let mock_address_info = json!({
+            "address": mock_address,
+            "chain_stats": { "funded_txo_count": 1, "funded_txo_sum": 100000, "spent_txo_count": 0, "spent_txo_sum": 0, "tx_count": 1 },
+            "mempool_stats": { "funded_txo_count": 0, "funded_txo_sum": 0, "spent_txo_count": 0, "spent_txo_sum": 0, "tx_count": 0 }
+        });
+
+        let rpc_response = json!({
+            "jsonrpc": "2.0",
+            "result": mock_address_info,
+            "id": 1
+        });
+
+        Mock::given(method("POST"))
+            .and(body_json(json!({
+                "jsonrpc": "2.0",
+                "method": "esplora_address",
+                "params": [mock_address],
+                "id": 1
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+            .mount(&server)
+            .await;
+
+        // Act
+        let result = EsploraProvider::get_address(&provider, mock_address).await;
+
+        // Assert
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), mock_address_info);
+    }
+
+    #[tokio::test]
+    async fn test_get_address_txs() {
+        // Arrange
+        let (server, provider) = setup().await;
+        let mock_address = "bc1q...";
+        let mock_txs = json!([
+            { "txid": "a1b2c3d4...", "status": { "confirmed": true } }
+        ]);
+
+        let rpc_response = json!({
+            "jsonrpc": "2.0",
+            "result": mock_txs,
+            "id": 1
+        });
+
+        Mock::given(method("POST"))
+            .and(body_json(json!({
+                "jsonrpc": "2.0",
+                "method": "esplora_address:txs",
+                "params": [mock_address],
+                "id": 1
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+            .mount(&server)
+            .await;
+
+        // Act
+        let result = provider.get_address_txs(mock_address).await;
+
+        // Assert
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), mock_txs);
+    }
+
+    #[tokio::test]
+    async fn test_get_address_txs_chain() {
+        // Arrange
+        let (server, provider) = setup().await;
+        let mock_address = "bc1q...";
+        let mock_last_txid = "a1b2c3d4...";
+        let mock_txs = json!([
+            { "txid": "e5f6g7h8...", "status": { "confirmed": true } }
+        ]);
+
+        let rpc_response = json!({
+            "jsonrpc": "2.0",
+            "result": mock_txs,
+            "id": 1
+        });
+
+        Mock::given(method("POST"))
+            .and(body_json(json!({
+                "jsonrpc": "2.0",
+                "method": "esplora_address:txs:chain",
+                "params": [mock_address, mock_last_txid],
+                "id": 1
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+            .mount(&server)
+            .await;
+
+        // Act
+        let result = provider.get_address_txs_chain(mock_address, Some(mock_last_txid)).await;
+
+        // Assert
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), mock_txs);
+    }
+
+    #[tokio::test]
+    async fn test_get_address_txs_mempool() {
+        // Arrange
+        let (server, provider) = setup().await;
+        let mock_address = "bc1q...";
+        let mock_txs = json!([
+            { "txid": "mempooltx...", "status": { "confirmed": false } }
+        ]);
+
+        let rpc_response = json!({
+            "jsonrpc": "2.0",
+            "result": mock_txs,
+            "id": 1
+        });
+
+        Mock::given(method("POST"))
+            .and(body_json(json!({
+                "jsonrpc": "2.0",
+                "method": "esplora_address:txs:mempool",
+                "params": [mock_address],
+                "id": 1
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+            .mount(&server)
+            .await;
+
+        // Act
+        let result = provider.get_address_txs_mempool(mock_address).await;
+
+        // Assert
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), mock_txs);
+    }
+
+    #[tokio::test]
+    async fn test_get_address_utxo() {
+        // Arrange
+        let (server, provider) = setup().await;
+        let mock_address = "bc1q...";
+        let mock_utxos = json!([
+            { "txid": "utxotx...", "vout": 0, "value": 12345 }
+        ]);
+
+        let rpc_response = json!({
+            "jsonrpc": "2.0",
+            "result": mock_utxos,
+            "id": 1
+        });
+
+        Mock::given(method("POST"))
+            .and(body_json(json!({
+                "jsonrpc": "2.0",
+                "method": "esplora_address:utxo",
+                "params": [mock_address],
+                "id": 1
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+            .mount(&server)
+            .await;
+
+        // Act
+        let result = provider.get_address_utxo(mock_address).await;
+
+        // Assert
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), mock_utxos);
+    }
+
+    #[tokio::test]
+    async fn test_get_mempool() {
+        // Arrange
+        let (server, provider) = setup().await;
+        let mock_mempool_info = json!({
+            "count": 10,
+            "vsize": 12345,
+            "total_fee": 54321,
+            "fee_histogram": [[1.0, 12345]]
+        });
+
+        let rpc_response = json!({
+            "jsonrpc": "2.0",
+            "result": mock_mempool_info,
+            "id": 1
+        });
+
+        Mock::given(method("POST"))
+            .and(body_json(json!({
+                "jsonrpc": "2.0",
+                "method": "esplora_mempool",
+                "params": [],
+                "id": 1
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+            .mount(&server)
+            .await;
+
+        // Act
+        let result = provider.get_mempool().await;
+
+        // Assert
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), mock_mempool_info);
+    }
+
+    #[tokio::test]
+    async fn test_get_mempool_txids() {
+        // Arrange
+        let (server, provider) = setup().await;
+        let mock_txids = json!([
+            "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+        ]);
+
+        let rpc_response = json!({
+            "jsonrpc": "2.0",
+            "result": mock_txids,
+            "id": 1
+        });
+
+        Mock::given(method("POST"))
+            .and(body_json(json!({
+                "jsonrpc": "2.0",
+                "method": "esplora_mempool:txids",
+                "params": [],
+                "id": 1
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+            .mount(&server)
+            .await;
+
+        // Act
+        let result = provider.get_mempool_txids().await;
+
+        // Assert
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), mock_txids);
+    }
+
+    #[tokio::test]
+    async fn test_get_mempool_recent() {
+        // Arrange
+        let (server, provider) = setup().await;
+        let mock_recent = json!([
+            { "txid": "a1b2c3d4...", "fee": 1000, "vsize": 200, "value": 12345 }
+        ]);
+
+        let rpc_response = json!({
+            "jsonrpc": "2.0",
+            "result": mock_recent,
+            "id": 1
+        });
+
+        Mock::given(method("POST"))
+            .and(body_json(json!({
+                "jsonrpc": "2.0",
+                "method": "esplora_mempool:recent",
+                "params": [],
+                "id": 1
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+            .mount(&server)
+            .await;
+
+        // Act
+        let result = provider.get_mempool_recent().await;
+
+        // Assert
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), mock_recent);
+    }
+
+    #[tokio::test]
+    async fn test_get_fee_estimates() {
+        // Arrange
+        let (server, provider) = setup().await;
+        let mock_fees = json!({ "1": 10.0, "6": 5.0, "144": 1.0 });
+
+        let rpc_response = json!({
+            "jsonrpc": "2.0",
+            "result": mock_fees,
+            "id": 1
+        });
+
+        Mock::given(method("POST"))
+            .and(body_json(json!({
+                "jsonrpc": "2.0",
+                "method": "esplora_fee-estimates",
+                "params": [],
+                "id": 1
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+            .mount(&server)
+            .await;
+
+        // Act
+        let result = provider.get_fee_estimates().await;
+
+        // Assert
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), mock_fees);
+    }
+
+    #[tokio::test]
+    async fn test_broadcast() {
+        // Arrange
+        let (server, provider) = setup().await;
+        let mock_tx_hex = "0100000001...";
+        let mock_txid = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2";
+
+        let rpc_response = json!({
+            "jsonrpc": "2.0",
+            "result": mock_txid,
+            "id": 1
+        });
+
+        Mock::given(method("POST"))
+            .and(body_json(json!({
+                "jsonrpc": "2.0",
+                "method": "esplora_broadcast",
+                "params": [mock_tx_hex],
+                "id": 1
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+            .mount(&server)
+            .await;
+
+        // Act
+        let result = provider.broadcast(mock_tx_hex).await;
+
+        // Assert
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), mock_txid);
     }
 }

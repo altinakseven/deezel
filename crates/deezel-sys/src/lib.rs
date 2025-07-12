@@ -1210,189 +1210,301 @@ impl SystemMonitor for SystemDeezel {
 
 #[async_trait(?Send)]
 impl SystemEsplora for SystemDeezel {
-   async fn execute_esplora_command(&self, command: EsploraCommands) -> deezel_common::Result<()> {
-       let provider = &self.provider;
-       let res: anyhow::Result<()> = match command {
-            EsploraCommands::BlocksTipHash => {
+    async fn execute_esplora_command(&self, command: EsploraCommands) -> deezel_common::Result<()> {
+        let provider = &self.provider;
+        let res: anyhow::Result<()> = match command {
+            EsploraCommands::BlocksTipHash { raw } => {
                 let hash = provider.get_blocks_tip_hash().await?;
-                println!("{}", hash);
+                if raw {
+                    println!("{}", serde_json::to_string(&hash)?);
+                } else {
+                    println!("⛓️ Tip Hash: {}", hash);
+                }
                 Ok(())
             },
-           EsploraCommands::BlocksTipHeight => {
-               let height = provider.get_blocks_tip_height().await?;
-               println!("{}", height);
-               Ok(())
-           },
-           EsploraCommands::Blocks { start_height } => {
-               let result = provider.get_blocks(start_height).await?;
-               println!("{}", serde_json::to_string_pretty(&result)?);
-               Ok(())
-           },
-           EsploraCommands::BlockHeight { height } => {
-               let hash = provider.get_block_by_height(height).await?;
-               println!("{}", hash);
-               Ok(())
-           },
-           EsploraCommands::Block { hash } => {
-               let block = EsploraProvider::get_block(provider, &hash).await?;
-               println!("{}", serde_json::to_string_pretty(&block)?);
-               Ok(())
-           },
-           EsploraCommands::BlockStatus { hash } => {
-               let status = provider.get_block_status(&hash).await?;
-               println!("{}", serde_json::to_string_pretty(&status)?);
-               Ok(())
-           },
-           EsploraCommands::BlockTxids { hash } => {
-               let txids = provider.get_block_txids(&hash).await?;
-               println!("{}", serde_json::to_string_pretty(&txids)?);
-               Ok(())
-           },
-           EsploraCommands::BlockHeader { hash } => {
-               let header = provider.get_block_header(&hash).await?;
-               println!("{}", header);
-               Ok(())
-           },
-           EsploraCommands::BlockRaw { hash } => {
-               let raw = provider.get_block_raw(&hash).await?;
-               println!("{}", raw);
-               Ok(())
-           },
-           EsploraCommands::BlockTxid { hash, index } => {
-               let txid = provider.get_block_txid(&hash, index).await?;
-               println!("{}", txid);
-               Ok(())
-           },
-           EsploraCommands::BlockTxs { hash, start_index } => {
-               let txs = provider.get_block_txs(&hash, start_index).await?;
-               println!("{}", serde_json::to_string_pretty(&txs)?);
-               Ok(())
-           },
-           EsploraCommands::Address { params } => {
-               // Handle address resolution if needed
-               let resolved_params = resolve_address_identifiers(&params, provider).await?;
-               let result = EsploraProvider::get_address(provider, &resolved_params).await?;
-               println!("{}", serde_json::to_string_pretty(&result)?);
-               Ok(())
-           },
-           EsploraCommands::AddressTxs { params } => {
-               // Handle address resolution if needed
-               let resolved_params = resolve_address_identifiers(&params, provider).await?;
-               let result = provider.get_address_txs(&resolved_params).await?;
-               println!("{}", serde_json::to_string_pretty(&result)?);
-               Ok(())
-           },
-           EsploraCommands::AddressTxsChain { params } => {
-               // Handle address resolution for the first part (address:last_seen_txid)
-               let parts: Vec<&str> = params.split(':').collect();
-               let resolved_params = if parts.len() >= 2 {
-                   let address_part = parts[0];
-                   let resolved_address = resolve_address_identifiers(address_part, provider).await?;
-                   if parts.len() == 2 {
-                       format!("{}:{}", resolved_address, parts[1])
-                   } else {
-                       format!("{}:{}", resolved_address, parts[1..].join(":"))
-                   }
-               } else {
-                   resolve_address_identifiers(&params, provider).await?
-               };
-               let result = provider.get_address_txs_chain(&resolved_params, None).await?;
-               println!("{}", serde_json::to_string_pretty(&result)?);
-               Ok(())
-           },
-           EsploraCommands::AddressTxsMempool { address } => {
-               let resolved_address = resolve_address_identifiers(&address, provider).await?;
-               let result = provider.get_address_txs_mempool(&resolved_address).await?;
-               println!("{}", serde_json::to_string_pretty(&result)?);
-               Ok(())
-           },
-           EsploraCommands::AddressUtxo { address } => {
-               let resolved_address = resolve_address_identifiers(&address, provider).await?;
-               let result = provider.get_address_utxo(&resolved_address).await?;
-               println!("{}", serde_json::to_string_pretty(&result)?);
-               Ok(())
-           },
-           
-           EsploraCommands::AddressPrefix { prefix } => {
-               let result = provider.get_address_prefix(&prefix).await?;
-               println!("{}", serde_json::to_string_pretty(&result)?);
-               Ok(())
-           },
-           EsploraCommands::Tx { txid } => {
-               let tx = provider.get_tx(&txid).await?;
-               println!("{}", serde_json::to_string_pretty(&tx)?);
-               Ok(())
-           },
-           EsploraCommands::TxHex { txid } => {
-               let hex = provider.get_tx_hex(&txid).await?;
-               println!("{}", hex);
-               Ok(())
-           },
-           EsploraCommands::TxRaw { txid } => {
-               let raw = provider.get_tx_raw(&txid).await?;
-               println!("{}", raw);
-               Ok(())
-           },
-           EsploraCommands::TxStatus { txid } => {
-               let status = provider.get_tx_status(&txid).await?;
-               println!("{}", serde_json::to_string_pretty(&status)?);
-               Ok(())
-           },
-           EsploraCommands::TxMerkleProof { txid } => {
-               let proof = provider.get_tx_merkle_proof(&txid).await?;
-               println!("{}", serde_json::to_string_pretty(&proof)?);
-               Ok(())
-           },
-           EsploraCommands::TxMerkleblockProof { txid } => {
-               let proof = provider.get_tx_merkleblock_proof(&txid).await?;
-               println!("{}", proof);
-               Ok(())
-           },
-           EsploraCommands::TxOutspend { txid, index } => {
-               let outspend = provider.get_tx_outspend(&txid, index).await?;
-               println!("{}", serde_json::to_string_pretty(&outspend)?);
-               Ok(())
-           },
-           EsploraCommands::TxOutspends { txid } => {
-               let outspends = provider.get_tx_outspends(&txid).await?;
-               println!("{}", serde_json::to_string_pretty(&outspends)?);
-               Ok(())
-           },
-           EsploraCommands::Broadcast { tx_hex } => {
-               let txid = provider.broadcast(&tx_hex).await?;
-               println!("✅ Transaction broadcast successfully!");
-               println!("🔗 Transaction ID: {}", txid);
-               Ok(())
-           },
-           EsploraCommands::PostTx { tx_hex } => {
-               let txid = provider.broadcast(&tx_hex).await?;
-               println!("✅ Transaction posted successfully!");
-               println!("🔗 Transaction ID: {}", txid);
-               Ok(())
-           },
-           EsploraCommands::Mempool => {
-               let mempool = provider.get_mempool().await?;
-               println!("{}", serde_json::to_string_pretty(&mempool)?);
-               Ok(())
-           },
-           EsploraCommands::MempoolTxids => {
-               let txids = provider.get_mempool_txids().await?;
-               println!("{}", serde_json::to_string_pretty(&txids)?);
-               Ok(())
-           },
-           EsploraCommands::MempoolRecent => {
-               let recent = provider.get_mempool_recent().await?;
-               println!("{}", serde_json::to_string_pretty(&recent)?);
-               Ok(())
-           },
-           EsploraCommands::FeeEstimates => {
-               let estimates = provider.get_fee_estimates().await?;
-               println!("{}", serde_json::to_string_pretty(&estimates)?);
-               Ok(())
-           },
-       };
-       res.map_err(|e| DeezelError::Wallet(e.to_string()))
-   }
+            EsploraCommands::BlocksTipHeight { raw } => {
+                let height = provider.get_blocks_tip_height().await?;
+                if raw {
+                    println!("{}", serde_json::to_string(&height)?);
+                } else {
+                    println!("📈 Tip Height: {}", height);
+                }
+                Ok(())
+            },
+            EsploraCommands::Blocks { start_height, raw } => {
+                let result = provider.get_blocks(start_height).await?;
+                if raw {
+                    println!("{}", serde_json::to_string(&result)?);
+                } else {
+                    println!("📦 Blocks:\n{}", serde_json::to_string_pretty(&result)?);
+                }
+                Ok(())
+            },
+            EsploraCommands::BlockHeight { height, raw } => {
+                let hash = provider.get_block_by_height(height).await?;
+                if raw {
+                    println!("{}", serde_json::to_string(&hash)?);
+                } else {
+                    println!("🔗 Block Hash at {}: {}", height, hash);
+                }
+                Ok(())
+            },
+            EsploraCommands::Block { hash, raw } => {
+                let block = EsploraProvider::get_block(provider, &hash).await?;
+                if raw {
+                    println!("{}", serde_json::to_string(&block)?);
+                } else {
+                    println!("📦 Block {}:\n{}", hash, serde_json::to_string_pretty(&block)?);
+                }
+                Ok(())
+            },
+            EsploraCommands::BlockStatus { hash, raw } => {
+                let status = provider.get_block_status(&hash).await?;
+                if raw {
+                    println!("{}", serde_json::to_string(&status)?);
+                } else {
+                    println!("ℹ️ Block Status {}:\n{}", hash, serde_json::to_string_pretty(&status)?);
+                }
+                Ok(())
+            },
+            EsploraCommands::BlockTxids { hash, raw } => {
+                let txids = provider.get_block_txids(&hash).await?;
+                if raw {
+                    println!("{}", serde_json::to_string(&txids)?);
+                } else {
+                    println!("📄 Block Txids {}:\n{}", hash, serde_json::to_string_pretty(&txids)?);
+                }
+                Ok(())
+            },
+            EsploraCommands::BlockHeader { hash, raw } => {
+                let header = provider.get_block_header(&hash).await?;
+                if raw {
+                    println!("{}", serde_json::to_string(&header)?);
+                } else {
+                    println!("📄 Block Header {}: {}", hash, header);
+                }
+                Ok(())
+            },
+            EsploraCommands::BlockRaw { hash, raw } => {
+                let raw_block = provider.get_block_raw(&hash).await?;
+                if raw {
+                    println!("{}", serde_json::to_string(&raw_block)?);
+                } else {
+                    println!("📦 Raw Block {}: {}", hash, raw_block);
+                }
+                Ok(())
+            },
+            EsploraCommands::BlockTxid { hash, index, raw } => {
+                let txid = provider.get_block_txid(&hash, index).await?;
+                if raw {
+                    println!("{}", serde_json::to_string(&txid)?);
+                } else {
+                    println!("📄 Txid at index {} in block {}: {}", index, hash, txid);
+                }
+                Ok(())
+            },
+            EsploraCommands::BlockTxs { hash, start_index, raw } => {
+                let txs = provider.get_block_txs(&hash, start_index).await?;
+                if raw {
+                    println!("{}", serde_json::to_string(&txs)?);
+                } else {
+                    println!("📄 Transactions in block {}:\n{}", hash, serde_json::to_string_pretty(&txs)?);
+                }
+                Ok(())
+            },
+            EsploraCommands::Address { params, raw } => {
+                let resolved_params = resolve_address_identifiers(&params, provider).await?;
+                let result = EsploraProvider::get_address(provider, &resolved_params).await?;
+                if raw {
+                    println!("{}", serde_json::to_string(&result)?);
+                } else {
+                    println!("🏠 Address {}:\n{}", params, serde_json::to_string_pretty(&result)?);
+                }
+                Ok(())
+            },
+            EsploraCommands::AddressTxs { params, raw } => {
+                let resolved_params = resolve_address_identifiers(&params, provider).await?;
+                let result = provider.get_address_txs(&resolved_params).await?;
+                if raw {
+                    println!("{}", serde_json::to_string(&result)?);
+                } else {
+                    println!("📄 Transactions for address {}:\n{}", params, serde_json::to_string_pretty(&result)?);
+                }
+                Ok(())
+            },
+            EsploraCommands::AddressTxsChain { params, raw } => {
+                let parts: Vec<&str> = params.split(':').collect();
+                let resolved_params = if parts.len() >= 2 {
+                    let address_part = parts[0];
+                    let resolved_address = resolve_address_identifiers(address_part, provider).await?;
+                    if parts.len() == 2 {
+                        format!("{}:{}", resolved_address, parts[1])
+                    } else {
+                        format!("{}:{}", resolved_address, parts[1..].join(":"))
+                    }
+                } else {
+                    resolve_address_identifiers(&params, provider).await?
+                };
+                let result = provider.get_address_txs_chain(&resolved_params, None).await?;
+                if raw {
+                    println!("{}", serde_json::to_string(&result)?);
+                } else {
+                    println!("⛓️ Chain transactions for address {}:\n{}", params, serde_json::to_string_pretty(&result)?);
+                }
+                Ok(())
+            },
+            EsploraCommands::AddressTxsMempool { address, raw } => {
+                let resolved_address = resolve_address_identifiers(&address, provider).await?;
+                let result = provider.get_address_txs_mempool(&resolved_address).await?;
+                if raw {
+                    println!("{}", serde_json::to_string(&result)?);
+                } else {
+                    println!("⏳ Mempool transactions for address {}:\n{}", address, serde_json::to_string_pretty(&result)?);
+                }
+                Ok(())
+            },
+            EsploraCommands::AddressUtxo { address, raw } => {
+                let resolved_address = resolve_address_identifiers(&address, provider).await?;
+                let result = provider.get_address_utxo(&resolved_address).await?;
+                if raw {
+                    println!("{}", serde_json::to_string(&result)?);
+                } else {
+                    println!("💰 UTXOs for address {}:\n{}", address, serde_json::to_string_pretty(&result)?);
+                }
+                Ok(())
+            },
+            EsploraCommands::AddressPrefix { prefix, raw } => {
+                let result = provider.get_address_prefix(&prefix).await?;
+                if raw {
+                    println!("{}", serde_json::to_string(&result)?);
+                } else {
+                    println!("🔍 Addresses with prefix '{}':\n{}", prefix, serde_json::to_string_pretty(&result)?);
+                }
+                Ok(())
+            },
+            EsploraCommands::Tx { txid, raw } => {
+                let tx = provider.get_tx(&txid).await?;
+                if raw {
+                    println!("{}", serde_json::to_string(&tx)?);
+                } else {
+                    println!("📄 Transaction {}:\n{}", txid, serde_json::to_string_pretty(&tx)?);
+                }
+                Ok(())
+            },
+            EsploraCommands::TxHex { txid, raw } => {
+                let hex = provider.get_tx_hex(&txid).await?;
+                if raw {
+                    println!("{}", serde_json::to_string(&hex)?);
+                } else {
+                    println!("📄 Hex for tx {}: {}", txid, hex);
+                }
+                Ok(())
+            },
+            EsploraCommands::TxRaw { txid, raw } => {
+                let raw_tx = provider.get_tx_raw(&txid).await?;
+                if raw {
+                    println!("{}", serde_json::to_string(&raw_tx)?);
+                } else {
+                    println!("📄 Raw tx {}: {}", txid, raw_tx);
+                }
+                Ok(())
+            },
+            EsploraCommands::TxStatus { txid, raw } => {
+                let status = provider.get_tx_status(&txid).await?;
+                if raw {
+                    println!("{}", serde_json::to_string(&status)?);
+                } else {
+                    println!("ℹ️ Status for tx {}:\n{}", txid, serde_json::to_string_pretty(&status)?);
+                }
+                Ok(())
+            },
+            EsploraCommands::TxMerkleProof { txid, raw } => {
+                let proof = provider.get_tx_merkle_proof(&txid).await?;
+                if raw {
+                    println!("{}", serde_json::to_string(&proof)?);
+                } else {
+                    println!("🧾 Merkle proof for tx {}:\n{}", txid, serde_json::to_string_pretty(&proof)?);
+                }
+                Ok(())
+            },
+            EsploraCommands::TxMerkleblockProof { txid, raw } => {
+                let proof = provider.get_tx_merkleblock_proof(&txid).await?;
+                if raw {
+                    println!("{}", serde_json::to_string(&proof)?);
+                } else {
+                    println!("🧾 Merkleblock proof for tx {}: {}", txid, proof);
+                }
+                Ok(())
+            },
+            EsploraCommands::TxOutspend { txid, index, raw } => {
+                let outspend = provider.get_tx_outspend(&txid, index).await?;
+                if raw {
+                    println!("{}", serde_json::to_string(&outspend)?);
+                } else {
+                    println!("💸 Outspend for tx {}, vout {}:\n{}", txid, index, serde_json::to_string_pretty(&outspend)?);
+                }
+                Ok(())
+            },
+            EsploraCommands::TxOutspends { txid, raw } => {
+                let outspends = provider.get_tx_outspends(&txid).await?;
+                if raw {
+                    println!("{}", serde_json::to_string(&outspends)?);
+                } else {
+                    println!("💸 Outspends for tx {}:\n{}", txid, serde_json::to_string_pretty(&outspends)?);
+                }
+                Ok(())
+            },
+            EsploraCommands::Broadcast { tx_hex, raw: _ } => {
+                let txid = provider.broadcast(&tx_hex).await?;
+                println!("✅ Transaction broadcast successfully!");
+                println!("🔗 Transaction ID: {}", txid);
+                Ok(())
+            },
+            EsploraCommands::PostTx { tx_hex, raw: _ } => {
+                let txid = provider.broadcast(&tx_hex).await?;
+                println!("✅ Transaction posted successfully!");
+                println!("🔗 Transaction ID: {}", txid);
+                Ok(())
+            },
+            EsploraCommands::Mempool { raw } => {
+                let mempool = provider.get_mempool().await?;
+                if raw {
+                    println!("{}", serde_json::to_string(&mempool)?);
+                } else {
+                    println!("⏳ Mempool Info:\n{}", serde_json::to_string_pretty(&mempool)?);
+                }
+                Ok(())
+            },
+            EsploraCommands::MempoolTxids { raw } => {
+                let txids = provider.get_mempool_txids().await?;
+                if raw {
+                    println!("{}", serde_json::to_string(&txids)?);
+                } else {
+                    println!("📄 Mempool Txids:\n{}", serde_json::to_string_pretty(&txids)?);
+                }
+                Ok(())
+            },
+            EsploraCommands::MempoolRecent { raw } => {
+                let recent = provider.get_mempool_recent().await?;
+                if raw {
+                    println!("{}", serde_json::to_string(&recent)?);
+                } else {
+                    println!("📄 Recent Mempool Txs:\n{}", serde_json::to_string_pretty(&recent)?);
+                }
+                Ok(())
+            },
+            EsploraCommands::FeeEstimates { raw } => {
+                let estimates = provider.get_fee_estimates().await?;
+                if raw {
+                    println!("{}", serde_json::to_string(&estimates)?);
+                } else {
+                    println!("💰 Fee Estimates:\n{}", serde_json::to_string_pretty(&estimates)?);
+                }
+                Ok(())
+            },
+        };
+        res.map_err(|e| DeezelError::Wallet(e.to_string()))
+    }
 }
 
 #[async_trait(?Send)]

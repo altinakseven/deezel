@@ -258,6 +258,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "assert-json-diff"
+version = "2.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "47e4f2b81832e72834d7518d8487a0396a28cc408186a2e8854c0f98011faf12"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "async-channel"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1396,6 +1406,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "deadpool"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fb84100978c1c7b37f09ed3ce3e5f843af02c2a2c431bae5b19230dad2c1b490"
+dependencies = [
+ "async-trait",
+ "deadpool-runtime",
+ "num_cpus",
+ "tokio",
+]
+
+[[package]]
+name = "deadpool-runtime"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "092966b41edc516079bdf31ec78a2e0588d1d0c08f78b91d8307215928642b2b"
+
+[[package]]
 name = "deezel"
 version = "0.1.0"
 dependencies = [
@@ -1472,6 +1500,7 @@ dependencies = [
  "wasmprinter",
  "wat",
  "web-sys",
+ "wiremock",
 ]
 
 [[package]]
@@ -1615,6 +1644,7 @@ dependencies = [
  "regex",
  "secp256k1 0.29.1",
  "serde",
+ "serde-wasm-bindgen",
  "serde_json",
  "sha2",
  "sha3",
@@ -3404,6 +3434,16 @@ checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
 dependencies = [
  "autocfg",
  "libm",
+]
+
+[[package]]
+name = "num_cpus"
+version = "1.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "91df4bbde75afed763b708b7eee1e8e7651e02d97f6d5dd763e89367e957b23b"
+dependencies = [
+ "hermit-abi",
+ "libc",
 ]
 
 [[package]]
@@ -6324,6 +6364,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "74c7b26e3480b707944fc872477815d29a8e429d2f93a1ce000f5fa84a15cbcd"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "wiremock"
+version = "0.6.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2b8b99d4cdbf36b239a9532e31fe4fb8acc38d1897c1761e161550a7dc78e6a"
+dependencies = [
+ "assert-json-diff",
+ "async-trait",
+ "base64 0.22.1",
+ "deadpool",
+ "futures",
+ "http",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "log",
+ "once_cell",
+ "regex",
+ "serde",
+ "serde_json",
+ "tokio",
+ "url",
 ]
 
 [[package]]

@@ -57,6 +57,7 @@ pub mod monitor;
 pub mod utils;
 pub mod keystore;
 pub mod pgp_rpgp;
+pub mod esplora;
  
 // Re-export key types and traits for convenience
 pub use traits::*;

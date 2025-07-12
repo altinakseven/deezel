@@ -94,6 +94,7 @@ use crate::logging::WebLogger;
 #[derive(Clone)]
 pub struct WebProvider {
     sandshrew_rpc_url: String,
+    esplora_rpc_url: String,
     network: Network,
     storage: WebStorage,
     network_client: WebNetwork,
@@ -111,8 +112,6 @@ impl WebProvider {
     ///
     /// # Arguments
     ///
-    /// * `bitcoin_rpc_url` - URL for the Bitcoin Core RPC endpoint
-    /// * `metashrew_rpc_url` - URL for the Metashrew/Sandshrew RPC endpoint
     /// * `network_str` - Network identifier ("mainnet", "testnet", "signet", "regtest")
     ///
     /// # Returns
@@ -152,8 +151,17 @@ impl WebProvider {
             _ => return Err(DeezelError::Configuration(format!("Unsupported network: {}", network_str))),
         };
 
+        let esplora_rpc_url = match network {
+            Network::Bitcoin => "https://mempool.space/api".to_string(),
+            Network::Testnet => "https://mempool.space/testnet/api".to_string(),
+            Network::Signet => "https://mempool.space/signet/api".to_string(),
+            Network::Regtest => "http://localhost:3003".to_string(),
+            _ => return Err(DeezelError::Configuration(format!("Unsupported network: {}", network_str))),
+        };
+
         Ok(Self {
             sandshrew_rpc_url,
+            esplora_rpc_url,
             network,
             storage: WebStorage::new(),
             network_client: WebNetwork::new(),
@@ -202,6 +210,11 @@ impl WebProvider {
     /// Get the Sandshrew RPC URL
     pub fn sandshrew_rpc_url(&self) -> &str {
         &self.sandshrew_rpc_url
+    }
+
+    /// Get the Esplora RPC URL
+    pub fn esplora_rpc_url(&self) -> &str {
+        &self.esplora_rpc_url
     }
 
     /// Make a fetch request using web-sys
@@ -330,7 +343,7 @@ impl WebProvider {
 
 #[async_trait(?Send)]
 impl JsonRpcProvider for WebProvider {
-    async fn call(&self, _url: &str, method: &str, params: JsonValue, id: u64) -> Result<JsonValue> {
+    async fn call(&self, url: &str, method: &str, params: JsonValue, id: u64) -> Result<JsonValue> {
         let request_body = serde_json::json!({
             "jsonrpc": "2.0",
             "method": method,
@@ -344,7 +357,7 @@ impl JsonRpcProvider for WebProvider {
             .map_err(|e| DeezelError::Network(format!("Failed to set header: {:?}", e)))?;
 
         let response = self.fetch_request(
-            self.sandshrew_rpc_url(),
+            url,
             "POST",
             Some(&request_body.to_string()),
             Some(&headers),
@@ -480,6 +493,139 @@ impl LogProvider for WebProvider {
 
     fn error(&self, message: &str) {
         self.logger.error(message);
+    }
+}
+
+#[async_trait(?Send)]
+impl EsploraProvider for WebProvider {
+    async fn get_blocks_tip_hash(&self) -> Result<String> {
+        let result = self.call(&self.esplora_rpc_url, esplora::EsploraJsonRpcMethods::BLOCKS_TIP_HASH, esplora::params::empty(), 1).await?;
+        result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid tip hash response".to_string()))
+    }
+
+    async fn get_blocks_tip_height(&self) -> Result<u64> {
+        let result = self.call(&self.esplora_rpc_url, esplora::EsploraJsonRpcMethods::BLOCKS_TIP_HEIGHT, esplora::params::empty(), 1).await?;
+        result.as_u64().ok_or_else(|| DeezelError::RpcError("Invalid tip height response".to_string()))
+    }
+
+    async fn get_blocks(&self, start_height: Option<u64>) -> Result<serde_json::Value> {
+        self.call(&self.esplora_rpc_url, esplora::EsploraJsonRpcMethods::BLOCKS, esplora::params::optional_single(start_height), 1).await
+    }
+
+    async fn get_block_by_height(&self, height: u64) -> Result<String> {
+        let result = self.call(&self.esplora_rpc_url, esplora::EsploraJsonRpcMethods::BLOCK_HEIGHT, esplora::params::single(height), 1).await?;
+        result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid block hash response".to_string()))
+    }
+
+    async fn get_block(&self, hash: &str) -> Result<serde_json::Value> {
+        self.call(&self.esplora_rpc_url, esplora::EsploraJsonRpcMethods::BLOCK, esplora::params::single(hash), 1).await
+    }
+
+    async fn get_block_status(&self, hash: &str) -> Result<serde_json::Value> {
+        self.call(&self.esplora_rpc_url, esplora::EsploraJsonRpcMethods::BLOCK_STATUS, esplora::params::single(hash), 1).await
+    }
+
+    async fn get_block_txids(&self, hash: &str) -> Result<serde_json::Value> {
+        self.call(&self.esplora_rpc_url, esplora::EsploraJsonRpcMethods::BLOCK_TXIDS, esplora::params::single(hash), 1).await
+    }
+
+    async fn get_block_header(&self, hash: &str) -> Result<String> {
+        let result = self.call(&self.esplora_rpc_url, esplora::EsploraJsonRpcMethods::BLOCK_HEADER, esplora::params::single(hash), 1).await?;
+        result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid block header response".to_string()))
+    }
+
+    async fn get_block_raw(&self, hash: &str) -> Result<String> {
+        let result = self.call(&self.esplora_rpc_url, esplora::EsploraJsonRpcMethods::BLOCK_RAW, esplora::params::single(hash), 1).await?;
+        result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid raw block response".to_string()))
+    }
+
+    async fn get_block_txid(&self, hash: &str, index: u32) -> Result<String> {
+        let result = self.call(&self.esplora_rpc_url, esplora::EsploraJsonRpcMethods::BLOCK_TXID, esplora::params::dual(hash, index), 1).await?;
+        result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid txid response".to_string()))
+    }
+
+    async fn get_block_txs(&self, hash: &str, start_index: Option<u32>) -> Result<serde_json::Value> {
+        self.call(&self.esplora_rpc_url, esplora::EsploraJsonRpcMethods::BLOCK_TXS, esplora::params::optional_dual(hash, start_index), 1).await
+    }
+
+    async fn get_address(&self, address: &str) -> Result<serde_json::Value> {
+        self.call(&self.esplora_rpc_url, esplora::EsploraJsonRpcMethods::ADDRESS, esplora::params::single(address), 1).await
+    }
+
+    async fn get_address_txs(&self, address: &str) -> Result<serde_json::Value> {
+        self.call(&self.esplora_rpc_url, esplora::EsploraJsonRpcMethods::ADDRESS_TXS, esplora::params::single(address), 1).await
+    }
+
+    async fn get_address_txs_chain(&self, address: &str, last_seen_txid: Option<&str>) -> Result<serde_json::Value> {
+        self.call(&self.esplora_rpc_url, esplora::EsploraJsonRpcMethods::ADDRESS_TXS_CHAIN, esplora::params::optional_dual(address, last_seen_txid), 1).await
+    }
+
+    async fn get_address_txs_mempool(&self, address: &str) -> Result<serde_json::Value> {
+        self.call(&self.esplora_rpc_url, esplora::EsploraJsonRpcMethods::ADDRESS_TXS_MEMPOOL, esplora::params::single(address), 1).await
+    }
+
+    async fn get_address_utxo(&self, address: &str) -> Result<serde_json::Value> {
+        self.call(&self.esplora_rpc_url, esplora::EsploraJsonRpcMethods::ADDRESS_UTXO, esplora::params::single(address), 1).await
+    }
+
+    async fn get_address_prefix(&self, prefix: &str) -> Result<serde_json::Value> {
+        self.call(&self.esplora_rpc_url, esplora::EsploraJsonRpcMethods::ADDRESS_PREFIX, esplora::params::single(prefix), 1).await
+    }
+
+    async fn get_tx(&self, txid: &str) -> Result<serde_json::Value> {
+        self.call(&self.esplora_rpc_url, esplora::EsploraJsonRpcMethods::TX, esplora::params::single(txid), 1).await
+    }
+
+    async fn get_tx_hex(&self, txid: &str) -> Result<String> {
+        let result = self.call(&self.esplora_rpc_url, esplora::EsploraJsonRpcMethods::TX_HEX, esplora::params::single(txid), 1).await?;
+        result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid tx hex response".to_string()))
+    }
+
+    async fn get_tx_raw(&self, txid: &str) -> Result<String> {
+        let result = self.call(&self.esplora_rpc_url, esplora::EsploraJsonRpcMethods::TX_RAW, esplora::params::single(txid), 1).await?;
+        result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid raw tx response".to_string()))
+    }
+
+    async fn get_tx_status(&self, txid: &str) -> Result<serde_json::Value> {
+        self.call(&self.esplora_rpc_url, esplora::EsploraJsonRpcMethods::TX_STATUS, esplora::params::single(txid), 1).await
+    }
+
+    async fn get_tx_merkle_proof(&self, txid: &str) -> Result<serde_json::Value> {
+        self.call(&self.esplora_rpc_url, esplora::EsploraJsonRpcMethods::TX_MERKLE_PROOF, esplora::params::single(txid), 1).await
+    }
+
+    async fn get_tx_merkleblock_proof(&self, txid: &str) -> Result<String> {
+        let result = self.call(&self.esplora_rpc_url, esplora::EsploraJsonRpcMethods::TX_MERKLEBLOCK_PROOF, esplora::params::single(txid), 1).await?;
+        result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid merkleblock proof response".to_string()))
+    }
+
+    async fn get_tx_outspend(&self, txid: &str, index: u32) -> Result<serde_json::Value> {
+        self.call(&self.esplora_rpc_url, esplora::EsploraJsonRpcMethods::TX_OUTSPEND, esplora::params::dual(txid, index), 1).await
+    }
+
+    async fn get_tx_outspends(&self, txid: &str) -> Result<serde_json::Value> {
+        self.call(&self.esplora_rpc_url, esplora::EsploraJsonRpcMethods::TX_OUTSPENDS, esplora::params::single(txid), 1).await
+    }
+
+    async fn broadcast(&self, tx_hex: &str) -> Result<String> {
+        let result = self.call(&self.esplora_rpc_url, esplora::EsploraJsonRpcMethods::BROADCAST, esplora::params::single(tx_hex), 1).await?;
+        result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid broadcast response".to_string()))
+    }
+
+    async fn get_mempool(&self) -> Result<serde_json::Value> {
+        self.call(&self.esplora_rpc_url, esplora::EsploraJsonRpcMethods::MEMPOOL, esplora::params::empty(), 1).await
+    }
+
+    async fn get_mempool_txids(&self) -> Result<serde_json::Value> {
+        self.call(&self.esplora_rpc_url, esplora::EsploraJsonRpcMethods::MEMPOOL_TXIDS, esplora::params::empty(), 1).await
+    }
+
+    async fn get_mempool_recent(&self) -> Result<serde_json::Value> {
+        self.call(&self.esplora_rpc_url, esplora::EsploraJsonRpcMethods::MEMPOOL_RECENT, esplora::params::empty(), 1).await
+    }
+
+    async fn get_fee_estimates(&self) -> Result<serde_json::Value> {
+        self.call(&self.esplora_rpc_url, esplora::EsploraJsonRpcMethods::FEE_ESTIMATES, esplora::params::empty(), 1).await
     }
 }
 

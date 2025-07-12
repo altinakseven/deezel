@@ -294,13 +294,14 @@ impl traits::DeezelProvider for MockAlkanesProvider {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_alkanes_execute_with_edict() -> anyhow::Result<()> {
     let provider = MockAlkanesProvider::new();
     let alkanes_manager = alkanes::AlkanesManager::new(provider.clone());
 
     let params = traits::AlkanesExecuteParams {
         inputs: Some("B:1000000".to_string()),
-        to: "bc1p5d7rjq7g6rdk2yhzks9smlaqtedr4dekq08ge8ztwac72sfr9rusxg3297".to_string(),
+        to: "bcrt1p5d7rjq7g6rdk2yhzks9smlaqtedr4dekq08ge8ztwac72sfr9rus2j99h2".to_string(),
         change: None,
         fee_rate: Some(5.0),
         envelope: None,

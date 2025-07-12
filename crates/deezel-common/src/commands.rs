@@ -457,43 +457,63 @@ pub enum MonitorCommands {
 #[derive(Subcommand, Debug, Clone)]
 pub enum EsploraCommands {
     /// Get blocks tip hash
-    BlocksTipHash,
+    BlocksTipHash {
+        #[arg(long)]
+        raw: bool,
+    },
     /// Get blocks tip height
-    BlocksTipHeight,
+    BlocksTipHeight {
+        #[arg(long)]
+        raw: bool,
+    },
     /// Get blocks starting from height
     Blocks {
         /// Starting height (optional)
         start_height: Option<u64>,
+        #[arg(long)]
+        raw: bool,
     },
     /// Get block by height
     BlockHeight {
         /// Block height
         height: u64,
+        #[arg(long)]
+        raw: bool,
     },
     /// Get block information
     Block {
         /// Block hash
         hash: String,
+        #[arg(long)]
+        raw: bool,
     },
     /// Get block status
     BlockStatus {
         /// Block hash
         hash: String,
+        #[arg(long)]
+        raw: bool,
     },
     /// Get block transaction IDs
     BlockTxids {
         /// Block hash
         hash: String,
+        #[arg(long)]
+        raw: bool,
     },
     /// Get block header
     BlockHeader {
         /// Block hash
         hash: String,
+        #[arg(long)]
+        raw: bool,
     },
     /// Get raw block data
     BlockRaw {
         /// Block hash
         hash: String,
+        #[arg(long)]
+        raw: bool,
     },
     /// Get transaction ID by block hash and index
     BlockTxid {
@@ -501,6 +521,8 @@ pub enum EsploraCommands {
         hash: String,
         /// Transaction index
         index: u32,
+        #[arg(long)]
+        raw: bool,
     },
     /// Get block transactions
     BlockTxs {
@@ -508,66 +530,92 @@ pub enum EsploraCommands {
         hash: String,
         /// Start index (optional)
         start_index: Option<u32>,
+        #[arg(long)]
+        raw: bool,
     },
     /// Get address information
     Address {
         /// Address or colon-separated parameters
         params: String,
+        #[arg(long)]
+        raw: bool,
     },
     /// Get address transactions
     AddressTxs {
         /// Address or colon-separated parameters
         params: String,
+        #[arg(long)]
+        raw: bool,
     },
     /// Get address chain transactions
     AddressTxsChain {
         /// Address or colon-separated parameters (address:last_seen_txid)
         params: String,
+        #[arg(long)]
+        raw: bool,
     },
     /// Get address mempool transactions
     AddressTxsMempool {
         /// Address
         address: String,
+        #[arg(long)]
+        raw: bool,
     },
     /// Get address UTXOs
     AddressUtxo {
         /// Address
         address: String,
+        #[arg(long)]
+        raw: bool,
     },
     /// Search addresses by prefix
     AddressPrefix {
         /// Address prefix
         prefix: String,
+        #[arg(long)]
+        raw: bool,
     },
     /// Get transaction information
     Tx {
         /// Transaction ID
         txid: String,
+        #[arg(long)]
+        raw: bool,
     },
     /// Get transaction hex
     TxHex {
         /// Transaction ID
         txid: String,
+        #[arg(long)]
+        raw: bool,
     },
     /// Get raw transaction
     TxRaw {
         /// Transaction ID
         txid: String,
+        #[arg(long)]
+        raw: bool,
     },
     /// Get transaction status
     TxStatus {
         /// Transaction ID
         txid: String,
+        #[arg(long)]
+        raw: bool,
     },
     /// Get transaction merkle proof
     TxMerkleProof {
         /// Transaction ID
         txid: String,
+        #[arg(long)]
+        raw: bool,
     },
     /// Get transaction merkle block proof
     TxMerkleblockProof {
         /// Transaction ID
         txid: String,
+        #[arg(long)]
+        raw: bool,
     },
     /// Get transaction output spend status
     TxOutspend {
@@ -575,30 +623,50 @@ pub enum EsploraCommands {
         txid: String,
         /// Output index
         index: u32,
+        #[arg(long)]
+        raw: bool,
     },
     /// Get transaction output spends
     TxOutspends {
         /// Transaction ID
         txid: String,
+        #[arg(long)]
+        raw: bool,
     },
     /// Broadcast transaction
     Broadcast {
         /// Transaction hex
         tx_hex: String,
+        #[arg(long)]
+        raw: bool,
     },
     /// Post transaction (alias for broadcast)
     PostTx {
         /// Transaction hex
         tx_hex: String,
+        #[arg(long)]
+        raw: bool,
     },
     /// Get mempool information
-    Mempool,
+    Mempool {
+        #[arg(long)]
+        raw: bool,
+    },
     /// Get mempool transaction IDs
-    MempoolTxids,
+    MempoolTxids {
+        #[arg(long)]
+        raw: bool,
+    },
     /// Get recent mempool transactions
-    MempoolRecent,
+    MempoolRecent {
+        #[arg(long)]
+        raw: bool,
+    },
     /// Get fee estimates
-    FeeEstimates,
+    FeeEstimates {
+        #[arg(long)]
+        raw: bool,
+    },
 }
 
 /// PGP subcommands
