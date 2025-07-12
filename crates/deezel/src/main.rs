@@ -13,7 +13,12 @@ use deezel_common::traits::*;
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
     // Parse command-line arguments
-    let args = Args::parse();
+    let mut args = Args::parse();
+
+    // If the provider is regtest and sandshrew_rpc_url is not set, default it.
+    if args.provider == "regtest" && args.sandshrew_rpc_url.is_none() {
+        args.sandshrew_rpc_url = Some("http://localhost:18888".to_string());
+    }
 
     // Initialize logger
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(&args.log_level))

@@ -4,7 +4,6 @@
 //! using PGP encryption for secure seed storage.
 
 use anyhow::{anyhow, Context, Result as AnyhowResult};
-use serde::{Deserialize, Serialize};
 use bitcoin::{
     Network,
     bip32::{DerivationPath, Xpriv},
@@ -26,37 +25,13 @@ use rand::{rngs::OsRng, RngCore};
 use hex;
 
 use crate::pgp::DeezelPgpProvider;
-use deezel_common::traits::{KeystoreProvider, KeystoreAddress, KeystoreInfo};
-use deezel_common::{Result as CommonResult, DeezelError};
+use deezel_common::{
+    keystore::{Keystore, PbkdfParams},
+    traits::{KeystoreAddress, KeystoreInfo, KeystoreProvider},
+    DeezelError, Result as CommonResult,
+};
 use async_trait::async_trait;
-
-/// Keystore structure that contains encrypted seed and master public key
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Keystore {
-    /// PGP ASCII armored encrypted seed data
-    pub encrypted_seed: String,
-    /// Master public key for address derivation (hex encoded)
-    pub master_public_key: String,
-    /// Master fingerprint for identification
-    pub master_fingerprint: String,
-    /// Creation timestamp
-    pub created_at: u64,
-    /// Version of the keystore format
-    pub version: String,
-    /// PBKDF2 parameters for key derivation
-    pub pbkdf2_params: PbkdfParams,
-}
-
-/// PBKDF2 parameters for secure key derivation
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PbkdfParams {
-    /// Salt used for PBKDF2 (hex encoded)
-    pub salt: String,
-    /// Number of iterations
-    pub iterations: u32,
-    /// Hash algorithm used
-    pub hash_algorithm: String,
-}
+use std::collections::HashMap;
 
 
 /// Parameters for creating a new keystore
@@ -113,6 +88,16 @@ impl KeystoreManager {
         // Get master fingerprint
         let master_fingerprint = master_key.fingerprint(&secp);
 
+        // Derive the account-level key for Taproot (BIP 86).
+        // We use a hardened path, which requires the private key. This is done once at creation.
+        // The resulting account xpub can then be used for non-hardened address derivation.
+        // Using testnet coin type '1' as per standard practice for multi-network wallets.
+        let account_derivation_path = DerivationPath::from_str("m/86'/1'/0'")
+            .context("Failed to create account derivation path")?;
+        let account_xpriv = master_key.derive_priv(&secp, &account_derivation_path)
+            .context("Failed to derive account private key")?;
+        let account_xpub = Xpub::from_priv(&secp, &account_xpriv);
+
         let keystore = Keystore {
             encrypted_seed,
             master_public_key: master_public_key.to_string(),
@@ -120,6 +105,8 @@ impl KeystoreManager {
             created_at: chrono::Utc::now().timestamp() as u64,
             version: env!("CARGO_PKG_VERSION").to_string(),
             pbkdf2_params,
+            account_xpub: account_xpub.to_string(),
+            addresses: HashMap::new(),
         };
 
         Ok((keystore, mnemonic_str))
@@ -153,7 +140,7 @@ impl KeystoreManager {
         let pbkdf2_params = PbkdfParams {
             salt: hex::encode(salt),
             iterations,
-            hash_algorithm: "SHA256".to_string(),
+            algorithm: Some("SHA256".to_string()),
         };
 
         Ok((armored_message, pbkdf2_params))

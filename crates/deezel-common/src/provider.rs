@@ -35,7 +35,7 @@ use bitcoin::{
     Address, Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
     secp256k1::{Secp256k1, All},
     sighash::{SighashCache, Prevouts, TapSighashType},
-    bip32::{DerivationPath, Xpriv},
+    bip32::{DerivationPath, Xpriv, Xpub},
 };
 use ordinals::{Runestone, Artifact};
 
@@ -106,6 +106,7 @@ impl ConcreteProvider {
                keystore: keystore.clone(),
                mnemonic,
            };
+           self.passphrase = Some(passphrase.to_string());
            Ok(())
        } else {
            Err(DeezelError::Wallet("Wallet is not in a locked state".to_string()))
@@ -115,6 +116,11 @@ impl ConcreteProvider {
     /// Get the wallet path
     pub fn get_wallet_path(&self) -> Option<&PathBuf> {
         self.wallet_path.as_ref()
+    }
+
+    /// Get the current wallet state
+    pub fn get_wallet_state(&self) -> &WalletState {
+        &self.wallet_state
     }
 
     /// Convert a SignedSecretKey to our PgpKey format
@@ -611,21 +617,15 @@ impl WalletProvider for ConcreteProvider {
     }
     
     async fn get_address(&self) -> Result<String> {
-        #[cfg(feature = "native-deps")]
-        {
-            let wallet_path = self.get_wallet_path().ok_or_else(|| DeezelError::Wallet("Wallet path not set".to_string()))?;
-            let keystore_data = fs::read(wallet_path)
-                .map_err(|e| DeezelError::Wallet(format!("Failed to read keystore: {}", e)))?;
-            let keystore: Keystore = serde_json::from_slice(&keystore_data)
-                .map_err(|e| DeezelError::Wallet(format!("Failed to deserialize keystore: {}", e)))?;
-
-            let passphrase = self.passphrase.as_deref().ok_or_else(|| DeezelError::Wallet("Passphrase not set".to_string()))?;
-            let seed = crate::keystore::decrypt_seed(&keystore, passphrase)?;
-            let path = bitcoin::bip32::DerivationPath::from_str("m/86'/0'/0'/0/0").unwrap();
-            let network = self.get_network();
-            let address = crate::keystore::derive_address(&seed, &path, network)?;
-            
-            Ok(address.to_string())
+        match &self.wallet_state {
+            WalletState::Unlocked { mnemonic, .. } => {
+                let path = bitcoin::bip32::DerivationPath::from_str("m/86'/0'/0'/0/0").unwrap();
+                let network = self.get_network();
+                let address = crate::keystore::derive_address(mnemonic, &path, network)?;
+                Ok(address.to_string())
+            },
+            WalletState::Locked(_) => Err(DeezelError::Wallet("Wallet is locked. Cannot get address without unlocking.".to_string())),
+            WalletState::None => Err(DeezelError::Wallet("No wallet loaded".to_string())),
         }
         #[cfg(not(feature = "native-deps"))]
         {
@@ -635,40 +635,43 @@ impl WalletProvider for ConcreteProvider {
     }
     
     async fn get_addresses(&self, count: u32) -> Result<Vec<AddressInfo>> {
-        #[cfg(feature = "native-deps")]
-        {
-            let wallet_path = self.get_wallet_path().ok_or_else(|| DeezelError::Wallet("Wallet path not set".to_string()))?;
-            let keystore_data = fs::read(wallet_path)
-                .map_err(|e| DeezelError::Wallet(format!("Failed to read keystore: {}", e)))?;
-            let keystore: Keystore = serde_json::from_slice(&keystore_data)
-                .map_err(|e| DeezelError::Wallet(format!("Failed to deserialize keystore: {}", e)))?;
+        let keystore = match &self.wallet_state {
+            WalletState::Unlocked { keystore, .. } => keystore,
+            WalletState::Locked(keystore) => keystore,
+            WalletState::None => return Err(DeezelError::Wallet("No wallet loaded".to_string())),
+        };
 
-            let passphrase = self.passphrase.as_deref().ok_or_else(|| DeezelError::Wallet("Passphrase not set".to_string()))?;
-            let seed = crate::keystore::decrypt_seed(&keystore, passphrase)?;
-            let network = self.get_network();
-            let mut addresses = Vec::new();
+        if keystore.account_xpub.is_empty() {
+            return Err(DeezelError::Wallet(
+                "Keystore is missing the account_xpub. Please recreate the wallet.".to_string(),
+            ));
+        }
 
-            for i in 0..count {
-                let path_str = format!("m/86'/0'/0'/0/{}", i);
-                let path = bitcoin::bip32::DerivationPath::from_str(&path_str).unwrap();
-                let address = crate::keystore::derive_address(&seed, &path, network)?;
-                
-                addresses.push(AddressInfo {
-                    address: address.to_string(),
-                    index: i,
-                    derivation_path: path_str,
-                    script_type: "p2tr".to_string(),
-                    used: false, // Assuming not used for now
-                });
-            }
-            
-            Ok(addresses)
+        let network = self.get_network();
+        let mut addresses = Vec::new();
+        let secp = Secp256k1::<All>::new();
+
+        let account_xpub = Xpub::from_str(&keystore.account_xpub)?;
+
+        for i in 0..count {
+            // The derivation path here is non-hardened, so it can be derived from the public key.
+            let address_path_str = format!("0/{}", i);
+            let address_path = DerivationPath::from_str(&address_path_str)?;
+            let derived_xpub = account_xpub.derive_pub(&secp, &address_path)?;
+            let (internal_key, _) = derived_xpub.public_key.x_only_public_key();
+            let address = Address::p2tr(&secp, internal_key, None, network);
+
+            addresses.push(AddressInfo {
+                address: address.to_string(),
+                index: i,
+                // The full path includes the hardened part used to derive the account_xpub
+                derivation_path: format!("m/86'/1'/0'/{}", address_path_str),
+                script_type: "p2tr".to_string(),
+                used: false,
+            });
         }
-        #[cfg(not(feature = "native-deps"))]
-        {
-            let _ = (self, count); // Suppress unused parameter warnings
-            Err(DeezelError::NotImplemented("File system operations not supported in WASM environment".to_string()))
-        }
+
+        Ok(addresses)
     }
     
     async fn send(&self, params: SendParams) -> Result<String> {
@@ -683,10 +686,21 @@ impl WalletProvider for ConcreteProvider {
     }
     
     async fn get_utxos(&self, _include_frozen: bool, addresses: Option<Vec<String>>) -> Result<Vec<UtxoInfo>> {
-        let addrs = addresses.ok_or_else(|| DeezelError::Wallet("get_utxos requires at least one address".to_string()))?;
-        let mut all_utxos = Vec::new();
+        let addrs_to_check = if let Some(provided_addresses) = addresses {
+            provided_addresses
+        } else {
+            // If no addresses are provided, derive the first 20 from the public key.
+            // This is a common default for wallets (e.g., for discovery).
+            let derived_infos = self.get_addresses(20).await?;
+            derived_infos.into_iter().map(|info| info.address).collect()
+        };
 
-        for address in addrs {
+        if addrs_to_check.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut all_utxos = Vec::new();
+        for address in addrs_to_check {
             let utxos_json = self.get_address_utxo(&address).await?;
             if let Some(utxos_array) = utxos_json.as_array() {
                 for utxo in utxos_array {
@@ -823,18 +837,16 @@ impl WalletProvider for ConcreteProvider {
     }
 
     async fn sign_transaction(&self, tx_hex: String) -> Result<String> {
-        #[cfg(feature = "native-deps")]
-        {
-            // 1. Deserialize the transaction
-            let hex_bytes = hex::decode(tx_hex)?;
-            let mut tx: Transaction = bitcoin::consensus::deserialize(&hex_bytes)?;
+        let (keystore, mnemonic) = match &self.wallet_state {
+            WalletState::Unlocked { keystore, mnemonic } => (keystore, mnemonic),
+            _ => return Err(DeezelError::Wallet("Wallet must be unlocked to sign transactions".to_string())),
+        };
 
-            // 2. Get the seed and keystore
-            let wallet_path = self.get_wallet_path().ok_or_else(|| DeezelError::Wallet("Wallet path not set".to_string()))?;
-            let keystore_data = fs::read(wallet_path)?;
-        let keystore: Keystore = serde_json::from_slice(&keystore_data)?;
-        let passphrase = self.passphrase.as_deref().ok_or_else(|| DeezelError::Wallet("Passphrase not set for signing".to_string()))?;
-        let seed = crate::keystore::decrypt_seed(&keystore, passphrase)?;
+        // 1. Deserialize the transaction
+        let hex_bytes = hex::decode(tx_hex)?;
+        let mut tx: Transaction = bitcoin::consensus::deserialize(&hex_bytes)?;
+
+        // 2. Setup for signing
         let network = self.get_network();
         let secp: Secp256k1<All> = Secp256k1::new();
 
@@ -866,7 +878,7 @@ impl WalletProvider for ConcreteProvider {
             let path = DerivationPath::from_str(&addr_info.path)?;
 
             // Derive the private key for this input
-            let root_key = Xpriv::new_master(network, seed.as_bytes())?;
+            let root_key = Xpriv::new_master(network, mnemonic.as_bytes())?;
             let derived_xpriv = root_key.derive_priv(&secp, &path)?;
             let keypair = derived_xpriv.to_keypair(&secp);
 
@@ -890,12 +902,6 @@ impl WalletProvider for ConcreteProvider {
         // 5. Serialize the signed transaction
         let signed_tx = sighash_cache.into_transaction();
         Ok(bitcoin::consensus::encode::serialize_hex(&signed_tx))
-        }
-        #[cfg(not(feature = "native-deps"))]
-        {
-            let _ = (self, tx_hex); // Suppress unused parameter warnings
-            Err(DeezelError::NotImplemented("File system operations not supported in WASM environment".to_string()))
-        }
     }
     
     async fn broadcast_transaction(&self, tx_hex: String) -> Result<String> {

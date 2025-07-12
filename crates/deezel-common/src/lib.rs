@@ -250,6 +250,12 @@ impl From<bitcoin::bip32::Error> for DeezelError {
     }
 }
 
+impl From<bip39::ErrorKind> for DeezelError {
+    fn from(err: bip39::ErrorKind) -> Self {
+        DeezelError::Wallet(format!("BIP39 error: {:?}", err))
+    }
+}
+
 impl From<bitcoin::secp256k1::Error> for DeezelError {
     fn from(err: bitcoin::secp256k1::Error) -> Self {
         DeezelError::Crypto(err.to_string())

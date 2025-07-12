@@ -139,7 +139,7 @@ impl SystemWallet for SystemDeezel {
         // Conditionally load wallet based on command requirements
         if command.requires_signing() {
             // For signing commands, ensure the full wallet is loaded, prompting for passphrase if needed
-            if let deezel_common::provider::WalletState::Locked(_) = provider.wallet_state {
+            if let deezel_common::provider::WalletState::Locked(_) = provider.get_wallet_state() {
                 let passphrase = if let Some(ref pass) = self.args.passphrase {
                     pass.clone()
                 } else {
@@ -147,7 +147,7 @@ impl SystemWallet for SystemDeezel {
                         .map_err(|e| DeezelError::Wallet(format!("Failed to get passphrase: {}", e)))?
                 };
                 provider.unlock_wallet(&passphrase).await?;
-            } else if let deezel_common::provider::WalletState::None = provider.wallet_state {
+            } else if let deezel_common::provider::WalletState::None = provider.get_wallet_state() {
                  return Err(DeezelError::Wallet("No wallet found. Please create or specify a wallet file.".to_string()));
             }
         }
@@ -236,8 +236,8 @@ impl SystemWallet for SystemDeezel {
                Ok(())
            },
            WalletCommands::Info => {
-               let address = WalletProvider::get_address(provider).await?;
-               let balance = WalletProvider::get_balance(provider).await?;
+               let address = WalletProvider::get_address(&provider).await?;
+               let balance = WalletProvider::get_balance(&provider).await?;
                let network = provider.get_network();
                
                println!("💼 Wallet Information");
@@ -248,7 +248,7 @@ impl SystemWallet for SystemDeezel {
                Ok(())
            },
            WalletCommands::Balance { raw } => {
-               let balance = WalletProvider::get_balance(provider).await?;
+               let balance = WalletProvider::get_balance(&provider).await?;
                
                if raw {
                    let balance_json = serde_json::json!({
@@ -472,14 +472,14 @@ impl SystemWallet for SystemDeezel {
             },
            WalletCommands::Send { address, amount, fee_rate, send_all, from, change, yes } => {
                // Resolve address identifiers
-               let resolved_address = resolve_address_identifiers(&address, provider).await?;
+               let resolved_address = resolve_address_identifiers(&address, &provider).await?;
                let resolved_from = if let Some(from_addr) = from {
-                   Some(resolve_address_identifiers(&from_addr, provider).await?)
+                   Some(resolve_address_identifiers(&from_addr, &provider).await?)
                } else {
                    None
                };
                let resolved_change = if let Some(change_addr) = change {
-                   Some(resolve_address_identifiers(&change_addr, provider).await?)
+                   Some(resolve_address_identifiers(&change_addr, &provider).await?)
                } else {
                    None
                };
@@ -508,7 +508,7 @@ impl SystemWallet for SystemDeezel {
            },
            WalletCommands::SendAll { address, fee_rate, yes } => {
                // Resolve address identifiers
-               let resolved_address = resolve_address_identifiers(&address, provider).await?;
+               let resolved_address = resolve_address_identifiers(&address, &provider).await?;
                
                let send_params = SendParams {
                    address: resolved_address,
@@ -534,7 +534,7 @@ impl SystemWallet for SystemDeezel {
            },
            WalletCommands::CreateTx { address, amount, fee_rate, send_all, yes } => {
                // Resolve address identifiers
-               let resolved_address = resolve_address_identifiers(&address, provider).await?;
+               let resolved_address = resolve_address_identifiers(&address, &provider).await?;
                
                let create_params = SendParams {
                    address: resolved_address,
@@ -599,7 +599,7 @@ impl SystemWallet for SystemDeezel {
            },
            WalletCommands::Utxos { raw, include_frozen, addresses } => {
                let address_list = if let Some(addr_str) = addresses {
-                   let resolved_addresses = resolve_address_identifiers(&addr_str, provider).await?;
+                   let resolved_addresses = resolve_address_identifiers(&addr_str, &provider).await?;
                    Some(resolved_addresses.split(',').map(|s| s.trim().to_string()).collect())
                } else {
                    None
@@ -693,7 +693,7 @@ impl SystemWallet for SystemDeezel {
            },
            WalletCommands::History { count, raw, address } => {
                let resolved_address = if let Some(addr) = address {
-                   Some(resolve_address_identifiers(&addr, provider).await?)
+                   Some(resolve_address_identifiers(&addr, &provider).await?)
                } else {
                    None
                };
@@ -735,7 +735,7 @@ impl SystemWallet for SystemDeezel {
                Ok(())
            },
            WalletCommands::TxDetails { txid, raw } => {
-               let details = EsploraProvider::get_tx(provider, &txid).await?;
+               let details = EsploraProvider::get_tx(&provider, &txid).await?;
                
                if raw {
                    println!("{}", serde_json::to_string_pretty(&details)?);
