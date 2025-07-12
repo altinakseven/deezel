@@ -1127,36 +1127,6 @@ impl SystemAlkanes for SystemDeezel {
                }
                Ok(())
            },
-           AlkanesCommands::Getbytecode { alkane_id, raw } => {
-              let bytecode = <ConcreteProvider as AlkanesProvider>::get_bytecode(provider, &alkane_id).await?;
-              
-              if raw {
-                  let json_result = serde_json::json!({
-                      "alkane_id": alkane_id,
-                      "bytecode": bytecode
-                  });
-                  println!("{}", serde_json::to_string_pretty(&json_result)?);
-              } else {
-                  println!("🔍 Alkanes Contract Bytecode");
-                  println!("═══════════════════════════");
-                  println!("🏷️  Alkane ID: {}", alkane_id);
-                  
-                  if bytecode.is_empty() || bytecode == "0x" {
-                      println!("❌ No bytecode found for this contract");
-                  } else {
-                      let clean_bytecode = bytecode.strip_prefix("0x").unwrap_or(&bytecode);
-                      
-                      println!("💾 Bytecode:");
-                      println!("   Length: {} bytes", clean_bytecode.len() / 2);
-                      println!("   Hex: {}", bytecode);
-                      
-                      if clean_bytecode.len() >= 8 {
-                          println!("   First 4 bytes: {}", &clean_bytecode[..8]);
-                      }
-                  }
-              }
-              Ok(())
-          },
        };
        res.map_err(|e| DeezelError::Wallet(e.to_string()))
    }
@@ -1487,7 +1457,7 @@ impl SystemPgp for SystemDeezel {
                 }
                 Ok(())
             },
-            deezel_common::commands::PgpCommands::ExportKey { identifier, private, output, raw } => {
+            deezel_common::commands::PgpCommands::ExportKey { identifier, private, output, raw: _ } => {
                 // For now, this is a placeholder since we don't have key storage
                 println!("📤 Export key functionality not yet implemented");
                 println!("🔍 Would export key: {}", identifier);
@@ -1555,7 +1525,7 @@ impl SystemPgp for SystemDeezel {
                 println!("✅ Key deleted successfully: {}", identifier);
                 Ok(())
             },
-            deezel_common::commands::PgpCommands::Encrypt { input, output, recipients, armor, sign, sign_key, passphrase } => {
+            deezel_common::commands::PgpCommands::Encrypt { input, output, recipients, armor, sign, sign_key: _, passphrase: _ } => {
                 println!("🔐 PGP encrypt functionality not yet fully implemented");
                 println!("📥 Input: {}", input);
                 if let Some(output_file) = output {
@@ -1566,7 +1536,7 @@ impl SystemPgp for SystemDeezel {
                 println!("✍️  Sign: {}", sign);
                 Ok(())
             },
-            deezel_common::commands::PgpCommands::Decrypt { input, output, key, passphrase, verify, signer } => {
+            deezel_common::commands::PgpCommands::Decrypt { input, output, key, passphrase: _, verify, signer: _ } => {
                 println!("🔓 PGP decrypt functionality not yet fully implemented");
                 println!("📥 Input: {}", input);
                 if let Some(output_file) = output {
@@ -1576,7 +1546,7 @@ impl SystemPgp for SystemDeezel {
                 println!("✅ Verify: {}", verify);
                 Ok(())
             },
-            deezel_common::commands::PgpCommands::Sign { input, output, key, passphrase, armor, detached } => {
+            deezel_common::commands::PgpCommands::Sign { input, output, key, passphrase: _, armor, detached } => {
                 println!("✍️  PGP sign functionality not yet fully implemented");
                 println!("📥 Input: {}", input);
                 if let Some(output_file) = output {
@@ -1587,7 +1557,7 @@ impl SystemPgp for SystemDeezel {
                 println!("📎 Detached: {}", detached);
                 Ok(())
             },
-            deezel_common::commands::PgpCommands::Verify { input, signature, key, raw } => {
+            deezel_common::commands::PgpCommands::Verify { input, signature, key, raw: _ } => {
                 println!("✅ PGP verify functionality not yet fully implemented");
                 println!("📥 Input: {}", input);
                 if let Some(sig_file) = signature {
@@ -1596,7 +1566,7 @@ impl SystemPgp for SystemDeezel {
                 println!("🔑 Key: {}", key);
                 Ok(())
             },
-            deezel_common::commands::PgpCommands::ChangePassphrase { identifier, old_passphrase, new_passphrase } => {
+            deezel_common::commands::PgpCommands::ChangePassphrase { identifier, old_passphrase: _, new_passphrase: _ } => {
                 println!("🔐 Change passphrase functionality not yet fully implemented");
                 println!("🔑 Key: {}", identifier);
                 Ok(())

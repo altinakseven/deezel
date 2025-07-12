@@ -189,23 +189,30 @@ impl JsonRpcProvider for ConcreteProvider {
         params: serde_json::Value,
         id: u64,
     ) -> Result<serde_json::Value> {
-        use crate::rpc::{RpcRequest, RpcResponse};
-        let request = RpcRequest::new(method, params, id);
-        let client = reqwest::Client::new();
-        let response = client
-            .post(url)
-            .json(&request)
-            .send()
-            .await
-            .map_err(|e| DeezelError::Network(e.to_string()))?;
-        let rpc_response: RpcResponse = response
-            .json()
-            .await
-            .map_err(|e| DeezelError::Network(e.to_string()))?;
-        if let Some(error) = rpc_response.error {
-            return Err(DeezelError::RpcError(format!("{}: {}", error.code, error.message)));
+        #[cfg(feature = "native-deps")]
+        {
+            use crate::rpc::{RpcRequest, RpcResponse};
+            let request = RpcRequest::new(method, params, id);
+            let client = reqwest::Client::new();
+            let response = client
+                .post(url)
+                .json(&request)
+                .send()
+                .await
+                .map_err(|e| DeezelError::Network(e.to_string()))?;
+            let rpc_response: RpcResponse = response
+                .json()
+                .await
+                .map_err(|e| DeezelError::Network(e.to_string()))?;
+            if let Some(error) = rpc_response.error {
+                return Err(DeezelError::RpcError(format!("{}: {}", error.code, error.message)));
+            }
+            rpc_response.result.ok_or_else(|| DeezelError::RpcError("No result in RPC response".to_string()))
         }
-        rpc_response.result.ok_or_else(|| DeezelError::RpcError("No result in RPC response".to_string()))
+        #[cfg(not(feature = "native-deps"))]
+        {
+            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
+        }
     }
     
     async fn get_bytecode(&self, block: &str, tx: &str) -> Result<String> {
@@ -506,25 +513,32 @@ impl WalletProvider for ConcreteProvider {
     }
     
     async fn load_wallet(&self, config: WalletConfig, _passphrase: Option<String>) -> Result<WalletInfo> {
-        let keystore_path = PathBuf::from(config.wallet_path);
-        let keystore_data = fs::read(keystore_path)
-            .map_err(|e| DeezelError::Wallet(format!("Failed to read keystore: {}", e)))?;
+        #[cfg(feature = "native-deps")]
+        {
+            let keystore_path = PathBuf::from(config.wallet_path);
+            let keystore_data = fs::read(keystore_path)
+                .map_err(|e| DeezelError::Wallet(format!("Failed to read keystore: {}", e)))?;
         
-        let keystore: Keystore = serde_json::from_slice(&keystore_data)
-            .map_err(|e| DeezelError::Wallet(format!("Failed to deserialize keystore: {}", e)))?;
+            let keystore: Keystore = serde_json::from_slice(&keystore_data)
+                .map_err(|e| DeezelError::Wallet(format!("Failed to deserialize keystore: {}", e)))?;
 
-        // Decryption would happen here. For now, we assume it's not encrypted.
-        let mnemonic = keystore.encrypted_seed;
+            // Decryption would happen here. For now, we assume it's not encrypted.
+            let mnemonic = keystore.encrypted_seed;
 
-        // For now, we'll just return placeholder info.
-        // A full implementation would derive the address from the mnemonic.
-        let address = "bc1qloadedplaceholder0000000000000000000000000".to_string();
+            // For now, we'll just return placeholder info.
+            // A full implementation would derive the address from the mnemonic.
+            let address = "bc1qloadedplaceholder0000000000000000000000000".to_string();
 
-        Ok(WalletInfo {
-            address,
-            network: config.network,
-            mnemonic: Some(mnemonic),
-        })
+            Ok(WalletInfo {
+                address,
+                network: config.network,
+                mnemonic: Some(mnemonic),
+            })
+        }
+        #[cfg(not(feature = "native-deps"))]
+        {
+            Err(DeezelError::NotImplemented("File system operations not supported in WASM environment".to_string()))
+        }
     }
     
     async fn get_balance(&self) -> Result<WalletBalance> {
@@ -535,48 +549,62 @@ impl WalletProvider for ConcreteProvider {
     }
     
     async fn get_address(&self) -> Result<String> {
-        let wallet_path = self.get_wallet_path().ok_or_else(|| DeezelError::Wallet("Wallet path not set".to_string()))?;
-        let keystore_data = fs::read(wallet_path)
-            .map_err(|e| DeezelError::Wallet(format!("Failed to read keystore: {}", e)))?;
-        let keystore: Keystore = serde_json::from_slice(&keystore_data)
-            .map_err(|e| DeezelError::Wallet(format!("Failed to deserialize keystore: {}", e)))?;
+        #[cfg(feature = "native-deps")]
+        {
+            let wallet_path = self.get_wallet_path().ok_or_else(|| DeezelError::Wallet("Wallet path not set".to_string()))?;
+            let keystore_data = fs::read(wallet_path)
+                .map_err(|e| DeezelError::Wallet(format!("Failed to read keystore: {}", e)))?;
+            let keystore: Keystore = serde_json::from_slice(&keystore_data)
+                .map_err(|e| DeezelError::Wallet(format!("Failed to deserialize keystore: {}", e)))?;
 
-        let passphrase = self.passphrase.as_deref().ok_or_else(|| DeezelError::Wallet("Passphrase not set".to_string()))?;
-        let seed = crate::keystore::decrypt_seed(&keystore, passphrase)?;
-        let path = bitcoin::bip32::DerivationPath::from_str("m/86'/0'/0'/0/0").unwrap();
-        let network = self.get_network();
-        let address = crate::keystore::derive_address(&seed, &path, network)?;
-        
-        Ok(address.to_string())
+            let passphrase = self.passphrase.as_deref().ok_or_else(|| DeezelError::Wallet("Passphrase not set".to_string()))?;
+            let seed = crate::keystore::decrypt_seed(&keystore, passphrase)?;
+            let path = bitcoin::bip32::DerivationPath::from_str("m/86'/0'/0'/0/0").unwrap();
+            let network = self.get_network();
+            let address = crate::keystore::derive_address(&seed, &path, network)?;
+            
+            Ok(address.to_string())
+        }
+        #[cfg(not(feature = "native-deps"))]
+        {
+            Err(DeezelError::NotImplemented("File system operations not supported in WASM environment".to_string()))
+        }
     }
     
     async fn get_addresses(&self, count: u32) -> Result<Vec<AddressInfo>> {
-        let wallet_path = self.get_wallet_path().ok_or_else(|| DeezelError::Wallet("Wallet path not set".to_string()))?;
-        let keystore_data = fs::read(wallet_path)
-            .map_err(|e| DeezelError::Wallet(format!("Failed to read keystore: {}", e)))?;
-        let keystore: Keystore = serde_json::from_slice(&keystore_data)
-            .map_err(|e| DeezelError::Wallet(format!("Failed to deserialize keystore: {}", e)))?;
+        #[cfg(feature = "native-deps")]
+        {
+            let wallet_path = self.get_wallet_path().ok_or_else(|| DeezelError::Wallet("Wallet path not set".to_string()))?;
+            let keystore_data = fs::read(wallet_path)
+                .map_err(|e| DeezelError::Wallet(format!("Failed to read keystore: {}", e)))?;
+            let keystore: Keystore = serde_json::from_slice(&keystore_data)
+                .map_err(|e| DeezelError::Wallet(format!("Failed to deserialize keystore: {}", e)))?;
 
-        let passphrase = self.passphrase.as_deref().ok_or_else(|| DeezelError::Wallet("Passphrase not set".to_string()))?;
-        let seed = crate::keystore::decrypt_seed(&keystore, passphrase)?;
-        let network = self.get_network();
-        let mut addresses = Vec::new();
+            let passphrase = self.passphrase.as_deref().ok_or_else(|| DeezelError::Wallet("Passphrase not set".to_string()))?;
+            let seed = crate::keystore::decrypt_seed(&keystore, passphrase)?;
+            let network = self.get_network();
+            let mut addresses = Vec::new();
 
-        for i in 0..count {
-            let path_str = format!("m/86'/0'/0'/0/{}", i);
-            let path = bitcoin::bip32::DerivationPath::from_str(&path_str).unwrap();
-            let address = crate::keystore::derive_address(&seed, &path, network)?;
+            for i in 0..count {
+                let path_str = format!("m/86'/0'/0'/0/{}", i);
+                let path = bitcoin::bip32::DerivationPath::from_str(&path_str).unwrap();
+                let address = crate::keystore::derive_address(&seed, &path, network)?;
+                
+                addresses.push(AddressInfo {
+                    address: address.to_string(),
+                    index: i,
+                    derivation_path: path_str,
+                    script_type: "p2tr".to_string(),
+                    used: false, // Assuming not used for now
+                });
+            }
             
-            addresses.push(AddressInfo {
-                address: address.to_string(),
-                index: i,
-                derivation_path: path_str,
-                script_type: "p2tr".to_string(),
-                used: false, // Assuming not used for now
-            });
+            Ok(addresses)
         }
-        
-        Ok(addresses)
+        #[cfg(not(feature = "native-deps"))]
+        {
+            Err(DeezelError::NotImplemented("File system operations not supported in WASM environment".to_string()))
+        }
     }
     
     async fn send(&self, params: SendParams) -> Result<String> {
@@ -731,13 +759,15 @@ impl WalletProvider for ConcreteProvider {
     }
 
     async fn sign_transaction(&self, tx_hex: String) -> Result<String> {
-        // 1. Deserialize the transaction
-        let hex_bytes = hex::decode(tx_hex)?;
-        let mut tx: Transaction = bitcoin::consensus::deserialize(&hex_bytes)?;
+        #[cfg(feature = "native-deps")]
+        {
+            // 1. Deserialize the transaction
+            let hex_bytes = hex::decode(tx_hex)?;
+            let mut tx: Transaction = bitcoin::consensus::deserialize(&hex_bytes)?;
 
-        // 2. Get the seed and keystore
-        let wallet_path = self.get_wallet_path().ok_or_else(|| DeezelError::Wallet("Wallet path not set".to_string()))?;
-        let keystore_data = fs::read(wallet_path)?;
+            // 2. Get the seed and keystore
+            let wallet_path = self.get_wallet_path().ok_or_else(|| DeezelError::Wallet("Wallet path not set".to_string()))?;
+            let keystore_data = fs::read(wallet_path)?;
         let keystore: Keystore = serde_json::from_slice(&keystore_data)?;
         let passphrase = self.passphrase.as_deref().ok_or_else(|| DeezelError::Wallet("Passphrase not set for signing".to_string()))?;
         let seed = crate::keystore::decrypt_seed(&keystore, passphrase)?;
@@ -785,7 +815,7 @@ impl WalletProvider for ConcreteProvider {
 
             // Sign the sighash
             let msg = bitcoin::secp256k1::Message::from(sighash);
-            let signature = secp.sign_schnorr(&msg, &keypair);
+            let signature = secp.sign_schnorr_with_rng(&msg, &keypair, &mut rand::thread_rng());
 
             // Add the signature to the witness
             let mut witness = Witness::new();
@@ -796,6 +826,11 @@ impl WalletProvider for ConcreteProvider {
         // 5. Serialize the signed transaction
         let signed_tx = sighash_cache.into_transaction();
         Ok(bitcoin::consensus::encode::serialize_hex(&signed_tx))
+        }
+        #[cfg(not(feature = "native-deps"))]
+        {
+            Err(DeezelError::NotImplemented("File system operations not supported in WASM environment".to_string()))
+        }
     }
     
     async fn broadcast_transaction(&self, tx_hex: String) -> Result<String> {
@@ -980,122 +1015,227 @@ impl MetashrewRpcProvider for ConcreteProvider {
 #[async_trait(?Send)]
 impl EsploraProvider for ConcreteProvider {
     async fn get_blocks_tip_hash(&self) -> Result<String> {
-        let url = format!("{}/blocks/tip/hash", self.bitcoin_rpc_url);
-        let client = reqwest::Client::new();
-        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-        response.text().await.map_err(|e| DeezelError::Network(e.to_string()))
+        #[cfg(feature = "native-deps")]
+        {
+            let url = format!("{}/blocks/tip/hash", self.bitcoin_rpc_url);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            response.text().await.map_err(|e| DeezelError::Network(e.to_string()))
+        }
+        #[cfg(not(feature = "native-deps"))]
+        {
+            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
+        }
     }
 
     async fn get_blocks_tip_height(&self) -> Result<u64> {
-        let url = format!("{}/blocks/tip/height", self.bitcoin_rpc_url);
-        let client = reqwest::Client::new();
-        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-        let text = response.text().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-        text.parse::<u64>().map_err(|e| DeezelError::RpcError(format!("Invalid height response: {}", e)))
+        #[cfg(feature = "native-deps")]
+        {
+            let url = format!("{}/blocks/tip/height", self.bitcoin_rpc_url);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            let text = response.text().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            text.parse::<u64>().map_err(|e| DeezelError::RpcError(format!("Invalid height response: {}", e)))
+        }
+        #[cfg(not(feature = "native-deps"))]
+        {
+            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
+        }
     }
 
     async fn get_blocks(&self, start_height: Option<u64>) -> Result<serde_json::Value> {
-        let url = if let Some(height) = start_height {
-            format!("{}/blocks/{}", self.bitcoin_rpc_url, height)
-        } else {
-            format!("{}/blocks", self.bitcoin_rpc_url)
-        };
-        let client = reqwest::Client::new();
-        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-        response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
+        #[cfg(feature = "native-deps")]
+        {
+            let url = if let Some(height) = start_height {
+                format!("{}/blocks/{}", self.bitcoin_rpc_url, height)
+            } else {
+                format!("{}/blocks", self.bitcoin_rpc_url)
+            };
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
+        }
+        #[cfg(not(feature = "native-deps"))]
+        {
+            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
+        }
     }
 
     async fn get_block_by_height(&self, height: u64) -> Result<String> {
-        let url = format!("{}/block-height/{}", self.bitcoin_rpc_url, height);
-        let client = reqwest::Client::new();
-        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-        response.text().await.map_err(|e| DeezelError::Network(e.to_string()))
+        #[cfg(feature = "native-deps")]
+        {
+            let url = format!("{}/block-height/{}", self.bitcoin_rpc_url, height);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            response.text().await.map_err(|e| DeezelError::Network(e.to_string()))
+        }
+        #[cfg(not(feature = "native-deps"))]
+        {
+            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
+        }
     }
 
     async fn get_block(&self, hash: &str) -> Result<serde_json::Value> {
-        let url = format!("{}/block/{}", self.bitcoin_rpc_url, hash);
-        let client = reqwest::Client::new();
-        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-        response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
+        #[cfg(feature = "native-deps")]
+        {
+            let url = format!("{}/block/{}", self.bitcoin_rpc_url, hash);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
+        }
+        #[cfg(not(feature = "native-deps"))]
+        {
+            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
+        }
     }
 
     async fn get_block_status(&self, hash: &str) -> Result<serde_json::Value> {
-        let url = format!("{}/block/{}/status", self.bitcoin_rpc_url, hash);
-        let client = reqwest::Client::new();
-        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-        response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
+        #[cfg(feature = "native-deps")]
+        {
+            let url = format!("{}/block/{}/status", self.bitcoin_rpc_url, hash);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
+        }
+        #[cfg(not(feature = "native-deps"))]
+        {
+            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
+        }
     }
 
     async fn get_block_txids(&self, hash: &str) -> Result<serde_json::Value> {
-        let url = format!("{}/block/{}/txids", self.bitcoin_rpc_url, hash);
-        let client = reqwest::Client::new();
-        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-        response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
+        #[cfg(feature = "native-deps")]
+        {
+            let url = format!("{}/block/{}/txids", self.bitcoin_rpc_url, hash);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
+        }
+        #[cfg(not(feature = "native-deps"))]
+        {
+            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
+        }
     }
 
     async fn get_block_header(&self, hash: &str) -> Result<String> {
-        let url = format!("{}/block/{}/header", self.bitcoin_rpc_url, hash);
-        let client = reqwest::Client::new();
-        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-        response.text().await.map_err(|e| DeezelError::Network(e.to_string()))
+        #[cfg(feature = "native-deps")]
+        {
+            let url = format!("{}/block/{}/header", self.bitcoin_rpc_url, hash);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            response.text().await.map_err(|e| DeezelError::Network(e.to_string()))
+        }
+        #[cfg(not(feature = "native-deps"))]
+        {
+            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
+        }
     }
 
     async fn get_block_raw(&self, hash: &str) -> Result<String> {
-        let url = format!("{}/block/{}/raw", self.bitcoin_rpc_url, hash);
-        let client = reqwest::Client::new();
-        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-        let bytes = response.bytes().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-        Ok(hex::encode(bytes))
+        #[cfg(feature = "native-deps")]
+        {
+            let url = format!("{}/block/{}/raw", self.bitcoin_rpc_url, hash);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            let bytes = response.bytes().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            Ok(hex::encode(bytes))
+        }
+        #[cfg(not(feature = "native-deps"))]
+        {
+            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
+        }
     }
 
     async fn get_block_txid(&self, hash: &str, index: u32) -> Result<String> {
-        let url = format!("{}/block/{}/txid/{}", self.bitcoin_rpc_url, hash, index);
-        let client = reqwest::Client::new();
-        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-        response.text().await.map_err(|e| DeezelError::Network(e.to_string()))
+        #[cfg(feature = "native-deps")]
+        {
+            let url = format!("{}/block/{}/txid/{}", self.bitcoin_rpc_url, hash, index);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            response.text().await.map_err(|e| DeezelError::Network(e.to_string()))
+        }
+        #[cfg(not(feature = "native-deps"))]
+        {
+            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
+        }
     }
 
     async fn get_block_txs(&self, hash: &str, start_index: Option<u32>) -> Result<serde_json::Value> {
-        let url = if let Some(index) = start_index {
-            format!("{}/block/{}/txs/{}", self.bitcoin_rpc_url, hash, index)
-        } else {
-            format!("{}/block/{}/txs", self.bitcoin_rpc_url, hash)
-        };
-        let client = reqwest::Client::new();
-        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-        response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
+        #[cfg(feature = "native-deps")]
+        {
+            let url = if let Some(index) = start_index {
+                format!("{}/block/{}/txs/{}", self.bitcoin_rpc_url, hash, index)
+            } else {
+                format!("{}/block/{}/txs", self.bitcoin_rpc_url, hash)
+            };
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
+        }
+        #[cfg(not(feature = "native-deps"))]
+        {
+            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
+        }
     }
 
     async fn get_address(&self, address: &str) -> Result<serde_json::Value> {
-        let url = format!("{}/address/{}", self.bitcoin_rpc_url, address);
-        let client = reqwest::Client::new();
-        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-        response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
+        #[cfg(feature = "native-deps")]
+        {
+            let url = format!("{}/address/{}", self.bitcoin_rpc_url, address);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
+        }
+        #[cfg(not(feature = "native-deps"))]
+        {
+            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
+        }
     }
 
     async fn get_address_txs(&self, address: &str) -> Result<serde_json::Value> {
-        let url = format!("{}/address/{}/txs", self.bitcoin_rpc_url, address);
-        let client = reqwest::Client::new();
-        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-        response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
+        #[cfg(feature = "native-deps")]
+        {
+            let url = format!("{}/address/{}/txs", self.bitcoin_rpc_url, address);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
+        }
+        #[cfg(not(feature = "native-deps"))]
+        {
+            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
+        }
     }
 
     async fn get_address_txs_chain(&self, address: &str, last_seen_txid: Option<&str>) -> Result<serde_json::Value> {
-        let url = if let Some(txid) = last_seen_txid {
-            format!("{}/address/{}/txs/chain/{}", self.bitcoin_rpc_url, address, txid)
-        } else {
-            format!("{}/address/{}/txs/chain", self.bitcoin_rpc_url, address)
-        };
-        let client = reqwest::Client::new();
-        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-        response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
+        #[cfg(feature = "native-deps")]
+        {
+            let url = if let Some(txid) = last_seen_txid {
+                format!("{}/address/{}/txs/chain/{}", self.bitcoin_rpc_url, address, txid)
+            } else {
+                format!("{}/address/{}/txs/chain", self.bitcoin_rpc_url, address)
+            };
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
+        }
+        #[cfg(not(feature = "native-deps"))]
+        {
+            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
+        }
     }
 
     async fn get_address_txs_mempool(&self, address: &str) -> Result<serde_json::Value> {
-        let url = format!("{}/address/{}/txs/mempool", self.bitcoin_rpc_url, address);
-        let client = reqwest::Client::new();
-        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-        response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
+        #[cfg(feature = "native-deps")]
+        {
+            let url = format!("{}/address/{}/txs/mempool", self.bitcoin_rpc_url, address);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
+        }
+        #[cfg(not(feature = "native-deps"))]
+        {
+            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
+        }
     }
 
     async fn get_address_utxo(&self, address: &str) -> Result<serde_json::Value> {
@@ -1104,10 +1244,17 @@ impl EsploraProvider for ConcreteProvider {
     }
 
     async fn get_address_prefix(&self, prefix: &str) -> Result<serde_json::Value> {
-        let url = format!("{}/address/prefix/{}", self.bitcoin_rpc_url, prefix);
-        let client = reqwest::Client::new();
-        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-        response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
+        #[cfg(feature = "native-deps")]
+        {
+            let url = format!("{}/address/prefix/{}", self.bitcoin_rpc_url, prefix);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
+        }
+        #[cfg(not(feature = "native-deps"))]
+        {
+            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
+        }
     }
 
     async fn get_tx(&self, txid: &str) -> Result<serde_json::Value> {
@@ -1116,53 +1263,102 @@ impl EsploraProvider for ConcreteProvider {
     }
 
     async fn get_tx_hex(&self, txid: &str) -> Result<String> {
-        let url = format!("{}/tx/{}/hex", self.bitcoin_rpc_url, txid);
-        let client = reqwest::Client::new();
-        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-        response.text().await.map_err(|e| DeezelError::Network(e.to_string()))
+        #[cfg(feature = "native-deps")]
+        {
+            let url = format!("{}/tx/{}/hex", self.bitcoin_rpc_url, txid);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            response.text().await.map_err(|e| DeezelError::Network(e.to_string()))
+        }
+        #[cfg(not(feature = "native-deps"))]
+        {
+            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
+        }
     }
 
     async fn get_tx_raw(&self, txid: &str) -> Result<String> {
-        let url = format!("{}/tx/{}/raw", self.bitcoin_rpc_url, txid);
-        let client = reqwest::Client::new();
-        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-        let bytes = response.bytes().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-        Ok(hex::encode(bytes))
+        #[cfg(feature = "native-deps")]
+        {
+            let url = format!("{}/tx/{}/raw", self.bitcoin_rpc_url, txid);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            let bytes = response.bytes().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            Ok(hex::encode(bytes))
+        }
+        #[cfg(not(feature = "native-deps"))]
+        {
+            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
+        }
     }
 
     async fn get_tx_status(&self, txid: &str) -> Result<serde_json::Value> {
-        let url = format!("{}/tx/{}/status", self.bitcoin_rpc_url, txid);
-        let client = reqwest::Client::new();
-        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-        response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
+        #[cfg(feature = "native-deps")]
+        {
+            let url = format!("{}/tx/{}/status", self.bitcoin_rpc_url, txid);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
+        }
+        #[cfg(not(feature = "native-deps"))]
+        {
+            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
+        }
     }
 
     async fn get_tx_merkle_proof(&self, txid: &str) -> Result<serde_json::Value> {
-        let url = format!("{}/tx/{}/merkle-proof", self.bitcoin_rpc_url, txid);
-        let client = reqwest::Client::new();
-        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-        response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
+        #[cfg(feature = "native-deps")]
+        {
+            let url = format!("{}/tx/{}/merkle-proof", self.bitcoin_rpc_url, txid);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
+        }
+        #[cfg(not(feature = "native-deps"))]
+        {
+            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
+        }
     }
 
     async fn get_tx_merkleblock_proof(&self, txid: &str) -> Result<String> {
-        let url = format!("{}/tx/{}/merkleblock-proof", self.bitcoin_rpc_url, txid);
-        let client = reqwest::Client::new();
-        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-        response.text().await.map_err(|e| DeezelError::Network(e.to_string()))
+        #[cfg(feature = "native-deps")]
+        {
+            let url = format!("{}/tx/{}/merkleblock-proof", self.bitcoin_rpc_url, txid);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            response.text().await.map_err(|e| DeezelError::Network(e.to_string()))
+        }
+        #[cfg(not(feature = "native-deps"))]
+        {
+            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
+        }
     }
 
     async fn get_tx_outspend(&self, txid: &str, index: u32) -> Result<serde_json::Value> {
-        let url = format!("{}/tx/{}/outspend/{}", self.bitcoin_rpc_url, txid, index);
-        let client = reqwest::Client::new();
-        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-        response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
+        #[cfg(feature = "native-deps")]
+        {
+            let url = format!("{}/tx/{}/outspend/{}", self.bitcoin_rpc_url, txid, index);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
+        }
+        #[cfg(not(feature = "native-deps"))]
+        {
+            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
+        }
     }
 
     async fn get_tx_outspends(&self, txid: &str) -> Result<serde_json::Value> {
-        let url = format!("{}/tx/{}/outspends", self.bitcoin_rpc_url, txid);
-        let client = reqwest::Client::new();
-        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-        response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
+        #[cfg(feature = "native-deps")]
+        {
+            let url = format!("{}/tx/{}/outspends", self.bitcoin_rpc_url, txid);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
+        }
+        #[cfg(not(feature = "native-deps"))]
+        {
+            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
+        }
     }
 
     async fn broadcast(&self, tx_hex: &str) -> Result<String> {
@@ -1172,31 +1368,59 @@ impl EsploraProvider for ConcreteProvider {
     }
 
     async fn get_mempool(&self) -> Result<serde_json::Value> {
-        let url = format!("{}/mempool", self.bitcoin_rpc_url);
-        let client = reqwest::Client::new();
-        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-        response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
+        #[cfg(feature = "native-deps")]
+        {
+            let url = format!("{}/mempool", self.bitcoin_rpc_url);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
+        }
+        #[cfg(not(feature = "native-deps"))]
+        {
+            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
+        }
     }
 
     async fn get_mempool_txids(&self) -> Result<serde_json::Value> {
-        let url = format!("{}/mempool/txids", self.bitcoin_rpc_url);
-        let client = reqwest::Client::new();
-        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-        response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
+        #[cfg(feature = "native-deps")]
+        {
+            let url = format!("{}/mempool/txids", self.bitcoin_rpc_url);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
+        }
+        #[cfg(not(feature = "native-deps"))]
+        {
+            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
+        }
     }
 
     async fn get_mempool_recent(&self) -> Result<serde_json::Value> {
-        let url = format!("{}/mempool/recent", self.bitcoin_rpc_url);
-        let client = reqwest::Client::new();
-        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-        response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
+        #[cfg(feature = "native-deps")]
+        {
+            let url = format!("{}/mempool/recent", self.bitcoin_rpc_url);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
+        }
+        #[cfg(not(feature = "native-deps"))]
+        {
+            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
+        }
     }
 
     async fn get_fee_estimates(&self) -> Result<serde_json::Value> {
-        let url = format!("{}/fee-estimates", self.bitcoin_rpc_url);
-        let client = reqwest::Client::new();
-        let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-        response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
+        #[cfg(feature = "native-deps")]
+        {
+            let url = format!("{}/fee-estimates", self.bitcoin_rpc_url);
+            let client = reqwest::Client::new();
+            let response = client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            response.json().await.map_err(|e| DeezelError::Network(e.to_string()))
+        }
+        #[cfg(not(feature = "native-deps"))]
+        {
+            Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
+        }
     }
 }
 

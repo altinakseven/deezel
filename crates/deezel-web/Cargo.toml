@@ -28,7 +28,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # Core deezel functionality
-deezel-common = { path = "../deezel-common", default-features = false, features = ["web-compat"] }
+deezel-common = { path = "../deezel-common", default-features = false, features = ["web-compat", "wasm-inspection"] }
 
 # Core Bitcoin functionality
 bitcoin = { workspace = true }
