@@ -278,7 +278,7 @@ pub async fn demonstrate_alkanes_execution() {
     
     // Example alkanes execution parameters
     let execute_params = AlkanesExecuteParams {
-        inputs: "auto".to_string(),
+        inputs: Some("auto".to_string()),
         to: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4".to_string(),
         change: None,
         fee_rate: Some(1.0),

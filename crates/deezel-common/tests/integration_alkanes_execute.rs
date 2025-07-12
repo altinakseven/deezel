@@ -129,6 +129,7 @@ impl traits::AddressResolver for MockAlkanesProvider {
 impl traits::BitcoinRpcProvider for MockAlkanesProvider {
     async fn get_block_count(&self) -> deezel_common::Result<u64> { Ok(800000) }
     async fn generate_to_address(&self, _nblocks: u32, _address: &str) -> deezel_common::Result<serde_json::Value> { Ok(serde_json::json!(["0000000000000000000000000000000000000000000000000000000000000000"])) }
+    async fn get_new_address(&self) -> deezel_common::Result<serde_json::Value> { Ok(serde_json::json!("bc1p5d7rjq7g6rdk2yhzks9smlaqtedr4dekq08ge8ztwac72sfr9rusxg3297")) }
     async fn get_transaction_hex(&self, _txid: &str) -> deezel_common::Result<String> { Ok("0200000001".to_string()) }
     async fn get_block(&self, _hash: &str) -> deezel_common::Result<serde_json::Value> { Ok(serde_json::json!({})) }
     async fn get_block_hash(&self, _height: u64) -> deezel_common::Result<String> { Ok("0000000000000000000000000000000000000000000000000000000000000000".to_string()) }
@@ -227,7 +228,7 @@ impl traits::AlkanesProvider for MockAlkanesProvider {
             }],
             output: vec![
                 TxOut { value: Amount::from_sat(0), script_pubkey },
-                TxOut { value: Amount::from_sat(546), script_pubkey: Address::from_str(&params.to).map_err(|e| DeezelError::JsonRpc(e.to_string()))?.assume_checked().script_pubkey() }
+                TxOut { value: Amount::from_sat(546), script_pubkey: Address::from_str(&params.to).map_err(|e| DeezelError::JsonRpc(e.to_string()))?.require_network(bitcoin::Network::Regtest).map_err(|e| DeezelError::JsonRpc(e.to_string()))?.script_pubkey() }
             ],
         };
         

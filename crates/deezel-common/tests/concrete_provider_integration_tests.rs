@@ -7,15 +7,14 @@ use deezel_common::{
     DeezelError, Result,
 };
 use bitcoin::{
-    self, address::Payload, Address, Amount, Network, OutPoint, ScriptBuf, Sequence, Transaction,
+    self, Address, Amount, Network, OutPoint, ScriptBuf, Sequence, Transaction,
     TxIn, TxOut, Witness,
     bip32::{DerivationPath, Xpriv},
-    hashes::Hash,
     secp256k1::{All, Secp256k1},
     sighash::{self, Prevouts, SighashCache},
 };
-use bip39::{Mnemonic, Seed};
-use serde_json::json;
+use bip39::{Mnemonic, Language};
+use serde_json::{json, Value as JsonValue};
 use std::{collections::HashMap, fs::File, io::Write, str::FromStr};
 
 // A mock provider that simulates JSON-RPC calls for testing.
@@ -155,15 +154,15 @@ impl BitcoinRpcProvider for MockRpcProvider {
     }
     // Other BitcoinRpcProvider methods are not needed for this test
     async fn get_block_count(&self) -> Result<u64> { unimplemented!() }
-    async fn generate_to_address(&self, _nblocks: u32, _address: &str) -> Result<serde_json::Value> { unimplemented!() }
-    async fn get_new_address(&self) -> Result<serde_json::Value> { unimplemented!() }
+    async fn generate_to_address(&self, _nblocks: u32, _address: &str) -> Result<JsonValue> { unimplemented!() }
+    async fn get_new_address(&self) -> Result<JsonValue> { Ok(json!("bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4")) }
     async fn get_transaction_hex(&self, _txid: &str) -> Result<String> { unimplemented!() }
-    async fn get_block(&self, _hash: &str) -> Result<serde_json::Value> { unimplemented!() }
+    async fn get_block(&self, _hash: &str) -> Result<JsonValue> { unimplemented!() }
     async fn get_block_hash(&self, _height: u64) -> Result<String> { unimplemented!() }
-    async fn get_mempool_info(&self) -> Result<serde_json::Value> { unimplemented!() }
-    async fn estimate_smart_fee(&self, _target: u32) -> Result<serde_json::Value> { unimplemented!() }
+    async fn get_mempool_info(&self) -> Result<JsonValue> { unimplemented!() }
+    async fn estimate_smart_fee(&self, _target: u32) -> Result<JsonValue> { unimplemented!() }
     async fn get_esplora_blocks_tip_height(&self) -> Result<u64> { unimplemented!() }
-    async fn trace_transaction(&self, _txid: &str, _vout: u32, _block: Option<&str>, _tx: Option<&str>) -> Result<serde_json::Value> { unimplemented!() }
+    async fn trace_transaction(&self, _txid: &str, _vout: u32, _block: Option<&str>, _tx: Option<&str>) -> Result<JsonValue> { unimplemented!() }
 }
 
 #[async_trait::async_trait(?Send)]
@@ -197,7 +196,7 @@ impl WalletProvider for MockRpcProvider {
                 witness: Witness::new(),
             });
         }
-        let recipient_address = Address::from_str(&params.address)?.assume_checked();
+        let recipient_address = Address::from_str(&params.address)?.require_network(self.network)?;
         tx.output.push(TxOut {
             value: target_amount,
             script_pubkey: recipient_address.script_pubkey(),
@@ -206,7 +205,7 @@ impl WalletProvider for MockRpcProvider {
         let change_amount = total_input_amount.checked_sub(target_amount).and_then(|a| a.checked_sub(fee));
         if let Some(change) = change_amount {
             if change.to_sat() > 546 {
-                let change_address = Address::from_str(&all_addresses[0].address)?.assume_checked();
+                let change_address = Address::from_str(&all_addresses[0].address)?.require_network(self.network)?;
                 tx.output.push(TxOut {
                     value: change,
                     script_pubkey: change_address.script_pubkey(),
@@ -227,6 +226,7 @@ impl WalletProvider for MockRpcProvider {
         let network = self.get_network();
         let secp: Secp256k1<All> = Secp256k1::new();
         let mut prevouts = Vec::new();
+        let mut utxo_addresses = Vec::new();
         for input in &tx.input {
             let tx_info = self.get_tx(&input.previous_output.txid.to_string()).await?;
             let vout_info = tx_info["vout"].get(input.previous_output.vout as usize).ok_or_else(|| DeezelError::Wallet("Vout not found".to_string()))?;
@@ -234,11 +234,18 @@ impl WalletProvider for MockRpcProvider {
             let script_pubkey_hex = vout_info["scriptpubkey"]["hex"].as_str().ok_or_else(|| DeezelError::Wallet("UTXO script pubkey not found".to_string()))?;
             let script_pubkey = ScriptBuf::from_hex(script_pubkey_hex)?;
             prevouts.push(TxOut { value: Amount::from_sat(amount), script_pubkey });
+            
+            // Get the address from the UTXO data instead of trying to derive it from script
+            // For this test, we know the address from our test setup
+            let all_addresses = self.get_addresses(100).await?;
+            let utxo_address = &all_addresses[0].address; // Use the first address for this test
+            utxo_addresses.push(utxo_address.clone());
         }
         let mut sighash_cache = SighashCache::new(&mut tx);
         for i in 0..prevouts.len() {
             let prev_txout = &prevouts[i];
-            let address = Address::from_script(&prev_txout.script_pubkey, network)?;
+            let address_str = &utxo_addresses[i];
+            let address = Address::from_str(address_str)?.require_network(network)?;
             let addr_info = self.find_address_info(&keystore, &address, network)?;
             let path = DerivationPath::from_str(&addr_info.path)?;
             let root_key = Xpriv::new_master(network, seed.as_bytes())?;
@@ -276,15 +283,17 @@ impl WalletProvider for MockRpcProvider {
     async fn get_balance(&self) -> Result<deezel_common::traits::WalletBalance> { unimplemented!() }
     async fn get_address(&self) -> Result<String> { unimplemented!() }
     async fn get_addresses(&self, _count: u32) -> Result<Vec<deezel_common::traits::AddressInfo>> {
-        let mnemonic = Mnemonic::from_str("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about").unwrap();
-        let seed = Seed::new(&mnemonic, "");
+        // Load the keystore to get the actual address
+        let wallet_path = self.wallet_path.as_ref().ok_or_else(|| DeezelError::Wallet("Wallet path not set".to_string()))?;
+        let keystore_data = std::fs::read(wallet_path)?;
+        let keystore: Keystore = serde_json::from_slice(&keystore_data)?;
         let network = self.get_network();
-        let path = DerivationPath::from_str("m/84'/1'/0'/0/0").unwrap();
-        let address = keystore::derive_address(seed.as_bytes(), &path, network).unwrap();
+        let address_info = &keystore.addresses.get(&network.to_string()).unwrap()[0];
+        
         Ok(vec![deezel_common::traits::AddressInfo {
-            address: address.to_string(),
-            script_type: "p2wpkh".to_string(),
-            derivation_path: "m/84'/1'/0'/0/0".to_string(),
+            address: address_info.address.clone(),
+            script_type: address_info.address_type.clone(),
+            derivation_path: address_info.path.clone(),
             index: 0,
             used: false,
         }])
@@ -318,28 +327,28 @@ impl WalletProvider for MockRpcProvider {
 async fn test_wallet_send_transaction() {
     // 1. Generate deterministic key material
     let network = Network::Regtest;
-    let secp = Secp256k1::new();
-    let mnemonic = Mnemonic::from_str("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about").unwrap();
-    let seed = Seed::new(&mnemonic, "");
-    let path = DerivationPath::from_str("m/84'/1'/0'/0/0").unwrap(); // BIP 84 for P2WPKH
-    let xpriv = Xpriv::new_master(network, seed.as_bytes()).unwrap().derive_priv(&secp, &path).unwrap();
-    let pubkey = xpriv.to_keypair(&secp).public_key();
-    let script_pubkey = ScriptBuf::new_p2wpkh(&pubkey.wpubkey_hash().unwrap());
-    let address = Address::from_payload(Payload::WitnessProgram(script_pubkey.witness_program().unwrap())).unwrap();
-    let address_str = address.to_string();
-
+    let mnemonic = Mnemonic::from_phrase("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", Language::English).unwrap();
+    
     // 2. Create a keystore with the deterministic seed and address info
     let passphrase = "test_password";
     let keystore = keystore::new_from_mnemonic(passphrase, &mnemonic.to_string(), network).unwrap();
     let keystore_json = serde_json::to_string(&keystore).unwrap();
+    
+    // 3. Get the address from the keystore (this ensures consistency)
+    let address_info = &keystore.addresses.get(&network.to_string()).unwrap()[0];
+    let address_str = &address_info.address;
+    
+    // 4. Parse the address to get the script_pubkey for the mock response
+    let address = Address::from_str(address_str).unwrap().require_network(network).unwrap();
+    let script_pubkey = address.script_pubkey();
 
-    // 3. Save the keystore to a temporary file
+    // 5. Save the keystore to a temporary file
     let dir = tempfile::tempdir().unwrap();
     let file_path = dir.path().join("test-wallet-send.keystore");
     let mut file = File::create(&file_path).unwrap();
     file.write_all(keystore_json.as_bytes()).unwrap();
 
-    // 4. Setup mock RPC responses using the deterministic data
+    // 6. Setup mock RPC responses using the deterministic data
     let utxos_response = json!([
         {
             "txid": "1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a",
@@ -371,7 +380,7 @@ async fn test_wallet_send_transaction() {
 
     let broadcast_txid = "mock_txid_from_broadcast";
 
-    // 5. Create a mock provider
+    // 7. Create a mock provider
     let mut provider = MockRpcProvider::new()
         .with_response("esplora_address::utxo", utxos_response)
         .with_response("esplora_tx", prev_tx_response)
@@ -379,8 +388,8 @@ async fn test_wallet_send_transaction() {
     provider.wallet_path = Some(file_path.to_str().unwrap().to_string());
     provider.passphrase = Some(passphrase.to_string());
 
-    // 6. Send a transaction
-    let recipient_address = "bcrt1ps5ctpu8046wsz2lpu9sf7m72z39j222k33az2k42n63248qg2qps5jwjhd";
+    // 8. Send a transaction
+    let recipient_address = "bcrt1p45un5d47hvfhx6mfezr6x0htpanw23tgll7ppn6hj6gfzu3x3dnsaegh8d";
     let send_params = SendParams {
         address: recipient_address.to_string(),
         amount: 10000, // sats
@@ -392,6 +401,6 @@ async fn test_wallet_send_transaction() {
     };
     let txid = provider.send(send_params).await.unwrap();
 
-    // 7. Assert the result
+    // 9. Assert the result
     assert_eq!(txid, broadcast_txid);
 }

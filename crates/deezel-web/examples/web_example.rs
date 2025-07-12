@@ -173,7 +173,7 @@ async fn test_alkanes_operations(provider: &WebProvider) {
     
     // Test alkanes execution (mock)
     let execute_params = AlkanesExecuteParams {
-        inputs: "mock_inputs".to_string(),
+        inputs: Some("mock_inputs".to_string()),
         to: "mock_to_address".to_string(),
         change: None,
         fee_rate: Some(10.0),

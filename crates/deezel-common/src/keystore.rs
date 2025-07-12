@@ -12,9 +12,8 @@ use bitcoin::{
     bip32::{DerivationPath, Xpriv},
     Network as BitcoinNetwork,
     secp256k1::{Secp256k1},
-    Address,
+    Address, PublicKey,
     bip32::Xpub,
-    CompressedPublicKey,
 };
 use bip39::{Language, Mnemonic, Seed};
 use rand::{rngs::OsRng, RngCore};
@@ -26,6 +25,7 @@ use deezel_rpgp::{
 use std::collections::HashMap;
 use std::str::FromStr;
 use crate::{DeezelError, Result};
+use crate::address::{DeezelAddress, NetworkConfig};
 
 /// Represents the entire JSON keystore.
 #[derive(Serialize, Deserialize, Debug)]
@@ -62,6 +62,17 @@ pub struct AddressInfo {
     pub address_type: String,
 }
 
+/// Convert Bitcoin network to our NetworkConfig
+fn network_to_config(network: BitcoinNetwork) -> NetworkConfig {
+    match network {
+        BitcoinNetwork::Bitcoin => NetworkConfig::mainnet(),
+        BitcoinNetwork::Testnet => NetworkConfig::testnet(),
+        BitcoinNetwork::Signet => NetworkConfig::signet(),
+        BitcoinNetwork::Regtest => NetworkConfig::regtest(),
+        _ => NetworkConfig::mainnet(), // Default fallback for any future network types
+    }
+}
+
 /// Creates a new encrypted keystore.
 pub fn create_keystore(passphrase: &str) -> Result<Keystore> {
     let secp = Secp256k1::new();
@@ -85,18 +96,19 @@ pub fn create_keystore(passphrase: &str) -> Result<Keystore> {
     ];
 
     for (net_name, network) in &networks {
+        let network_config = network_to_config(*network);
         let mut address_infos = Vec::new();
         for i in 0..10 {
             // P2WPKH
             let path_str = format!("m/84'/0'/0'/0/{}", i);
             let path = DerivationPath::from_str(&path_str).unwrap();
             let child_key = root_key.derive_priv(&secp, &path).unwrap();
-            let pubkey = Xpub::from_priv(&secp, &child_key).public_key;
-            let compressed_pubkey = CompressedPublicKey(pubkey);
-            let address = Address::p2wpkh(&compressed_pubkey, *network);
+            let secp_pubkey = Xpub::from_priv(&secp, &child_key).public_key;
+            let bitcoin_pubkey = PublicKey::new(secp_pubkey);
+            let address = DeezelAddress::p2wpkh(&bitcoin_pubkey, &network_config).unwrap();
             address_infos.push(AddressInfo {
                 path: path_str,
-                address: address.to_string(),
+                address: address.to_string().unwrap(),
                 address_type: "p2wpkh".to_string(),
             });
 
@@ -105,10 +117,10 @@ pub fn create_keystore(passphrase: &str) -> Result<Keystore> {
             let path = DerivationPath::from_str(&path_str).unwrap();
             let child_key = root_key.derive_priv(&secp, &path).unwrap();
             let (internal_key, _) = Xpub::from_priv(&secp, &child_key).public_key.x_only_public_key();
-            let address = Address::p2tr(&secp, internal_key, None, *network);
+            let address = DeezelAddress::p2tr(&secp, internal_key, None, &network_config);
             address_infos.push(AddressInfo {
                 path: path_str,
-                address: address.to_string(),
+                address: address.to_string().unwrap(),
                 address_type: "p2tr".to_string(),
             });
         }
@@ -171,12 +183,13 @@ pub fn new_from_mnemonic(passphrase: &str, mnemonic_str: &str, network: BitcoinN
     let path = DerivationPath::from_str(&path_str).unwrap();
     let child_key = root_key.derive_priv(&secp, &path).unwrap();
     let keypair = child_key.to_keypair(&secp);
-    let pubkey = keypair.public_key();
-    let compressed_pubkey = CompressedPublicKey(pubkey);
-    let address = Address::p2wpkh(&compressed_pubkey, network);
+    let secp_pubkey = keypair.public_key();
+    let bitcoin_pubkey = PublicKey::new(secp_pubkey);
+    let network_config = network_to_config(network);
+    let address = DeezelAddress::p2wpkh(&bitcoin_pubkey, &network_config).unwrap();
     address_infos.push(AddressInfo {
         path: path_str,
-        address: address.to_string(),
+        address: address.to_string().unwrap(),
         address_type: "p2wpkh".to_string(),
     });
     
@@ -267,7 +280,12 @@ pub fn derive_address(seed: &Seed, path: &DerivationPath, network: BitcoinNetwor
         .map_err(|e| DeezelError::Crypto(e.to_string()))?;
         
     let (internal_key, _) = Xpub::from_priv(&secp, &child_key).public_key.x_only_public_key();
-    Ok(Address::p2tr(&secp, internal_key, None, network))
+    let network_config = network_to_config(network);
+    let deezel_address = DeezelAddress::p2tr(&secp, internal_key, None, &network_config);
+    
+    // Convert back to bitcoin::Address for compatibility
+    let address_str = deezel_address.to_string().map_err(|e| DeezelError::AddressResolution(e.to_string()))?;
+    Address::from_str(&address_str)?.require_network(network).map_err(|e| DeezelError::AddressResolution(e.to_string()))
 }
 
 

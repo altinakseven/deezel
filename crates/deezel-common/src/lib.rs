@@ -42,6 +42,7 @@ use std::{
 };
 
 // Core modules
+pub mod address;
 pub mod commands;
 pub mod traits;
 pub mod network;
@@ -281,6 +282,7 @@ pub fn init() {
 pub mod prelude {
     pub use crate::traits::*;
     pub use crate::{DeezelError, Result};
+    pub use crate::address::{DeezelAddress, NetworkConfig};
     pub use crate::network::NetworkParams;
     pub use crate::rpc::{RpcClient, RpcConfig};
     pub use bitcoin::{Network, Transaction, Address, ScriptBuf};

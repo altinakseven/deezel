@@ -702,7 +702,8 @@ impl WalletProvider for ConcreteProvider {
         }
 
         // Add the recipient's output
-        let recipient_address = Address::from_str(&params.address)?.assume_checked();
+        let network = self.get_network();
+        let recipient_address = Address::from_str(&params.address)?.require_network(network)?;
         tx.output.push(TxOut {
             value: target_amount,
             script_pubkey: recipient_address.script_pubkey(),
@@ -717,7 +718,7 @@ impl WalletProvider for ConcreteProvider {
         if let Some(change) = change_amount {
             if change > bitcoin::Amount::from_sat(546) { // Dust limit
                 // Use the first address as the change address for simplicity
-                let change_address = Address::from_str(&all_addresses[0].address)?.assume_checked();
+                let change_address = Address::from_str(&all_addresses[0].address)?.require_network(network)?;
                 tx.output.push(TxOut {
                     value: change,
                     script_pubkey: change_address.script_pubkey(),
@@ -765,7 +766,8 @@ impl WalletProvider for ConcreteProvider {
             let prev_txout = &prevouts[i];
             
             // Find the address and its derivation path from our keystore
-            let address = Address::from_script(&prev_txout.script_pubkey, network)?;
+            let address = Address::from_script(&prev_txout.script_pubkey, network)
+                .map_err(|e| DeezelError::Wallet(format!("Failed to parse address from script: {}", e)))?;
             let addr_info = self.find_address_info(&keystore, &address, network)?;
             let path = DerivationPath::from_str(&addr_info.path)?;
 
@@ -1271,5 +1273,67 @@ impl AlkanesProvider for ConcreteProvider {
 
     async fn simulate(&self, _contract_id: &str, _params: Option<&str>) -> Result<JsonValue> {
         unimplemented!()
+    }
+}
+
+// Implement DeezelProvider trait for ConcreteProvider
+#[async_trait(?Send)]
+impl DeezelProvider for ConcreteProvider {
+    fn provider_name(&self) -> &str {
+        "ConcreteProvider"
+    }
+
+    fn clone_box(&self) -> Box<dyn DeezelProvider> {
+        Box::new(self.clone())
+    }
+
+    async fn initialize(&self) -> Result<()> {
+        // Initialize the provider - for now this is a no-op
+        // In a full implementation, this might:
+        // - Verify RPC connections
+        // - Load configuration
+        // - Initialize caches
+        Ok(())
+    }
+
+    async fn shutdown(&self) -> Result<()> {
+        // Shutdown the provider - for now this is a no-op
+        // In a full implementation, this might:
+        // - Close connections
+        // - Save state
+        // - Clean up resources
+        Ok(())
+    }
+}
+
+// Implement KeystoreProvider trait for ConcreteProvider
+#[async_trait(?Send)]
+impl KeystoreProvider for ConcreteProvider {
+    async fn derive_addresses(&self, _master_public_key: &str, _network: Network, _script_types: &[&str], _start_index: u32, _count: u32) -> Result<Vec<KeystoreAddress>> {
+        Err(DeezelError::NotImplemented("KeystoreProvider derive_addresses not yet implemented".to_string()))
+    }
+
+    async fn get_default_addresses(&self, _master_public_key: &str, _network: Network) -> Result<Vec<KeystoreAddress>> {
+        Err(DeezelError::NotImplemented("KeystoreProvider get_default_addresses not yet implemented".to_string()))
+    }
+
+    fn parse_address_range(&self, _range_spec: &str) -> Result<(String, u32, u32)> {
+        Err(DeezelError::NotImplemented("KeystoreProvider parse_address_range not yet implemented".to_string()))
+    }
+
+    async fn get_keystore_info(&self, _master_public_key: &str, _master_fingerprint: &str, _created_at: u64, _version: &str) -> Result<KeystoreInfo> {
+        Err(DeezelError::NotImplemented("KeystoreProvider get_keystore_info not yet implemented".to_string()))
+    }
+}
+
+// Implement MonitorProvider trait for ConcreteProvider
+#[async_trait(?Send)]
+impl MonitorProvider for ConcreteProvider {
+    async fn monitor_blocks(&self, _start: Option<u64>) -> Result<()> {
+        Err(DeezelError::NotImplemented("MonitorProvider monitor_blocks not yet implemented".to_string()))
+    }
+
+    async fn get_block_events(&self, _height: u64) -> Result<Vec<BlockEvent>> {
+        Err(DeezelError::NotImplemented("MonitorProvider get_block_events not yet implemented".to_string()))
     }
 }

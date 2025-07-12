@@ -1128,6 +1128,11 @@ impl WalletProvider for BrowserWalletProvider {
         // This method should not be used with browser wallets
         Err(DeezelError::Wallet("Browser wallets do not expose private keys".to_string()))
     }
+
+    fn set_passphrase(&mut self, _passphrase: Option<String>) {
+        // Browser wallets manage their own passphrases
+        // This is a no-op for browser wallet providers
+    }
 }
 
 // Implement the remaining provider traits by delegating to web_provider
@@ -1158,6 +1163,10 @@ impl BitcoinRpcProvider for BrowserWalletProvider {
     
     async fn generate_to_address(&self, nblocks: u32, address: &str) -> Result<JsonValue> {
         self.web_provider.generate_to_address(nblocks, address).await
+    }
+    
+    async fn get_new_address(&self) -> Result<JsonValue> {
+        self.web_provider.get_new_address().await
     }
     
     async fn get_transaction_hex(&self, txid: &str) -> Result<String> {

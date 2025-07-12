@@ -60,6 +60,7 @@ log = { workspace = true }
 hex = { workspace = true }
 async-trait = { workspace = true }
 base64 = { workspace = true }
+bech32 = { workspace = true }
 regex = { workspace = true }
 chrono = { workspace = true }
 smallvec = { workspace = true }

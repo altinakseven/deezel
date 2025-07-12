@@ -277,6 +277,11 @@ impl WalletProvider for WebProvider {
             .map_err(|e| DeezelError::Wallet(format!("Failed to create secret key: {}", e)))?;
         Ok(bitcoin::secp256k1::Keypair::from_secret_key(&secp, &secret_key))
     }
+
+    fn set_passphrase(&mut self, _passphrase: Option<String>) {
+        // Web provider doesn't manage passphrases directly
+        // This is a no-op for web providers
+    }
 }
 
 // AddressResolver implementation
@@ -320,6 +325,11 @@ impl BitcoinRpcProvider for WebProvider {
     async fn generate_to_address(&self, nblocks: u32, address: &str) -> Result<JsonValue> {
         let params = serde_json::json!([nblocks, address]);
         self.call(self.sandshrew_rpc_url(), "generatetoaddress", params, 1).await
+    }
+
+    async fn get_new_address(&self) -> Result<JsonValue> {
+        let result = self.call(self.sandshrew_rpc_url(), "getnewaddress", serde_json::json!([]), 1).await?;
+        Ok(result)
     }
 
     async fn get_transaction_hex(&self, txid: &str) -> Result<String> {

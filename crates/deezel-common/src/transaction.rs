@@ -261,16 +261,20 @@ impl<P: DeezelProvider> TransactionConstructor<P> {
     async fn get_change_script(&self, params: &SendTransactionParams) -> Result<ScriptBuf> {
         if let Some(change_address) = &params.change_address {
             // Parse change address to script
+            let network = self.provider.get_network();
             let address = Address::from_str(change_address)
                 .map_err(|e| DeezelError::AddressResolution(e.to_string()))?
-                .assume_checked();
+                .require_network(network)
+                .map_err(|e| DeezelError::AddressResolution(e.to_string()))?;
             Ok(address.script_pubkey())
         } else {
             // Use default wallet address
             let address_str = WalletProvider::get_address(&self.provider).await?;
+            let network = self.provider.get_network();
             let address = Address::from_str(&address_str)
                 .map_err(|e| DeezelError::AddressResolution(e.to_string()))?
-                .assume_checked();
+                .require_network(network)
+                .map_err(|e| DeezelError::AddressResolution(e.to_string()))?;
             Ok(address.script_pubkey())
         }
     }
