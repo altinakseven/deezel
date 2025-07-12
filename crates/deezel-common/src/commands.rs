@@ -282,8 +282,7 @@ impl WalletCommands {
             WalletCommands::Send { .. } |
             WalletCommands::SendAll { .. } |
             WalletCommands::CreateTx { .. } |
-            WalletCommands::SignTx { .. } |
-            WalletCommands::BroadcastTx { .. }
+            WalletCommands::SignTx { .. }
         )
     }
 }

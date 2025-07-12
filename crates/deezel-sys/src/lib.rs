@@ -236,17 +236,50 @@ impl SystemWallet for SystemDeezel {
                Ok(())
            },
            WalletCommands::Info => {
-               let address = WalletProvider::get_address(&provider).await?;
-               let balance = WalletProvider::get_balance(&provider, None).await?;
-               let network = provider.get_network();
-               
-               println!("💼 Wallet Information");
-               println!("═══════════════════");
-               println!("🏠 Address: {}", address);
-               println!("💰 Balance: {} sats", balance.confirmed as i64 + balance.pending);
-               println!("🌐 Network: {:?}", network);
-               Ok(())
-           },
+                // Use the wallet file path from provider
+                let wallet_file = provider.get_wallet_path()
+                    .ok_or_else(|| anyhow!("No wallet file path configured"))?
+                    .to_string_lossy()
+                    .to_string();
+
+                if !std::path::Path::new(&wallet_file).exists() {
+                    println!("❌ No keystore found. Please create a wallet first using 'deezel wallet create'");
+                    return Ok(());
+                }
+
+                // Load keystore metadata without requiring passphrase
+                let keystore_metadata = self.keystore_manager.load_keystore_metadata_from_file(&wallet_file).await?;
+                let info = self.keystore_manager.get_keystore_info(&keystore_metadata);
+                let network = provider.get_network();
+
+                println!("💼 Wallet Information (Locked)");
+                println!("═════════════════════════════");
+                println!("🔑 Master Public Key: {}", info.master_public_key);
+                println!("🔍 Master Fingerprint: {}", info.master_fingerprint);
+                println!("📅 Created: {}", chrono::DateTime::from_timestamp(info.created_at as i64, 0).map(|dt| dt.to_rfc2822()).unwrap_or_else(|| "Invalid date".to_string()));
+                println!("🏷️  Version: {}", info.version);
+                println!("🌐 Network: {:?}", network);
+
+                // Display first 5 addresses of each type
+                println!("\n📋 Default Addresses (derived from public key):");
+                let default_addresses = self.keystore_manager.get_default_addresses_from_metadata(&keystore_metadata, network, None)?;
+                
+                let mut grouped_addresses: std::collections::HashMap<String, Vec<&deezel_common::traits::KeystoreAddress>> = std::collections::HashMap::new();
+                for addr in &default_addresses {
+                    grouped_addresses.entry(addr.script_type.clone()).or_default().push(addr);
+                }
+
+                for (script_type, addrs) in grouped_addresses {
+                    println!("\n  {}:", script_type.to_uppercase());
+                    for addr in addrs {
+                        println!("    {}. {} (index: {})", addr.index, addr.address, addr.index);
+                    }
+                }
+
+                println!("\n💡 To see balances or send transactions, unlock the wallet by providing the --passphrase argument or by running a command that requires signing (e.g., 'wallet send').");
+
+                Ok(())
+            },
            WalletCommands::Balance { raw, addresses } => {
                 let address_list = if let Some(addr_str) = addresses {
                     Some(resolve_addresses(&addr_str, &provider).await?)
