@@ -7,7 +7,6 @@ use crate::traits::*;
 use crate::{Result, DeezelError, JsonValue};
 use async_trait::async_trait;
 use std::path::PathBuf;
-use std::fs;
 use std::str::FromStr;
 use crate::keystore::Keystore;
 
@@ -35,10 +34,13 @@ use hex::{self, FromHex};
 use bitcoin::{
     Address, Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
     secp256k1::{Secp256k1, All},
-    sighash::{self, SighashCache, Prevouts},
+    sighash::{SighashCache, Prevouts, TapSighashType},
     bip32::{DerivationPath, Xpriv},
 };
 use ordinals::{Runestone, Artifact};
+
+#[cfg(feature = "native-deps")]
+use std::fs;
 
 #[derive(Clone)]
 pub struct ConcreteProvider {
@@ -211,6 +213,7 @@ impl JsonRpcProvider for ConcreteProvider {
         }
         #[cfg(not(feature = "native-deps"))]
         {
+            let _ = (url, method, params, id); // Suppress unused parameter warnings
             Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
         }
     }
@@ -537,6 +540,7 @@ impl WalletProvider for ConcreteProvider {
         }
         #[cfg(not(feature = "native-deps"))]
         {
+            let _ = config; // Suppress unused parameter warning
             Err(DeezelError::NotImplemented("File system operations not supported in WASM environment".to_string()))
         }
     }
@@ -567,6 +571,7 @@ impl WalletProvider for ConcreteProvider {
         }
         #[cfg(not(feature = "native-deps"))]
         {
+            let _ = self; // Suppress unused parameter warning
             Err(DeezelError::NotImplemented("File system operations not supported in WASM environment".to_string()))
         }
     }
@@ -603,6 +608,7 @@ impl WalletProvider for ConcreteProvider {
         }
         #[cfg(not(feature = "native-deps"))]
         {
+            let _ = (self, count); // Suppress unused parameter warnings
             Err(DeezelError::NotImplemented("File system operations not supported in WASM environment".to_string()))
         }
     }
@@ -810,7 +816,7 @@ impl WalletProvider for ConcreteProvider {
             let sighash = sighash_cache.taproot_key_spend_signature_hash(
                 i,
                 &Prevouts::All(&prevouts),
-                sighash::TapSighashType::Default,
+                TapSighashType::Default,
             )?;
 
             // Sign the sighash
@@ -829,6 +835,7 @@ impl WalletProvider for ConcreteProvider {
         }
         #[cfg(not(feature = "native-deps"))]
         {
+            let _ = (self, tx_hex); // Suppress unused parameter warnings
             Err(DeezelError::NotImplemented("File system operations not supported in WASM environment".to_string()))
         }
     }
@@ -1024,6 +1031,7 @@ impl EsploraProvider for ConcreteProvider {
         }
         #[cfg(not(feature = "native-deps"))]
         {
+            let _ = self; // Suppress unused parameter warning
             Err(DeezelError::NotImplemented("HTTP requests not available in WASM environment".to_string()))
         }
     }

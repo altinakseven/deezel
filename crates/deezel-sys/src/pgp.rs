@@ -108,12 +108,14 @@ impl DeezelPgpProvider {
     }
 
     /// Parse an armored secret key
+    #[allow(dead_code)]
     fn parse_secret_key(armored: &str) -> core::result::Result<(SignedSecretKey, std::collections::BTreeMap<String, Vec<String>>), String> {
         SignedSecretKey::from_armor_single(armored.as_bytes())
             .map_err(|e| format!("Failed to parse secret key: {:?}", e))
     }
 
     /// Parse an armored public key
+    #[allow(dead_code)]
     fn parse_public_key(armored: &str) -> core::result::Result<(SignedPublicKey, std::collections::BTreeMap<String, Vec<String>>), String> {
         SignedPublicKey::from_armor_single(armored.as_bytes())
             .map_err(|e| format!("Failed to parse public key: {:?}", e))

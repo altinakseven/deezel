@@ -73,6 +73,7 @@ pub struct KeystoreCreateParams {
 
 /// Keystore manager that handles creation and management
 pub struct KeystoreManager {
+    #[allow(dead_code)]
     pgp_provider: DeezelPgpProvider,
 }
 

@@ -8,7 +8,7 @@ use clap::{Parser, Subcommand};
 /// Main CLI arguments
 #[derive(Parser, Debug, Clone)]
 #[command(name = "deezel")]
-#[command(about = "DEEZEL - DIESEL token minting and alkanes smart contract CLI")]
+#[command(about = "DEEZEL - Alkanes SDK")]
 #[command(version = "0.1.0")]
 pub struct Args {
     /// Bitcoin RPC URL

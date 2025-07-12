@@ -119,6 +119,7 @@ pub struct WebSleep {
 }
 
 impl WebSleep {
+    #[allow(dead_code)]
     fn new(duration_ms: u64) -> Self {
         Self {
             promise: None,
