@@ -86,11 +86,12 @@ url = { version = "2.5.0", optional = true }
 clap = { workspace = true, features = ["derive"], default-features = false }
 ord = { version = "0.23.2", optional = true }
 bitcoincore-rpc = { version = "0.18.0", optional = true }
+tabled = { version = "0.15.0", optional = true }
 
 [features]
 default = ["wasm-inspection", "native-deps"]
 wasm-inspection = ["wasmi", "wasmprinter", "wat", "spin"]
-native-deps = ["dirs", "tempfile", "tokio", "reqwest", "url", "ord", "bitcoincore-rpc"]
+native-deps = ["dirs", "tempfile", "tokio", "reqwest", "url", "ord", "bitcoincore-rpc", "tabled"]
 web-compat = ["spin"]
 
 [dev-dependencies]

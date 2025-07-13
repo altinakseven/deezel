@@ -5,6 +5,7 @@
 
 use crate::traits::*;
 use crate::{Result, DeezelError, JsonValue};
+use crate::ord;
 use async_trait::async_trait;
 use alloc::format;
 use alloc::string::{String, ToString};
@@ -69,7 +70,6 @@ pub struct ConcreteProvider {
     metashrew_rpc_url: String,
     sandshrew_rpc_url: String,
     esplora_url: Option<String>,
-    ord_url: Option<String>,
     provider: String,
     #[cfg(not(target_arch = "wasm32"))]
     wallet_path: Option<PathBuf>,
@@ -87,7 +87,6 @@ impl ConcreteProvider {
         metashrew_rpc_url: String,
         sandshrew_rpc_url: String,
         esplora_url: Option<String>,
-        ord_url: Option<String>,
         provider: String,
         #[cfg(not(target_arch = "wasm32"))]
         wallet_path: Option<PathBuf>,
@@ -99,7 +98,6 @@ impl ConcreteProvider {
            metashrew_rpc_url,
            sandshrew_rpc_url,
            esplora_url,
-           ord_url,
            provider,
            wallet_path: wallet_path.clone(),
            passphrase: None,
@@ -1711,7 +1709,6 @@ mod esplora_provider_tests {
             server.uri(),
             server.uri(),
             Some(server.uri()),
-            Some(server.uri()),
             "regtest".to_string(),
             None,
         ).await.unwrap();
@@ -2579,239 +2576,79 @@ mod esplora_provider_tests {
 
 #[async_trait(?Send)]
 impl OrdProvider for ConcreteProvider {
-    async fn get_inscription(&self, inscription_id: &str) -> Result<JsonValue> {
-        #[cfg(feature = "native-deps")]
-        if let Some(ord_url) = &self.ord_url {
-            let url = format!("{}/inscription/{}", ord_url, inscription_id);
-            let response = self.http_client
-                .get(&url)
-                .header("Accept", "application/json")
-                .send()
-                .await
-                .map_err(|e| DeezelError::Network(e.to_string()))?;
-            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
-        }
-        
-        self.call(&self.sandshrew_rpc_url, "ord_getInscription", crate::esplora::params::single(inscription_id), 1).await
+    async fn get_inscription(&self, inscription_id: &str) -> Result<ord::Inscription> {
+        let json = self.call(&self.sandshrew_rpc_url, "ord_getInscription", crate::esplora::params::single(inscription_id), 1).await?;
+        serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
     }
 
-    async fn get_inscriptions_in_block(&self, block_hash: &str) -> Result<JsonValue> {
-        #[cfg(feature = "native-deps")]
-        if let Some(ord_url) = &self.ord_url {
-            let url = format!("{}/inscriptions/block/{}", ord_url, block_hash);
-            let response = self.http_client
-                .get(&url)
-                .header("Accept", "application/json")
-                .send()
-                .await
-                .map_err(|e| DeezelError::Network(e.to_string()))?;
-            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
-        }
-        
-        self.call(&self.sandshrew_rpc_url, "ord_getInscriptionsInBlock", crate::esplora::params::single(block_hash), 1).await
+    async fn get_inscriptions_in_block(&self, block_hash: &str) -> Result<ord::Inscriptions> {
+        let json = self.call(&self.sandshrew_rpc_url, "ord_getInscriptionsInBlock", crate::esplora::params::single(block_hash), 1).await?;
+        serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
     }
 
-   async fn get_ord_address_info(&self, address: &str) -> Result<JsonValue> {
-        #[cfg(feature = "native-deps")]
-        if let Some(ord_url) = &self.ord_url {
-            let url = format!("{}/address/{}", ord_url, address);
-            let response = self.http_client.get(&url).header("Accept", "application/json").send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            if !response.status().is_success() {
-                let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-                return Err(DeezelError::Network(format!("Error from ord server: {}", error_text)));
-            }
-            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
-        }
-        self.call(&self.sandshrew_rpc_url, "ord_address", crate::esplora::params::single(address), 1).await
+   async fn get_ord_address_info(&self, address: &str) -> Result<ord::AddressInfo> {
+        let json = self.call(&self.sandshrew_rpc_url, "ord_address", crate::esplora::params::single(address), 1).await?;
+        serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
    }
 
-   async fn get_block_info(&self, query: &str) -> Result<JsonValue> {
-        #[cfg(feature = "native-deps")]
-        if let Some(ord_url) = &self.ord_url {
-            let url = format!("{}/block/{}", ord_url, query);
-            let response = self.http_client.get(&url).header("Accept", "application/json").send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            if !response.status().is_success() {
-                let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-                return Err(DeezelError::Network(format!("Error from ord server: {}", error_text)));
-            }
-            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
-        }
-        self.call(&self.sandshrew_rpc_url, "ord_block", crate::esplora::params::single(query), 1).await
+   async fn get_block_info(&self, query: &str) -> Result<ord::Block> {
+        let json = self.call(&self.sandshrew_rpc_url, "ord_block", crate::esplora::params::single(query), 1).await?;
+        serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
    }
 
-   async fn get_ord_block_count(&self) -> Result<JsonValue> {
-        #[cfg(feature = "native-deps")]
-        if let Some(ord_url) = &self.ord_url {
-            let url = format!("{}/blockcount", ord_url);
-            let response = self.http_client.get(&url).header("Accept", "application/json").send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            if !response.status().is_success() {
-                let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-                return Err(DeezelError::Network(format!("Error from ord server: {}", error_text)));
-            }
-            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
-        }
-        self.call(&self.sandshrew_rpc_url, "ord_blockCount", crate::esplora::params::empty(), 1).await
+   async fn get_ord_block_count(&self) -> Result<u64> {
+        let json = self.call(&self.sandshrew_rpc_url, "ord_blockCount", crate::esplora::params::empty(), 1).await?;
+        json.as_u64().ok_or_else(|| DeezelError::RpcError("Invalid block count response".to_string()))
    }
 
-   async fn get_ord_blocks(&self) -> Result<JsonValue> {
-        #[cfg(feature = "native-deps")]
-        if let Some(ord_url) = &self.ord_url {
-            let url = format!("{}/blocks", ord_url);
-            let response = self.http_client.get(&url).header("Accept", "application/json").send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            if !response.status().is_success() {
-                let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-                return Err(DeezelError::Network(format!("Error from ord server: {}", error_text)));
-            }
-            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
-        }
-        self.call(&self.sandshrew_rpc_url, "ord_blocks", crate::esplora::params::empty(), 1).await
+   async fn get_ord_blocks(&self) -> Result<ord::Blocks> {
+        let json = self.call(&self.sandshrew_rpc_url, "ord_blocks", crate::esplora::params::empty(), 1).await?;
+        serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
    }
 
-   async fn get_children(&self, inscription_id: &str, page: Option<u32>) -> Result<JsonValue> {
-        #[cfg(feature = "native-deps")]
-        if let Some(ord_url) = &self.ord_url {
-            let path = if let Some(p) = page {
-                format!("/children/{}/{}", inscription_id, p)
-            } else {
-                format!("/children/{}", inscription_id)
-            };
-            let url = format!("{}{}", ord_url, path);
-            let response = self.http_client.get(&url).header("Accept", "application/json").send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            if !response.status().is_success() {
-                let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-                return Err(DeezelError::Network(format!("Error from ord server: {}", error_text)));
-            }
-            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
-        }
-        self.call(&self.sandshrew_rpc_url, "ord_children", crate::esplora::params::optional_dual(inscription_id, page), 1).await
+   async fn get_children(&self, inscription_id: &str, page: Option<u32>) -> Result<ord::Children> {
+        let json = self.call(&self.sandshrew_rpc_url, "ord_children", crate::esplora::params::optional_dual(inscription_id, page), 1).await?;
+        serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
    }
 
    async fn get_content(&self, inscription_id: &str) -> Result<Vec<u8>> {
-        #[cfg(feature = "native-deps")]
-        if let Some(ord_url) = &self.ord_url {
-            let url = format!("{}/content/{}", ord_url, inscription_id);
-            let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            if !response.status().is_success() {
-                let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-                return Err(DeezelError::Network(format!("Error from ord server: {}", error_text)));
-            }
-            return response.bytes().await.map(|b| b.to_vec()).map_err(|e| DeezelError::Network(e.to_string()));
-        }
         let result = self.call(&self.sandshrew_rpc_url, "ord_content", crate::esplora::params::single(inscription_id), 1).await?;
         let hex_str = result.as_str().ok_or_else(|| DeezelError::RpcError("Invalid content response".to_string()))?;
         hex::decode(hex_str.strip_prefix("0x").unwrap_or(hex_str)).map_err(|e| DeezelError::Serialization(e.to_string()))
    }
 
-   async fn get_inscriptions(&self, page: Option<u32>) -> Result<JsonValue> {
-        #[cfg(feature = "native-deps")]
-        if let Some(ord_url) = &self.ord_url {
-            let path = if let Some(p) = page {
-                format!("/inscriptions/{}", p)
-            } else {
-                "/inscriptions".to_string()
-            };
-            let url = format!("{}{}", ord_url, path);
-            let response = self.http_client.get(&url).header("Accept", "application/json").send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            if !response.status().is_success() {
-                let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-                return Err(DeezelError::Network(format!("Error from ord server: {}", error_text)));
-            }
-            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
-        }
-        self.call(&self.sandshrew_rpc_url, "ord_inscriptions", crate::esplora::params::optional_single(page), 1).await
+   async fn get_inscriptions(&self, page: Option<u32>) -> Result<ord::Inscriptions> {
+        let json = self.call(&self.sandshrew_rpc_url, "ord_inscriptions", crate::esplora::params::optional_single(page), 1).await?;
+        serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
    }
 
-   async fn get_output(&self, output: &str) -> Result<JsonValue> {
-        #[cfg(feature = "native-deps")]
-        if let Some(ord_url) = &self.ord_url {
-            let url = format!("{}/output/{}", ord_url, output);
-            let response = self.http_client.get(&url).header("Accept", "application/json").send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            if !response.status().is_success() {
-                let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-                return Err(DeezelError::Network(format!("Error from ord server: {}", error_text)));
-            }
-            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
-        }
-        self.call(&self.sandshrew_rpc_url, "ord_output", crate::esplora::params::single(output), 1).await
+   async fn get_output(&self, output: &str) -> Result<ord::Output> {
+        let json = self.call(&self.sandshrew_rpc_url, "ord_output", crate::esplora::params::single(output), 1).await?;
+        serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
    }
 
-   async fn get_parents(&self, inscription_id: &str, page: Option<u32>) -> Result<JsonValue> {
-        #[cfg(feature = "native-deps")]
-        if let Some(ord_url) = &self.ord_url {
-            let path = if let Some(p) = page {
-                format!("/parents/{}/{}", inscription_id, p)
-            } else {
-                format!("/parents/{}", inscription_id)
-            };
-            let url = format!("{}{}", ord_url, path);
-            let response = self.http_client.get(&url).header("Accept", "application/json").send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            if !response.status().is_success() {
-                let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-                return Err(DeezelError::Network(format!("Error from ord server: {}", error_text)));
-            }
-            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
-        }
-        self.call(&self.sandshrew_rpc_url, "ord_parents", crate::esplora::params::optional_dual(inscription_id, page), 1).await
+   async fn get_parents(&self, inscription_id: &str, page: Option<u32>) -> Result<ord::ParentInscriptions> {
+        let json = self.call(&self.sandshrew_rpc_url, "ord_parents", crate::esplora::params::optional_dual(inscription_id, page), 1).await?;
+        serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
    }
 
-   async fn get_rune(&self, rune: &str) -> Result<JsonValue> {
-        #[cfg(feature = "native-deps")]
-        if let Some(ord_url) = &self.ord_url {
-            let url = format!("{}/rune/{}", ord_url, rune);
-            let response = self.http_client.get(&url).header("Accept", "application/json").send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            if !response.status().is_success() {
-                let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-                return Err(DeezelError::Network(format!("Error from ord server: {}", error_text)));
-            }
-            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
-        }
-        self.call(&self.sandshrew_rpc_url, "ord_rune", crate::esplora::params::single(rune), 1).await
+   async fn get_rune(&self, rune: &str) -> Result<ord::RuneInfo> {
+        let json = self.call(&self.sandshrew_rpc_url, "ord_rune", crate::esplora::params::single(rune), 1).await?;
+        serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
    }
 
-   async fn get_runes(&self, page: Option<u32>) -> Result<JsonValue> {
-        #[cfg(feature = "native-deps")]
-        if let Some(ord_url) = &self.ord_url {
-            let path = if let Some(p) = page {
-                format!("/runes/{}", p)
-            } else {
-                "/runes".to_string()
-            };
-            let url = format!("{}{}", ord_url, path);
-            let response = self.http_client.get(&url).header("Accept", "application/json").send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            if !response.status().is_success() {
-                let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-                return Err(DeezelError::Network(format!("Error from ord server: {}", error_text)));
-            }
-            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
-        }
-        self.call(&self.sandshrew_rpc_url, "ord_runes", crate::esplora::params::optional_single(page), 1).await
+   async fn get_runes(&self, page: Option<u32>) -> Result<ord::Runes> {
+        let json = self.call(&self.sandshrew_rpc_url, "ord_runes", crate::esplora::params::optional_single(page), 1).await?;
+        serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
    }
 
-   async fn get_sat(&self, sat: u64) -> Result<JsonValue> {
-        #[cfg(feature = "native-deps")]
-        if let Some(ord_url) = &self.ord_url {
-            let url = format!("{}/sat/{}", ord_url, sat);
-            let response = self.http_client.get(&url).header("Accept", "application/json").send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            if !response.status().is_success() {
-                let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-                return Err(DeezelError::Network(format!("Error from ord server: {}", error_text)));
-            }
-            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
-        }
-        self.call(&self.sandshrew_rpc_url, "ord_sat", crate::esplora::params::single(sat), 1).await
+   async fn get_sat(&self, sat: u64) -> Result<ord::SatResponse> {
+        let json = self.call(&self.sandshrew_rpc_url, "ord_sat", crate::esplora::params::single(sat), 1).await?;
+        serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
    }
 
-   async fn get_tx_info(&self, txid: &str) -> Result<JsonValue> {
-        #[cfg(feature = "native-deps")]
-        if let Some(ord_url) = &self.ord_url {
-            let url = format!("{}/tx/{}", ord_url, txid);
-            let response = self.http_client.get(&url).header("Accept", "application/json").send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            if !response.status().is_success() {
-                let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-                return Err(DeezelError::Network(format!("Error from ord server: {}", error_text)));
-            }
-            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
-        }
-        self.call(&self.sandshrew_rpc_url, "ord_tx", crate::esplora::params::single(txid), 1).await
+   async fn get_tx_info(&self, txid: &str) -> Result<ord::TxInfo> {
+        let json = self.call(&self.sandshrew_rpc_url, "ord_tx", crate::esplora::params::single(txid), 1).await?;
+        serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
    }
 }

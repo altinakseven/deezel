@@ -107,7 +107,6 @@ impl SystemDeezel {
             metashrew_rpc_url,
             sandshrew_rpc_url,
             args.esplora_url.clone(),
-            args.ord_url.clone(),
             args.provider.clone(),
             Some(std::path::PathBuf::from(&wallet_file)),
         ).await?;
@@ -1803,7 +1802,7 @@ impl SystemOrd for SystemDeezel {
     async fn execute_ord_command(&self, command: OrdCommands) -> deezel_common::Result<()> {
         let provider = &self.provider;
         let res: anyhow::Result<()> = match command {
-            OrdCommands::GetInscription { id, raw } => {
+            OrdCommands::Inscription { id, raw } => {
                 let inscription = provider.get_inscription(&id).await?;
                 if raw {
                     println!("{}", serde_json::to_string_pretty(&inscription)?);
@@ -1812,7 +1811,7 @@ impl SystemOrd for SystemDeezel {
                 }
                 Ok(())
             },
-            OrdCommands::GetInscriptionsInBlock { hash, raw } => {
+            OrdCommands::InscriptionsInBlock { hash, raw } => {
                 let inscriptions = provider.get_inscriptions_in_block(&hash).await?;
                 if raw {
                     println!("{}", serde_json::to_string_pretty(&inscriptions)?);
@@ -1857,17 +1856,17 @@ impl SystemOrd for SystemDeezel {
                 }
                 Ok(())
             },
-            OrdCommands::Children { inscription_id, page, raw } => {
-                let result = provider.get_children(&inscription_id, page).await?;
+            OrdCommands::Children { id, page, raw } => {
+                let result = provider.get_children(&id, page).await?;
                 if raw {
                     println!("{}", serde_json::to_string_pretty(&result)?);
                 } else {
-                    println!("Children of {}:\n{}", inscription_id, serde_json::to_string_pretty(&result)?);
+                    println!("Children of {}:\n{}", id, serde_json::to_string_pretty(&result)?);
                 }
                 Ok(())
             },
-            OrdCommands::Content { inscription_id } => {
-                let result = provider.get_content(&inscription_id).await?;
+            OrdCommands::Content { id } => {
+                let result = provider.get_content(&id).await?;
                 use std::io::{self, Write};
                 io::stdout().write_all(&result)?;
                 Ok(())
@@ -1881,21 +1880,21 @@ impl SystemOrd for SystemDeezel {
                 }
                 Ok(())
             },
-            OrdCommands::Output { output, raw } => {
-                let result = provider.get_output(&output).await?;
+            OrdCommands::Output { outpoint, raw } => {
+                let result = provider.get_output(&outpoint).await?;
                 if raw {
                     println!("{}", serde_json::to_string_pretty(&result)?);
                 } else {
-                    println!("Output {}:\n{}", output, serde_json::to_string_pretty(&result)?);
+                    println!("Output {}:\n{}", outpoint, serde_json::to_string_pretty(&result)?);
                 }
                 Ok(())
             },
-            OrdCommands::Parents { inscription_id, page, raw } => {
-                let result = provider.get_parents(&inscription_id, page).await?;
+            OrdCommands::Parents { id, page, raw } => {
+                let result = provider.get_parents(&id, page).await?;
                 if raw {
                     println!("{}", serde_json::to_string_pretty(&result)?);
                 } else {
-                    println!("Parents of {}:\n{}", inscription_id, serde_json::to_string_pretty(&result)?);
+                    println!("Parents of {}:\n{}", id, serde_json::to_string_pretty(&result)?);
                 }
                 Ok(())
             },

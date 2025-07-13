@@ -115,14 +115,8 @@ pub enum Commands {
         command: PgpCommands,
     },
     /// Interact with an ord indexer
-    Ord(OrdArgs),
-}
-
-/// Arguments for the `ord` subcommand
-#[derive(Parser, Debug, Clone)]
-pub struct OrdArgs {
     #[command(subcommand)]
-    pub command: OrdCommands,
+    Ord(OrdCommands),
 }
 
 /// Wallet subcommands
@@ -913,104 +907,102 @@ pub enum PgpCommands {
     },
 }
 
-/// Commands for interacting with an ord indexer
-#[derive(Debug, Subcommand, Clone)]
+/// Ord subcommands
+#[derive(Subcommand, Debug, Clone, Serialize, Deserialize)]
 pub enum OrdCommands {
     /// Get inscription by ID
-    GetInscription {
-        /// Inscription ID
-        #[arg(long)]
+    Inscription {
+        /// The inscription ID
         id: String,
-        /// Output in raw JSON format
+        /// Show raw JSON output
         #[arg(long)]
         raw: bool,
     },
     /// Get inscriptions for a block
-    GetInscriptionsInBlock {
-        /// Block hash
-        #[arg(long)]
+    InscriptionsInBlock {
+        /// The block hash
         hash: String,
-        /// Output in raw JSON format
+        /// Show raw JSON output
         #[arg(long)]
         raw: bool,
     },
     /// Get address information
     Address {
-        /// Address
+        /// The address
         address: String,
-        /// Output in raw JSON format
+        /// Show raw JSON output
         #[arg(long)]
         raw: bool,
     },
     /// Get block information
     Block {
-        /// Block hash or height
+        /// The block hash or height
         query: String,
-        /// Output in raw JSON format
+        /// Show raw JSON output
         #[arg(long)]
         raw: bool,
     },
     /// Get latest block count
     BlockCount {
-        /// Output in raw JSON format
+        /// Show raw JSON output
         #[arg(long)]
         raw: bool,
     },
     /// Get latest blocks
     Blocks {
-        /// Output in raw JSON format
+        /// Show raw JSON output
         #[arg(long)]
         raw: bool,
     },
     /// Get children of an inscription
     Children {
-        /// Inscription ID
-        inscription_id: String,
+        /// The inscription ID
+        id: String,
         /// Page number
         #[arg(long)]
         page: Option<u32>,
-        /// Output in raw JSON format
+        /// Show raw JSON output
         #[arg(long)]
         raw: bool,
     },
     /// Get inscription content
     Content {
-        /// Inscription ID
-        inscription_id: String,
+        /// The inscription ID
+        id: String,
     },
     /// Get all inscriptions
     Inscriptions {
         /// Page number
         #[arg(long)]
         page: Option<u32>,
-        /// Output in raw JSON format
+        /// Show raw JSON output
         #[arg(long)]
         raw: bool,
     },
     /// Get output information
     Output {
-        /// Output point (txid:vout)
-        output: String,
-        /// Output in raw JSON format
+        /// The outpoint
+        outpoint: String,
+        /// Show raw JSON output
         #[arg(long)]
         raw: bool,
     },
     /// Get parents of an inscription
     Parents {
-        /// Inscription ID
-        inscription_id: String,
+        /// The inscription ID
+        id: String,
         /// Page number
         #[arg(long)]
         page: Option<u32>,
-        /// Output in raw JSON format
+        /// Show raw JSON output
         #[arg(long)]
         raw: bool,
     },
     /// Get rune information
     Rune {
-        /// Rune name or ID
+        /// The rune name or ID
         rune: String,
-        /// Output in raw JSON format
+        /// Show raw JSON output
         #[arg(long)]
         raw: bool,
     },
@@ -1019,23 +1011,23 @@ pub enum OrdCommands {
         /// Page number
         #[arg(long)]
         page: Option<u32>,
-        /// Output in raw JSON format
+        /// Show raw JSON output
         #[arg(long)]
         raw: bool,
     },
     /// Get sat information
     Sat {
-        /// Sat number
+        /// The sat number
         sat: u64,
-        /// Output in raw JSON format
+        /// Show raw JSON output
         #[arg(long)]
         raw: bool,
     },
     /// Get transaction information
     Tx {
-        /// Transaction ID
+        /// The transaction ID
         txid: String,
-        /// Output in raw JSON format
+        /// Show raw JSON output
         #[arg(long)]
         raw: bool,
     },

@@ -108,6 +108,128 @@ pub enum BitcoindCommands {
     },
 }
 
+/// Ord subcommands
+#[derive(Subcommand, Debug, Clone, Serialize, Deserialize)]
+pub enum OrdCommands {
+    /// Get inscription by ID
+    Inscription {
+        /// The inscription ID
+        id: String,
+        /// Show raw JSON output
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Get inscriptions for a block
+    InscriptionsInBlock {
+        /// The block hash
+        hash: String,
+        /// Show raw JSON output
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Get address information
+    AddressInfo {
+        /// The address
+        address: String,
+        /// Show raw JSON output
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Get block information
+    BlockInfo {
+        /// The block hash or height
+        query: String,
+        /// Show raw JSON output
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Get latest block count
+    BlockCount,
+    /// Get latest blocks
+    Blocks {
+        /// Show raw JSON output
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Get children of an inscription
+    Children {
+        /// The inscription ID
+        id: String,
+        /// Page number
+        #[arg(long)]
+        page: Option<u32>,
+        /// Show raw JSON output
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Get inscription content
+    Content {
+        /// The inscription ID
+        id: String,
+    },
+    /// Get all inscriptions
+    Inscriptions {
+        /// Page number
+        #[arg(long)]
+        page: Option<u32>,
+        /// Show raw JSON output
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Get output information
+    Output {
+        /// The outpoint
+        outpoint: String,
+        /// Show raw JSON output
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Get parents of an inscription
+    Parents {
+        /// The inscription ID
+        id: String,
+        /// Page number
+        #[arg(long)]
+        page: Option<u32>,
+        /// Show raw JSON output
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Get rune information
+    Rune {
+        /// The rune name or ID
+        rune: String,
+        /// Show raw JSON output
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Get all runes
+    Runes {
+        /// Page number
+        #[arg(long)]
+        page: Option<u32>,
+        /// Show raw JSON output
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Get sat information
+    Sat {
+        /// The sat number
+        sat: u64,
+        /// Show raw JSON output
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Get transaction information
+    TxInfo {
+        /// The transaction ID
+        txid: String,
+        /// Show raw JSON output
+        #[arg(long)]
+        raw: bool,
+    },
+}
+
 /// Pretty-prints a JSON value as a stylized tree.
 pub fn pretty_print_json(value: &JsonValue) -> String {
     let mut output = String::new();

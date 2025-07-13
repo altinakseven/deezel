@@ -62,6 +62,7 @@ pub mod keystore;
 pub mod pgp_rpgp;
 pub mod esplora;
 pub mod bitcoind;
+pub mod ord;
 
 // Re-export key types and traits for convenience
 pub use traits::*;

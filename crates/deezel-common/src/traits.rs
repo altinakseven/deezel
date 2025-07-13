@@ -20,6 +20,12 @@ use crate::{Result, ToString, format};
 use async_trait::async_trait;
 use serde_json::Value as JsonValue;
 use bitcoin::{Network, Transaction, ScriptBuf};
+use crate::ord::{
+    AddressInfo as OrdAddressInfo, Block as OrdBlock, Blocks as OrdBlocks, Children as OrdChildren,
+    Inscription as OrdInscription, Inscriptions as OrdInscriptions, Output as OrdOutput,
+    ParentInscriptions as OrdParents, SatResponse as OrdSat, RuneInfo as OrdRuneInfo,
+    Runes as OrdRunes, TxInfo as OrdTxInfo,
+};
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::{vec::Vec, boxed::Box, string::String};
@@ -692,36 +698,36 @@ pub trait RunestoneProvider {
 #[async_trait(?Send)]
 pub trait OrdProvider {
     /// Get inscription by ID
-    async fn get_inscription(&self, inscription_id: &str) -> Result<JsonValue>;
+    async fn get_inscription(&self, inscription_id: &str) -> Result<OrdInscription>;
     
     /// Get inscriptions for a block
-    async fn get_inscriptions_in_block(&self, block_hash: &str) -> Result<JsonValue>;
+    async fn get_inscriptions_in_block(&self, block_hash: &str) -> Result<OrdInscriptions>;
     /// Get address information
-    async fn get_ord_address_info(&self, address: &str) -> Result<JsonValue>;
+    async fn get_ord_address_info(&self, address: &str) -> Result<OrdAddressInfo>;
     /// Get block information
-    async fn get_block_info(&self, query: &str) -> Result<JsonValue>;
+    async fn get_block_info(&self, query: &str) -> Result<OrdBlock>;
     /// Get latest block count
-    async fn get_ord_block_count(&self) -> Result<JsonValue>;
+    async fn get_ord_block_count(&self) -> Result<u64>;
     /// Get latest blocks
-    async fn get_ord_blocks(&self) -> Result<JsonValue>;
+    async fn get_ord_blocks(&self) -> Result<OrdBlocks>;
     /// Get children of an inscription
-    async fn get_children(&self, inscription_id: &str, page: Option<u32>) -> Result<JsonValue>;
+    async fn get_children(&self, inscription_id: &str, page: Option<u32>) -> Result<OrdChildren>;
     /// Get inscription content
     async fn get_content(&self, inscription_id: &str) -> Result<Vec<u8>>;
     /// Get all inscriptions
-    async fn get_inscriptions(&self, page: Option<u32>) -> Result<JsonValue>;
+    async fn get_inscriptions(&self, page: Option<u32>) -> Result<OrdInscriptions>;
     /// Get output information
-    async fn get_output(&self, output: &str) -> Result<JsonValue>;
+    async fn get_output(&self, output: &str) -> Result<OrdOutput>;
     /// Get parents of an inscription
-    async fn get_parents(&self, inscription_id: &str, page: Option<u32>) -> Result<JsonValue>;
+    async fn get_parents(&self, inscription_id: &str, page: Option<u32>) -> Result<OrdParents>;
     /// Get rune information
-    async fn get_rune(&self, rune: &str) -> Result<JsonValue>;
+    async fn get_rune(&self, rune: &str) -> Result<OrdRuneInfo>;
     /// Get all runes
-    async fn get_runes(&self, page: Option<u32>) -> Result<JsonValue>;
+    async fn get_runes(&self, page: Option<u32>) -> Result<OrdRunes>;
     /// Get sat information
-    async fn get_sat(&self, sat: u64) -> Result<JsonValue>;
+    async fn get_sat(&self, sat: u64) -> Result<OrdSat>;
     /// Get transaction information
-    async fn get_tx_info(&self, txid: &str) -> Result<JsonValue>;
+    async fn get_tx_info(&self, txid: &str) -> Result<OrdTxInfo>;
 }
 
 /// Trait for alkanes operations
@@ -1482,50 +1488,50 @@ impl<T: DeezelProvider + ?Sized> RunestoneProvider for Box<T> {
 
 #[async_trait(?Send)]
 impl<T: DeezelProvider + ?Sized> OrdProvider for Box<T> {
-    async fn get_inscription(&self, inscription_id: &str) -> Result<JsonValue> {
+    async fn get_inscription(&self, inscription_id: &str) -> Result<OrdInscription> {
         (**self).get_inscription(inscription_id).await
     }
 
-    async fn get_inscriptions_in_block(&self, block_hash: &str) -> Result<JsonValue> {
+    async fn get_inscriptions_in_block(&self, block_hash: &str) -> Result<OrdInscriptions> {
         (**self).get_inscriptions_in_block(block_hash).await
     }
-    async fn get_ord_address_info(&self, address: &str) -> Result<JsonValue> {
+    async fn get_ord_address_info(&self, address: &str) -> Result<OrdAddressInfo> {
         (**self).get_ord_address_info(address).await
     }
-    async fn get_block_info(&self, query: &str) -> Result<JsonValue> {
+    async fn get_block_info(&self, query: &str) -> Result<OrdBlock> {
         (**self).get_block_info(query).await
     }
-    async fn get_ord_block_count(&self) -> Result<JsonValue> {
+    async fn get_ord_block_count(&self) -> Result<u64> {
         (**self).get_ord_block_count().await
     }
-    async fn get_ord_blocks(&self) -> Result<JsonValue> {
+    async fn get_ord_blocks(&self) -> Result<OrdBlocks> {
         (**self).get_ord_blocks().await
     }
-    async fn get_children(&self, inscription_id: &str, page: Option<u32>) -> Result<JsonValue> {
+    async fn get_children(&self, inscription_id: &str, page: Option<u32>) -> Result<OrdChildren> {
         (**self).get_children(inscription_id, page).await
     }
     async fn get_content(&self, inscription_id: &str) -> Result<Vec<u8>> {
         (**self).get_content(inscription_id).await
     }
-    async fn get_inscriptions(&self, page: Option<u32>) -> Result<JsonValue> {
+    async fn get_inscriptions(&self, page: Option<u32>) -> Result<OrdInscriptions> {
         (**self).get_inscriptions(page).await
     }
-    async fn get_output(&self, output: &str) -> Result<JsonValue> {
+    async fn get_output(&self, output: &str) -> Result<OrdOutput> {
         (**self).get_output(output).await
     }
-    async fn get_parents(&self, inscription_id: &str, page: Option<u32>) -> Result<JsonValue> {
+    async fn get_parents(&self, inscription_id: &str, page: Option<u32>) -> Result<OrdParents> {
         (**self).get_parents(inscription_id, page).await
     }
-    async fn get_rune(&self, rune: &str) -> Result<JsonValue> {
+    async fn get_rune(&self, rune: &str) -> Result<OrdRuneInfo> {
         (**self).get_rune(rune).await
     }
-    async fn get_runes(&self, page: Option<u32>) -> Result<JsonValue> {
+    async fn get_runes(&self, page: Option<u32>) -> Result<OrdRunes> {
         (**self).get_runes(page).await
     }
-    async fn get_sat(&self, sat: u64) -> Result<JsonValue> {
+    async fn get_sat(&self, sat: u64) -> Result<OrdSat> {
         (**self).get_sat(sat).await
     }
-    async fn get_tx_info(&self, txid: &str) -> Result<JsonValue> {
+    async fn get_tx_info(&self, txid: &str) -> Result<OrdTxInfo> {
         (**self).get_tx_info(txid).await
     }
 }
