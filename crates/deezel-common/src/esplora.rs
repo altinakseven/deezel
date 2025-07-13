@@ -10,6 +10,9 @@
 //! - REST: `/tx/{txid}/outspend/{index}` → JSON-RPC: `esplora_tx:outspend` params: [txid, index]
 
 use serde::{Deserialize, Serialize};
+use alloc::string::String;
+use alloc::vec::Vec;
+use alloc::collections::BTreeMap as HashMap;
 
 /// Block information response
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -142,7 +145,7 @@ pub struct EsploraMempool {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EsploraFeeEstimates {
     #[serde(flatten)]
-    pub estimates: std::collections::HashMap<String, f64>,
+    pub estimates: HashMap<String, f64>,
 }
 
 /// JSON-RPC method names for Esplora endpoints

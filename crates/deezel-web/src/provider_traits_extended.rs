@@ -114,6 +114,18 @@ impl MonitorProvider for WebProvider {
         serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
     }
 }
+// OrdProvider implementation
+#[async_trait(?Send)]
+impl OrdProvider for WebProvider {
+    async fn get_inscription(&self, _inscription_id: &str) -> Result<JsonValue> {
+        Err(DeezelError::NotImplemented("Ord operations not implemented for web provider".to_string()))
+    }
+
+    async fn get_inscriptions_in_block(&self, _block_hash: &str) -> Result<JsonValue> {
+        Err(DeezelError::NotImplemented("Ord operations not implemented for web provider".to_string()))
+    }
+}
+
 // DeezelProvider implementation
 #[async_trait(?Send)]
 #[async_trait(?Send)]

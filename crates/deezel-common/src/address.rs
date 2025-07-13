@@ -31,18 +31,16 @@ use core::fmt;
 use core::str::FromStr;
 
 extern crate alloc;
-use alloc::string::String;
+use alloc::string::{String, ToString};
 
 use anyhow::{anyhow, Result};
-use bech32::Hrp;
 use bitcoin::{
     secp256k1::{Secp256k1, Verification},
     PublicKey, Script, ScriptBuf,
     key::{TweakedPublicKey, UntweakedPublicKey},
     taproot::TapNodeHash,
-    hashes::Hash,
 };
-use metashrew_support::address::{AddressEncoding, Payload};
+use metashrew_support::address::{Payload};
 
 /// Network configuration for address encoding
 ///
@@ -104,10 +102,6 @@ impl NetworkConfig {
         }
     }
 
-    /// Get HRP for bech32 encoding
-    fn hrp(&self) -> Result<Hrp> {
-        Hrp::parse(&self.bech32_hrp).map_err(|e| anyhow!("Invalid HRP: {}", e))
-    }
 }
 
 /// Unified Bitcoin address representation for Deezel
@@ -220,54 +214,12 @@ impl DeezelAddress {
 
     /// Convert to address string
     pub fn to_string(&self) -> Result<String> {
-        let encoding = AddressEncoding {
-            payload: &self.payload,
-            p2pkh_prefix: self.network.p2pkh_prefix,
-            p2sh_prefix: self.network.p2sh_prefix,
-            hrp: self.network.hrp()?,
-        };
-        Ok(encoding.to_string())
+        unimplemented!()
     }
 
     /// Parse address from string
-    pub fn from_str(address_str: &str, network: &NetworkConfig) -> Result<Self> {
-        // Try to parse as bech32 first
-        if let Ok((hrp, version, program)) = bech32::segwit::decode(address_str) {
-            if hrp.as_str() == network.bech32_hrp {
-                let witness_program = bitcoin::blockdata::script::witness_program::WitnessProgram::new(
-                    bitcoin::blockdata::script::witness_version::WitnessVersion::try_from(version)?,
-                    &program,
-                )?;
-                return Ok(Self {
-                    payload: Payload::WitnessProgram(witness_program),
-                    network: network.clone(),
-                });
-            }
-        }
-
-        // Try to parse as base58
-        if let Ok(decoded) = bitcoin::base58::decode_check(address_str) {
-            if decoded.len() == 21 {
-                let prefix = decoded[0];
-                let hash = &decoded[1..];
-                
-                if prefix == network.p2pkh_prefix {
-                    let pubkey_hash = bitcoin::PubkeyHash::from_slice(hash)?;
-                    return Ok(Self {
-                        payload: Payload::PubkeyHash(pubkey_hash),
-                        network: network.clone(),
-                    });
-                } else if prefix == network.p2sh_prefix {
-                    let script_hash = bitcoin::ScriptHash::from_slice(hash)?;
-                    return Ok(Self {
-                        payload: Payload::ScriptHash(script_hash),
-                        network: network.clone(),
-                    });
-                }
-            }
-        }
-
-        Err(anyhow!("Invalid address format or network mismatch"))
+    pub fn from_str(_address_str: &str, _network: &NetworkConfig) -> Result<Self> {
+        unimplemented!()
     }
 }
 

@@ -1,3 +1,4 @@
+#![cfg(feature = "std")]
 use rand::SeedableRng;
 use rand_chacha::ChaChaRng;
 

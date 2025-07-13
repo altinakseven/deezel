@@ -1,4 +1,4 @@
-#![no_std]
+#![cfg_attr(not(feature = "std"), no_std)]
 #![doc = include_str!("../README.md")]
 #![cfg_attr(not(test), deny(clippy::unwrap_used))]
 #![allow(clippy::missing_const_for_fn, clippy::type_complexity)]
@@ -13,7 +13,7 @@ extern crate alloc;
 /// [signing and verifying with external hashing]: crate::composed::signed_key
 /// [packet based signing and verifying]: crate::packet
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 #[macro_use]
 extern crate pretty_assertions;
 

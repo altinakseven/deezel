@@ -1,3 +1,4 @@
+#![cfg(feature = "std")]
 use deezel_rpgp::composed::{Any, Deserializable, SignedPublicKey};
 
 #[test]

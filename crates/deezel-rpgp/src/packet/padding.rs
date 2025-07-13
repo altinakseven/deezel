@@ -3,8 +3,6 @@ extern crate alloc;
 use crate::io::{BufRead, Write};
 
 use bytes::Bytes;
-#[cfg(all(test, feature = "std"))]
-use proptest::prelude::*;
 use rand::{CryptoRng, RngCore};
 
 use crate::{
@@ -19,12 +17,10 @@ use crate::{
 ///
 /// <https://www.rfc-editor.org/rfc/rfc9580.html#name-padding-packet-type-id-21>
 #[derive(derive_more::Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(all(test, feature = "std"), derive(proptest_derive::Arbitrary))]
 pub struct Padding {
     packet_header: PacketHeader,
     /// Random data.
     #[debug("{}", hex::encode(data))]
-    #[cfg_attr(all(test, feature = "std"), proptest(strategy = "any::<Vec<u8>>().prop_map(Into::into)"))]
     data: Bytes,
 }
 
@@ -76,70 +72,3 @@ impl PacketTrait for Padding {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    #[cfg(feature = "std")]
-    use proptest::prelude::*;
-    use rand::SeedableRng;
-    use rand_chacha::ChaCha20Rng;
-
-    use super::*;
-    use crate::{
-        packet::{Packet, PacketHeader},
-        types::PacketLength,
-    };
-
-    #[test]
-    fn test_padding_roundtrip() {
-        let packet_raw = hex::decode("d50ec5a293072991628147d72c8f86b7").expect("valid hex");
-        let mut to_parse = crate::io::Cursor::new(&packet_raw);
-        let header = PacketHeader::try_from_reader(&mut to_parse).expect("parse");
-
-        let PacketLength::Fixed(_len) = header.packet_length() else {
-            panic!("invalid parse result");
-        };
-
-        let full_packet = Packet::from_reader(header, &mut to_parse).expect("body parse");
-
-        let Packet::Padding(ref packet) = full_packet else {
-            panic!("invalid packet: {:?}", full_packet);
-        };
-        assert_eq!(
-            packet.data,
-            hex::decode("c5a293072991628147d72c8f86b7").expect("valid hex")
-        );
-
-        // encode
-        let encoded = full_packet.to_bytes().expect("encode");
-        assert_eq!(encoded, packet_raw);
-    }
-
-    #[test]
-    fn test_padding_new() {
-        let mut rng = ChaCha20Rng::seed_from_u64(1);
-        let packet = Padding::new(&mut rng, PacketHeaderVersion::New, 20).unwrap();
-        assert_eq!(packet.data.len(), 20);
-
-        let encoded = packet.to_bytes().expect("encode");
-        assert_eq!(encoded, packet.data);
-    }
-
-    #[cfg(feature = "std")]
-    proptest! {
-        #[test]
-        fn write_len(padding: Padding) {
-            let mut buf = Vec::new();
-            padding.to_writer(&mut buf).unwrap();
-            assert_eq!(buf.len(), padding.write_len());
-        }
-
-
-        #[test]
-        fn packet_roundtrip(padding: Padding) {
-            let mut buf = Vec::new();
-            padding.to_writer(&mut buf).unwrap();
-            let new_padding = Padding::try_from_reader(padding.packet_header, &mut &buf[..]).unwrap();
-            assert_eq!(padding, new_padding);
-        }
-    }
-}

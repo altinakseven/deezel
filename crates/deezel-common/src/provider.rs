@@ -4,10 +4,17 @@
 //! using deezel-rpgp for PGP operations and other concrete implementations.
 
 use crate::traits::*;
-use crate::{Result, DeezelError, JsonValue, VERSION};
+use crate::{Result, DeezelError, JsonValue};
 use async_trait::async_trait;
+use alloc::format;
+use alloc::string::{String, ToString};
+use alloc::vec;
+use alloc::vec::Vec;
+use alloc::boxed::Box;
+use alloc::sync::Arc;
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::PathBuf;
-use std::str::FromStr;
+use core::str::FromStr;
 use crate::keystore::Keystore;
 
 // Import deezel-rpgp types for PGP functionality
@@ -41,7 +48,6 @@ use ordinals::{Runestone, Artifact};
 
 #[cfg(feature = "native-deps")]
 use std::fs;
-use std::sync::Arc;
 
 /// Represents the state of the wallet within the provider
 #[derive(Clone)]
@@ -63,8 +69,12 @@ pub struct ConcreteProvider {
     metashrew_rpc_url: String,
     sandshrew_rpc_url: String,
     esplora_url: Option<String>,
+    ord_url: Option<String>,
     provider: String,
+    #[cfg(not(target_arch = "wasm32"))]
     wallet_path: Option<PathBuf>,
+    #[cfg(target_arch = "wasm32")]
+    wallet_path: Option<String>,
     passphrase: Option<String>,
     wallet_state: WalletState,
     #[cfg(feature = "native-deps")]
@@ -77,14 +87,19 @@ impl ConcreteProvider {
         metashrew_rpc_url: String,
         sandshrew_rpc_url: String,
         esplora_url: Option<String>,
+        ord_url: Option<String>,
         provider: String,
+        #[cfg(not(target_arch = "wasm32"))]
         wallet_path: Option<PathBuf>,
+        #[cfg(target_arch = "wasm32")]
+        wallet_path: Option<String>,
     ) -> Result<Self> {
        let mut new_self = Self {
            bitcoin_rpc_url,
            metashrew_rpc_url,
            sandshrew_rpc_url,
            esplora_url,
+           ord_url,
            provider,
            wallet_path: wallet_path.clone(),
            passphrase: None,
@@ -94,9 +109,10 @@ impl ConcreteProvider {
        };
 
        // Try to load the keystore metadata if a path is provided
-       if let Some(path) = wallet_path {
+       #[cfg(not(target_arch = "wasm32"))]
+       if let Some(path) = &wallet_path {
            if path.exists() {
-               match Keystore::from_file(&path) {
+               match Keystore::from_file(path) {
                    Ok(keystore) => new_self.wallet_state = WalletState::Locked(keystore),
                    Err(e) => log::warn!("Failed to load keystore metadata: {}", e),
                }
@@ -122,7 +138,12 @@ impl ConcreteProvider {
    }
 
     /// Get the wallet path
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn get_wallet_path(&self) -> Option<&PathBuf> {
+        self.wallet_path.as_ref()
+    }
+    #[cfg(target_arch = "wasm32")]
+    pub fn get_wallet_path(&self) -> Option<&String> {
         self.wallet_path.as_ref()
     }
 
@@ -550,15 +571,15 @@ impl TimeProvider for ConcreteProvider {
     }
     
     #[cfg(feature = "native-deps")]
-    fn sleep_ms(&self, _ms: u64) -> std::pin::Pin<Box<dyn core::future::Future<Output = ()> + Send>> {
-        Box::pin(tokio::time::sleep(std::time::Duration::from_millis(_ms)))
+    fn sleep_ms(&self, _ms: u64) -> core::pin::Pin<Box<dyn core::future::Future<Output = ()>>> {
+        Box::pin(tokio::time::sleep(core::time::Duration::from_millis(_ms)))
     }
 
     #[cfg(not(feature = "native-deps"))]
-    fn sleep_ms(&self, _ms: u64) -> std::pin::Pin<Box<dyn core::future::Future<Output = ()>>> {
+    fn sleep_ms(&self, _ms: u64) -> core::pin::Pin<Box<dyn core::future::Future<Output = ()>>> {
         #[cfg(target_arch = "wasm32")]
         {
-            Box::pin(gloo_timers::future::sleep(std::time::Duration::from_millis(_ms)))
+            Box::pin(gloo_timers::future::sleep(core::time::Duration::from_millis(_ms)))
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
@@ -1687,6 +1708,9 @@ mod esplora_provider_tests {
         let provider = ConcreteProvider::new(
             server.uri(),
             server.uri(),
+            server.uri(),
+            Some(server.uri()),
+            Some(server.uri()),
             "regtest".to_string(),
             None,
         ).await.unwrap();
@@ -2549,5 +2573,40 @@ mod esplora_provider_tests {
         // Assert
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), mock_txid);
+    }
+}
+
+#[async_trait(?Send)]
+impl OrdProvider for ConcreteProvider {
+    async fn get_inscription(&self, inscription_id: &str) -> Result<JsonValue> {
+        #[cfg(feature = "native-deps")]
+        if let Some(ord_url) = &self.ord_url {
+            let url = format!("{}/inscription/{}", ord_url, inscription_id);
+            let response = self.http_client
+                .get(&url)
+                .header("Accept", "application/json")
+                .send()
+                .await
+                .map_err(|e| DeezelError::Network(e.to_string()))?;
+            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
+        }
+        
+        self.call(&self.sandshrew_rpc_url, "ord_getInscription", crate::esplora::params::single(inscription_id), 1).await
+    }
+
+    async fn get_inscriptions_in_block(&self, block_hash: &str) -> Result<JsonValue> {
+        #[cfg(feature = "native-deps")]
+        if let Some(ord_url) = &self.ord_url {
+            let url = format!("{}/inscriptions/block/{}", ord_url, block_hash);
+            let response = self.http_client
+                .get(&url)
+                .header("Accept", "application/json")
+                .send()
+                .await
+                .map_err(|e| DeezelError::Network(e.to_string()))?;
+            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
+        }
+        
+        self.call(&self.sandshrew_rpc_url, "ord_getInscriptionsInBlock", crate::esplora::params::single(block_hash), 1).await
     }
 }

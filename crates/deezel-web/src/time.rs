@@ -46,9 +46,9 @@ use js_sys::{Date, Promise};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{window, Performance};
-use std::future::Future;
-use std::pin::Pin;
-use std::task::{Context, Poll};
+use core::future::Future;
+use core::pin::Pin;
+use core::task::{Context, Poll};
 #[cfg(target_arch = "wasm32")]
 use alloc::string::ToString;
 use alloc::boxed::Box;
@@ -93,7 +93,7 @@ impl deezel_common::TimeProvider for WebTime {
         self.get_date_now() as u64
     }
 
-    fn sleep_ms(&self, ms: u64) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn sleep_ms(&self, ms: u64) -> Pin<Box<dyn Future<Output = ()>>> {
         #[cfg(not(target_arch = "wasm32"))]
         {
             Box::pin(async move {

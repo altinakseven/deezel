@@ -171,7 +171,7 @@ pub trait TimeProvider {
     fn now_millis(&self) -> u64;
     
     /// Sleep for the specified duration (in milliseconds)
-    fn sleep_ms(&self, ms: u64) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>;
+    fn sleep_ms(&self, ms: u64) -> core::pin::Pin<Box<dyn core::future::Future<Output = ()>>>;
 }
 
 /// Trait for logging operations
@@ -557,72 +557,6 @@ pub trait BitcoinRpcProvider {
 }
 
 /// Trait for bitcoind RPC operations using bitcoincore_rpc_json types
-#[async_trait(?Send)]
-pub trait BitcoindProvider {
-    /// Get information about the blockchain state.
-    async fn get_blockchain_info(&self) -> Result<bitcoincore_rpc_json::GetBlockchainInfoResult>;
-
-    /// Get information about the network.
-    async fn get_network_info(&self) -> Result<bitcoincore_rpc_json::GetNetworkInfoResult>;
-
-    /// Get a raw transaction from the mempool or a block.
-    async fn get_raw_transaction(
-        &self,
-        txid: &bitcoin::Txid,
-        block_hash: Option<&bitcoin::BlockHash>,
-    ) -> Result<bitcoin::Transaction>;
-
-    /// Get a verbose raw transaction from the mempool or a block.
-    async fn get_raw_transaction_info(
-        &self,
-        txid: &bitcoin::Txid,
-        block_hash: Option<&bitcoin::BlockHash>,
-    ) -> Result<bitcoincore_rpc_json::GetRawTransactionResult>;
-
-    /// Get a block from the blockchain.
-    async fn get_block(&self, hash: &bitcoin::BlockHash) -> Result<bitcoin::Block>;
-
-    /// Get a verbose block from the blockchain.
-    async fn get_block_info(&self, hash: &bitcoin::BlockHash) -> Result<bitcoincore_rpc_json::GetBlockResult>;
-
-    /// Get the hash of the block at a given height.
-    async fn get_block_hash(&self, height: u64) -> Result<bitcoin::BlockHash>;
-
-    /// Get a block header from the blockchain.
-    async fn get_block_header(&self, hash: &bitcoin::BlockHash) -> Result<bitcoin::block::Header>;
-
-    /// Get a verbose block header from the blockchain.
-    async fn get_block_header_info(&self, hash: &bitcoin::BlockHash) -> Result<bitcoincore_rpc_json::GetBlockHeaderResult>;
-
-    /// Get statistics about a block.
-    async fn get_block_stats(&self, hash: &bitcoin::BlockHash) -> Result<bitcoincore_rpc_json::GetBlockStatsResult>;
-
-    /// Get the tips of all chains.
-    async fn get_chain_tips(&self) -> Result<bitcoincore_rpc_json::GetChainTipsResult>;
-
-    /// Get information about the mempool.
-    async fn get_mempool_info(&self) -> Result<bitcoincore_rpc_json::GetMempoolInfoResult>;
-
-    /// Get the raw mempool.
-    async fn get_raw_mempool(&self) -> Result<Vec<bitcoin::Txid>>;
-
-    /// Get a transaction output.
-    async fn get_tx_out(
-        &self,
-        txid: &bitcoin::Txid,
-        vout: u32,
-        include_mempool: bool,
-    ) -> Result<Option<bitcoincore_rpc_json::GetTxOutResult>>;
-
-    /// Send a raw transaction.
-    async fn send_raw_transaction(&self, tx: &bitcoin::Transaction) -> Result<bitcoin::Txid>;
-
-    /// Get the number of blocks in the longest blockchain.
-    async fn get_block_count(&self) -> Result<u64>;
-
-    /// Generate blocks to a specified address.
-    async fn generate_to_address(&self, nblocks: u32, address: &str) -> Result<serde_json::Value>;
-}
 
 /// Trait for Metashrew/Sandshrew RPC operations
 #[async_trait(?Send)]
@@ -752,6 +686,16 @@ pub trait RunestoneProvider {
     
     /// Analyze runestone from transaction ID
     async fn analyze_runestone(&self, txid: &str) -> Result<JsonValue>;
+}
+
+/// Trait for ord operations
+#[async_trait(?Send)]
+pub trait OrdProvider {
+    /// Get inscription by ID
+    async fn get_inscription(&self, inscription_id: &str) -> Result<JsonValue>;
+    
+    /// Get inscriptions for a block
+    async fn get_inscriptions_in_block(&self, block_hash: &str) -> Result<JsonValue>;
 }
 
 /// Trait for alkanes operations
@@ -1087,13 +1031,13 @@ pub trait DeezelProvider:
     WalletProvider +
     AddressResolver +
     BitcoinRpcProvider +
-    BitcoindProvider +
     MetashrewRpcProvider +
     EsploraProvider +
     RunestoneProvider +
     AlkanesProvider +
     MonitorProvider +
-    KeystoreProvider
+    KeystoreProvider +
+    OrdProvider
 {
     /// Get provider name/type
     fn provider_name(&self) -> &str;
@@ -1231,7 +1175,7 @@ impl<T: DeezelProvider + ?Sized> TimeProvider for Box<T> {
    fn now_millis(&self) -> u64 {
        (**self).now_millis()
    }
-   fn sleep_ms(&self, ms: u64) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
+   fn sleep_ms(&self, ms: u64) -> core::pin::Pin<Box<dyn core::future::Future<Output = ()>>> {
        (**self).sleep_ms(ms)
    }
 }
@@ -1343,10 +1287,10 @@ impl<T: DeezelProvider + ?Sized> AddressResolver for Box<T> {
 #[async_trait(?Send)]
 impl<T: DeezelProvider + ?Sized> BitcoinRpcProvider for Box<T> {
    async fn get_block_count(&self) -> Result<u64> {
-       <T as BitcoindProvider>::get_block_count(self).await
+       (**self).get_block_count().await
    }
    async fn generate_to_address(&self, nblocks: u32, address: &str) -> Result<serde_json::Value> {
-       <T as BitcoindProvider>::generate_to_address(self, nblocks, address).await
+       (**self).generate_to_address(nblocks, address).await
    }
    async fn get_new_address(&self) -> Result<JsonValue> {
        (**self).get_new_address().await
@@ -1511,6 +1455,17 @@ impl<T: DeezelProvider + ?Sized> RunestoneProvider for Box<T> {
 }
 
 #[async_trait(?Send)]
+impl<T: DeezelProvider + ?Sized> OrdProvider for Box<T> {
+    async fn get_inscription(&self, inscription_id: &str) -> Result<JsonValue> {
+        (**self).get_inscription(inscription_id).await
+    }
+
+    async fn get_inscriptions_in_block(&self, block_hash: &str) -> Result<JsonValue> {
+        (**self).get_inscriptions_in_block(block_hash).await
+    }
+}
+
+#[async_trait(?Send)]
 impl<T: DeezelProvider + ?Sized> AlkanesProvider for Box<T> {
    async fn execute(&self, params: AlkanesExecuteParams) -> Result<AlkanesExecuteResult> {
        (**self).execute(params).await
@@ -1581,6 +1536,7 @@ impl<T: DeezelProvider + ?Sized> DeezelProvider for Box<T> {
 }
 
 /// Trait for system-level wallet operations, corresponding to CLI commands
+#[cfg(not(target_arch = "wasm32"))]
 #[async_trait(?Send)]
 pub trait SystemWallet {
    /// Execute a wallet command
@@ -1590,6 +1546,7 @@ pub trait SystemWallet {
 }
 
 /// Trait for system-level Bitcoin Core RPC operations
+#[cfg(not(target_arch = "wasm32"))]
 #[async_trait(?Send)]
 pub trait SystemBitcoind {
    /// Execute a bitcoind command
@@ -1597,6 +1554,7 @@ pub trait SystemBitcoind {
 }
 
 /// Trait for system-level Metashrew RPC operations
+#[cfg(not(target_arch = "wasm32"))]
 #[async_trait(?Send)]
 pub trait SystemMetashrew {
    /// Execute a metashrew command
@@ -1604,6 +1562,7 @@ pub trait SystemMetashrew {
 }
 
 /// Trait for system-level Alkanes operations
+#[cfg(not(target_arch = "wasm32"))]
 #[async_trait(?Send)]
 pub trait SystemAlkanes {
    /// Execute an alkanes command
@@ -1611,6 +1570,7 @@ pub trait SystemAlkanes {
 }
 
 /// Trait for system-level Runestone operations
+#[cfg(not(target_arch = "wasm32"))]
 #[async_trait(?Send)]
 pub trait SystemRunestone {
    /// Execute a runestone command
@@ -1618,6 +1578,7 @@ pub trait SystemRunestone {
 }
 
 /// Trait for system-level Protorunes operations
+#[cfg(not(target_arch = "wasm32"))]
 #[async_trait(?Send)]
 pub trait SystemProtorunes {
    /// Execute a protorunes command
@@ -1625,6 +1586,7 @@ pub trait SystemProtorunes {
 }
 
 /// Trait for system-level monitoring operations
+#[cfg(not(target_arch = "wasm32"))]
 #[async_trait(?Send)]
 pub trait SystemMonitor {
    /// Execute a monitor command
@@ -1632,6 +1594,7 @@ pub trait SystemMonitor {
 }
 
 /// Trait for system-level Esplora operations
+#[cfg(not(target_arch = "wasm32"))]
 #[async_trait(?Send)]
 pub trait SystemEsplora {
    /// Execute an esplora command
@@ -1639,6 +1602,7 @@ pub trait SystemEsplora {
 }
 
 /// Trait for system-level PGP operations
+#[cfg(not(target_arch = "wasm32"))]
 #[async_trait(?Send)]
 pub trait SystemPgp {
    /// Execute a PGP command
@@ -1646,6 +1610,7 @@ pub trait SystemPgp {
 }
 
 /// Combined system trait that includes all system-level functionality
+#[cfg(not(target_arch = "wasm32"))]
 #[async_trait(?Send)]
 pub trait System:
    SystemWallet +

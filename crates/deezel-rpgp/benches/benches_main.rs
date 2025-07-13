@@ -1,3 +1,4 @@
+#![cfg(feature = "std")]
 use criterion::criterion_main;
 
 mod benchmarks;

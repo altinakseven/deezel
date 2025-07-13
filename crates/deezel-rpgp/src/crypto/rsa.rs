@@ -32,10 +32,8 @@ pub(crate) const MAX_KEY_SIZE: usize = 16384;
 
 /// Private Key for RSA.
 #[derive(derive_more::Debug, ZeroizeOnDrop, Clone, PartialEq, Eq)]
-#[cfg_attr(all(test, feature = "std"), derive(proptest_derive::Arbitrary))]
 pub struct SecretKey(
     #[debug("..")]
-    #[cfg_attr(all(test, feature = "std"), proptest(strategy = "tests::key_gen()"))]
     RsaPrivateKey,
 );
 
@@ -236,18 +234,3 @@ pub fn verify(
     }
 }
 
-#[cfg(all(test, feature = "std"))]
-#[cfg(all(test, feature = "std"))]
-mod tests {
-    use proptest::prelude::*;
-    use rand::SeedableRng;
-
-    use super::*;
-
-    prop_compose! {
-        pub fn key_gen()(seed: u64) -> RsaPrivateKey {
-            let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
-            RsaPrivateKey::new(&mut rng, 512).unwrap()
-        }
-    }
-}

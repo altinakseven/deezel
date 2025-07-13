@@ -787,7 +787,7 @@ impl TimeProvider for BrowserWalletProvider {
         self.web_provider.now_millis()
     }
     
-    fn sleep_ms(&self, ms: u64) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
+    fn sleep_ms(&self, ms: u64) -> core::pin::Pin<Box<dyn core::future::Future<Output = ()>>> {
         self.web_provider.sleep_ms(ms)
     }
 }
@@ -1152,11 +1152,11 @@ impl AddressResolver for BrowserWalletProvider {
 #[async_trait(?Send)]
 impl BitcoinRpcProvider for BrowserWalletProvider {
     async fn get_block_count(&self) -> Result<u64> {
-        <WebProvider as BitcoindProvider>::get_block_count(&self.web_provider).await
+        <WebProvider as BitcoinRpcProvider>::get_block_count(&self.web_provider).await
     }
     
     async fn generate_to_address(&self, nblocks: u32, address: &str) -> Result<JsonValue> {
-        <WebProvider as BitcoindProvider>::generate_to_address(&self.web_provider, nblocks, address).await
+        <WebProvider as BitcoinRpcProvider>::generate_to_address(&self.web_provider, nblocks, address).await
     }
     
     async fn get_new_address(&self) -> Result<JsonValue> {
@@ -1362,6 +1362,17 @@ impl RunestoneProvider for BrowserWalletProvider {
     
     async fn analyze_runestone(&self, txid: &str) -> Result<JsonValue> {
         self.web_provider.analyze_runestone(txid).await
+    }
+}
+
+#[async_trait(?Send)]
+impl OrdProvider for BrowserWalletProvider {
+    async fn get_inscription(&self, inscription_id: &str) -> Result<JsonValue> {
+        self.web_provider.get_inscription(inscription_id).await
+    }
+
+    async fn get_inscriptions_in_block(&self, block_hash: &str) -> Result<JsonValue> {
+        self.web_provider.get_inscriptions_in_block(block_hash).await
     }
 }
 

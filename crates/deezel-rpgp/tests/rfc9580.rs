@@ -1,3 +1,4 @@
+#![cfg(feature = "std")]
 use deezel_rpgp::io::Read;
 use deezel_rpgp::{
     composed::{

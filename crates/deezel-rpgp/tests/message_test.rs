@@ -1,3 +1,4 @@
+#![cfg(feature = "std")]
 extern crate rand;
 #[macro_use]
 extern crate pretty_assertions;

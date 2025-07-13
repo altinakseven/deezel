@@ -5,6 +5,9 @@
 
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
+use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
 
 /// Main CLI arguments
 #[derive(Parser, Debug, Clone)]
@@ -27,6 +30,10 @@ pub struct Args {
     /// Esplora API URL (overrides Sandshrew for Esplora calls, enables REST)
     #[arg(long)]
     pub esplora_url: Option<String>,
+
+    /// Ord API URL (overrides Sandshrew for ord calls, enables REST)
+    #[arg(long)]
+    pub ord_url: Option<String>,
 
     /// Network provider
     #[arg(short = 'p', long, default_value = "regtest")]
@@ -106,6 +113,11 @@ pub enum Commands {
     Pgp {
         #[command(subcommand)]
         command: PgpCommands,
+    },
+    /// Interact with an ord indexer
+    Ord {
+        #[command(subcommand)]
+        command: OrdCommands,
     },
 }
 
@@ -894,5 +906,28 @@ pub enum PgpCommands {
         /// New passphrase
         #[arg(long)]
         new_passphrase: Option<String>,
+    },
+}
+
+/// Commands for interacting with an ord indexer
+#[derive(Debug, Subcommand, Clone)]
+pub enum OrdCommands {
+    /// Get inscription by ID
+    GetInscription {
+        /// Inscription ID
+        #[arg(long)]
+        id: String,
+        /// Output in raw JSON format
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Get inscriptions for a block
+    GetInscriptionsInBlock {
+        /// Block hash
+        #[arg(long)]
+        hash: String,
+        /// Output in raw JSON format
+        #[arg(long)]
+        raw: bool,
     },
 }

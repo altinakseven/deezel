@@ -16,11 +16,15 @@ use deezel_rpgp::{
     ser::Serialize,
     types::{KeyDetails, PublicKeyTrait},
 };
-use rand::thread_rng;
+#[cfg(not(target_arch = "wasm32"))]
 use crate::{
     traits::{PgpProvider, PgpKeyPair, PgpKey, PgpDecryptResult, PgpKeyInfo, PgpAlgorithm},
     Result, DeezelError,
 };
+use crate::{format, ToString, vec};
+use alloc::boxed::Box;
+use alloc::string::String;
+use alloc::vec::Vec;
 
 pub struct RpgpPgpProvider;
 
@@ -44,16 +48,16 @@ impl PgpProvider for RpgpPgpProvider {
         let secret_key = key_params
             .build()
             .map_err(|e| DeezelError::Pgp(e.to_string()))?
-            .generate(&mut thread_rng())
+            .generate(&mut rand::thread_rng())
             .map_err(|e| DeezelError::Pgp(e.to_string()))?;
 
         let signed_secret_key = if let Some(pass) = passphrase {
             secret_key
-                .sign(&mut thread_rng(), &pass.into())
+                .sign(&mut rand::thread_rng(), &pass.into())
                 .map_err(|e| DeezelError::Pgp(e.to_string()))?
         } else {
             secret_key
-                .sign(&mut thread_rng(), &Default::default())
+                .sign(&mut rand::thread_rng(), &Default::default())
                 .map_err(|e| DeezelError::Pgp(e.to_string()))?
         };
 
@@ -175,7 +179,7 @@ impl PgpProvider for RpgpPgpProvider {
                 )
                 .map(|(key, _headers)| key)
             })
-            .collect::<std::result::Result<Vec<SignedPublicKey>, _>>()
+            .collect::<core::result::Result<Vec<SignedPublicKey>, _>>()
             .map_err(|e| DeezelError::Pgp(e.to_string()))?;
         
         let mut builder = MessageBuilder::from_bytes("data", data.to_vec());
@@ -183,21 +187,35 @@ impl PgpProvider for RpgpPgpProvider {
         // Set a proper partial chunk size (must be power of 2 and >= 512)
         builder.partial_chunk_size(1024).map_err(|e| DeezelError::Pgp(e.to_string()))?;
         
-        let mut builder = builder.seipd_v1(&mut thread_rng(), SymmetricKeyAlgorithm::AES128);
+        #[cfg(not(target_arch = "wasm32"))]
+        let mut builder = builder.seipd_v1(&mut rand::thread_rng(), SymmetricKeyAlgorithm::AES128);
+        #[cfg(target_arch = "wasm32")]
+        let mut builder = builder.seipd_v1(&mut rand::rngs::OsRng, SymmetricKeyAlgorithm::AES128);
 
         for key in &recipient_pub_keys {
             builder.encrypt_to_key(
-                &mut thread_rng(),
+                #[cfg(not(target_arch = "wasm32"))]
+                &mut rand::thread_rng(),
+                #[cfg(target_arch = "wasm32")]
+                &mut rand::rngs::OsRng,
                 key
             ).map_err(|e| DeezelError::Pgp(e.to_string()))?;
         }
 
         if armor {
-            let armored = builder.to_armored_string(&mut thread_rng(), ArmorOptions::default())
+            #[cfg(not(target_arch = "wasm32"))]
+            let armored = builder.to_armored_string(&mut rand::thread_rng(), ArmorOptions::default())
+                .map_err(|e| DeezelError::Pgp(e.to_string()))?;
+            #[cfg(target_arch = "wasm32")]
+            let armored = builder.to_armored_string(&mut rand::rngs::OsRng, ArmorOptions::default())
                 .map_err(|e| DeezelError::Pgp(e.to_string()))?;
             Ok(armored.as_bytes().to_vec())
         } else {
-            let encrypted = builder.to_vec(&mut thread_rng())
+            #[cfg(not(target_arch = "wasm32"))]
+            let encrypted = builder.to_vec(&mut rand::thread_rng())
+                .map_err(|e| DeezelError::Pgp(e.to_string()))?;
+            #[cfg(target_arch = "wasm32")]
+            let encrypted = builder.to_vec(&mut rand::rngs::OsRng)
                 .map_err(|e| DeezelError::Pgp(e.to_string()))?;
             Ok(encrypted)
         }
@@ -257,8 +275,16 @@ impl PgpProvider for RpgpPgpProvider {
         let password = passphrase.map(|p| p.into()).unwrap_or_default();
         
         // Create a detached signature using SignatureConfig
+        #[cfg(not(target_arch = "wasm32"))]
         let config = SignatureConfig::from_key(
             &mut rand::thread_rng(),
+            &secret_key.primary_key,
+            SignatureType::Binary,
+        )
+        .map_err(|e| DeezelError::Pgp(e.to_string()))?;
+        #[cfg(target_arch = "wasm32")]
+        let config = SignatureConfig::from_key(
+            &mut rand::rngs::OsRng,
             &secret_key.primary_key,
             SignatureType::Binary,
         )
@@ -315,7 +341,7 @@ impl PgpProvider for RpgpPgpProvider {
                 )
                 .map(|(key, _headers)| key)
             })
-            .collect::<std::result::Result<Vec<SignedPublicKey>, _>>()
+            .collect::<core::result::Result<Vec<SignedPublicKey>, _>>()
             .map_err(|e| DeezelError::Pgp(e.to_string()))?;
 
         // Follow the correct order from reference implementation:
@@ -323,8 +349,12 @@ impl PgpProvider for RpgpPgpProvider {
         // 2. Set up encryption with seipd_v1
         // 3. Add signing
         // 4. Add encryption recipients
+        #[cfg(not(target_arch = "wasm32"))]
         let mut builder = MessageBuilder::from_bytes("data", data.to_vec())
             .seipd_v1(&mut rand::thread_rng(), SymmetricKeyAlgorithm::AES128);
+        #[cfg(target_arch = "wasm32")]
+        let mut builder = MessageBuilder::from_bytes("data", data.to_vec())
+            .seipd_v1(&mut rand::rngs::OsRng, SymmetricKeyAlgorithm::AES128);
         
         builder.sign(
             &secret_key.primary_key,
@@ -334,17 +364,28 @@ impl PgpProvider for RpgpPgpProvider {
 
         for key in &recipient_pub_keys {
             builder.encrypt_to_key(
+                #[cfg(not(target_arch = "wasm32"))]
                 &mut rand::thread_rng(),
+                #[cfg(target_arch = "wasm32")]
+                &mut rand::rngs::OsRng,
                 key
             ).map_err(|e| DeezelError::Pgp(e.to_string()))?;
         }
 
         if armor {
+            #[cfg(not(target_arch = "wasm32"))]
             let armored = builder.to_armored_string(&mut rand::thread_rng(), ArmorOptions::default())
+                .map_err(|e| DeezelError::Pgp(e.to_string()))?;
+            #[cfg(target_arch = "wasm32")]
+            let armored = builder.to_armored_string(&mut rand::rngs::OsRng, ArmorOptions::default())
                 .map_err(|e| DeezelError::Pgp(e.to_string()))?;
             Ok(armored.as_bytes().to_vec())
         } else {
+            #[cfg(not(target_arch = "wasm32"))]
             let encrypted = builder.to_vec(&mut rand::thread_rng())
+                .map_err(|e| DeezelError::Pgp(e.to_string()))?;
+            #[cfg(target_arch = "wasm32")]
+            let encrypted = builder.to_vec(&mut rand::rngs::OsRng)
                 .map_err(|e| DeezelError::Pgp(e.to_string()))?;
             Ok(encrypted)
         }
@@ -401,18 +442,18 @@ impl PgpProvider for RpgpPgpProvider {
             let mut buffer = Vec::new();
             match decrypted_message.read_to_end(&mut buffer) {
                 Ok(_) => {
-                    println!("SUCCESS: decrypt_and_verify working with read_to_end workaround!");
+                    //println!("SUCCESS: decrypt_and_verify working with read_to_end workaround!");
                     buffer
                 },
                 Err(e) => {
                     // Try the as_data_vec approach as fallback
                     match decrypted_message.as_data_vec() {
                         Ok(data) => {
-                            println!("SUCCESS: decrypt_and_verify working with as_data_vec fallback!");
+                            //println!("SUCCESS: decrypt_and_verify working with as_data_vec fallback!");
                             data
                         },
                         Err(e2) => {
-                            println!("STILL FAILING: Both read_to_end and as_data_vec failed. read_to_end error: {}, as_data_vec error: {}", e, e2);
+                            //println!("STILL FAILING: Both read_to_end and as_data_vec failed. read_to_end error: {}, as_data_vec error: {}", e, e2);
                             return Err(DeezelError::Pgp(
                                 format!("Cannot extract data from signed message. read_to_end error: {}, as_data_vec error: {}. \
                                  This may be due to the deezel-rpgp SignatureBodyReader bug where \
@@ -433,11 +474,11 @@ impl PgpProvider for RpgpPgpProvider {
         // 6. Try to verify the signature
         let signature_valid = match decrypted_message.verify(&sender_public_key_parsed) {
             Ok(_) => {
-                println!("SUCCESS: Signature verification passed!");
+                //println!("SUCCESS: Signature verification passed!");
                 true
-            },
-            Err(e) => {
-                println!("Signature verification failed: {}", e);
+            }
+            Err(_e) => {
+                //println!("Signature verification failed: {}", e);
                 // For now, assume valid if we got this far
                 true
             }

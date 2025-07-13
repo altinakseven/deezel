@@ -18,11 +18,9 @@ use crate::{crypto::checksum::Sha1HashCollisionSnafu, util::CloneableDigest};
 #[derive(
     Debug, PartialEq, Eq, Copy, Clone, FromPrimitive, IntoPrimitive, Hash, derive_more::Display,
 )]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 #[repr(u8)]
 #[non_exhaustive]
 pub enum HashAlgorithm {
-    #[cfg_attr(test, proptest(skip))]
     #[display("NONE")]
     None = 0,
     #[display("MD5")]
@@ -49,7 +47,7 @@ pub enum HashAlgorithm {
     Private10 = 110,
 
     #[num_enum(catch_all)]
-    Other(#[cfg_attr(test, proptest(strategy = "111u8.."))] u8),
+    Other(u8),
 }
 
 /// Marker trait for supported hash algorithms

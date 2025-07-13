@@ -1,3 +1,4 @@
+#![cfg(feature = "std")]
 use criterion::{black_box, criterion_group, BenchmarkId, Criterion};
 use pgp::{
     crypto::{hash::HashAlgorithm, sym::SymmetricKeyAlgorithm},

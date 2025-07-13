@@ -4,7 +4,10 @@
 //! wallet keystores, including encrypted seeds and public metadata.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use alloc::collections::BTreeMap;
+use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
 
 /// Represents the entire JSON keystore.
 /// This structure is designed to be stored in a file, with the seed
@@ -30,7 +33,7 @@ pub struct Keystore {
     /// This is kept for potential compatibility but new logic should
     /// prefer dynamic derivation.
     #[serde(default)]
-    pub addresses: HashMap<String, Vec<AddressInfo>>,
+    pub addresses: BTreeMap<String, Vec<AddressInfo>>,
 }
 
 /// Parameters for the PBKDF2/S2K key derivation function.
@@ -49,10 +52,12 @@ use crate::{DeezelError, Result};
 use bip39::{Mnemonic, Seed};
 use deezel_rpgp::composed::Message;
 use deezel_rpgp::types::Password;
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
 
 impl Keystore {
     /// Load keystore from a file path.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn from_file(path: &Path) -> Result<Self> {
         let data = std::fs::read_to_string(path)
             .map_err(|e| DeezelError::Wallet(format!("Failed to read keystore file: {}", e)))?;
@@ -89,7 +94,7 @@ use bitcoin::{
     secp256k1::{Secp256k1, All},
     Address,
 };
-use std::str::FromStr;
+use core::str::FromStr;
 
 
 /// Derives a Bitcoin address from a mnemonic and a derivation path.

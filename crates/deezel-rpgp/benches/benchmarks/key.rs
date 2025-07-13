@@ -1,3 +1,4 @@
+#![cfg(feature = "std")]
 use std::fs::File;
 
 use criterion::{black_box, criterion_group, Criterion};

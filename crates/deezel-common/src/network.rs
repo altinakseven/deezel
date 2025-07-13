@@ -6,6 +6,7 @@
 use crate::{Result, DeezelError, ToString, format};
 use bitcoin::Network;
 use serde::{Deserialize, Serialize, Serializer, Deserializer};
+use alloc::vec;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::string::String;
@@ -16,6 +17,7 @@ use alloc::string::String;
 use std::collections::HashMap;
 #[cfg(target_arch = "wasm32")]
 use alloc::collections::BTreeMap as HashMap;
+use alloc::vec::Vec;
 
 #[derive(Debug, Clone)]
 pub struct NetworkParams {

@@ -1,3 +1,4 @@
+#![cfg(feature = "std")]
 #![cfg(feature = "draft-pqc")]
 use deezel_rpgp::{
     composed::{

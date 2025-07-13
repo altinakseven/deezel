@@ -107,6 +107,7 @@ impl SystemDeezel {
             metashrew_rpc_url,
             sandshrew_rpc_url,
             args.esplora_url.clone(),
+            args.ord_url.clone(),
             args.provider.clone(),
             Some(std::path::PathBuf::from(&wallet_file)),
         ).await?;
@@ -897,7 +898,7 @@ impl SystemBitcoind for SystemDeezel {
        let provider = &self.provider;
        let res: anyhow::Result<()> = match command {
             BitcoindCommands::Getblockcount => {
-                let count = <ConcreteProvider as BitcoindProvider>::get_block_count(provider).await?;
+                let count = <ConcreteProvider as BitcoinRpcProvider>::get_block_count(provider).await?;
                 println!("{}", count);
                 Ok(())
             },
@@ -905,7 +906,7 @@ impl SystemBitcoind for SystemDeezel {
               // Resolve address identifiers if needed
               let resolved_address = resolve_address_identifiers(&address, provider).await?;
               
-              let result = <ConcreteProvider as BitcoindProvider>::generate_to_address(provider, nblocks, &resolved_address).await?;
+              let result = <ConcreteProvider as BitcoinRpcProvider>::generate_to_address(provider, nblocks, &resolved_address).await?;
               println!("Generated {} blocks to address {}", nblocks, resolved_address);
               if let Some(block_hashes) = result.as_array() {
                   println!("Block hashes:");
@@ -1792,6 +1793,38 @@ impl SystemPgp for SystemDeezel {
    }
 }
 
+#[async_trait(?Send)]
+pub trait SystemOrd {
+    async fn execute_ord_command(&self, command: OrdCommands) -> deezel_common::Result<()>;
+}
+
+#[async_trait(?Send)]
+impl SystemOrd for SystemDeezel {
+    async fn execute_ord_command(&self, command: OrdCommands) -> deezel_common::Result<()> {
+        let provider = &self.provider;
+        let res: anyhow::Result<()> = match command {
+            OrdCommands::GetInscription { id, raw } => {
+                let inscription = provider.get_inscription(&id).await?;
+                if raw {
+                    println!("{}", serde_json::to_string_pretty(&inscription)?);
+                } else {
+                    println!("Inscription {}:\n{}", id, serde_json::to_string_pretty(&inscription)?);
+                }
+                Ok(())
+            },
+            OrdCommands::GetInscriptionsInBlock { hash, raw } => {
+                let inscriptions = provider.get_inscriptions_in_block(&hash).await?;
+                if raw {
+                    println!("{}", serde_json::to_string_pretty(&inscriptions)?);
+                } else {
+                    println!("Inscriptions in block {}:\n{}", hash, serde_json::to_string_pretty(&inscriptions)?);
+                }
+                Ok(())
+            },
+        };
+        res.map_err(|e| DeezelError::Wallet(e.to_string()))
+    }
+}
 
 /// Expand tilde (~) in file paths to home directory
 fn expand_tilde(path: &str) -> Result<String> {

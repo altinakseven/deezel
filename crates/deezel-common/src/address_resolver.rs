@@ -391,6 +391,7 @@ mod tests {
 #[cfg(not(target_arch = "wasm32"))]
 mod standalone_impls {
     use super::*;
+    use crate::JsonValue;
     use async_trait::async_trait;
 
     #[async_trait(?Send)]
@@ -514,7 +515,7 @@ impl TimeProvider for StandaloneAddressResolver {
     fn now_secs(&self) -> u64 { 0 }
     fn now_millis(&self) -> u64 { 0 }
     #[cfg(feature = "native-deps")]
-    fn sleep_ms(&self, _ms: u64) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
+    fn sleep_ms(&self, _ms: u64) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()>>> {
         Box::pin(tokio::time::sleep(std::time::Duration::from_millis(_ms)))
     }
 
@@ -797,6 +798,18 @@ impl RunestoneProvider for StandaloneAddressResolver {
     }
     async fn analyze_runestone(&self, _txid: &str) -> Result<serde_json::Value> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support runestone operations".to_string()))
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[async_trait(?Send)]
+impl OrdProvider for StandaloneAddressResolver {
+    async fn get_inscription(&self, _inscription_id: &str) -> Result<JsonValue> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support ord operations".to_string()))
+    }
+
+    async fn get_inscriptions_in_block(&self, _block_hash: &str) -> Result<JsonValue> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support ord operations".to_string()))
     }
 }
 

@@ -3,6 +3,7 @@
 //! This module provides keystore creation and management functionality
 //! using PGP encryption for secure seed storage.
 
+extern crate alloc;
 use anyhow::{anyhow, Context, Result as AnyhowResult};
 use bitcoin::{
     Network,
@@ -31,7 +32,7 @@ use deezel_common::{
     DeezelError, Result as CommonResult,
 };
 use async_trait::async_trait;
-use std::collections::HashMap;
+use alloc::collections::BTreeMap;
 
 
 /// Parameters for creating a new keystore
@@ -106,7 +107,7 @@ impl KeystoreManager {
             version: env!("CARGO_PKG_VERSION").to_string(),
             pbkdf2_params,
             account_xpub: account_xpub.to_string(),
-            addresses: HashMap::new(),
+            addresses: BTreeMap::new(),
         };
 
         Ok((keystore, mnemonic_str))

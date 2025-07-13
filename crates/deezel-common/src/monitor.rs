@@ -152,7 +152,7 @@ impl<P: DeezelProvider> BlockMonitor<P> {
         // Try Metashrew first, fall back to Bitcoin RPC
         match self.provider.get_metashrew_height().await {
             Ok(height) => Ok(height),
-            Err(_) => <P as BitcoindProvider>::get_block_count(&self.provider).await,
+            Err(_) => <P as BitcoinRpcProvider>::get_block_count(&self.provider).await,
         }
     }
     

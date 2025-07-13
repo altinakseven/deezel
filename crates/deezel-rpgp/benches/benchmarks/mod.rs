@@ -1,3 +1,4 @@
+#![cfg(feature = "std")]
 use pgp::{
     composed::{KeyType, SecretKey, SecretKeyParamsBuilder, SubkeyParamsBuilder},
     crypto::{hash::HashAlgorithm, sym::SymmetricKeyAlgorithm},

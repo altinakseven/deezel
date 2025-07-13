@@ -1,3 +1,4 @@
+#![cfg_attr(target_arch = "wasm32", no_std)]
 //! Deezel Common Library
 //!
 //! This library provides the core functionality for the deezel project,
@@ -24,25 +25,27 @@
 //! - `utils`: Common utilities
 pub mod provider;
 
-#[cfg_attr(target_arch = "wasm32", no_std)]
-
 extern crate alloc;
 
 
+
 #[cfg(target_arch = "wasm32")]
-use alloc::{
+pub use alloc::{
     string::{String, ToString},
     format,
+    vec,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
-use std::{
+pub use std::{
     string::{String, ToString},
     format,
+    vec,
 };
 
 // Core modules
 pub mod address;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod commands;
 pub mod traits;
 pub mod network;

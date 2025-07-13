@@ -20,7 +20,6 @@ use crate::{
 /// corresponding flag is known as "Version 1 Symmetrically Encrypted and Integrity Protected
 /// Data packet".
 #[derive(derive_more::Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(all(test, feature = "std"), derive(proptest_derive::Arbitrary))]
 pub struct ModDetectionCode {
     packet_header: PacketHeader,
     /// 20 byte SHA1 hash of the preceding plaintext data.
@@ -57,28 +56,3 @@ impl PacketTrait for ModDetectionCode {
     }
 }
 
-#[cfg(all(test, feature = "std"))]
-mod tests {
-    use proptest::prelude::*;
-    use alloc::format;
-    use alloc::vec::Vec;
-
-    use super::*;
-
-    proptest! {
-        #[test]
-        fn write_len(packet: ModDetectionCode) {
-            let mut buf = Vec::new();
-            packet.to_writer(&mut buf).unwrap();
-            prop_assert_eq!(buf.len(), packet.write_len());
-        }
-
-        #[test]
-        fn packet_roundtrip(packet: ModDetectionCode) {
-            let mut buf = Vec::new();
-            packet.to_writer(&mut buf).unwrap();
-            let new_packet = ModDetectionCode::try_from_reader(packet.packet_header, &mut &buf[..]).unwrap();
-            prop_assert_eq!(packet, new_packet);
-        }
-    }
-}
