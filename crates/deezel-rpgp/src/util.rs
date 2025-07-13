@@ -8,7 +8,7 @@ use digest::DynDigest;
 use nom::Input;
 use dyn_clone::DynClone;
 
-use crate::io::{Read, Write};
+use crate::io::{self, Read, Write};
 
 pub(crate) fn fill_buffer<R: Read>(
     source: &mut R,

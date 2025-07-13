@@ -134,7 +134,7 @@ pub mod test_utils {
     }
     
     pub fn assert_valid_balance(balance: &WalletBalance) {
-        assert!(balance.confirmed <= balance.confirmed + balance.trusted_pending + balance.untrusted_pending);
+        assert!(balance.confirmed >= balance.confirmed.saturating_sub(balance.pending as u64));
     }
 }
 
@@ -224,8 +224,7 @@ mod tests {
         
         let balance = WalletBalance {
             confirmed: 100000,
-            trusted_pending: 50000,
-            untrusted_pending: 25000,
+            pending: 75000,
         };
         test_utils::assert_valid_balance(&balance);
     }

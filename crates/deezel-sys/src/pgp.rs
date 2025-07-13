@@ -13,8 +13,10 @@ use deezel_common::{Result, DeezelError};
 
 // Import deezel-rpgp types
 use deezel_rpgp::composed::{
-    SecretKeyParamsBuilder, KeyType, SignedSecretKey, SignedPublicKey,
-    ArmorOptions, Deserializable
+    SecretKeyParamsBuilder, KeyType, SignedSecretKey, SignedPublicKey, Deserializable,
+};
+use deezel_rpgp::composed::types::{
+    ArmorOptions,
 };
 use deezel_rpgp::types::{Password, KeyDetails, PublicKeyTrait};
 use deezel_rpgp::crypto::{hash::HashAlgorithm, sym::SymmetricKeyAlgorithm};

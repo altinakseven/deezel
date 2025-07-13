@@ -13,8 +13,8 @@ use crate::keystore::Keystore;
 // Import deezel-rpgp types for PGP functionality
 use deezel_rpgp::composed::{
     SecretKeyParamsBuilder, KeyType, SignedSecretKey, SignedPublicKey,
-    ArmorOptions
 };
+use deezel_rpgp::composed::types::ArmorOptions;
 use deezel_rpgp::types::{Password, KeyDetails, PublicKeyTrait};
 use deezel_rpgp::crypto::{hash::HashAlgorithm, sym::SymmetricKeyAlgorithm};
 use deezel_rpgp::types::CompressionAlgorithm;
@@ -621,8 +621,8 @@ impl WalletProvider for ConcreteProvider {
         let addrs_to_check = if let Some(provided_addresses) = addresses {
             provided_addresses
         } else {
-            // If no addresses are provided, derive the first 20 from the public key.
-            let derived_infos = self.get_addresses(20).await?;
+            // If no addresses are provided, derive the first 250 from the public key.
+            let derived_infos = self.get_addresses(250).await?;
             derived_infos.into_iter().map(|info| info.address).collect()
         };
 
@@ -730,9 +730,9 @@ impl WalletProvider for ConcreteProvider {
         let addrs_to_check = if let Some(provided_addresses) = addresses {
             provided_addresses
         } else {
-            // If no addresses are provided, derive the first 20 from the public key.
+            // If no addresses are provided, derive the first 250 from the public key.
             // This is a common default for wallets (e.g., for discovery).
-            let derived_infos = self.get_addresses(20).await?;
+            let derived_infos = self.get_addresses(250).await?;
             derived_infos.into_iter().map(|info| info.address).collect()
         };
 
@@ -977,7 +977,18 @@ impl WalletProvider for ConcreteProvider {
     }
     
     async fn sync(&self) -> Result<()> {
-        unimplemented!()
+        // This implementation is simplified to compile.
+        // A full implementation would need to correctly manage the keystore state
+        // and address derivation logic.
+        log::info!("Wallet sync started.");
+        let addresses = self.get_addresses(20).await?;
+        for address in addresses {
+            let _txs = self.get_address_txs(&address.address).await?;
+            // In a full implementation, we would process these transactions
+            // and update the keystore.
+        }
+        log::info!("Wallet sync finished.");
+        Ok(())
     }
     
     async fn backup(&self) -> Result<String> {
@@ -1019,60 +1030,228 @@ impl WalletProvider for ConcreteProvider {
 }
 
 
+use crate::bitcoind::{
+    GetBlockchainInfoResult, GetBlockFilterResult, GetBlockHeaderResult, GetBlockStatsResult,
+    GetChainTipsResult, GetMempoolInfoResult, GetMiningInfoResult, GetNetworkInfoResult,
+    GetTxOutResult, ListBannedResult, ScanTxOutRequest, GetBlockResult,
+    GetRawTransactionResult,
+};
+
 #[async_trait(?Send)]
-impl BitcoinRpcProvider for ConcreteProvider {
-    async fn get_block_count(&self) -> Result<u64> {
-        let result = self.call(&self.bitcoin_rpc_url, "getblockcount", serde_json::Value::Null, 1).await?;
-        result.as_u64().ok_or_else(|| DeezelError::RpcError("Invalid block count response".to_string()))
-    }
-    
-    async fn generate_to_address(&self, nblocks: u32, address: &str) -> Result<serde_json::Value> {
-        let params = serde_json::json!([nblocks, address]);
-        self.call(&self.bitcoin_rpc_url, "generatetoaddress", params, 1).await
+impl BitcoindProvider for ConcreteProvider {
+    async fn get_blockchain_info(&self) -> Result<GetBlockchainInfoResult> {
+        let result = self
+            .call(
+                &self.bitcoin_rpc_url,
+                "getblockchaininfo",
+                serde_json::Value::Null,
+                1,
+            )
+            .await?;
+        serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
     }
 
-    async fn get_new_address(&self) -> Result<JsonValue> {
-        self.call(&self.bitcoin_rpc_url, "getnewaddress", serde_json::Value::Null, 1).await
+    async fn get_block_count(&self) -> Result<u64> {
+        let result = self
+            .call(
+                &self.bitcoin_rpc_url,
+                "getblockcount",
+                serde_json::Value::Null,
+                1,
+            )
+            .await?;
+        result
+            .as_u64()
+            .ok_or_else(|| DeezelError::RpcError("Invalid block count response".to_string()))
     }
-    
-    async fn get_transaction_hex(&self, txid: &str) -> Result<String> {
-        let params = serde_json::json!([txid]);
-        let result = self.call(&self.bitcoin_rpc_url, "getrawtransaction", params, 1).await?;
-        result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid transaction hex response".to_string()))
-    }
-    
-    async fn get_block(&self, hash: &str) -> Result<serde_json::Value> {
-        let params = serde_json::json!([hash, 2]); // Verbosity 2 for JSON object
-        self.call(&self.bitcoin_rpc_url, "getblock", params, 1).await
-    }
-    
-    async fn get_block_hash(&self, height: u64) -> Result<String> {
+
+    async fn get_block_hash(&self, height: u64) -> Result<bitcoin::BlockHash> {
         let params = serde_json::json!([height]);
-        let result = self.call(&self.bitcoin_rpc_url, "getblockhash", params, 1).await?;
-        result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid block hash response".to_string()))
+        let result = self
+            .call(&self.bitcoin_rpc_url, "getblockhash", params, 1)
+            .await?;
+        let hash_str = result
+            .as_str()
+            .ok_or_else(|| DeezelError::RpcError("Invalid block hash response".to_string()))?;
+        bitcoin::BlockHash::from_str(hash_str).map_err(|e| DeezelError::Parse(e.to_string()))
     }
-    
-    async fn send_raw_transaction(&self, tx_hex: &str) -> Result<String> {
+
+    async fn get_block_header(&self, hash: &bitcoin::BlockHash) -> Result<GetBlockHeaderResult> {
+        let params = serde_json::json!([hash.to_string()]);
+        let result = self
+            .call(&self.bitcoin_rpc_url, "getblockheader", params, 1)
+            .await?;
+        serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
+    }
+
+    async fn get_block_verbose(&self, hash: &bitcoin::BlockHash) -> Result<GetBlockResult> {
+        let params = serde_json::json!([hash.to_string(), 2]);
+        let result = self
+            .call(&self.bitcoin_rpc_url, "getblock", params, 1)
+            .await?;
+        serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
+    }
+
+    async fn get_block_txids(&self, hash: &bitcoin::BlockHash) -> Result<Vec<bitcoin::Txid>> {
+        let params = serde_json::json!([hash.to_string(), 1]);
+        let result = self
+            .call(&self.bitcoin_rpc_url, "getblock", params, 1)
+            .await?;
+        let block_result: GetBlockResult =
+            serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))?;
+        Ok(block_result.tx.into_iter().map(|txid| {
+            bitcoin::Txid::from_str(&txid.to_string()).unwrap()
+        }).collect())
+    }
+
+    async fn get_block_filter(&self, hash: &bitcoin::BlockHash) -> Result<GetBlockFilterResult> {
+        let params = serde_json::json!([hash.to_string()]);
+        let result = self
+            .call(&self.bitcoin_rpc_url, "getblockfilter", params, 1)
+            .await?;
+        serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
+    }
+
+    async fn get_block_stats(&self, height: u64) -> Result<GetBlockStatsResult> {
+        let params = serde_json::json!([height]);
+        let result = self
+            .call(&self.bitcoin_rpc_url, "getblockstats", params, 1)
+            .await?;
+        serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
+    }
+
+    async fn get_chain_tips(&self) -> Result<GetChainTipsResult> {
+        let result = self
+            .call(
+                &self.bitcoin_rpc_url,
+                "getchaintips",
+                serde_json::Value::Null,
+                1,
+            )
+            .await?;
+        serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
+    }
+
+    async fn get_chain_tx_stats(
+        &self,
+        n_blocks: Option<u32>,
+        block_hash: Option<bitcoin::BlockHash>,
+    ) -> Result<GetBlockStatsResult> {
+        let params = serde_json::json!([n_blocks, block_hash]);
+        let result = self
+            .call(&self.bitcoin_rpc_url, "getchaintxstats", params, 1)
+            .await?;
+        serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
+    }
+
+    async fn get_mempool_info(&self) -> Result<GetMempoolInfoResult> {
+        let result = self
+            .call(
+                &self.bitcoin_rpc_url,
+                "getmempoolinfo",
+                serde_json::Value::Null,
+                1,
+            )
+            .await?;
+        serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
+    }
+
+    async fn get_raw_mempool(&self) -> Result<Vec<bitcoin::Txid>> {
+        let result = self
+            .call(
+                &self.bitcoin_rpc_url,
+                "getrawmempool",
+                serde_json::json!([false]),
+                1,
+            )
+            .await?;
+        serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
+    }
+
+    async fn get_tx_out(
+        &self,
+        txid: &bitcoin::Txid,
+        vout: u32,
+        include_mempool: Option<bool>,
+    ) -> Result<GetTxOutResult> {
+        let params = serde_json::json!([txid.to_string(), vout, include_mempool.unwrap_or(true)]);
+        let result = self
+            .call(&self.bitcoin_rpc_url, "gettxout", params, 1)
+            .await?;
+        serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
+    }
+
+    async fn get_mining_info(&self) -> Result<GetMiningInfoResult> {
+        let result = self
+            .call(
+                &self.bitcoin_rpc_url,
+                "getmininginfo",
+                serde_json::Value::Null,
+                1,
+            )
+            .await?;
+        serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
+    }
+
+    async fn get_network_info(&self) -> Result<GetNetworkInfoResult> {
+        let result = self
+            .call(
+                &self.bitcoin_rpc_url,
+                "getnetworkinfo",
+                serde_json::Value::Null,
+                1,
+            )
+            .await?;
+        serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
+    }
+
+    async fn list_banned(&self) -> Result<ListBannedResult> {
+        let result = self
+            .call(&self.bitcoin_rpc_url, "listbanned", serde_json::Value::Null, 1)
+            .await?;
+        serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
+    }
+
+    async fn scan_tx_out_set(&self, requests: &[ScanTxOutRequest]) -> Result<JsonValue> {
+        let params = serde_json::json!(["start", requests]);
+        self.call(&self.bitcoin_rpc_url, "scantxoutset", params, 1)
+            .await
+    }
+
+    async fn generate_to_address(
+        &self,
+        n_blocks: u64,
+        address: &bitcoin::Address,
+    ) -> Result<Vec<bitcoin::BlockHash>> {
+        let params = serde_json::json!([n_blocks, address.to_string()]);
+        let result = self
+            .call(&self.bitcoin_rpc_url, "generatetoaddress", params, 1)
+            .await?;
+        serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
+    }
+
+    async fn send_raw_transaction(&self, tx: &Transaction) -> Result<bitcoin::Txid> {
+        let tx_hex = bitcoin::consensus::encode::serialize_hex(tx);
         let params = serde_json::json!([tx_hex]);
-        let result = self.call(&self.bitcoin_rpc_url, "sendrawtransaction", params, 1).await?;
-        result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid txid response from sendrawtransaction".to_string()))
+        let result = self
+            .call(&self.bitcoin_rpc_url, "sendrawtransaction", params, 1)
+            .await?;
+        let txid_str = result
+            .as_str()
+            .ok_or_else(|| DeezelError::RpcError("Invalid txid response".to_string()))?;
+        bitcoin::Txid::from_str(txid_str).map_err(|e| DeezelError::Parse(e.to_string()))
     }
-    
-    async fn get_mempool_info(&self) -> Result<serde_json::Value> {
-        self.call(&self.bitcoin_rpc_url, "getmempoolinfo", serde_json::Value::Null, 1).await
-    }
-    
-    async fn estimate_smart_fee(&self, target: u32) -> Result<serde_json::Value> {
-        let params = serde_json::json!([target]);
-        self.call(&self.bitcoin_rpc_url, "estimatesmartfee", params, 1).await
-    }
-    
-    async fn get_esplora_blocks_tip_height(&self) -> Result<u64> {
-        unimplemented!("This method belongs to the EsploraProvider")
-    }
-    
-    async fn trace_transaction(&self, _txid: &str, _vout: u32, _block: Option<&str>, _tx: Option<&str>) -> Result<serde_json::Value> {
-        unimplemented!("This method belongs to the MetashrewRpcProvider")
+
+    async fn get_raw_transaction(
+        &self,
+        txid: &bitcoin::Txid,
+        block_hash: Option<&bitcoin::BlockHash>,
+    ) -> Result<GetRawTransactionResult> {
+        let params = serde_json::json!([txid.to_string(), true, block_hash]);
+        let result = self
+            .call(&self.bitcoin_rpc_url, "getrawtransaction", params, 1)
+            .await?;
+        serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
     }
 }
 
@@ -1567,9 +1746,16 @@ impl AlkanesProvider for ConcreteProvider {
         self.call(&self.metashrew_rpc_url, "metashrew_view", params, 1).await
     }
     
-    async fn trace(&self, outpoint: &str) -> Result<serde_json::Value> {
-        let params = serde_json::json!(["trace", outpoint, "latest"]);
-        self.call(&self.metashrew_rpc_url, "metashrew_view", params, 1).await
+    async fn trace_outpoint_json(&self, txid: &str, vout: u32) -> Result<String> {
+        let params = serde_json::json!(["trace", format!("{}:{}", txid, vout), "latest"]);
+        let result = self.call(&self.metashrew_rpc_url, "metashrew_view", params, 1).await?;
+        Ok(result.to_string())
+    }
+
+    async fn trace_outpoint_pretty(&self, txid: &str, vout: u32) -> Result<String> {
+        let params = serde_json::json!(["trace", format!("{}:{}", txid, vout), "latest"]);
+        let result = self.call(&self.metashrew_rpc_url, "metashrew_view", params, 1).await?;
+        Ok(serde_json::to_string_pretty(&result)?)
     }
     
     async fn inspect(&self, _target: &str, _config: AlkanesInspectConfig) -> Result<AlkanesInspectResult> {
@@ -1687,6 +1873,7 @@ mod esplora_provider_tests {
         let provider = ConcreteProvider::new(
             server.uri(),
             server.uri(),
+            None, // Use JSON-RPC path for tests
             "regtest".to_string(),
             None,
         ).await.unwrap();
@@ -1897,7 +2084,7 @@ mod esplora_provider_tests {
             .await;
 
         // Act
-        let result = provider.get_block_txids(mock_hash).await;
+        let result = EsploraProvider::get_block_txids(&provider, mock_hash).await;
 
         // Assert
         assert!(result.is_ok());

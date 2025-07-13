@@ -43,7 +43,8 @@
 
 use deezel_common::{DeezelError, Result};
 use js_sys::{Date, Promise};
-use wasm_bindgen::prelude::*;
+use web_sys::wasm_bindgen::prelude::*;
+use web_sys::wasm_bindgen::JsValue;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{window, Performance};
 use core::future::Future;

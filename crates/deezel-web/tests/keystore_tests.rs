@@ -4,7 +4,7 @@
 //! and demonstrate the JSON output format.
 
 use deezel_web::prelude::*;
-use deezel_common::keystore::{create_keystore, Keystore};
+use deezel_common::keystore::create_keystore;
 use wasm_bindgen_test::*;
 use serde_json;
 
@@ -13,11 +13,11 @@ wasm_bindgen_test_configure!(run_in_browser);
 #[wasm_bindgen_test]
 pub fn test_keystore_creation_basic() {
     let passphrase = "test_passphrase_123";
-    let keystore_result = create_keystore(passphrase);
+    let keystore_result = create_keystore(passphrase, None);
     
     assert!(keystore_result.is_ok(), "Keystore creation should succeed");
     
-    let keystore = keystore_result.unwrap();
+    let (keystore, _) = keystore_result.unwrap();
     
     // Verify basic structure
     assert_eq!(keystore.version, "1");
@@ -51,7 +51,7 @@ pub fn test_keystore_creation_basic() {
 #[wasm_bindgen_test]
 pub fn test_keystore_json_serialization() {
     let passphrase = "demo_passphrase_456";
-    let keystore = create_keystore(passphrase).unwrap();
+    let (keystore, _) = create_keystore(passphrase, None).unwrap();
     
     // Test JSON serialization
     let json_result = serde_json::to_string_pretty(&keystore);
@@ -69,7 +69,7 @@ pub fn test_keystore_json_serialization() {
     assert!(json_string.contains("\"algorithm\""));
     
     // Test deserialization
-    let deserialized_result = serde_json::from_str::<Keystore>(&json_string);
+    let deserialized_result = serde_json::from_str::<deezel_common::keystore::Keystore>(&json_string);
     assert!(deserialized_result.is_ok(), "JSON should deserialize back to Keystore");
     
     let deserialized = deserialized_result.unwrap();
@@ -81,7 +81,7 @@ pub fn test_keystore_json_serialization() {
 #[wasm_bindgen_test]
 pub fn test_keystore_address_formats() {
     let passphrase = "address_test_789";
-    let keystore = create_keystore(passphrase).unwrap();
+    let (keystore, _) = create_keystore(passphrase, None).unwrap();
     
     // Test mainnet addresses
     let mainnet_addresses = keystore.addresses.get("mainnet").unwrap();
@@ -127,8 +127,8 @@ pub fn test_keystore_encryption_uniqueness() {
     let passphrase = "uniqueness_test";
     
     // Create two keystores with same passphrase
-    let keystore1 = create_keystore(passphrase).unwrap();
-    let keystore2 = create_keystore(passphrase).unwrap();
+    let (keystore1, _) = create_keystore(passphrase, None).unwrap();
+    let (keystore2, _) = create_keystore(passphrase, None).unwrap();
     
     // They should have different encrypted seeds (due to random salt/entropy)
     assert_ne!(keystore1.encrypted_seed, keystore2.encrypted_seed);
@@ -145,7 +145,7 @@ pub fn test_keystore_encryption_uniqueness() {
 #[wasm_bindgen_test]
 pub fn demonstrate_keystore_json_output() {
     let passphrase = "example_demo_passphrase";
-    let keystore = create_keystore(passphrase).unwrap();
+    let (keystore, _) = create_keystore(passphrase, None).unwrap();
     
     // Create a pretty-printed JSON for demonstration
     let json = serde_json::to_string_pretty(&keystore).unwrap();

@@ -73,8 +73,14 @@ impl AlkanesProvider for WebProvider {
        serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
    }
 
-    async fn trace(&self, outpoint: &str) -> Result<JsonValue> {
-        self.call(self.sandshrew_rpc_url(), "alkanes_trace", serde_json::json!([outpoint]), 1).await
+    async fn trace_outpoint_json(&self, txid: &str, vout: u32) -> Result<String> {
+        let result = self.call(self.sandshrew_rpc_url(), "alkanes_trace", serde_json::json!([format!("{}:{}", txid, vout)]), 1).await?;
+        serde_json::to_string(&result).map_err(|e| DeezelError::Serialization(e.to_string()))
+    }
+
+    async fn trace_outpoint_pretty(&self, txid: &str, vout: u32) -> Result<String> {
+        let result = self.call(self.sandshrew_rpc_url(), "alkanes_trace", serde_json::json!([format!("{}:{}", txid, vout)]), 1).await?;
+        serde_json::to_string_pretty(&result).map_err(|e| DeezelError::Serialization(e.to_string()))
     }
 
     async fn inspect(&self, target: &str, config: AlkanesInspectConfig) -> Result<AlkanesInspectResult> {

@@ -5,7 +5,8 @@
 
 use deezel_common::{DeezelError, Result};
 use js_sys::{Array, Object, Uint8Array};
-use wasm_bindgen::prelude::*;
+use web_sys::wasm_bindgen::prelude::*;
+use web_sys::wasm_bindgen::{JsCast, JsValue};
 use web_sys::{window, Document, Location, Navigator, Window};
 
 #[cfg(target_arch = "wasm32")]

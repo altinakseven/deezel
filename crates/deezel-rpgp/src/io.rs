@@ -6,7 +6,9 @@
 #![allow(clippy::module_inception)]
 
 #[cfg(feature = "std")]
-pub use std::io::{self, copy, BufRead, BufReader, Cursor, Error, ErrorKind, Read, Result, Write};
+
+#[cfg(not(feature = "std"))]
+pub use self::no_std_io::*;
 
 #[cfg(not(feature = "std"))]
 mod no_std_io {
@@ -455,6 +457,3 @@ mod no_std_io {
         }
     }
 }
-
-#[cfg(not(feature = "std"))]
-pub use self::no_std_io::*;

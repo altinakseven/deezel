@@ -46,7 +46,8 @@ use async_trait::async_trait;
 use bitcoin::Network;
 use deezel_common::*;
 use serde_json::Value as JsonValue;
-use wasm_bindgen::prelude::*;
+use web_sys::wasm_bindgen::prelude::*;
+use web_sys::wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{Request, RequestInit, RequestMode, Response, window};
 

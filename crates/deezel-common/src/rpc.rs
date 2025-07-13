@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 #[cfg(not(target_arch = "wasm32"))]
-use std::{vec, string::String};
+use std::string::String;
 #[cfg(target_arch = "wasm32")]
 use alloc::{vec, string::String};
 
@@ -109,6 +109,10 @@ impl<P: DeezelProvider> RpcClient<P> {
         }
     }
     
+    pub fn provider(&self) -> &P {
+        &self.provider
+    }
+
     /// Get next request ID
     fn next_id(&self) -> u64 {
         #[cfg(not(target_arch = "wasm32"))]
@@ -129,86 +133,29 @@ impl<P: DeezelProvider> RpcClient<P> {
         self.provider.call(url, method, params, id).await
     }
     
-    /// Make a Bitcoin Core RPC call
-    pub async fn bitcoin_call(&self, method: &str, params: JsonValue) -> Result<JsonValue> {
-        self.call(&self.config.bitcoin_rpc_url, method, params).await
-    }
-    
-    /// Make a Bitcoin Core RPC call
-    pub async fn sandshrew_call(&self, method: &str, params: JsonValue) -> Result<JsonValue> {
-        self.call(&self.config.sandshrew_rpc_url, method, params).await
-    }
-
-    /// Make a Metashrew RPC call
-    pub async fn metashrew_call(&self, method: &str, params: JsonValue) -> Result<JsonValue> {
-        self.call(&self.config.metashrew_rpc_url, method, params).await
-    }
-    
     /// Get current block count
     pub async fn get_block_count(&self) -> Result<u64> {
-        let result = self.sandshrew_call("getblockcount", JsonValue::Array(vec![])).await?;
-        result.as_u64()
-            .ok_or_else(|| DeezelError::RpcError("Invalid block count response".to_string()))
+        self.provider.get_block_count().await
     }
     
     /// Generate blocks to address (regtest only)
-    pub async fn generate_to_address(&self, nblocks: u32, address: &str) -> Result<JsonValue> {
-        let params = serde_json::json!([nblocks, address]);
-        self.sandshrew_call("generatetoaddress", params).await
+    pub async fn generate_to_address(&self, nblocks: u64, address: &bitcoin::Address) -> Result<Vec<bitcoin::BlockHash>> {
+        self.provider.generate_to_address(nblocks, address).await
     }
     
-    /// Get transaction hex
-    pub async fn get_transaction_hex(&self, txid: &str) -> Result<String> {
-        let params = serde_json::json!([txid]);
-        let result = self.sandshrew_call("getrawtransaction", params).await?;
-        result.as_str()
-            .ok_or_else(|| DeezelError::RpcError("Invalid transaction hex response".to_string()))
-            .map(|s| s.to_string())
+    /// Get raw transaction
+    pub async fn get_raw_transaction(&self, txid: &bitcoin::Txid, block_hash: Option<&bitcoin::BlockHash>) -> Result<crate::bitcoind::GetRawTransactionResult> {
+        self.provider.get_raw_transaction(txid, block_hash).await
     }
     
     /// Get Metashrew height
     pub async fn get_metashrew_height(&self) -> Result<u64> {
-        let result = self.sandshrew_call("metashrew_height", JsonValue::Array(vec![])).await?;
-        result.as_u64()
-            .ok_or_else(|| DeezelError::RpcError("Invalid metashrew height response".to_string()))
+        self.provider.get_metashrew_height().await
     }
     
     /// Get bytecode for an alkane contract
     pub async fn get_bytecode(&self, block: &str, tx: &str) -> Result<String> {
-        use alkanes_support::proto::alkanes::{BytecodeRequest, AlkaneId, Uint128};
-        use protobuf::Message;
-        use crate::DeezelError;
-
-        let mut bytecode_request = BytecodeRequest::new();
-        let mut alkane_id = AlkaneId::new();
-
-        let block_u128 = block.parse::<u128>().map_err(|e| DeezelError::Other(e.to_string()))?;
-        let tx_u128 = tx.parse::<u128>().map_err(|e| DeezelError::Other(e.to_string()))?;
-
-        let mut block_uint128 = Uint128::new();
-        block_uint128.lo = (block_u128 & 0xFFFFFFFFFFFFFFFF) as u64;
-        block_uint128.hi = (block_u128 >> 64) as u64;
-
-        let mut tx_uint128 = Uint128::new();
-        tx_uint128.lo = (tx_u128 & 0xFFFFFFFFFFFFFFFF) as u64;
-        tx_uint128.hi = (tx_u128 >> 64) as u64;
-
-        alkane_id.block = protobuf::MessageField::some(block_uint128);
-        alkane_id.tx = protobuf::MessageField::some(tx_uint128);
-
-        bytecode_request.id = protobuf::MessageField::some(alkane_id);
-
-        let encoded_bytes = bytecode_request.write_to_bytes().map_err(|e| DeezelError::Other(e.to_string()))?;
-        let hex_input = format!("0x{}", hex::encode(encoded_bytes));
-
-        let result = self.sandshrew_call(
-            "metashrew_view",
-            serde_json::json!(["getbytecode", hex_input, "latest"])
-        ).await?;
-
-        result.as_str()
-            .ok_or_else(|| DeezelError::RpcError("Invalid bytecode response".to_string()))
-            .map(|s| s.to_string())
+        <P as JsonRpcProvider>::get_bytecode(&self.provider, block, tx).await
     }
     
     /// Get contract metadata
@@ -239,42 +186,9 @@ impl<P: DeezelProvider> RpcClient<P> {
         self.provider.get_protorunes_by_outpoint(txid, vout).await
     }
     
-    /// Make a generic call with method name (for Esplora API compatibility)
-    pub async fn _call(&self, method: &str, params: JsonValue) -> Result<JsonValue> {
-        // Parse method to determine which endpoint to use
-        if method.starts_with("esplora_") {
-            // Use metashrew endpoint for Esplora calls
-            self.sandshrew_call(method, params).await
-        } else if method.starts_with("btc_") || method.starts_with("bitcoin_") {
-            // Use Bitcoin RPC endpoint
-            let bitcoin_method = method.strip_prefix("btc_")
-                .or_else(|| method.strip_prefix("bitcoin_"))
-                .unwrap_or(method);
-            self.sandshrew_call(bitcoin_method, params).await
-        } else {
-            // Default to metashrew for unknown methods
-            self.sandshrew_call(method, params).await
-        }
-    }
-    
     /// Send raw transaction
-    pub async fn send_raw_transaction(&self, tx_hex: &str) -> Result<String> {
-        self.provider.send_raw_transaction(tx_hex).await
-    }
-    
-    /// Get Esplora blocks tip height
-    pub async fn get_esplora_blocks_tip_height(&self) -> Result<u64> {
-        self.provider.get_esplora_blocks_tip_height().await
-    }
-    
-    /// Simulate alkanes execution
-    pub async fn simulate(&self, contract_id: &str, params: Option<&str>) -> Result<serde_json::Value> {
-        self.provider.simulate(contract_id, params).await
-    }
-    
-    /// Trace transaction
-    pub async fn trace_transaction(&self, txid: &str, vout: u32, block: Option<&str>, tx: Option<&str>) -> Result<serde_json::Value> {
-        self.provider.trace_transaction(txid, vout, block, tx).await
+    pub async fn send_raw_transaction(&self, tx: &bitcoin::Transaction) -> Result<bitcoin::Txid> {
+        self.provider.send_raw_transaction(tx).await
     }
 }
 

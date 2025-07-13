@@ -1,5 +1,6 @@
 //! Implements Cleartext Signature Framework
 extern crate alloc;
+use crate::line_writer::LineBreak;
 use alloc::vec;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
@@ -52,7 +53,7 @@ impl CleartextSignedMessage {
     {
         let bytes = text.as_bytes();
         #[cfg(feature = "std")]
-        let signature_text = NormalizedReader::new(&mut bytes, LineBreak::Crlf);
+        let signature_text = NormalizedReader::new(&mut bytes, crate::line_writer::LineBreak::Crlf);
         #[cfg(not(feature = "std"))]
         let signature_text = bytes;
         let hash = config.hash_alg;
@@ -100,7 +101,7 @@ impl CleartextSignedMessage {
         F: FnOnce(&str) -> Result<Vec<Signature>>,
     {
         #[cfg(feature = "std")]
-        let signature_text = normalize_lines(text, LineBreak::Crlf);
+        let signature_text = normalize_lines(text, crate::line_writer::LineBreak::Crlf);
         #[cfg(not(feature = "std"))]
         let signature_text: String = text.into();
 
@@ -164,7 +165,7 @@ impl CleartextSignedMessage {
 
         #[cfg(feature = "std")]
         {
-            normalize_lines(&unescaped, LineBreak::Crlf).to_string()
+            normalize_lines(&unescaped, crate::line_writer::LineBreak::Crlf).to_string()
         }
         #[cfg(not(feature = "std"))]
         {

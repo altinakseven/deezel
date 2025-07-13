@@ -75,7 +75,8 @@ use alloc::{
 use async_trait::async_trait;
 use deezel_common::{DeezelError, Result};
 use js_sys::{Array, Object, Uint8Array};
-use wasm_bindgen::prelude::*;
+use web_sys::wasm_bindgen::prelude::*;
+use web_sys::wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{window, Crypto, SubtleCrypto, CryptoKey};
 use sha2::{Sha256, Digest as Sha2Digest};

@@ -1,5 +1,6 @@
 use deezel_common::pgp_rpgp::RpgpPgpProvider;
 use deezel_common::traits::PgpProvider;
+use deezel_rpgp::composed::types::Message;
 
 #[tokio::test]
 async fn debug_signed_message_reading() {
@@ -52,7 +53,7 @@ async fn debug_signed_message_reading() {
     println!("Created literal message: {} bytes", literal_message.len());
     
     // Parse it back
-    let mut parsed_literal = deezel_rpgp::composed::Message::from_bytes(&literal_message).unwrap();
+    let mut parsed_literal = Message::from_bytes(&literal_message).unwrap();
     let literal_data_back = parsed_literal.as_data_vec().unwrap();
     println!("Literal message data: {:?}", String::from_utf8_lossy(&literal_data_back));
     

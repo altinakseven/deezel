@@ -290,14 +290,85 @@ impl WalletCommands {
 /// Bitcoin Core RPC subcommands
 #[derive(Subcommand, Debug, Clone)]
 pub enum BitcoindCommands {
-    /// Get current block count
-    Getblockcount,
+    /// Get blockchain info
+    GetBlockchainInfo,
+    /// Get block count
+    GetBlockCount,
+    /// Get block hash by height
+    GetBlockHash {
+        /// Block height
+        height: u64,
+    },
+    /// Get block header
+    GetBlockHeader {
+        /// Block hash
+        hash: String,
+    },
+    /// Get block verbose
+    GetBlockVerbose {
+        /// Block hash
+        hash: String,
+    },
+    /// Get block txids
+    GetBlockTxids {
+        /// Block hash
+        hash: String,
+    },
+    /// Get block filter
+    GetBlockFilter {
+        /// Block hash
+        hash: String,
+    },
+    /// Get block stats
+    GetBlockStats {
+        /// Block height
+        height: u64,
+    },
+    /// Get chain tips
+    GetChainTips,
+    /// Get chain tx stats
+    GetChainTxStats {
+        /// Number of blocks to look back
+        n_blocks: Option<u32>,
+        /// Block hash to start from
+        block_hash: Option<String>,
+    },
+    /// Get mempool info
+    GetMempoolInfo,
+    /// Get raw mempool
+    GetRawMempool,
+    /// Get tx out
+    GetTxOut {
+        /// Transaction id
+        txid: String,
+        /// Vout
+        vout: u32,
+        /// Include mempool
+        #[arg(long)]
+        include_mempool: bool,
+    },
+    /// Get mining info
+    GetMiningInfo,
+    /// Get network info
+    GetNetworkInfo,
+    /// List banned
+    ListBanned,
+    /// Scan tx out set
+    ScanTxOutSet {
+        /// Scan requests
+        requests: Vec<String>,
+    },
     /// Generate blocks to an address (regtest only)
-    Generatetoaddress {
+    GenerateToAddress {
         /// Number of blocks to generate
-        nblocks: u32,
+        n_blocks: u64,
         /// Address to generate to
         address: String,
+    },
+    /// Send raw transaction
+    SendRawTransaction {
+        /// Transaction hex
+        tx_hex: String,
     },
 }
 
@@ -337,6 +408,7 @@ pub enum AlkanesCommands {
         #[arg(long)]
         envelope: Option<String>,
         /// Protostone specifications
+        #[arg(long)]
         protostones: String,
         /// Show raw JSON output
         #[arg(long)]

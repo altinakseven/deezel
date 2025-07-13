@@ -17,7 +17,8 @@ use bitcoin::{
 use bip39::{Mnemonic, MnemonicType, Seed};
 use std::str::FromStr;
 use deezel_rpgp::{
-    composed::{ArmorOptions, MessageBuilder},
+    composed::{MessageBuilder},
+    composed::types::ArmorOptions,
     crypto::{sym::SymmetricKeyAlgorithm, hash::HashAlgorithm},
     types::{Password, StringToKey},
 };
@@ -233,7 +234,7 @@ impl KeystoreManager {
         
         // For now, we use the PGP library's built-in password-based decryption
         // which should handle the S2K parameters that were used during encryption
-        use deezel_rpgp::composed::Message;
+        use deezel_rpgp::composed::types::Message;
         
         let (message, _headers) = Message::from_string(encrypted_seed)
             .context("Failed to parse armored PGP message")?;

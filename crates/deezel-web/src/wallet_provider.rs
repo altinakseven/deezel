@@ -59,7 +59,8 @@ use bitcoin::{Network, Transaction, psbt::Psbt, secp256k1::Keypair, XOnlyPublicK
 use deezel_common::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use wasm_bindgen::prelude::*;
+use web_sys::wasm_bindgen::prelude::*;
+use web_sys::wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{window, js_sys};
 
@@ -1155,49 +1156,85 @@ impl AddressResolver for BrowserWalletProvider {
 }
 
 #[async_trait(?Send)]
-impl BitcoinRpcProvider for BrowserWalletProvider {
+impl BitcoindProvider for BrowserWalletProvider {
+    async fn get_blockchain_info(&self) -> Result<bitcoind::GetBlockchainInfoResult> {
+        self.web_provider.get_blockchain_info().await
+    }
+
     async fn get_block_count(&self) -> Result<u64> {
         self.web_provider.get_block_count().await
     }
-    
-    async fn generate_to_address(&self, nblocks: u32, address: &str) -> Result<JsonValue> {
-        self.web_provider.generate_to_address(nblocks, address).await
-    }
-    
-    async fn get_new_address(&self) -> Result<JsonValue> {
-        self.web_provider.get_new_address().await
-    }
-    
-    async fn get_transaction_hex(&self, txid: &str) -> Result<String> {
-        self.web_provider.get_transaction_hex(txid).await
-    }
-    
-    async fn get_block(&self, hash: &str) -> Result<JsonValue> {
-        BitcoinRpcProvider::get_block(&self.web_provider, hash).await
-    }
-    
-    async fn get_block_hash(&self, height: u64) -> Result<String> {
+
+    async fn get_block_hash(&self, height: u64) -> Result<bitcoin::BlockHash> {
         self.web_provider.get_block_hash(height).await
     }
-    
-    async fn send_raw_transaction(&self, tx_hex: &str) -> Result<String> {
-        self.web_provider.send_raw_transaction(tx_hex).await
+
+    async fn get_block_header(&self, hash: &bitcoin::BlockHash) -> Result<bitcoind::GetBlockHeaderResult> {
+        BitcoindProvider::get_block_header(&self.web_provider, hash).await
     }
-    
-    async fn get_mempool_info(&self) -> Result<JsonValue> {
+
+    async fn get_block_verbose(&self, hash: &bitcoin::BlockHash) -> Result<bitcoind::GetBlockResult> {
+        self.web_provider.get_block_verbose(hash).await
+    }
+
+    async fn get_block_txids(&self, hash: &bitcoin::BlockHash) -> Result<Vec<bitcoin::Txid>> {
+        BitcoindProvider::get_block_txids(&self.web_provider, hash).await
+    }
+
+    async fn get_block_filter(&self, hash: &bitcoin::BlockHash) -> Result<bitcoind::GetBlockFilterResult> {
+        self.web_provider.get_block_filter(hash).await
+    }
+
+    async fn get_block_stats(&self, height: u64) -> Result<bitcoind::GetBlockStatsResult> {
+        self.web_provider.get_block_stats(height).await
+    }
+
+    async fn get_chain_tips(&self) -> Result<bitcoind::GetChainTipsResult> {
+        self.web_provider.get_chain_tips().await
+    }
+
+    async fn get_chain_tx_stats(&self, n_blocks: Option<u32>, block_hash: Option<bitcoin::BlockHash>) -> Result<bitcoind::GetBlockStatsResult> {
+        self.web_provider.get_chain_tx_stats(n_blocks, block_hash).await
+    }
+
+    async fn get_mempool_info(&self) -> Result<bitcoind::GetMempoolInfoResult> {
         self.web_provider.get_mempool_info().await
     }
-    
-    async fn estimate_smart_fee(&self, target: u32) -> Result<JsonValue> {
-        self.web_provider.estimate_smart_fee(target).await
+
+    async fn get_raw_mempool(&self) -> Result<Vec<bitcoin::Txid>> {
+        self.web_provider.get_raw_mempool().await
     }
-    
-    async fn get_esplora_blocks_tip_height(&self) -> Result<u64> {
-        self.web_provider.get_esplora_blocks_tip_height().await
+
+    async fn get_tx_out(&self, txid: &bitcoin::Txid, vout: u32, include_mempool: Option<bool>) -> Result<bitcoind::GetTxOutResult> {
+        self.web_provider.get_tx_out(txid, vout, include_mempool).await
     }
-    
-    async fn trace_transaction(&self, txid: &str, vout: u32, block: Option<&str>, tx: Option<&str>) -> Result<JsonValue> {
-        self.web_provider.trace_transaction(txid, vout, block, tx).await
+
+    async fn get_mining_info(&self) -> Result<bitcoind::GetMiningInfoResult> {
+        self.web_provider.get_mining_info().await
+    }
+
+    async fn get_network_info(&self) -> Result<bitcoind::GetNetworkInfoResult> {
+        self.web_provider.get_network_info().await
+    }
+
+    async fn list_banned(&self) -> Result<bitcoind::ListBannedResult> {
+        self.web_provider.list_banned().await
+    }
+
+    async fn scan_tx_out_set(&self, requests: &[bitcoind::ScanTxOutRequest]) -> Result<JsonValue> {
+        self.web_provider.scan_tx_out_set(requests).await
+    }
+
+    async fn generate_to_address(&self, n_blocks: u64, address: &bitcoin::Address) -> Result<Vec<bitcoin::BlockHash>> {
+        self.web_provider.generate_to_address(n_blocks, address).await
+    }
+
+    async fn send_raw_transaction(&self, tx: &Transaction) -> Result<bitcoin::Txid> {
+        self.web_provider.send_raw_transaction(tx).await
+    }
+
+    async fn get_raw_transaction(&self, txid: &bitcoin::Txid, block_hash: Option<&bitcoin::BlockHash>) -> Result<bitcoind::GetRawTransactionResult> {
+        self.web_provider.get_raw_transaction(txid, block_hash).await
     }
 }
 
@@ -1255,11 +1292,11 @@ impl EsploraProvider for BrowserWalletProvider {
     }
     
     async fn get_block_txids(&self, hash: &str) -> Result<JsonValue> {
-        self.web_provider.get_block_txids(hash).await
+        EsploraProvider::get_block_txids(&self.web_provider, hash).await
     }
     
     async fn get_block_header(&self, hash: &str) -> Result<String> {
-        self.web_provider.get_block_header(hash).await
+        EsploraProvider::get_block_header(&self.web_provider, hash).await
     }
     
     async fn get_block_raw(&self, hash: &str) -> Result<String> {
@@ -1388,8 +1425,12 @@ impl AlkanesProvider for BrowserWalletProvider {
         self.web_provider.get_token_info(alkane_id).await
     }
     
-    async fn trace(&self, outpoint: &str) -> Result<JsonValue> {
-        self.web_provider.trace(outpoint).await
+    async fn trace_outpoint_json(&self, txid: &str, vout: u32) -> Result<String> {
+        self.web_provider.trace_outpoint_json(txid, vout).await
+    }
+
+    async fn trace_outpoint_pretty(&self, txid: &str, vout: u32) -> Result<String> {
+        self.web_provider.trace_outpoint_pretty(txid, vout).await
     }
     
     async fn inspect(&self, target: &str, config: AlkanesInspectConfig) -> Result<AlkanesInspectResult> {

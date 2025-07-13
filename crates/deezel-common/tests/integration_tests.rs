@@ -3,11 +3,12 @@
 //! This test suite provides comprehensive coverage of the deezel-common library
 //! functionality using mock providers to test the trait-based architecture.
 
-use deezel_common::*;
+use deezel_common::{*, bitcoind};
 use async_trait::async_trait;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use bitcoin::{Network, Transaction};
+use std::str::FromStr;
 
 /// Mock provider for testing
 #[derive(Clone)]
@@ -159,11 +160,10 @@ impl WalletProvider for MockProvider {
         }, None, None).await
     }
     
-    async fn get_balance(&self) -> Result<WalletBalance> {
+    async fn get_balance(&self, _addresses: Option<Vec<String>>) -> Result<WalletBalance> {
         Ok(WalletBalance {
             confirmed: 100000000,
-            trusted_pending: 0,
-            untrusted_pending: 0,
+            pending: 0,
         })
     }
     
@@ -310,49 +310,119 @@ impl AddressResolver for MockProvider {
 }
 
 #[async_trait(?Send)]
-impl BitcoinRpcProvider for MockProvider {
+impl BitcoindProvider for MockProvider {
     async fn get_block_count(&self) -> Result<u64> {
         Ok(800000)
     }
-    
-    async fn generate_to_address(&self, _nblocks: u32, _address: &str) -> Result<JsonValue> {
-        Ok(serde_json::json!(["mock_block_hash"]))
+    async fn generate_to_address(
+        &self,
+        _nblocks: u64,
+        _address: &bitcoin::Address,
+    ) -> Result<Vec<bitcoin::BlockHash>> {
+        Ok(vec![bitcoin::BlockHash::from_str(
+            "0000000000000000000000000000000000000000000000000000000000000000",
+        )
+        .unwrap()])
     }
-    
-    async fn get_new_address(&self) -> Result<JsonValue> {
-        Ok(serde_json::json!("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"))
+    async fn get_block_hash(&self, _height: u64) -> Result<bitcoin::BlockHash> {
+        use std::str::FromStr;
+        bitcoin::BlockHash::from_str(
+            "0000000000000000000000000000000000000000000000000000000000000000",
+        )
+        .map_err(|e| DeezelError::Other(e.to_string()))
     }
-    
-    async fn get_transaction_hex(&self, _txid: &str) -> Result<String> {
-        Ok("mock_tx_hex".to_string())
+    async fn send_raw_transaction(&self, _tx: &Transaction) -> Result<bitcoin::Txid> {
+        use std::str::FromStr;
+        bitcoin::Txid::from_str(
+            "abcd1234567890abcd1234567890abcd1234567890abcd1234567890abcd1234",
+        )
+        .map_err(|e| DeezelError::Other(e.to_string()))
     }
-    
-    async fn get_block(&self, _hash: &str) -> Result<JsonValue> {
-        Ok(serde_json::json!({"height": 800000}))
+    async fn get_mempool_info(&self) -> Result<bitcoind::GetMempoolInfoResult> {
+        Ok(serde_json::from_value(serde_json::json!({})).unwrap())
     }
-    
-    async fn get_block_hash(&self, _height: u64) -> Result<String> {
-        Ok("mock_block_hash".to_string())
+    async fn get_block_txids(
+        &self,
+        _hash: &bitcoin::BlockHash,
+    ) -> Result<Vec<bitcoin::Txid>> {
+        Ok(vec![])
     }
-    
-    async fn send_raw_transaction(&self, _tx_hex: &str) -> Result<String> {
-        Ok("mock_txid".to_string())
+    async fn get_block_header(
+        &self,
+        _hash: &bitcoin::BlockHash,
+    ) -> Result<bitcoind::GetBlockHeaderResult> {
+        Ok(serde_json::from_value(serde_json::json!({
+            "hash": "0000000000000000000000000000000000000000000000000000000000000000",
+            "confirmations": 1,
+            "height": 800000,
+            "version": 0,
+            "versionHex": "00000000",
+            "merkleroot": "0000000000000000000000000000000000000000000000000000000000000000",
+            "time": 1640995200,
+            "mediantime": 1640995200,
+            "nonce": 0,
+            "bits": "1d00ffff",
+            "difficulty": 1.0,
+            "chainwork": "0000000000000000000000000000000000000000000000000000000000000000",
+            "nTx": 0,
+            "previousblockhash": "0000000000000000000000000000000000000000000000000000000000000000"
+        })).unwrap())
     }
-    
-    async fn get_mempool_info(&self) -> Result<JsonValue> {
-        Ok(serde_json::json!({"size": 1000}))
+    async fn scan_tx_out_set(
+        &self,
+        _requests: &[bitcoind::ScanTxOutRequest],
+    ) -> Result<serde_json::Value> {
+        unimplemented!()
     }
-    
-    async fn estimate_smart_fee(&self, _target: u32) -> Result<JsonValue> {
-        Ok(serde_json::json!({"feerate": 0.00010000}))
+
+    async fn get_blockchain_info(&self) -> Result<bitcoind::GetBlockchainInfoResult> {
+        unimplemented!()
     }
-    
-    async fn get_esplora_blocks_tip_height(&self) -> Result<u64> {
-        Ok(800000)
+    async fn get_block_verbose(&self, _hash: &bitcoin::BlockHash) -> Result<bitcoind::GetBlockResult> {
+        unimplemented!()
     }
-    
-    async fn trace_transaction(&self, _txid: &str, _vout: u32, _block: Option<&str>, _tx: Option<&str>) -> Result<JsonValue> {
-        Ok(serde_json::json!({"trace": "mock_trace"}))
+    async fn get_block_filter(&self, _hash: &bitcoin::BlockHash) -> Result<bitcoind::GetBlockFilterResult> {
+        unimplemented!()
+    }
+    async fn get_block_stats(&self, _height: u64) -> Result<bitcoind::GetBlockStatsResult> {
+        unimplemented!()
+    }
+    async fn get_chain_tips(&self) -> Result<deezel_common::bitcoind::GetChainTipsResult> {
+        unimplemented!()
+    }
+    async fn get_chain_tx_stats(
+        &self,
+        _nblocks: Option<u32>,
+        _blockhash: Option<bitcoin::BlockHash>,
+    ) -> Result<bitcoind::GetBlockStatsResult> {
+        unimplemented!()
+    }
+    async fn get_raw_mempool(&self) -> Result<Vec<bitcoin::Txid>> {
+        unimplemented!()
+    }
+    async fn get_tx_out(
+        &self,
+        _txid: &bitcoin::Txid,
+        _vout: u32,
+        _include_mempool: Option<bool>,
+    ) -> Result<bitcoind::GetTxOutResult> {
+        unimplemented!()
+    }
+    async fn get_mining_info(&self) -> Result<bitcoind::GetMiningInfoResult> {
+        unimplemented!()
+    }
+    async fn get_network_info(&self) -> Result<bitcoind::GetNetworkInfoResult> {
+        unimplemented!()
+    }
+    async fn list_banned(&self) -> Result<bitcoind::ListBannedResult> {
+        unimplemented!()
+    }
+    async fn get_raw_transaction(
+        &self,
+        _txid: &bitcoin::Txid,
+        _blockhash: Option<&bitcoin::BlockHash>,
+    ) -> Result<bitcoind::GetRawTransactionResult> {
+        unimplemented!()
     }
 }
 
@@ -427,6 +497,10 @@ impl EsploraProvider for MockProvider {
     
     async fn get_block_txs(&self, _hash: &str, _start_index: Option<u32>) -> Result<JsonValue> {
         Ok(serde_json::json!([]))
+    }
+    
+    async fn get_address_info(&self, _address: &str) -> Result<JsonValue> {
+        Ok(serde_json::json!({"balance": 100000000}))
     }
     
     async fn get_address(&self, _address: &str) -> Result<JsonValue> {
@@ -548,6 +622,7 @@ impl AlkanesProvider for MockProvider {
         Ok(serde_json::json!({"name": "Test Token", "symbol": "TEST"}))
     }
 
+    
     async fn get_alkanes_balance(&self, _address: Option<&str>) -> Result<Vec<AlkanesBalance>> {
         Ok(vec![AlkanesBalance {
             name: "Test Token".to_string(),
@@ -557,8 +632,12 @@ impl AlkanesProvider for MockProvider {
         }])
     }
     
-    async fn trace(&self, _outpoint: &str) -> Result<JsonValue> {
-        Ok(serde_json::json!({"trace": "mock_trace"}))
+    async fn trace_outpoint_json(&self, _txid: &str, _vout: u32) -> Result<String> {
+        Ok("{\"trace\": \"mock_trace\"}".to_string())
+    }
+
+    async fn trace_outpoint_pretty(&self, _txid: &str, _vout: u32) -> Result<String> {
+        Ok("mock_trace".to_string())
     }
     
     async fn inspect(&self, _target: &str, _config: AlkanesInspectConfig) -> Result<AlkanesInspectResult> {

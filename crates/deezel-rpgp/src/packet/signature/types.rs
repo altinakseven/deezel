@@ -1,4 +1,5 @@
 extern crate alloc;
+use crate::line_writer::LineBreak;
 use alloc::boxed::Box;
 use alloc::string::ToString;
 use alloc::vec;
@@ -473,7 +474,7 @@ impl Signature {
         if matches!(self.typ(), Some(SignatureType::Text)) {
             #[cfg(feature = "std")]
             {
-                let normalized = NormalizedReader::new(data, LineBreak::Crlf);
+                let normalized = NormalizedReader::new(data, crate::line_writer::LineBreak::Crlf);
                 config.hash_data_to_sign(&mut hasher, normalized)?;
             }
             #[cfg(not(feature = "std"))]

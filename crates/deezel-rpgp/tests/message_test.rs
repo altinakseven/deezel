@@ -11,8 +11,9 @@ extern crate log;
 
 use deezel_rpgp::{
     composed::{
-        CleartextSignedMessage, Deserializable, Message, PlainSessionKey, SignedPublicKey,
+        CleartextSignedMessage, Deserializable, PlainSessionKey, SignedPublicKey,
         SignedSecretKey,
+        types::Message,
     },
     crypto::sym::SymmetricKeyAlgorithm,
     types::{KeyDetails, KeyId, Password},

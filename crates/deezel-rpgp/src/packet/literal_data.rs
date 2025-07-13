@@ -23,7 +23,7 @@ use crate::{
 
 #[cfg(feature = "std")]
 use crate::normalize_lines::{
-    check_strings, normalize_lines, random_string, LineBreak, NormalizedReader,
+    normalize_lines, NormalizedReader,
 };
 
 /// Literal Data Packet
@@ -120,7 +120,7 @@ impl LiteralData {
     /// The data length combined with the header information must not be larger than `u32::MAX`.
     pub fn from_str(file_name: impl Into<Bytes>, raw_data: &str) -> Result<Self> {
         #[cfg(feature = "std")]
-        let data: Bytes = normalize_lines(raw_data, LineBreak::Crlf)
+        let data: Bytes = crate::normalize_lines::normalize_lines(raw_data, crate::line_writer::LineBreak::Crlf)
             .to_string()
             .into();
         #[cfg(not(feature = "std"))]
@@ -310,7 +310,7 @@ impl<R: io::Read> LiteralDataGenerator<R> {
             #[cfg(feature = "std")]
             {
                 if header.mode == DataMode::Utf8 {
-                    MaybeNormalizedReader::Normalized(NormalizedReader::new(source, LineBreak::Crlf))
+                    MaybeNormalizedReader::Normalized(NormalizedReader::new(source, crate::line_writer::LineBreak::Crlf))
                 } else {
                     MaybeNormalizedReader::Raw(source)
                 }

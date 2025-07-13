@@ -8,7 +8,10 @@
 use async_trait::async_trait;
 use deezel_rpgp::{
     composed::{
-        MessageBuilder, ArmorOptions, Deserializable, Message, SecretKeyParamsBuilder,
+        message::MessageBuilder,
+        types::{ArmorOptions, Message, TheRing},
+        Deserializable,
+        SecretKeyParamsBuilder,
         SignedPublicKey, SignedSecretKey, KeyType, StandaloneSignature,
     },
     crypto::{hash::HashAlgorithm, sym::SymmetricKeyAlgorithm},
@@ -152,10 +155,8 @@ impl PgpProvider for RpgpPgpProvider {
     async fn export_key(&self, key: &PgpKey, include_private: bool) -> Result<String> {
         if !include_private && key.is_private {
             // We need to convert the private key to a public key first
-            let (secret_key, _headers) = SignedSecretKey::from_string(
-                &String::from_utf8(key.key_data.clone()).unwrap(),
-            )
-            .map_err(|e| DeezelError::Pgp(e.to_string()))?;
+            let (secret_key, _headers) = SignedSecretKey::from_armor_single(&key.key_data)
+                .map_err(|e| DeezelError::Pgp(e.to_string()))?;
             let public_key: SignedPublicKey = secret_key.into();
             public_key
                 .to_armored_string(ArmorOptions::default())
@@ -170,9 +171,7 @@ impl PgpProvider for RpgpPgpProvider {
         let recipient_pub_keys: Vec<SignedPublicKey> = recipient_keys
             .iter()
             .map(|k| {
-                SignedPublicKey::from_string(
-                    &String::from_utf8(k.key_data.clone()).unwrap(),
-                )
+                SignedPublicKey::from_armor_single(&k.key_data)
                 .map(|(key, _headers)| key)
             })
             .collect::<std::result::Result<Vec<SignedPublicKey>, _>>()
@@ -208,7 +207,7 @@ impl PgpProvider for RpgpPgpProvider {
         let encrypted_str = String::from_utf8(encrypted_data.to_vec());
         let message = if let Ok(ref encrypted_str) = encrypted_str {
             // Try armored format first
-            if let Ok((msg, _headers)) = Message::from_string(encrypted_str) {
+            if let Ok((msg, _headers)) = Message::from_armor(encrypted_str.as_bytes()) {
                 msg
             } else {
                 // Fall back to binary format
@@ -221,10 +220,8 @@ impl PgpProvider for RpgpPgpProvider {
                 .map_err(|e| DeezelError::Pgp(e.to_string()))?
         };
 
-        let (secret_key, _headers) = SignedSecretKey::from_string(
-            &String::from_utf8(private_key.key_data.clone()).unwrap(),
-        )
-        .map_err(|e| DeezelError::Pgp(e.to_string()))?;
+        let (secret_key, _headers) = SignedSecretKey::from_armor_single(&private_key.key_data)
+            .map_err(|e| DeezelError::Pgp(e.to_string()))?;
 
         let key_passwords = if let Some(pass) = passphrase {
             vec![pass.into()]
@@ -232,7 +229,7 @@ impl PgpProvider for RpgpPgpProvider {
             vec![]
         };
 
-        let ring = deezel_rpgp::composed::TheRing {
+        let ring = TheRing {
             secret_keys: vec![&secret_key],
             key_passwords: key_passwords.iter().collect(),
             ..Default::default()
@@ -249,10 +246,8 @@ impl PgpProvider for RpgpPgpProvider {
     }
 
     async fn sign(&self, data: &[u8], private_key: &PgpKey, passphrase: Option<&str>, armor: bool) -> Result<Vec<u8>> {
-        let (secret_key, _headers) = SignedSecretKey::from_string(
-            &String::from_utf8(private_key.key_data.clone()).unwrap(),
-        )
-        .map_err(|e| DeezelError::Pgp(e.to_string()))?;
+        let (secret_key, _headers) = SignedSecretKey::from_armor_single(&private_key.key_data)
+            .map_err(|e| DeezelError::Pgp(e.to_string()))?;
 
         let password = passphrase.map(|p| p.into()).unwrap_or_default();
         
@@ -285,10 +280,8 @@ impl PgpProvider for RpgpPgpProvider {
     }
 
     async fn verify(&self, data: &[u8], signature: &[u8], public_key: &PgpKey) -> Result<bool> {
-        let (public_key, _headers) = SignedPublicKey::from_string(
-            &String::from_utf8(public_key.key_data.clone()).unwrap(),
-        )
-        .map_err(|e| DeezelError::Pgp(e.to_string()))?;
+        let (public_key, _headers) = SignedPublicKey::from_armor_single(&public_key.key_data)
+            .map_err(|e| DeezelError::Pgp(e.to_string()))?;
 
         let (signature, _headers) = StandaloneSignature::from_armor_single(signature)
             .map_err(|e| DeezelError::Pgp(e.to_string()))?;
@@ -300,19 +293,15 @@ impl PgpProvider for RpgpPgpProvider {
     }
 
     async fn encrypt_and_sign(&self, data: &[u8], recipient_keys: &[PgpKey], signing_key: &PgpKey, passphrase: Option<&str>, armor: bool) -> Result<Vec<u8>> {
-        let (secret_key, _headers) = SignedSecretKey::from_string(
-            &String::from_utf8(signing_key.key_data.clone()).unwrap(),
-        )
-        .map_err(|e| DeezelError::Pgp(e.to_string()))?;
+        let (secret_key, _headers) = SignedSecretKey::from_armor_single(&signing_key.key_data)
+            .map_err(|e| DeezelError::Pgp(e.to_string()))?;
 
         let password = passphrase.map(|p| p.into()).unwrap_or_default();
 
         let recipient_pub_keys: Vec<SignedPublicKey> = recipient_keys
             .iter()
             .map(|k| {
-                SignedPublicKey::from_string(
-                    &String::from_utf8(k.key_data.clone()).unwrap(),
-                )
+                SignedPublicKey::from_armor_single(&k.key_data)
                 .map(|(key, _headers)| key)
             })
             .collect::<std::result::Result<Vec<SignedPublicKey>, _>>()
@@ -358,7 +347,7 @@ impl PgpProvider for RpgpPgpProvider {
         let encrypted_str = String::from_utf8(encrypted_data.to_vec());
         let message = if let Ok(ref encrypted_str) = encrypted_str {
             // Try armored format first
-            if let Ok((msg, _headers)) = Message::from_string(encrypted_str) {
+            if let Ok((msg, _headers)) = Message::from_armor(encrypted_str.as_bytes()) {
                 msg
             } else {
                 // Fall back to binary format
@@ -372,10 +361,8 @@ impl PgpProvider for RpgpPgpProvider {
         };
 
         // 2. Get secret key for decryption
-        let (secret_key, _headers) = SignedSecretKey::from_string(
-            &String::from_utf8(private_key.key_data.clone()).unwrap(),
-        )
-        .map_err(|e| DeezelError::Pgp(e.to_string()))?;
+        let (secret_key, _headers) = SignedSecretKey::from_armor_single(&private_key.key_data)
+            .map_err(|e| DeezelError::Pgp(e.to_string()))?;
 
         let key_passwords = if let Some(pass) = passphrase {
             vec![pass.into()]
@@ -384,7 +371,7 @@ impl PgpProvider for RpgpPgpProvider {
         };
 
         // 3. Use the same decryption approach as the regular decrypt function
-        let ring = deezel_rpgp::composed::TheRing {
+        let ring = TheRing {
             secret_keys: vec![&secret_key],
             key_passwords: key_passwords.iter().collect(),
             ..Default::default()
@@ -425,10 +412,9 @@ impl PgpProvider for RpgpPgpProvider {
         };
 
         // 5. Get public key for verification
-        let (sender_public_key_parsed, _headers) = SignedPublicKey::from_string(
-            &String::from_utf8(sender_public_key.key_data.clone()).unwrap(),
-        )
-        .map_err(|e| DeezelError::Pgp(e.to_string()))?;
+        let (sender_public_key_parsed, _headers) =
+            SignedPublicKey::from_armor_single(&sender_public_key.key_data)
+                .map_err(|e| DeezelError::Pgp(e.to_string()))?;
 
         // 6. Try to verify the signature
         let signature_valid = match decrypted_message.verify(&sender_public_key_parsed) {

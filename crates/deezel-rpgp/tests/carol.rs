@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate pretty_assertions;
 
-use deezel_rpgp::composed::{ArmorOptions, Deserializable};
+use deezel_rpgp::composed::{types::ArmorOptions, Deserializable};
 
 #[test]
 fn load_carol_sec() {

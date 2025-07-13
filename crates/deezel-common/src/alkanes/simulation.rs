@@ -53,7 +53,7 @@ impl<P: crate::traits::DeezelProvider> SimulationManager<P> {
         );
         
         let contract_id = format!("{}:{}", params.target.block, params.target.tx);
-        self.rpc_client.simulate(&contract_id, Some(&simulation_params)).await
+        self.rpc_client.provider().simulate(&contract_id, Some(&simulation_params)).await
     }
 
     /// Simulate a contract execution
@@ -67,7 +67,7 @@ impl<P: crate::traits::DeezelProvider> SimulationManager<P> {
         
         let contract_id_str = format!("{}:{}", contract_id.block, contract_id.tx);
         let calldata_str = calldata.join(":");
-        self.rpc_client.simulate(&contract_id_str, Some(&calldata_str)).await
+        self.rpc_client.provider().simulate(&contract_id_str, Some(&calldata_str)).await
     }
 
     /// Simulate a token transfer
@@ -89,7 +89,7 @@ impl<P: crate::traits::DeezelProvider> SimulationManager<P> {
         
         let token_id_str = format!("{}:{}", token_id.block, token_id.tx);
         let inputs_str = inputs.join(":");
-        self.rpc_client.simulate(&token_id_str, Some(&inputs_str)).await
+        self.rpc_client.provider().simulate(&token_id_str, Some(&inputs_str)).await
     }
 
     /// Simulate a swap operation
@@ -111,7 +111,7 @@ impl<P: crate::traits::DeezelProvider> SimulationManager<P> {
         
         let pool_id_str = format!("{}:{}", pool_id.block, pool_id.tx);
         let inputs_str = inputs.join(":");
-        self.rpc_client.simulate(&pool_id_str, Some(&inputs_str)).await
+        self.rpc_client.provider().simulate(&pool_id_str, Some(&inputs_str)).await
     }
 
     /// Simulate liquidity addition
@@ -135,7 +135,7 @@ impl<P: crate::traits::DeezelProvider> SimulationManager<P> {
         
         let pool_id_str = format!("{}:{}", pool_id.block, pool_id.tx);
         let inputs_str = inputs.join(":");
-        self.rpc_client.simulate(&pool_id_str, Some(&inputs_str)).await
+        self.rpc_client.provider().simulate(&pool_id_str, Some(&inputs_str)).await
     }
 
     /// Simulate liquidity removal
@@ -152,7 +152,7 @@ impl<P: crate::traits::DeezelProvider> SimulationManager<P> {
         
         let pool_id_str = format!("{}:{}", pool_id.block, pool_id.tx);
         let inputs_str = inputs.join(":");
-        self.rpc_client.simulate(&pool_id_str, Some(&inputs_str)).await
+        self.rpc_client.provider().simulate(&pool_id_str, Some(&inputs_str)).await
     }
 
     /// Get simulation gas estimate

@@ -391,6 +391,7 @@ mod tests {
 #[cfg(not(target_arch = "wasm32"))]
 mod standalone_impls {
     use super::*;
+    use crate::bitcoind::*;
     use async_trait::async_trait;
 
     #[async_trait(?Send)]
@@ -614,41 +615,66 @@ impl crate::traits::AddressResolver for StandaloneAddressResolver {
 
 #[cfg(not(target_arch = "wasm32"))]
 #[async_trait(?Send)]
-impl BitcoinRpcProvider for StandaloneAddressResolver {
+impl BitcoindProvider for StandaloneAddressResolver {
+    async fn get_blockchain_info(&self) -> Result<GetBlockchainInfoResult> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoind RPC".to_string()))
+    }
     async fn get_block_count(&self) -> Result<u64> {
-        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoin RPC".to_string()))
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoind RPC".to_string()))
     }
-    async fn generate_to_address(&self, _nblocks: u32, _address: &str) -> Result<serde_json::Value> {
-        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoin RPC".to_string()))
+    async fn get_block_hash(&self, _height: u64) -> Result<bitcoin::BlockHash> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoind RPC".to_string()))
     }
-    async fn get_transaction_hex(&self, _txid: &str) -> Result<String> {
-        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoin RPC".to_string()))
+    async fn get_block_header(&self, _hash: &bitcoin::BlockHash) -> Result<GetBlockHeaderResult> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoind RPC".to_string()))
     }
-    async fn get_block(&self, _hash: &str) -> Result<serde_json::Value> {
-        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoin RPC".to_string()))
+    async fn get_block_verbose(&self, _hash: &bitcoin::BlockHash) -> Result<crate::bitcoind::GetBlockResult> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoind RPC".to_string()))
     }
-    async fn get_block_hash(&self, _height: u64) -> Result<String> {
-        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoin RPC".to_string()))
+    async fn get_block_txids(&self, _hash: &bitcoin::BlockHash) -> Result<Vec<bitcoin::Txid>> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoind RPC".to_string()))
     }
-    async fn send_raw_transaction(&self, _tx_hex: &str) -> Result<String> {
-        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoin RPC".to_string()))
+    async fn get_block_filter(&self, _hash: &bitcoin::BlockHash) -> Result<GetBlockFilterResult> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoind RPC".to_string()))
     }
-    async fn get_mempool_info(&self) -> Result<serde_json::Value> {
-        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoin RPC".to_string()))
+    async fn get_block_stats(&self, _height: u64) -> Result<GetBlockStatsResult> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoind RPC".to_string()))
     }
-    async fn estimate_smart_fee(&self, _target: u32) -> Result<serde_json::Value> {
-        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoin RPC".to_string()))
+    async fn get_chain_tips(&self) -> Result<GetChainTipsResult> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoind RPC".to_string()))
     }
-    
-    async fn get_esplora_blocks_tip_height(&self) -> Result<u64> {
-        Err(DeezelError::NotImplemented("get_esplora_blocks_tip_height not implemented for StandaloneAddressResolver".to_string()))
+    async fn get_chain_tx_stats(&self, _n_blocks: Option<u32>, _block_hash: Option<bitcoin::BlockHash>) -> Result<GetBlockStatsResult> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoind RPC".to_string()))
     }
-    
-    async fn trace_transaction(&self, _txid: &str, _vout: u32, _block: Option<&str>, _tx: Option<&str>) -> Result<serde_json::Value> {
-        Err(DeezelError::NotImplemented("trace_transaction not implemented for StandaloneAddressResolver".to_string()))
+    async fn get_mempool_info(&self) -> Result<GetMempoolInfoResult> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoind RPC".to_string()))
     }
-    async fn get_new_address(&self) -> Result<serde_json::Value> {
-        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoin RPC".to_string()))
+    async fn get_raw_mempool(&self) -> Result<Vec<bitcoin::Txid>> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoind RPC".to_string()))
+    }
+    async fn get_tx_out(&self, _txid: &bitcoin::Txid, _vout: u32, _include_mempool: Option<bool>) -> Result<GetTxOutResult> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoind RPC".to_string()))
+    }
+    async fn get_mining_info(&self) -> Result<GetMiningInfoResult> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoind RPC".to_string()))
+    }
+    async fn get_network_info(&self) -> Result<GetNetworkInfoResult> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoind RPC".to_string()))
+    }
+    async fn list_banned(&self) -> Result<ListBannedResult> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoind RPC".to_string()))
+    }
+    async fn scan_tx_out_set(&self, _requests: &[ScanTxOutRequest]) -> Result<serde_json::Value> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoind RPC".to_string()))
+    }
+    async fn generate_to_address(&self, _n_blocks: u64, _address: &bitcoin::Address) -> Result<Vec<bitcoin::BlockHash>> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoind RPC".to_string()))
+    }
+    async fn send_raw_transaction(&self, _tx: &bitcoin::Transaction) -> Result<bitcoin::Txid> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoind RPC".to_string()))
+    }
+    async fn get_raw_transaction(&self, _txid: &bitcoin::Txid, _block_hash: Option<&bitcoin::BlockHash>) -> Result<GetRawTransactionResult> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoind RPC".to_string()))
     }
 }
 
@@ -802,7 +828,10 @@ impl AlkanesProvider for StandaloneAddressResolver {
     async fn get_token_info(&self, _alkane_id: &str) -> Result<serde_json::Value> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
     }
-    async fn trace(&self, _outpoint: &str) -> Result<serde_json::Value> {
+    async fn trace_outpoint_json(&self, _txid: &str, _vout: u32) -> Result<String> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
+    }
+    async fn trace_outpoint_pretty(&self, _txid: &str, _vout: u32) -> Result<String> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
     }
     async fn inspect(&self, _target: &str, _config: AlkanesInspectConfig) -> Result<AlkanesInspectResult> {

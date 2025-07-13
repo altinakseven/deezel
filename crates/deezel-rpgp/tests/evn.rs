@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate pretty_assertions;
 
-use deezel_rpgp::composed::{ArmorOptions, Deserializable};
+use deezel_rpgp::composed::{types::ArmorOptions, Deserializable};
 
 /// "evn.cert" is a real world certificate with some unusual properties:
 /// For one thing, it encodes subpacket length in the 5 byte format.

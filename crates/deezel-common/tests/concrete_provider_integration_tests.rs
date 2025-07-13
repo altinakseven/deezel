@@ -1,7 +1,8 @@
 use deezel_common::{
+    bitcoind,
     keystore::{self, AddressInfo as KeystoreAddressInfo, Keystore},
     traits::{
-        BitcoinRpcProvider, EsploraProvider, JsonRpcProvider, SendParams, UtxoInfo, WalletProvider,
+        BitcoindProvider, EsploraProvider, JsonRpcProvider, SendParams, UtxoInfo, WalletProvider,
     },
     utils::hex::ToHexString,
     DeezelError, Result,
@@ -141,28 +142,35 @@ impl EsploraProvider for MockRpcProvider {
     async fn get_mempool_txids(&self) -> Result<serde_json::Value> { unimplemented!() }
     async fn get_mempool_recent(&self) -> Result<serde_json::Value> { unimplemented!() }
     async fn get_fee_estimates(&self) -> Result<serde_json::Value> { unimplemented!() }
+    async fn get_address_info(&self, _address: &str) -> Result<JsonValue> { unimplemented!() }
 }
 
 #[async_trait::async_trait(?Send)]
-impl BitcoinRpcProvider for MockRpcProvider {
-     async fn send_raw_transaction(&self, tx_hex: &str) -> Result<String> {
-        self.call("", "sendrawtransaction", json!([tx_hex]), 1)
-            .await?
-            .as_str()
-            .map(String::from)
-            .ok_or_else(|| DeezelError::RpcError("Invalid txid response".into()))
-    }
-    // Other BitcoinRpcProvider methods are not needed for this test
+impl BitcoindProvider for MockRpcProvider {
+    async fn get_blockchain_info(&self) -> Result<crate::bitcoind::GetBlockchainInfoResult> { unimplemented!() }
     async fn get_block_count(&self) -> Result<u64> { unimplemented!() }
-    async fn generate_to_address(&self, _nblocks: u32, _address: &str) -> Result<JsonValue> { unimplemented!() }
-    async fn get_new_address(&self) -> Result<JsonValue> { Ok(json!("bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4")) }
-    async fn get_transaction_hex(&self, _txid: &str) -> Result<String> { unimplemented!() }
-    async fn get_block(&self, _hash: &str) -> Result<JsonValue> { unimplemented!() }
-    async fn get_block_hash(&self, _height: u64) -> Result<String> { unimplemented!() }
-    async fn get_mempool_info(&self) -> Result<JsonValue> { unimplemented!() }
-    async fn estimate_smart_fee(&self, _target: u32) -> Result<JsonValue> { unimplemented!() }
-    async fn get_esplora_blocks_tip_height(&self) -> Result<u64> { unimplemented!() }
-    async fn trace_transaction(&self, _txid: &str, _vout: u32, _block: Option<&str>, _tx: Option<&str>) -> Result<JsonValue> { unimplemented!() }
+    async fn get_block_hash(&self, _height: u64) -> Result<bitcoin::BlockHash> { unimplemented!() }
+    async fn get_block_header(&self, _hash: &bitcoin::BlockHash) -> Result<crate::bitcoind::GetBlockHeaderResult> { unimplemented!() }
+    async fn get_block_verbose(&self, _hash: &bitcoin::BlockHash) -> Result<crate::bitcoind::GetBlockResult> { unimplemented!() }
+    async fn get_block_txids(&self, _hash: &bitcoin::BlockHash) -> Result<Vec<bitcoin::Txid>> { unimplemented!() }
+    async fn get_block_filter(&self, _hash: &bitcoin::BlockHash) -> Result<crate::bitcoind::GetBlockFilterResult> { unimplemented!() }
+    async fn get_block_stats(&self, _height: u64) -> Result<crate::bitcoind::GetBlockStatsResult> { unimplemented!() }
+    async fn get_chain_tips(&self) -> Result<crate::bitcoind::GetChainTipsResult> { unimplemented!() }
+    async fn get_chain_tx_stats(&self, _n_blocks: Option<u32>, _block_hash: Option<bitcoin::BlockHash>) -> Result<crate::bitcoind::GetBlockStatsResult> { unimplemented!() }
+    async fn get_mempool_info(&self) -> Result<crate::bitcoind::GetMempoolInfoResult> { unimplemented!() }
+    async fn get_raw_mempool(&self) -> Result<Vec<bitcoin::Txid>> { unimplemented!() }
+    async fn get_tx_out(&self, _txid: &bitcoin::Txid, _vout: u32, _include_mempool: Option<bool>) -> Result<crate::bitcoind::GetTxOutResult> { unimplemented!() }
+    async fn get_mining_info(&self) -> Result<crate::bitcoind::GetMiningInfoResult> { unimplemented!() }
+    async fn get_network_info(&self) -> Result<crate::bitcoind::GetNetworkInfoResult> { unimplemented!() }
+    async fn list_banned(&self) -> Result<crate::bitcoind::ListBannedResult> { unimplemented!() }
+    async fn scan_tx_out_set(&self, _requests: &[crate::bitcoind::ScanTxOutRequest]) -> Result<JsonValue> { unimplemented!() }
+    async fn generate_to_address(&self, _n_blocks: u64, _address: &Address) -> Result<Vec<bitcoin::BlockHash>> { unimplemented!() }
+    async fn send_raw_transaction(&self, _tx: &Transaction) -> Result<bitcoin::Txid> {
+        let response = self.call("", "sendrawtransaction", json!([]), 1).await?;
+        let txid_str = response.as_str().ok_or_else(|| DeezelError::RpcError("Invalid txid response".into()))?;
+        bitcoin::Txid::from_str(txid_str).map_err(|e| DeezelError::Other(e.to_string()))
+    }
+    async fn get_raw_transaction(&self, _txid: &bitcoin::Txid, _block_hash: Option<&bitcoin::BlockHash>) -> Result<crate::bitcoind::GetRawTransactionResult> { unimplemented!() }
 }
 
 #[async_trait::async_trait(?Send)]
@@ -222,7 +230,7 @@ impl WalletProvider for MockRpcProvider {
         let keystore_data = std::fs::read(wallet_path)?;
         let keystore: Keystore = serde_json::from_slice(&keystore_data)?;
         let passphrase = self.passphrase.as_deref().ok_or_else(|| DeezelError::Wallet("Passphrase not set".to_string()))?;
-        let seed = keystore::decrypt_seed(&keystore, passphrase)?;
+        let seed = keystore.decrypt_seed(passphrase)?;
         let network = self.get_network();
         let secp: Secp256k1<All> = Secp256k1::new();
         let mut prevouts = Vec::new();
@@ -274,13 +282,19 @@ impl WalletProvider for MockRpcProvider {
     }
 
     async fn broadcast_transaction(&self, tx_hex: String) -> Result<String> {
-        self.send_raw_transaction(&tx_hex).await
+        let tx: Transaction = bitcoin::consensus::deserialize(&hex::decode(tx_hex)?)?;
+        self.send_raw_transaction(&tx).await.map(|txid| txid.to_string())
     }
 
     // --- Unimplemented methods for this test ---
     async fn create_wallet(&self, _config: deezel_common::traits::WalletConfig, _mnemonic: Option<String>, _passphrase: Option<String>) -> Result<deezel_common::traits::WalletInfo> { unimplemented!() }
     async fn load_wallet(&self, _config: deezel_common::traits::WalletConfig, _passphrase: Option<String>) -> Result<deezel_common::traits::WalletInfo> { unimplemented!() }
-    async fn get_balance(&self) -> Result<deezel_common::traits::WalletBalance> { unimplemented!() }
+    async fn get_balance(&self, _addresses: Option<Vec<String>>) -> Result<deezel_common::traits::WalletBalance> {
+        Ok(deezel_common::traits::WalletBalance {
+            confirmed: 0,
+            pending: 0,
+        })
+    }
     async fn get_address(&self) -> Result<String> { unimplemented!() }
     async fn get_addresses(&self, _count: u32) -> Result<Vec<deezel_common::traits::AddressInfo>> {
         // Load the keystore to get the actual address
@@ -331,7 +345,7 @@ async fn test_wallet_send_transaction() {
     
     // 2. Create a keystore with the deterministic seed and address info
     let passphrase = "test_password";
-    let keystore = keystore::new_from_mnemonic(passphrase, &mnemonic.to_string(), network).unwrap();
+    let (keystore, _mnemonic_str) = keystore::create_keystore(passphrase, Some(mnemonic.to_string())).unwrap();
     let keystore_json = serde_json::to_string(&keystore).unwrap();
     
     // 3. Get the address from the keystore (this ensures consistency)

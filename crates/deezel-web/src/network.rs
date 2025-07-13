@@ -50,7 +50,8 @@
 use async_trait::async_trait;
 use deezel_common::{DeezelError, Result};
 use js_sys::Uint8Array;
-use wasm_bindgen::prelude::*;
+use web_sys::wasm_bindgen::prelude::*;
+use web_sys::wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{Request, RequestInit, RequestMode, Response, window, Headers};
 

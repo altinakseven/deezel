@@ -1,4 +1,5 @@
 extern crate alloc;
+use snafu::Backtrace;
 use alloc::boxed::Box;
 use alloc::string::{String, ToString};
 use alloc::format;
@@ -227,10 +228,12 @@ impl From<derive_builder::UninitializedFieldError> for Error {
 }
 
 #[cfg(feature = "std")]
-impl From<std::io::Error> for Error {
-    fn from(err: std::io::Error) -> Self {
+impl From<crate::io::Error> for Error {
+    fn from(err: crate::io::Error) -> Self {
         Self::IO {
-            source: err.into(),
+            source: err,
+            #[cfg(feature = "std")]
+            backtrace: snafu::GenerateImplicitData::generate(),
         }
     }
 }

@@ -45,7 +45,7 @@ fn ecdh_roundtrip_with_rpgp_0_10() {
 }
 
 fn decrypt_rpgp_cur(enc_msg: &str, keyfile: &str) -> Vec<u8> {
-    use deezel_rpgp::composed::{Deserializable, Message};
+    use deezel_rpgp::composed::{Deserializable, types::Message};
     use deezel_rpgp::io::Read;
     use deezel_rpgp::types::Password;
 
@@ -65,7 +65,7 @@ fn decrypt_rpgp_cur(enc_msg: &str, keyfile: &str) -> Vec<u8> {
 
 fn encrypt_rpgp_cur(msg: &'static [u8], keyfile: &str) -> String {
     use deezel_rpgp::{
-        composed::{Deserializable, MessageBuilder},
+        composed::{Deserializable, message::MessageBuilder},
         crypto::sym::SymmetricKeyAlgorithm,
     };
 

@@ -59,15 +59,14 @@ impl<P: DeezelProvider> AlkanesManager<P> {
         self.provider.get_token_info(alkane_id).await
     }
     
-    /// Trace alkanes transaction
-    pub async fn trace_transaction(&self, txid: &str, vout: u32) -> Result<serde_json::Value> {
-        let outpoint = format!("{}:{}", txid, vout);
-        self.provider.trace(&outpoint).await
+    /// Trace alkanes transaction and return raw JSON string
+    pub async fn trace_outpoint_json(&self, txid: &str, vout: u32) -> Result<String> {
+        self.provider.trace_outpoint_json(txid, vout).await
     }
-    
-    /// Trace alkanes by outpoint
-    pub async fn trace(&self, outpoint: &str) -> Result<serde_json::Value> {
-        self.provider.trace(outpoint).await
+
+    /// Trace alkanes transaction and return pretty-printed JSON string
+    pub async fn trace_outpoint_pretty(&self, txid: &str, vout: u32) -> Result<String> {
+        self.provider.trace_outpoint_pretty(txid, vout).await
     }
     
     /// Inspect alkanes bytecode

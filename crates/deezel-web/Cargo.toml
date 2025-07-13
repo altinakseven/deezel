@@ -75,7 +75,7 @@ chrono = { workspace = true }
 protobuf = { workspace = true }
 
 # Web-specific dependencies
-wasm-bindgen = "0.2"
+wasm-bindgen = { version = "0.2" }
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
 web-sys = { workspace = true, features = [
@@ -115,3 +115,7 @@ codegen-units = 1
 
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = ["-Os", "--enable-mutable-globals"]
+
+[[example]]
+name = "test_harness"
+required-features = ["wasm-bindgen"]

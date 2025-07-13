@@ -1,12 +1,11 @@
 //! Integration tests for alkanes execute functionality
 
-use deezel_common::*;
-use std::collections::HashMap;
+use deezel_common::{*, bitcoind};
+use std::{collections::HashMap, str::FromStr};
 use std::sync::Arc;
 use anyhow::anyhow;
 use tokio::sync::Mutex;
 use bitcoin::{Address, Amount, OutPoint, Sequence, Transaction, TxIn, TxOut, Witness};
-use std::str::FromStr;
 
 /// Mock provider for testing alkanes execute functionality
 #[derive(Clone)]
@@ -94,7 +93,7 @@ impl traits::LogProvider for MockAlkanesProvider {
 impl traits::WalletProvider for MockAlkanesProvider {
     async fn create_wallet(&self, _config: traits::WalletConfig, _mnemonic: Option<String>, _passphrase: Option<String>) -> deezel_common::Result<traits::WalletInfo> { Ok(traits::WalletInfo { address: "bc1p5d7rjq7g6rdk2yhzks9smlaqtedr4dekq08ge8ztwac72sfr9rusxg3297".to_string(), network: bitcoin::Network::Regtest, mnemonic: Some("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about".to_string()) }) }
     async fn load_wallet(&self, config: traits::WalletConfig, passphrase: Option<String>) -> deezel_common::Result<traits::WalletInfo> { self.create_wallet(config, None, passphrase).await }
-    async fn get_balance(&self) -> deezel_common::Result<traits::WalletBalance> { Ok(traits::WalletBalance { confirmed: 100_000_000, trusted_pending: 0, untrusted_pending: 0 }) }
+    async fn get_balance(&self, _addresses: Option<Vec<String>>) -> deezel_common::Result<traits::WalletBalance> { Ok(traits::WalletBalance { confirmed: 100_000_000, pending: 0 }) }
     async fn get_address(&self) -> deezel_common::Result<String> { Ok("bc1p5d7rjq7g6rdk2yhzks9smlaqtedr4dekq08ge8ztwac72sfr9rusxg3297".to_string()) }
     async fn get_addresses(&self, count: u32) -> deezel_common::Result<Vec<traits::AddressInfo>> { Ok((0..count).map(|i| traits::AddressInfo { address: format!("bc1p5d7rjq7g6rdk2yhzks9smlaqtedr4dekq08ge8ztwac72sfr9rusxg329{}", i), script_type: "p2tr".to_string(), derivation_path: format!("m/86'/0'/0'/0/{}", i), index: i, used: false }).collect()) }
     async fn send(&self, _params: traits::SendParams) -> deezel_common::Result<String> { Ok("abcd1234567890abcd1234567890abcd1234567890abcd1234567890abcd1234".to_string()) }
@@ -126,18 +125,122 @@ impl traits::AddressResolver for MockAlkanesProvider {
 }
 
 #[async_trait::async_trait(?Send)]
-impl traits::BitcoinRpcProvider for MockAlkanesProvider {
-    async fn get_block_count(&self) -> deezel_common::Result<u64> { Ok(800000) }
-    async fn generate_to_address(&self, _nblocks: u32, _address: &str) -> deezel_common::Result<serde_json::Value> { Ok(serde_json::json!(["0000000000000000000000000000000000000000000000000000000000000000"])) }
-    async fn get_new_address(&self) -> deezel_common::Result<serde_json::Value> { Ok(serde_json::json!("bc1p5d7rjq7g6rdk2yhzks9smlaqtedr4dekq08ge8ztwac72sfr9rusxg3297")) }
-    async fn get_transaction_hex(&self, _txid: &str) -> deezel_common::Result<String> { Ok("0200000001".to_string()) }
-    async fn get_block(&self, _hash: &str) -> deezel_common::Result<serde_json::Value> { Ok(serde_json::json!({})) }
-    async fn get_block_hash(&self, _height: u64) -> deezel_common::Result<String> { Ok("0000000000000000000000000000000000000000000000000000000000000000".to_string()) }
-    async fn send_raw_transaction(&self, tx_hex: &str) -> deezel_common::Result<String> { self.broadcasted_txs.lock().await.push(tx_hex.to_string()); Ok("abcd1234567890abcd1234567890abcd1234567890abcd1234567890abcd1234".to_string()) }
-    async fn get_mempool_info(&self) -> deezel_common::Result<serde_json::Value> { Ok(serde_json::json!({})) }
-    async fn estimate_smart_fee(&self, _target: u32) -> deezel_common::Result<serde_json::Value> { Ok(serde_json::json!({"feerate": 0.00005})) }
-    async fn get_esplora_blocks_tip_height(&self) -> deezel_common::Result<u64> { Ok(800000) }
-    async fn trace_transaction(&self, _txid: &str, _vout: u32, _block: Option<&str>, _tx: Option<&str>) -> deezel_common::Result<serde_json::Value> { Ok(serde_json::json!({})) }
+impl traits::BitcoindProvider for MockAlkanesProvider {
+    async fn get_block_count(&self) -> Result<u64> {
+        Ok(800000)
+    }
+    async fn generate_to_address(
+        &self,
+        _nblocks: u64,
+        _address: &Address,
+    ) -> Result<Vec<bitcoin::BlockHash>> {
+        Ok(vec![bitcoin::BlockHash::from_str(
+            "0000000000000000000000000000000000000000000000000000000000000000",
+        )
+        .unwrap()])
+    }
+    async fn get_block_hash(&self, _height: u64) -> Result<bitcoin::BlockHash> {
+        bitcoin::BlockHash::from_str(
+            "0000000000000000000000000000000000000000000000000000000000000000",
+        )
+        .map_err(|e| DeezelError::Other(e.to_string()))
+    }
+    async fn send_raw_transaction(&self, tx: &Transaction) -> Result<bitcoin::Txid> {
+        self.broadcasted_txs
+            .lock()
+            .await
+            .push(bitcoin::consensus::encode::serialize_hex(tx));
+        bitcoin::Txid::from_str(
+            "abcd1234567890abcd1234567890abcd1234567890abcd1234567890abcd1234",
+        )
+        .map_err(|e| DeezelError::Other(e.to_string()))
+    }
+    async fn get_mempool_info(&self) -> Result<bitcoind::GetMempoolInfoResult> {
+        Ok(serde_json::from_value(serde_json::json!({})).unwrap())
+    }
+    async fn get_block_txids(
+        &self,
+        _hash: &bitcoin::BlockHash,
+    ) -> Result<Vec<bitcoin::Txid>> {
+        Ok(vec![])
+    }
+    async fn get_block_header(
+        &self,
+        _hash: &bitcoin::BlockHash,
+    ) -> Result<bitcoind::GetBlockHeaderResult> {
+        Ok(serde_json::from_value(serde_json::json!({
+            "hash": "0000000000000000000000000000000000000000000000000000000000000000",
+            "confirmations": 1,
+            "height": 800000,
+            "version": 0,
+            "versionHex": "00000000",
+            "merkleroot": "0000000000000000000000000000000000000000000000000000000000000000",
+            "time": 1640995200,
+            "mediantime": 1640995200,
+            "nonce": 0,
+            "bits": "1d00ffff",
+            "difficulty": 1.0,
+            "chainwork": "0000000000000000000000000000000000000000000000000000000000000000",
+            "nTx": 0,
+            "previousblockhash": "0000000000000000000000000000000000000000000000000000000000000000"
+        })).unwrap())
+    }
+    async fn scan_tx_out_set(
+        &self,
+        _requests: &[bitcoind::ScanTxOutRequest],
+    ) -> Result<serde_json::Value> {
+        unimplemented!()
+    }
+
+    async fn get_blockchain_info(&self) -> Result<bitcoind::GetBlockchainInfoResult> {
+        unimplemented!()
+    }
+    async fn get_block_verbose(&self, _hash: &bitcoin::BlockHash) -> Result<bitcoind::GetBlockResult> {
+        unimplemented!()
+    }
+    async fn get_block_filter(&self, _hash: &bitcoin::BlockHash) -> Result<bitcoind::GetBlockFilterResult> {
+        unimplemented!()
+    }
+    async fn get_block_stats(&self, _height: u64) -> Result<bitcoind::GetBlockStatsResult> {
+        unimplemented!()
+    }
+    async fn get_chain_tips(&self) -> Result<deezel_common::bitcoind::GetChainTipsResult> {
+        unimplemented!()
+    }
+    async fn get_chain_tx_stats(
+        &self,
+        _nblocks: Option<u32>,
+        _blockhash: Option<bitcoin::BlockHash>,
+    ) -> Result<bitcoind::GetBlockStatsResult> {
+        unimplemented!()
+    }
+    async fn get_raw_mempool(&self) -> Result<Vec<bitcoin::Txid>> {
+        unimplemented!()
+    }
+    async fn get_tx_out(
+        &self,
+        _txid: &bitcoin::Txid,
+        _vout: u32,
+        _include_mempool: Option<bool>,
+    ) -> Result<bitcoind::GetTxOutResult> {
+        unimplemented!()
+    }
+    async fn get_mining_info(&self) -> Result<bitcoind::GetMiningInfoResult> {
+        unimplemented!()
+    }
+    async fn get_network_info(&self) -> Result<bitcoind::GetNetworkInfoResult> {
+        unimplemented!()
+    }
+    async fn list_banned(&self) -> Result<bitcoind::ListBannedResult> {
+        unimplemented!()
+    }
+    async fn get_raw_transaction(
+        &self,
+        _txid: &bitcoin::Txid,
+        _blockhash: Option<&bitcoin::BlockHash>,
+    ) -> Result<bitcoind::GetRawTransactionResult> {
+        unimplemented!()
+    }
 }
 
 #[async_trait::async_trait(?Send)]
@@ -164,6 +267,7 @@ impl traits::EsploraProvider for MockAlkanesProvider {
     async fn get_block_txid(&self, _hash: &str, _index: u32) -> deezel_common::Result<String> { Ok("0000000000000000000000000000000000000000000000000000000000000000".to_string()) }
     async fn get_block_txs(&self, _hash: &str, _start_index: Option<u32>) -> deezel_common::Result<serde_json::Value> { Ok(serde_json::json!([])) }
     async fn get_address(&self, _address: &str) -> deezel_common::Result<serde_json::Value> { Ok(serde_json::json!({})) }
+    async fn get_address_info(&self, _address: &str) -> deezel_common::Result<serde_json::Value> { Ok(serde_json::json!({})) }
     async fn get_address_txs(&self, _address: &str) -> deezel_common::Result<serde_json::Value> { Ok(serde_json::json!([])) }
     async fn get_address_txs_chain(&self, _address: &str, _last_seen_txid: Option<&str>) -> deezel_common::Result<serde_json::Value> { Ok(serde_json::json!([])) }
     async fn get_address_txs_mempool(&self, _address: &str) -> deezel_common::Result<serde_json::Value> { Ok(serde_json::json!([])) }
@@ -248,7 +352,8 @@ impl traits::AlkanesProvider for MockAlkanesProvider {
     async fn get_balance(&self, _address: Option<&str>) -> deezel_common::Result<Vec<traits::AlkanesBalance>> { Ok(vec![]) }
     async fn get_alkanes_balance(&self, _address: Option<&str>) -> deezel_common::Result<Vec<traits::AlkanesBalance>> { Ok(vec![]) }
     async fn get_token_info(&self, _alkane_id: &str) -> deezel_common::Result<serde_json::Value> { Ok(serde_json::json!({})) }
-    async fn trace(&self, _outpoint: &str) -> deezel_common::Result<serde_json::Value> { Ok(serde_json::json!({})) }
+    async fn trace_outpoint_json(&self, _txid: &str, _vout: u32) -> Result<String> { Ok("{}".to_string()) }
+    async fn trace_outpoint_pretty(&self, _txid: &str, _vout: u32) -> Result<String> { Ok("{}".to_string()) }
     async fn inspect(&self, _target: &str, _config: traits::AlkanesInspectConfig) -> deezel_common::Result<traits::AlkanesInspectResult> { Ok(traits::AlkanesInspectResult { alkane_id: traits::AlkaneId { block: 1, tx: 100 }, bytecode_length: 0, disassembly: None, metadata: None, codehash: None, fuzzing_results: None }) }
     async fn get_bytecode(&self, _alkane_id: &str) -> deezel_common::Result<String> { Ok("".to_string()) }
     async fn simulate(&self, _contract_id: &str, _params: Option<&str>) -> deezel_common::Result<serde_json::Value> { Ok(serde_json::json!({})) }

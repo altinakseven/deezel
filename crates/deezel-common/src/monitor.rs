@@ -10,6 +10,7 @@ use crate::{Result, ToString, format};
 use crate::traits::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+use std::str::FromStr;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::{collections::HashMap, vec::Vec, string::String};
@@ -265,15 +266,11 @@ impl<P: DeezelProvider> BlockMonitor<P> {
     }
     
     /// Check if transaction involves monitored addresses
-    async fn transaction_involves_addresses(&self, txid: &str, addresses: &[String]) -> Result<bool> {
-        // Get transaction details
-        match self.provider.get_transaction_hex(txid).await {
-            Ok(tx_hex) => {
-                // Parse transaction from hex
-                let tx_bytes = hex::decode(&tx_hex)
-                    .map_err(|e| crate::DeezelError::Parse(format!("Invalid hex: {}", e)))?;
-                let tx: bitcoin::Transaction = bitcoin::consensus::deserialize(&tx_bytes)
-                    .map_err(|e| crate::DeezelError::Parse(format!("Invalid transaction: {}", e)))?;
+    async fn transaction_involves_addresses(&self, txid_str: &str, addresses: &[String]) -> Result<bool> {
+        let txid = bitcoin::Txid::from_str(txid_str)?;
+        match self.provider.get_raw_transaction(&txid, None).await {
+            Ok(tx_info) => {
+                let tx = tx_info.transaction().map_err(|e| crate::DeezelError::Other(e.to_string()))?;
                 
                 // Check inputs and outputs for monitored addresses
                 for input in &tx.input {
@@ -287,7 +284,8 @@ impl<P: DeezelProvider> BlockMonitor<P> {
                 
                 for output in &tx.output {
                     // Extract address from script_pubkey
-                    if let Ok(address) = bitcoin::Address::from_script(&output.script_pubkey, bitcoin::Network::Bitcoin) {
+                    let script_buf = bitcoin::ScriptBuf::from_bytes(output.script_pubkey.to_bytes());
+                    if let Ok(address) = bitcoin::Address::from_script(&script_buf, bitcoin::Network::Bitcoin) {
                         let addr_str = address.to_string();
                         if addresses.contains(&addr_str) {
                             return Ok(true);

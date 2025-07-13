@@ -16,6 +16,7 @@ use std::io::Read;
 pub mod utils;
 pub mod pgp;
 pub mod keystore;
+pub mod bitcoind;
 use utils::*;
 use pgp::DeezelPgpProvider;
 use keystore::{KeystoreManager, KeystoreCreateParams};
@@ -881,36 +882,6 @@ async fn resolve_addresses(
     Ok(resolved_addresses)
 }
 
-#[async_trait(?Send)]
-impl SystemBitcoind for SystemDeezel {
-   async fn execute_bitcoind_command(&self, command: BitcoindCommands) -> deezel_common::Result<()> {
-       let provider = &self.provider;
-       let res: anyhow::Result<()> = match command {
-            BitcoindCommands::Getblockcount => {
-                let count = provider.get_block_count().await?;
-                println!("{}", count);
-                Ok(())
-            },
-           BitcoindCommands::Generatetoaddress { nblocks, address } => {
-               // Resolve address identifiers if needed
-               let resolved_address = resolve_address_identifiers(&address, provider).await?;
-               
-               let result = provider.generate_to_address(nblocks, &resolved_address).await?;
-               println!("Generated {} blocks to address {}", nblocks, resolved_address);
-               if let Some(block_hashes) = result.as_array() {
-                   println!("Block hashes:");
-                   for (i, hash) in block_hashes.iter().enumerate() {
-                       if let Some(hash_str) = hash.as_str() {
-                           println!("  {}: {}", i + 1, hash_str);
-                       }
-                   }
-               }
-               Ok(())
-           },
-       };
-       res.map_err(|e| DeezelError::Wallet(e.to_string()))
-   }
-}
 
 #[async_trait(?Send)]
 impl SystemMetashrew for SystemDeezel {
@@ -1108,7 +1079,7 @@ impl SystemAlkanes for SystemDeezel {
            },
            AlkanesCommands::Trace { outpoint, raw } => {
                let (txid, vout) = parse_outpoint(&outpoint)?;
-               let trace_result = provider.trace_transaction(&txid, vout, None, None).await?;
+               let trace_result = provider.trace_outpoint_json(&txid, vout).await?;
                
                if raw {
                    println!("{}", serde_json::to_string_pretty(&trace_result)?);
@@ -1232,7 +1203,7 @@ impl SystemRunestone for SystemDeezel {
                 Ok(())
             },
            RunestoneCommands::Analyze { txid, raw } => {
-               let tx_hex = provider.get_transaction_hex(&txid).await?;
+               let tx_hex = EsploraProvider::get_tx_hex(provider, &txid).await?;
                let tx = decode_transaction_hex(&tx_hex)?;
                analyze_runestone_tx(&tx, raw, provider).await?;
                Ok(())
@@ -1357,7 +1328,7 @@ impl SystemEsplora for SystemDeezel {
                 Ok(())
             },
             EsploraCommands::BlockTxids { hash, raw } => {
-                let txids = provider.get_block_txids(&hash).await?;
+                let txids = EsploraProvider::get_block_txids(provider, &hash).await?;
                 if raw {
                     println!("{}", serde_json::to_string(&txids)?);
                 } else {
@@ -1366,7 +1337,7 @@ impl SystemEsplora for SystemDeezel {
                 Ok(())
             },
             EsploraCommands::BlockHeader { hash, raw } => {
-                let header = provider.get_block_header(&hash).await?;
+                let header = EsploraProvider::get_block_header(provider, &hash).await?;
                 if raw {
                     println!("{}", serde_json::to_string(&header)?);
                 } else {

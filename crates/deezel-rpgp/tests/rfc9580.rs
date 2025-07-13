@@ -1,8 +1,9 @@
 use deezel_rpgp::io::Read;
 use deezel_rpgp::{
     composed::{
-        CleartextSignedMessage, Deserializable, KeyType, Message, SecretKeyParamsBuilder,
+        CleartextSignedMessage, Deserializable, KeyType, SecretKeyParamsBuilder,
         SignedPublicKey, SignedSecretKey,
+        types::Message,
     },
     crypto::{
         aead::{AeadAlgorithm, ChunkSize},
@@ -11,7 +12,7 @@ use deezel_rpgp::{
     },
     types::{KeyVersion, Password},
 };
-use deezel_rpgp::composed::MessageBuilder;
+use deezel_rpgp::composed::message::MessageBuilder;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 

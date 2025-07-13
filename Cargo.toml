@@ -18,6 +18,7 @@ resolver = "2"
 bitcoin = { version = "0.32.6", features = ["serde"] }
 ordinals = { git = "https://github.com/kungfuflex/alkanes-rs" }
 protorune-support = { git = "https://github.com/kungfuflex/alkanes-rs" }
+bitcoincore-rpc = { version = "0.19.0" }
 
 # Cryptography and wallet functionality
 secp256k1 = { version = "0.29", features = ["rand", "recovery"] }

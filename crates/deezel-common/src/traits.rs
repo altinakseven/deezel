@@ -16,7 +16,7 @@
 // - Address resolution
 // - Network abstraction
 
-use crate::{Result, ToString, format};
+use crate::{Result, ToString, format, bitcoind::GetBlockResult};
 use async_trait::async_trait;
 use serde_json::Value as JsonValue;
 use bitcoin::{Network, Transaction, ScriptBuf};
@@ -522,41 +522,55 @@ pub struct KeystoreInfo {
     pub version: String,
 }
 
+use crate::bitcoind::{
+    GetBlockchainInfoResult, GetBlockFilterResult, GetBlockHeaderResult, GetBlockStatsResult,
+    GetChainTipsResult,
+    GetMempoolInfoResult, GetMiningInfoResult, GetNetworkInfoResult,
+    GetTxOutResult, ListBannedResult, ScanTxOutRequest, GetRawTransactionResult,
+};
+
 /// Trait for Bitcoin Core RPC operations
 #[async_trait(?Send)]
-pub trait BitcoinRpcProvider {
-    /// Get current block count
+pub trait BitcoindProvider {
+    async fn get_blockchain_info(&self) -> Result<GetBlockchainInfoResult>;
     async fn get_block_count(&self) -> Result<u64>;
-    
-    /// Generate blocks to address (regtest only)
-    async fn generate_to_address(&self, nblocks: u32, address: &str) -> Result<JsonValue>;
-
-    /// Get a new address from the node's wallet
-    async fn get_new_address(&self) -> Result<JsonValue>;
-    
-    /// Get transaction hex
-    async fn get_transaction_hex(&self, txid: &str) -> Result<String>;
-    
-    /// Get block by hash
-    async fn get_block(&self, hash: &str) -> Result<JsonValue>;
-    
-    /// Get block hash by height
-    async fn get_block_hash(&self, height: u64) -> Result<String>;
-    
-    /// Send raw transaction
-    async fn send_raw_transaction(&self, tx_hex: &str) -> Result<String>;
-    
-    /// Get mempool info
-    async fn get_mempool_info(&self) -> Result<JsonValue>;
-    
-    /// Estimate smart fee
-    async fn estimate_smart_fee(&self, target: u32) -> Result<JsonValue>;
-    
-    /// Get Esplora blocks tip height
-    async fn get_esplora_blocks_tip_height(&self) -> Result<u64>;
-    
-    /// Trace transaction
-    async fn trace_transaction(&self, txid: &str, vout: u32, block: Option<&str>, tx: Option<&str>) -> Result<serde_json::Value>;
+    async fn get_block_hash(&self, height: u64) -> Result<bitcoin::BlockHash>;
+    async fn get_block_header(&self, hash: &bitcoin::BlockHash) -> Result<GetBlockHeaderResult>;
+    async fn get_block_verbose(&self, hash: &bitcoin::BlockHash) -> Result<GetBlockResult>;
+    async fn get_block_txids(&self, hash: &bitcoin::BlockHash) -> Result<Vec<bitcoin::Txid>>;
+    async fn get_block_filter(
+        &self,
+        hash: &bitcoin::BlockHash,
+    ) -> Result<GetBlockFilterResult>;
+    async fn get_block_stats(&self, height: u64) -> Result<GetBlockStatsResult>;
+    async fn get_chain_tips(&self) -> Result<GetChainTipsResult>;
+    async fn get_chain_tx_stats(
+        &self,
+        n_blocks: Option<u32>,
+        block_hash: Option<bitcoin::BlockHash>,
+    ) -> Result<GetBlockStatsResult>;
+    async fn get_mempool_info(&self) -> Result<GetMempoolInfoResult>;
+    async fn get_raw_mempool(&self) -> Result<Vec<bitcoin::Txid>>;
+    async fn get_tx_out(
+        &self,
+        txid: &bitcoin::Txid,
+        vout: u32,
+        include_mempool: Option<bool>,
+    ) -> Result<GetTxOutResult>;
+    async fn get_mining_info(&self) -> Result<GetMiningInfoResult>;
+    async fn get_network_info(&self) -> Result<GetNetworkInfoResult>;
+    async fn list_banned(&self) -> Result<ListBannedResult>;
+    async fn scan_tx_out_set(
+        &self,
+        requests: &[ScanTxOutRequest],
+    ) -> Result<serde_json::Value>;
+    async fn generate_to_address(
+        &self,
+        n_blocks: u64,
+        address: &bitcoin::Address,
+    ) -> Result<Vec<bitcoin::BlockHash>>;
+    async fn send_raw_transaction(&self, tx: &Transaction) -> Result<bitcoin::Txid>;
+    async fn get_raw_transaction(&self, txid: &bitcoin::Txid, block_hash: Option<&bitcoin::BlockHash>) -> Result<GetRawTransactionResult>;
 }
 
 /// Trait for Metashrew/Sandshrew RPC operations
@@ -704,7 +718,8 @@ pub trait AlkanesProvider {
     async fn get_token_info(&self, alkane_id: &str) -> Result<JsonValue>;
     
     /// Trace alkanes transaction
-    async fn trace(&self, outpoint: &str) -> Result<JsonValue>;
+    async fn trace_outpoint_json(&self, txid: &str, vout: u32) -> Result<String>;
+    async fn trace_outpoint_pretty(&self, txid: &str, vout: u32) -> Result<String>;
     
     /// Inspect alkanes bytecode
     async fn inspect(&self, target: &str, config: AlkanesInspectConfig) -> Result<AlkanesInspectResult>;
@@ -1021,7 +1036,7 @@ pub trait DeezelProvider:
     LogProvider +
     WalletProvider +
     AddressResolver +
-    BitcoinRpcProvider +
+    BitcoindProvider +
     MetashrewRpcProvider +
     EsploraProvider +
     RunestoneProvider +
@@ -1280,40 +1295,86 @@ impl<T: DeezelProvider + ?Sized> AddressResolver for Box<T> {
 }
 
 #[async_trait(?Send)]
-impl<T: DeezelProvider + ?Sized> BitcoinRpcProvider for Box<T> {
-   async fn get_block_count(&self) -> Result<u64> {
-       (**self).get_block_count().await
-   }
-   async fn generate_to_address(&self, nblocks: u32, address: &str) -> Result<serde_json::Value> {
-       (**self).generate_to_address(nblocks, address).await
-   }
-   async fn get_new_address(&self) -> Result<JsonValue> {
-       (**self).get_new_address().await
-   }
-   async fn get_transaction_hex(&self, txid: &str) -> Result<String> {
-       (**self).get_transaction_hex(txid).await
-   }
-   async fn get_block(&self, hash: &str) -> Result<serde_json::Value> {
-       <Self as BitcoinRpcProvider>::get_block(self, hash).await
-   }
-   async fn get_block_hash(&self, height: u64) -> Result<String> {
-       (**self).get_block_hash(height).await
-   }
-   async fn send_raw_transaction(&self, tx_hex: &str) -> Result<String> {
-       (**self).send_raw_transaction(tx_hex).await
-   }
-   async fn get_mempool_info(&self) -> Result<serde_json::Value> {
-       (**self).get_mempool_info().await
-   }
-   async fn estimate_smart_fee(&self, target: u32) -> Result<serde_json::Value> {
-       (**self).estimate_smart_fee(target).await
-   }
-   async fn get_esplora_blocks_tip_height(&self) -> Result<u64> {
-       (**self).get_esplora_blocks_tip_height().await
-   }
-   async fn trace_transaction(&self, txid: &str, vout: u32, block: Option<&str>, tx: Option<&str>) -> Result<serde_json::Value> {
-       (**self).trace_transaction(txid, vout, block, tx).await
-   }
+impl<T: DeezelProvider + ?Sized> BitcoindProvider for Box<T> {
+    async fn get_blockchain_info(&self) -> Result<GetBlockchainInfoResult> {
+        (**self).get_blockchain_info().await
+    }
+    async fn get_block_count(&self) -> Result<u64> {
+        (**self).get_block_count().await
+    }
+    async fn get_block_hash(&self, height: u64) -> Result<bitcoin::BlockHash> {
+        (**self).get_block_hash(height).await
+    }
+    async fn get_block_header(&self, hash: &bitcoin::BlockHash) -> Result<GetBlockHeaderResult> {
+        BitcoindProvider::get_block_header(&**self, hash).await
+    }
+    async fn get_block_verbose(&self, hash: &bitcoin::BlockHash) -> Result<GetBlockResult> {
+        (**self).get_block_verbose(hash).await
+    }
+    async fn get_block_txids(&self, hash: &bitcoin::BlockHash) -> Result<Vec<bitcoin::Txid>> {
+        BitcoindProvider::get_block_txids(&**self, hash).await
+    }
+    async fn get_block_filter(
+        &self,
+        hash: &bitcoin::BlockHash,
+    ) -> Result<GetBlockFilterResult> {
+        (**self).get_block_filter(hash).await
+    }
+    async fn get_block_stats(&self, height: u64) -> Result<GetBlockStatsResult> {
+        (**self).get_block_stats(height).await
+    }
+    async fn get_chain_tips(&self) -> Result<GetChainTipsResult> {
+        (**self).get_chain_tips().await
+    }
+    async fn get_chain_tx_stats(
+        &self,
+        n_blocks: Option<u32>,
+        block_hash: Option<bitcoin::BlockHash>,
+    ) -> Result<GetBlockStatsResult> {
+        (**self).get_chain_tx_stats(n_blocks, block_hash).await
+    }
+    async fn get_mempool_info(&self) -> Result<GetMempoolInfoResult> {
+        (**self).get_mempool_info().await
+    }
+    async fn get_raw_mempool(&self) -> Result<Vec<bitcoin::Txid>> {
+        (**self).get_raw_mempool().await
+    }
+    async fn get_tx_out(
+        &self,
+        txid: &bitcoin::Txid,
+        vout: u32,
+        include_mempool: Option<bool>,
+    ) -> Result<GetTxOutResult> {
+        (**self).get_tx_out(txid, vout, include_mempool).await
+    }
+    async fn get_mining_info(&self) -> Result<GetMiningInfoResult> {
+        (**self).get_mining_info().await
+    }
+    async fn get_network_info(&self) -> Result<GetNetworkInfoResult> {
+        (**self).get_network_info().await
+    }
+    async fn list_banned(&self) -> Result<ListBannedResult> {
+        (**self).list_banned().await
+    }
+    async fn scan_tx_out_set(
+        &self,
+        requests: &[ScanTxOutRequest],
+    ) -> Result<serde_json::Value> {
+        (**self).scan_tx_out_set(requests).await
+    }
+    async fn generate_to_address(
+        &self,
+        n_blocks: u64,
+        address: &bitcoin::Address,
+    ) -> Result<Vec<bitcoin::BlockHash>> {
+        (**self).generate_to_address(n_blocks, address).await
+    }
+    async fn send_raw_transaction(&self, tx: &Transaction) -> Result<bitcoin::Txid> {
+        (**self).send_raw_transaction(tx).await
+    }
+    async fn get_raw_transaction(&self, txid: &bitcoin::Txid, block_hash: Option<&bitcoin::BlockHash>) -> Result<GetRawTransactionResult> {
+        (**self).get_raw_transaction(txid, block_hash).await
+    }
 }
 
 #[async_trait(?Send)]
@@ -1359,10 +1420,10 @@ impl<T: DeezelProvider + ?Sized> EsploraProvider for Box<T> {
        (**self).get_block_status(hash).await
    }
    async fn get_block_txids(&self, hash: &str) -> Result<serde_json::Value> {
-       (**self).get_block_txids(hash).await
+       EsploraProvider::get_block_txids(&**self, hash).await
    }
    async fn get_block_header(&self, hash: &str) -> Result<String> {
-       (**self).get_block_header(hash).await
+       EsploraProvider::get_block_header(&**self, hash).await
    }
    async fn get_block_raw(&self, hash: &str) -> Result<String> {
        (**self).get_block_raw(hash).await
@@ -1462,9 +1523,12 @@ impl<T: DeezelProvider + ?Sized> AlkanesProvider for Box<T> {
    async fn get_token_info(&self, alkane_id: &str) -> Result<serde_json::Value> {
        (**self).get_token_info(alkane_id).await
    }
-   async fn trace(&self, outpoint: &str) -> Result<serde_json::Value> {
-       (**self).trace(outpoint).await
-   }
+    async fn trace_outpoint_json(&self, txid: &str, vout: u32) -> Result<String> {
+        (**self).trace_outpoint_json(txid, vout).await
+    }
+    async fn trace_outpoint_pretty(&self, txid: &str, vout: u32) -> Result<String> {
+        (**self).trace_outpoint_pretty(txid, vout).await
+    }
    async fn inspect(&self, target: &str, config: AlkanesInspectConfig) -> Result<AlkanesInspectResult> {
        (**self).inspect(target, config).await
    }

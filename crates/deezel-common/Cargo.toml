@@ -31,6 +31,7 @@ bitcoin = { workspace = true }
 ordinals = { workspace = true }
 protorune-support = { workspace = true }
 deezel-rpgp = { path = "../deezel-rpgp", default-features = false }
+bitcoincore-rpc = { workspace = true }
  
 # Cryptography and wallet functionality
 secp256k1 = { workspace = true }
@@ -94,6 +95,7 @@ native-deps = ["dirs", "tempfile", "tokio", "reqwest", "url", "ord"]
 web-compat = ["spin"]
 
 [dev-dependencies]
+deezel-rpgp = { path = "../deezel-rpgp", features = ["std"] }
 tokio = { workspace = true, features = ["macros", "rt", "time", "sync", "test-util"] }
 env_logger = "0.10"
 wiremock = "0.6.0"

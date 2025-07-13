@@ -1,4 +1,4 @@
-use deezel_rpgp::composed::{Deserializable, Message};
+use deezel_rpgp::composed::{Deserializable, types::Message};
 
 /// RPG-022
 #[test]

@@ -417,7 +417,7 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
         info!("💡 Envelope transactions with large witness data appear to have high fee rates but are actually reasonable");
         
         // Step 8: Broadcast transaction
-        let tx_hex = hex::encode(bitcoin::consensus::serialize(&tx));
+        let _tx_hex = hex::encode(bitcoin::consensus::serialize(&tx));
         
         // Debug: Check if transaction has witness data
         let has_witness = tx.input.iter().any(|input| !input.witness.is_empty());
@@ -434,7 +434,7 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
             }
         }
         
-        let txid = self.rpc_client.send_raw_transaction(&tx_hex).await?.to_string();
+        let txid = self.rpc_client.provider().send_raw_transaction(&tx).await?.to_string();
         
         if !params.raw_output {
             println!("✅ Transaction broadcast successfully!");
@@ -1727,9 +1727,9 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
         info!("⚠️  Skipping commit transaction fee validation to avoid Bitcoin Core fee rate errors");
         
         // Broadcast commit transaction directly via RPC to avoid BDK's internal fee validation
-        let tx_hex = hex::encode(bitcoin::consensus::serialize(&signed_commit_tx));
+        let _tx_hex = hex::encode(bitcoin::consensus::serialize(&signed_commit_tx));
         info!("🚀 Broadcasting commit transaction directly via RPC with maxfeerate=0");
-        let commit_txid = self.rpc_client.send_raw_transaction(&tx_hex).await?;
+        let commit_txid = self.rpc_client.provider().send_raw_transaction(&signed_commit_tx).await?.to_string();
         
         // Create outpoint for the commit output (first output)
         let commit_outpoint = bitcoin::OutPoint {
@@ -1798,7 +1798,7 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
         info!("⚠️  Skipping reveal transaction fee validation to avoid Bitcoin Core fee rate errors");
         
         // Step 9: Broadcast reveal transaction directly via RPC to avoid BDK's internal fee validation
-        let tx_hex = hex::encode(bitcoin::consensus::serialize(&signed_tx));
+        let _tx_hex = hex::encode(bitcoin::consensus::serialize(&signed_tx));
         
         // CRITICAL DEBUG: Dump complete witness stack before broadcast
         info!("🔍 === COMPLETE WITNESS STACK DUMP BEFORE BROADCAST ===");
@@ -1872,7 +1872,7 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
         }
         
         info!("🚀 Broadcasting reveal transaction directly via RPC with maxfeerate=0");
-        let txid = self.rpc_client.send_raw_transaction(&tx_hex).await?;
+        let txid = self.rpc_client.provider().send_raw_transaction(&signed_tx).await?.to_string();
         
         Ok((txid, final_fee))
     }
@@ -2005,7 +2005,7 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
         self.wait_for_metashrew_sync_enhanced(params).await?;
         
         // Step 5: Get transaction details to find protostone outputs
-        let tx_hex = self.rpc_client.get_transaction_hex(txid).await?;
+        let tx_hex = self.rpc_client.provider().get_tx_hex(txid).await?;
         
         // Debug: Log the raw hex string returned from RPC (truncated for readability)
         let _truncated_raw_hex = if tx_hex.len() > 128 {
@@ -2075,13 +2075,13 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
                        protostone_count + 1, vout, trace_vout);
                 
                 // Trace this protostone using the normal txid and calculated vout (matching manual trace command)
-                match self.rpc_client.trace_outpoint_json(txid, trace_vout).await {
+                match self.rpc_client.provider().trace_outpoint_json(txid, trace_vout).await {
                     Ok(trace_result) => {
                         if params.raw_output {
                             traces.push(serde_json::Value::String(trace_result));
                         } else {
                             // Pretty print the trace
-                            match self.rpc_client.trace_outpoint_pretty(txid, trace_vout).await {
+                            match self.rpc_client.provider().trace_outpoint_pretty(txid, trace_vout).await {
                                 Ok(pretty_trace) => {
                                     println!("\n📊 Trace for protostone #{} (vout {}, trace_vout {}):", protostone_count + 1, vout, trace_vout);
                                     println!("{}", pretty_trace);
@@ -2128,18 +2128,14 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
             // Coinbase outputs require 100+ confirmations to be mature
             let blocks_to_mine = 101;
             
-            match self.rpc_client.generate_to_address(blocks_to_mine, &change_address).await {
+            let address = bitcoin::Address::from_str(&change_address)
+                .context("Invalid change address for mining")?
+                .require_network(network)
+                .context("Change address network mismatch for mining")?;
+            match self.rpc_client.provider().generate_to_address(blocks_to_mine, &address).await {
                 Ok(block_hashes) => {
-                    let first_hash = if let Some(array) = block_hashes.as_array() {
-                        array.first().and_then(|h| h.as_str()).unwrap_or("none")
-                    } else {
-                        "none"
-                    };
-                    let last_hash = if let Some(array) = block_hashes.as_array() {
-                        array.last().and_then(|h| h.as_str()).unwrap_or("none")
-                    } else {
-                        "none"
-                    };
+                    let first_hash = block_hashes.first().map(|h| h.to_string()).unwrap_or_else(|| "none".to_string());
+                    let last_hash = block_hashes.last().map(|h| h.to_string()).unwrap_or_else(|| "none".to_string());
                     
                     info!("✅ Mined {} blocks on regtest: first={}, last={}",
                           blocks_to_mine, first_hash, last_hash);
@@ -2173,10 +2169,10 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
             attempts += 1;
             
             // Check if transaction exists and is confirmed
-            match self.rpc_client.get_transaction_hex(txid).await {
+            match self.rpc_client.provider().get_tx_hex(txid).await {
                 Ok(_) => {
                     // Transaction found, check if it's confirmed by getting block count
-                    let current_block_count = self.rpc_client.get_block_count().await?;
+                    let current_block_count = self.rpc_client.provider().get_block_count().await?;
                     
                     if current_block_count > last_block_count {
                         if !params.raw_output {
@@ -2197,7 +2193,7 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
                     // Transaction not found yet - continue polling indefinitely
                     
                     // Check if new blocks have been mined while waiting
-                    let current_block_count = self.rpc_client.get_block_count().await?;
+                    let current_block_count = self.rpc_client.provider().get_block_count().await?;
                     if current_block_count > last_block_count {
                         if !params.raw_output {
                             println!("📦 Block mined (height: {}) but transaction not yet included...", current_block_count);
@@ -2237,8 +2233,8 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
             attempts += 1;
             
             // Get heights from both Bitcoin Core and Metashrew
-            let bitcoin_height = self.rpc_client.get_block_count().await?;
-            let metashrew_height = self.rpc_client.get_metashrew_height().await?;
+            let bitcoin_height = self.rpc_client.provider().get_block_count().await?;
+            let metashrew_height = self.rpc_client.provider().get_metashrew_height().await?;
             
             // Metashrew should be at least equal to Bitcoin Core height
             if metashrew_height >= bitcoin_height {
@@ -2276,8 +2272,8 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
             attempts += 1;
             
             // Get heights from both Bitcoin Core and Esplora
-            let bitcoin_height = self.rpc_client.get_block_count().await?;
-            let esplora_height = self.rpc_client.get_esplora_blocks_tip_height().await?;
+            let bitcoin_height = self.rpc_client.provider().get_block_count().await?;
+            let esplora_height = self.rpc_client.provider().get_blocks_tip_height().await?;
             
             // Esplora should be at least equal to Bitcoin Core height
             if esplora_height >= bitcoin_height {
@@ -2331,8 +2327,8 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
             attempts += 1;
             
             // Get heights from both Bitcoin Core and Metashrew
-            let bitcoin_height = self.rpc_client.get_block_count().await?;
-            let metashrew_height = self.rpc_client.get_metashrew_height().await?;
+            let bitcoin_height = self.rpc_client.provider().get_block_count().await?;
+            let metashrew_height = self.rpc_client.provider().get_metashrew_height().await?;
             
             // Metashrew should be at least equal to Bitcoin Core height
             if metashrew_height >= bitcoin_height {
@@ -2607,7 +2603,7 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
         info!("⚠️  Skipping reveal transaction fee validation to avoid Bitcoin Core fee rate errors");
         
         // Step 7: Broadcast transaction directly via RPC
-        let tx_hex = hex::encode(bitcoin::consensus::serialize(&signed_tx));
+        let _tx_hex = hex::encode(bitcoin::consensus::serialize(&signed_tx));
         
         // Debug: Log transaction details
         info!("🔍 === SCRIPT-PATH REVEAL TRANSACTION ANALYSIS ===");
@@ -2633,7 +2629,7 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
         }
         
         info!("🚀 Broadcasting script-path reveal transaction directly via RPC");
-        let txid = self.rpc_client.send_raw_transaction(&tx_hex).await?;
+        let txid = self.rpc_client.provider().send_raw_transaction(&signed_tx).await?.to_string();
         
         info!("✅ Script-path reveal transaction broadcast: {}", txid);
         info!("💰 Fee: {} sats", final_fee);
@@ -3105,7 +3101,9 @@ impl<P: crate::traits::DeezelProvider> EnhancedAlkanesExecutor<P> {
         warn!("🚧 With JSON-RPC payload: {}", request);
         
         // Fallback to standard RPC for now
-        let txid = self.rpc_client.send_raw_transaction(tx_hex).await?;
+        let tx_bytes = hex::decode(tx_hex).context("Failed to decode tx_hex for rebar fallback")?;
+        let tx: bitcoin::Transaction = bitcoin::consensus::deserialize(&tx_bytes).context("Failed to deserialize tx for rebar fallback")?;
+        let txid = self.rpc_client.provider().send_raw_transaction(&tx).await?.to_string();
         
         info!("✅ Transaction broadcast (via fallback RPC): {}", txid);
         info!("🛡️  In production, this would be sent privately via Rebar Shield");

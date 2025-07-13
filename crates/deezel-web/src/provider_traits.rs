@@ -326,62 +326,124 @@ impl AddressResolver for WebProvider {
     }
 }
 
-// BitcoinRpcProvider implementation
+// BitcoindProvider implementation
 #[async_trait(?Send)]
-impl BitcoinRpcProvider for WebProvider {
+impl BitcoindProvider for WebProvider {
+    async fn get_blockchain_info(&self) -> Result<bitcoind::GetBlockchainInfoResult> {
+        let result = self.call(self.sandshrew_rpc_url(), "getblockchaininfo", serde_json::json!([]), 1).await?;
+        serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
+    }
+
     async fn get_block_count(&self) -> Result<u64> {
-        let result = self.call(self.sandshrew_rpc_url(), "btc_getblockcount", serde_json::json!([]), 1).await?;
-        Ok(result.as_u64().unwrap_or(800000))
+        let result = self.call(self.sandshrew_rpc_url(), "getblockcount", serde_json::json!([]), 1).await?;
+        result.as_u64().ok_or_else(|| DeezelError::RpcError("Invalid block count".to_string()))
     }
 
-    async fn generate_to_address(&self, nblocks: u32, address: &str) -> Result<JsonValue> {
-        let params = serde_json::json!([nblocks, address]);
-        self.call(self.sandshrew_rpc_url(), "generatetoaddress", params, 1).await
-    }
-
-    async fn get_new_address(&self) -> Result<JsonValue> {
-        let result = self.call(self.sandshrew_rpc_url(), "getnewaddress", serde_json::json!([]), 1).await?;
-        Ok(result)
-    }
-
-    async fn get_transaction_hex(&self, txid: &str) -> Result<String> {
-        let params = serde_json::json!([txid]);
-        let result = self.call(self.sandshrew_rpc_url(), "getrawtransaction", params, 1).await?;
-        Ok(result.as_str().unwrap_or("").to_string())
-    }
-
-    async fn get_block(&self, hash: &str) -> Result<JsonValue> {
-        let params = serde_json::json!([hash]);
-        self.call(self.sandshrew_rpc_url(), "getblock", params, 1).await
-    }
-
-    async fn get_block_hash(&self, height: u64) -> Result<String> {
+    async fn get_block_hash(&self, height: u64) -> Result<bitcoin::BlockHash> {
         let params = serde_json::json!([height]);
         let result = self.call(self.sandshrew_rpc_url(), "getblockhash", params, 1).await?;
-        Ok(result.as_str().unwrap_or("").to_string())
+        let hash_str = result.as_str().ok_or_else(|| DeezelError::RpcError("Invalid block hash string".to_string()))?;
+        hash_str.parse().map_err(|e| DeezelError::Other(format!("Failed to parse block hash: {}", e)))
     }
 
-    async fn send_raw_transaction(&self, tx_hex: &str) -> Result<String> {
+    async fn get_block_header(&self, hash: &bitcoin::BlockHash) -> Result<bitcoind::GetBlockHeaderResult> {
+        let params = serde_json::json!([hash.to_string(), true]);
+        let result = self.call(self.sandshrew_rpc_url(), "getblockheader", params, 1).await?;
+        serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
+    }
+
+    async fn get_block_verbose(&self, hash: &bitcoin::BlockHash) -> Result<bitcoind::GetBlockResult> {
+        let params = serde_json::json!([hash.to_string(), 2]);
+        let result = self.call(self.sandshrew_rpc_url(), "getblock", params, 1).await?;
+        serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
+    }
+
+    async fn get_block_txids(&self, hash: &bitcoin::BlockHash) -> Result<Vec<bitcoin::Txid>> {
+        let params = serde_json::json!([hash.to_string(), 1]);
+        let result = self.call(self.sandshrew_rpc_url(), "getblock", params, 1).await?;
+        let txs = result.get("tx").and_then(|v| v.as_array()).ok_or_else(|| DeezelError::RpcError("Invalid tx array in block".to_string()))?;
+        txs.iter()
+            .map(|v| v.as_str().unwrap_or_default().parse().map_err(|e| DeezelError::Other(format!("Failed to parse txid: {}", e))))
+            .collect()
+    }
+
+    async fn get_block_filter(&self, hash: &bitcoin::BlockHash) -> Result<bitcoind::GetBlockFilterResult> {
+        let params = serde_json::json!([hash.to_string()]);
+        let result = self.call(self.sandshrew_rpc_url(), "getblockfilter", params, 1).await?;
+        serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
+    }
+
+    async fn get_block_stats(&self, height: u64) -> Result<bitcoind::GetBlockStatsResult> {
+        let params = serde_json::json!([height]);
+        let result = self.call(self.sandshrew_rpc_url(), "getblockstats", params, 1).await?;
+        serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
+    }
+
+    async fn get_chain_tips(&self) -> Result<bitcoind::GetChainTipsResult> {
+        let result = self.call(self.sandshrew_rpc_url(), "getchaintips", serde_json::json!([]), 1).await?;
+        serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
+    }
+
+    async fn get_chain_tx_stats(&self, n_blocks: Option<u32>, block_hash: Option<bitcoin::BlockHash>) -> Result<bitcoind::GetBlockStatsResult> {
+        let params = serde_json::json!([n_blocks, block_hash.map(|h| h.to_string())]);
+        let result = self.call(self.sandshrew_rpc_url(), "getchaintxstats", params, 1).await?;
+        serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
+    }
+
+    async fn get_mempool_info(&self) -> Result<bitcoind::GetMempoolInfoResult> {
+        let result = self.call(self.sandshrew_rpc_url(), "getmempoolinfo", serde_json::json!([]), 1).await?;
+        serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
+    }
+
+    async fn get_raw_mempool(&self) -> Result<Vec<bitcoin::Txid>> {
+        let result = self.call(self.sandshrew_rpc_url(), "getrawmempool", serde_json::json!([false]), 1).await?;
+        serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
+    }
+
+    async fn get_tx_out(&self, txid: &bitcoin::Txid, vout: u32, include_mempool: Option<bool>) -> Result<bitcoind::GetTxOutResult> {
+        let params = serde_json::json!([txid.to_string(), vout, include_mempool.unwrap_or(true)]);
+        let result = self.call(self.sandshrew_rpc_url(), "gettxout", params, 1).await?;
+        serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
+    }
+
+    async fn get_mining_info(&self) -> Result<bitcoind::GetMiningInfoResult> {
+        let result = self.call(self.sandshrew_rpc_url(), "getmininginfo", serde_json::json!([]), 1).await?;
+        serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
+    }
+
+    async fn get_network_info(&self) -> Result<bitcoind::GetNetworkInfoResult> {
+        let result = self.call(self.sandshrew_rpc_url(), "getnetworkinfo", serde_json::json!([]), 1).await?;
+        serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
+    }
+
+    async fn list_banned(&self) -> Result<bitcoind::ListBannedResult> {
+        let result = self.call(self.sandshrew_rpc_url(), "listbanned", serde_json::json!([]), 1).await?;
+        serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
+    }
+
+    async fn scan_tx_out_set(&self, requests: &[bitcoind::ScanTxOutRequest]) -> Result<JsonValue> {
+        let params = serde_json::json!(["start", requests]);
+        self.call(self.sandshrew_rpc_url(), "scantxoutset", params, 1).await
+    }
+
+    async fn generate_to_address(&self, n_blocks: u64, address: &bitcoin::Address) -> Result<Vec<bitcoin::BlockHash>> {
+        let params = serde_json::json!([n_blocks, address.to_string()]);
+        let result = self.call(self.sandshrew_rpc_url(), "generatetoaddress", params, 1).await?;
+        serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
+    }
+
+    async fn send_raw_transaction(&self, tx: &bitcoin::Transaction) -> Result<bitcoin::Txid> {
+        let tx_hex = bitcoin::consensus::encode::serialize_hex(tx);
         let params = serde_json::json!([tx_hex]);
         let result = self.call(self.sandshrew_rpc_url(), "sendrawtransaction", params, 1).await?;
-        Ok(result.as_str().unwrap_or("").to_string())
+        let txid_str = result.as_str().ok_or_else(|| DeezelError::RpcError("Invalid txid string".to_string()))?;
+        txid_str.parse().map_err(|e| DeezelError::Other(format!("Failed to parse txid: {}", e)))
     }
 
-    async fn get_mempool_info(&self) -> Result<JsonValue> {
-        self.call(self.sandshrew_rpc_url(), "getmempoolinfo", serde_json::json!([]), 1).await
-    }
-
-    async fn estimate_smart_fee(&self, target: u32) -> Result<JsonValue> {
-        let params = serde_json::json!([target]);
-        self.call(self.sandshrew_rpc_url(), "estimatesmartfee", params, 1).await
-    }
-
-    async fn get_esplora_blocks_tip_height(&self) -> Result<u64> {
-        EsploraProvider::get_blocks_tip_height(self).await
-    }
-
-    async fn trace_transaction(&self, _txid: &str, _vout: u32, _block: Option<&str>, _tx: Option<&str>) -> Result<JsonValue> {
-        Ok(serde_json::json!({"trace": "web_mock_trace"}))
+    async fn get_raw_transaction(&self, txid: &bitcoin::Txid, block_hash: Option<&bitcoin::BlockHash>) -> Result<bitcoind::GetRawTransactionResult> {
+        let params = serde_json::json!([txid.to_string(), true, block_hash.map(|h| h.to_string())]);
+        let result = self.call(self.sandshrew_rpc_url(), "getrawtransaction", params, 1).await?;
+        serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
     }
 }
 

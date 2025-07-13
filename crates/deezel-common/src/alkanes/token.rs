@@ -148,25 +148,27 @@ impl<P: crate::traits::DeezelProvider> TokenManager<P> {
         info!("Getting token info for: {}:{}", token_id.block, token_id.tx);
         
         // Use the trace method to get token information
-        let trace_result = self.rpc_client.trace_transaction(
-            &format!("{}:{}", token_id.block, token_id.tx),
-            0,
-            None,
-            None
-        ).await?;
+        let alkane_id_str = format!("{}:{}", token_id.block, token_id.tx);
+        let trace_result = self.rpc_client.provider().get_token_info(&alkane_id_str).await?;
         
         debug!("Trace result: {}", serde_json::to_string_pretty(&trace_result)?);
-        
+
         // Parse the trace result to extract token information
-        // This is a simplified implementation - in practice, you'd need to decode the actual contract state
+        let name = trace_result.get("name").and_then(|v| v.as_str()).unwrap_or("Unknown").to_string();
+        let symbol = trace_result.get("symbol").and_then(|v| v.as_str()).unwrap_or("UNK").to_string();
+        let total_supply = trace_result.get("total_supply").and_then(|v| v.as_u64()).unwrap_or(0);
+        let cap = trace_result.get("cap").and_then(|v| v.as_u64()).unwrap_or(0);
+        let amount_per_mint = trace_result.get("amount_per_mint").and_then(|v| v.as_u64()).unwrap_or(0);
+        let minted = trace_result.get("minted").and_then(|v| v.as_u64()).unwrap_or(0);
+
         Ok(TokenInfo {
             alkane_id: token_id.clone(),
-            name: "Unknown Token".to_string(),
-            symbol: "UNK".to_string(),
-            total_supply: 0,
-            cap: 0,
-            amount_per_mint: 0,
-            minted: 0,
+            name,
+            symbol,
+            total_supply,
+            cap,
+            amount_per_mint,
+            minted,
         })
     }
 
