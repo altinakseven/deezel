@@ -787,12 +787,7 @@ impl TimeProvider for BrowserWalletProvider {
         self.web_provider.now_millis()
     }
     
-    #[cfg(not(target_arch = "wasm32"))]
-    fn sleep_ms(&self, ms: u64) -> std::pin::Pin<Box<dyn core::future::Future<Output = ()>>> {
-        self.web_provider.sleep_ms(ms)
-    }
-    #[cfg(target_arch = "wasm32")]
-    fn sleep_ms(&self, ms: u64) -> std::pin::Pin<Box<dyn core::future::Future<Output = ()>>> {
+    fn sleep_ms(&self, ms: u64) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
         self.web_provider.sleep_ms(ms)
     }
 }
@@ -1157,11 +1152,11 @@ impl AddressResolver for BrowserWalletProvider {
 #[async_trait(?Send)]
 impl BitcoinRpcProvider for BrowserWalletProvider {
     async fn get_block_count(&self) -> Result<u64> {
-        self.web_provider.get_block_count().await
+        <WebProvider as BitcoindProvider>::get_block_count(&self.web_provider).await
     }
     
     async fn generate_to_address(&self, nblocks: u32, address: &str) -> Result<JsonValue> {
-        self.web_provider.generate_to_address(nblocks, address).await
+        <WebProvider as BitcoindProvider>::generate_to_address(&self.web_provider, nblocks, address).await
     }
     
     async fn get_new_address(&self) -> Result<JsonValue> {
@@ -1177,15 +1172,15 @@ impl BitcoinRpcProvider for BrowserWalletProvider {
     }
     
     async fn get_block_hash(&self, height: u64) -> Result<String> {
-        self.web_provider.get_block_hash(height).await
+        <WebProvider as BitcoinRpcProvider>::get_block_hash(&self.web_provider, height).await
     }
     
     async fn send_raw_transaction(&self, tx_hex: &str) -> Result<String> {
-        self.web_provider.send_raw_transaction(tx_hex).await
+        <WebProvider as BitcoinRpcProvider>::send_raw_transaction(&self.web_provider, tx_hex).await
     }
     
     async fn get_mempool_info(&self) -> Result<JsonValue> {
-        self.web_provider.get_mempool_info().await
+        <WebProvider as BitcoinRpcProvider>::get_mempool_info(&self.web_provider).await
     }
     
     async fn estimate_smart_fee(&self, target: u32) -> Result<JsonValue> {
@@ -1259,7 +1254,7 @@ impl EsploraProvider for BrowserWalletProvider {
     }
     
     async fn get_block_header(&self, hash: &str) -> Result<String> {
-        self.web_provider.get_block_header(hash).await
+        <WebProvider as EsploraProvider>::get_block_header(&self.web_provider, hash).await
     }
     
     async fn get_block_raw(&self, hash: &str) -> Result<String> {

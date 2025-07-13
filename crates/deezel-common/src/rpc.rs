@@ -259,7 +259,7 @@ impl<P: DeezelProvider> RpcClient<P> {
     
     /// Send raw transaction
     pub async fn send_raw_transaction(&self, tx_hex: &str) -> Result<String> {
-        self.provider.send_raw_transaction(tx_hex).await
+        <P as BitcoinRpcProvider>::send_raw_transaction(&self.provider, tx_hex).await
     }
     
     /// Get Esplora blocks tip height

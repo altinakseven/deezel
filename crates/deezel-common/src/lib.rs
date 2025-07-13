@@ -58,7 +58,8 @@ pub mod utils;
 pub mod keystore;
 pub mod pgp_rpgp;
 pub mod esplora;
- 
+pub mod bitcoind;
+
 // Re-export key types and traits for convenience
 pub use traits::*;
 pub use network::NetworkParams;
@@ -265,6 +266,13 @@ impl From<bitcoin::secp256k1::Error> for DeezelError {
 impl From<bitcoin::hashes::hex::HexToArrayError> for DeezelError {
     fn from(err: bitcoin::hashes::hex::HexToArrayError) -> Self {
         DeezelError::Hex(err.to_string())
+    }
+}
+
+#[cfg(feature = "native-deps")]
+impl From<reqwest::Error> for DeezelError {
+    fn from(err: reqwest::Error) -> Self {
+        DeezelError::Network(err.to_string())
     }
 }
 

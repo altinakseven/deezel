@@ -46,9 +46,9 @@ use js_sys::{Date, Promise};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{window, Performance};
-use core::future::Future;
-use core::pin::Pin;
-use core::task::{Context, Poll};
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 #[cfg(target_arch = "wasm32")]
 use alloc::string::ToString;
 use alloc::boxed::Box;
@@ -93,22 +93,24 @@ impl deezel_common::TimeProvider for WebTime {
         self.get_date_now() as u64
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
-    fn sleep_ms(&self, ms: u64) -> std::pin::Pin<Box<dyn core::future::Future<Output = ()>>> {
-        Box::pin(async move {
-            // For non-WASM targets, we'll use a simple busy wait
-            // This is not ideal but works for the web provider context
-            let start = std::time::Instant::now();
-            let duration = std::time::Duration::from_millis(ms);
-            while start.elapsed() < duration {
-                // Yield to allow other tasks to run
-                std::future::ready(()).await;
-            }
-        })
-    }
-    #[cfg(target_arch = "wasm32")]
-    fn sleep_ms(&self, ms: u64) -> std::pin::Pin<Box<dyn core::future::Future<Output = ()>>> {
-        Box::pin(WebSleep::new(ms))
+    fn sleep_ms(&self, ms: u64) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            Box::pin(async move {
+                // For non-WASM targets, we'll use a simple busy wait
+                // This is not ideal but works for the web provider context
+                let start = std::time::Instant::now();
+                let duration = std::time::Duration::from_millis(ms);
+                while start.elapsed() < duration {
+                    // Yield to allow other tasks to run
+                    std::future::ready(()).await;
+                }
+            })
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            Box::pin(WebSleep::new(ms))
+        }
     }
 }
 

@@ -88,15 +88,25 @@ impl SystemDeezel {
                 .context("Failed to create wallet directory")?;
         }
 
-        // CRITICAL FIX: Always use unified Sandshrew endpoint for ALL RPC operations
-        let sandshrew_rpc_url = args.sandshrew_rpc_url.clone()
-            .unwrap_or_else(|| get_rpc_url(&args.provider));
-        
-        // Create provider with unified endpoint
+        // Implement the new URL selection logic
+        let sandshrew_rpc_url = args.sandshrew_rpc_url.clone().unwrap_or_else(|| {
+            match args.provider.as_str() {
+                "mainnet" => "https://mainnet.sandshrew.io/v2/lasereyes".to_string(),
+                "signet" => "https://signet.sandshrew.io/v2/lasereyes".to_string(),
+                "regtest" => "http://localhost:18888".to_string(),
+                _ => "http://localhost:18888".to_string(), // Default for unknown providers
+            }
+        });
+
+        let bitcoin_rpc_url = args.bitcoin_rpc_url.clone().unwrap_or_else(|| sandshrew_rpc_url.clone());
+        let metashrew_rpc_url = args.metashrew_rpc_url.clone().unwrap_or_else(|| sandshrew_rpc_url.clone());
+
+        // Create provider with the resolved URLs
         let mut provider = ConcreteProvider::new(
-            sandshrew_rpc_url.clone(),  // Use Sandshrew for Bitcoin RPC calls
-            sandshrew_rpc_url.clone(),  // Use Sandshrew for Metashrew RPC calls
-            args.esplora_url.clone(),   // Pass the new Esplora URL
+            bitcoin_rpc_url,
+            metashrew_rpc_url,
+            sandshrew_rpc_url,
+            args.esplora_url.clone(),
             args.provider.clone(),
             Some(std::path::PathBuf::from(&wallet_file)),
         ).await?;
@@ -887,26 +897,31 @@ impl SystemBitcoind for SystemDeezel {
        let provider = &self.provider;
        let res: anyhow::Result<()> = match command {
             BitcoindCommands::Getblockcount => {
-                let count = provider.get_block_count().await?;
+                let count = <ConcreteProvider as BitcoindProvider>::get_block_count(provider).await?;
                 println!("{}", count);
                 Ok(())
             },
            BitcoindCommands::Generatetoaddress { nblocks, address } => {
-               // Resolve address identifiers if needed
-               let resolved_address = resolve_address_identifiers(&address, provider).await?;
-               
-               let result = provider.generate_to_address(nblocks, &resolved_address).await?;
-               println!("Generated {} blocks to address {}", nblocks, resolved_address);
-               if let Some(block_hashes) = result.as_array() {
-                   println!("Block hashes:");
-                   for (i, hash) in block_hashes.iter().enumerate() {
-                       if let Some(hash_str) = hash.as_str() {
-                           println!("  {}: {}", i + 1, hash_str);
-                       }
-                   }
-               }
+              // Resolve address identifiers if needed
+              let resolved_address = resolve_address_identifiers(&address, provider).await?;
+              
+              let result = <ConcreteProvider as BitcoindProvider>::generate_to_address(provider, nblocks, &resolved_address).await?;
+              println!("Generated {} blocks to address {}", nblocks, resolved_address);
+              if let Some(block_hashes) = result.as_array() {
+                  println!("Block hashes:");
+                  for (i, hash) in block_hashes.iter().enumerate() {
+                      if let Some(hash_str) = hash.as_str() {
+                          println!("  {}: {}", i + 1, hash_str);
+                      }
+                  }
+              }
+              Ok(())
+          },
+           // Catch-all for other bitcoind commands that are not yet implemented in deezel-sys
+           _ => {
+               println!("This bitcoind command is not yet implemented in deezel-sys.");
                Ok(())
-           },
+           }
        };
        res.map_err(|e| DeezelError::Wallet(e.to_string()))
    }
@@ -1366,7 +1381,7 @@ impl SystemEsplora for SystemDeezel {
                 Ok(())
             },
             EsploraCommands::BlockHeader { hash, raw } => {
-                let header = provider.get_block_header(&hash).await?;
+                let header = <ConcreteProvider as EsploraProvider>::get_block_header(&provider, &hash).await?;
                 if raw {
                     println!("{}", serde_json::to_string(&header)?);
                 } else {
@@ -1786,16 +1801,5 @@ fn expand_tilde(path: &str) -> Result<String> {
         Ok(path.replacen("~", &home, 1))
     } else {
         Ok(path.to_string())
-    }
-}
-
-/// Get RPC URL for a given provider
-fn get_rpc_url(provider: &str) -> String {
-    match provider {
-        "mainnet" => "http://bitcoinrpc:bitcoinrpc@localhost:8332".to_string(),
-        "testnet" => "http://bitcoinrpc:bitcoinrpc@localhost:18332".to_string(),
-        "signet" => "http://bitcoinrpc:bitcoinrpc@localhost:38332".to_string(),
-        "regtest" => "http://bitcoinrpc:bitcoinrpc@localhost:18443".to_string(),
-        _ => "http://bitcoinrpc:bitcoinrpc@localhost:8080".to_string(), // Default to Sandshrew
     }
 }

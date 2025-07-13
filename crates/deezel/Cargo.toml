@@ -19,6 +19,8 @@ env_logger = { workspace = true }
 log = { workspace = true }
 bitcoin = { workspace = true }
 serde_json = { workspace = true }
+hex = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { workspace = true, features = ["full"] }

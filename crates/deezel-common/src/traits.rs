@@ -171,10 +171,7 @@ pub trait TimeProvider {
     fn now_millis(&self) -> u64;
     
     /// Sleep for the specified duration (in milliseconds)
-    #[cfg(feature = "native-deps")]
     fn sleep_ms(&self, ms: u64) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>;
-    #[cfg(not(feature = "native-deps"))]
-    fn sleep_ms(&self, ms: u64) -> std::pin::Pin<Box<dyn core::future::Future<Output = ()>>>;
 }
 
 /// Trait for logging operations
@@ -557,6 +554,74 @@ pub trait BitcoinRpcProvider {
     
     /// Trace transaction
     async fn trace_transaction(&self, txid: &str, vout: u32, block: Option<&str>, tx: Option<&str>) -> Result<serde_json::Value>;
+}
+
+/// Trait for bitcoind RPC operations using bitcoincore_rpc_json types
+#[async_trait(?Send)]
+pub trait BitcoindProvider {
+    /// Get information about the blockchain state.
+    async fn get_blockchain_info(&self) -> Result<bitcoincore_rpc_json::GetBlockchainInfoResult>;
+
+    /// Get information about the network.
+    async fn get_network_info(&self) -> Result<bitcoincore_rpc_json::GetNetworkInfoResult>;
+
+    /// Get a raw transaction from the mempool or a block.
+    async fn get_raw_transaction(
+        &self,
+        txid: &bitcoin::Txid,
+        block_hash: Option<&bitcoin::BlockHash>,
+    ) -> Result<bitcoin::Transaction>;
+
+    /// Get a verbose raw transaction from the mempool or a block.
+    async fn get_raw_transaction_info(
+        &self,
+        txid: &bitcoin::Txid,
+        block_hash: Option<&bitcoin::BlockHash>,
+    ) -> Result<bitcoincore_rpc_json::GetRawTransactionResult>;
+
+    /// Get a block from the blockchain.
+    async fn get_block(&self, hash: &bitcoin::BlockHash) -> Result<bitcoin::Block>;
+
+    /// Get a verbose block from the blockchain.
+    async fn get_block_info(&self, hash: &bitcoin::BlockHash) -> Result<bitcoincore_rpc_json::GetBlockResult>;
+
+    /// Get the hash of the block at a given height.
+    async fn get_block_hash(&self, height: u64) -> Result<bitcoin::BlockHash>;
+
+    /// Get a block header from the blockchain.
+    async fn get_block_header(&self, hash: &bitcoin::BlockHash) -> Result<bitcoin::block::Header>;
+
+    /// Get a verbose block header from the blockchain.
+    async fn get_block_header_info(&self, hash: &bitcoin::BlockHash) -> Result<bitcoincore_rpc_json::GetBlockHeaderResult>;
+
+    /// Get statistics about a block.
+    async fn get_block_stats(&self, hash: &bitcoin::BlockHash) -> Result<bitcoincore_rpc_json::GetBlockStatsResult>;
+
+    /// Get the tips of all chains.
+    async fn get_chain_tips(&self) -> Result<bitcoincore_rpc_json::GetChainTipsResult>;
+
+    /// Get information about the mempool.
+    async fn get_mempool_info(&self) -> Result<bitcoincore_rpc_json::GetMempoolInfoResult>;
+
+    /// Get the raw mempool.
+    async fn get_raw_mempool(&self) -> Result<Vec<bitcoin::Txid>>;
+
+    /// Get a transaction output.
+    async fn get_tx_out(
+        &self,
+        txid: &bitcoin::Txid,
+        vout: u32,
+        include_mempool: bool,
+    ) -> Result<Option<bitcoincore_rpc_json::GetTxOutResult>>;
+
+    /// Send a raw transaction.
+    async fn send_raw_transaction(&self, tx: &bitcoin::Transaction) -> Result<bitcoin::Txid>;
+
+    /// Get the number of blocks in the longest blockchain.
+    async fn get_block_count(&self) -> Result<u64>;
+
+    /// Generate blocks to a specified address.
+    async fn generate_to_address(&self, nblocks: u32, address: &str) -> Result<serde_json::Value>;
 }
 
 /// Trait for Metashrew/Sandshrew RPC operations
@@ -1022,6 +1087,7 @@ pub trait DeezelProvider:
     WalletProvider +
     AddressResolver +
     BitcoinRpcProvider +
+    BitcoindProvider +
     MetashrewRpcProvider +
     EsploraProvider +
     RunestoneProvider +
@@ -1165,12 +1231,7 @@ impl<T: DeezelProvider + ?Sized> TimeProvider for Box<T> {
    fn now_millis(&self) -> u64 {
        (**self).now_millis()
    }
-   #[cfg(feature = "native-deps")]
    fn sleep_ms(&self, ms: u64) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
-       (**self).sleep_ms(ms)
-   }
-   #[cfg(not(feature = "native-deps"))]
-   fn sleep_ms(&self, ms: u64) -> std::pin::Pin<Box<dyn core::future::Future<Output = ()>>> {
        (**self).sleep_ms(ms)
    }
 }
@@ -1282,10 +1343,10 @@ impl<T: DeezelProvider + ?Sized> AddressResolver for Box<T> {
 #[async_trait(?Send)]
 impl<T: DeezelProvider + ?Sized> BitcoinRpcProvider for Box<T> {
    async fn get_block_count(&self) -> Result<u64> {
-       (**self).get_block_count().await
+       <T as BitcoindProvider>::get_block_count(self).await
    }
    async fn generate_to_address(&self, nblocks: u32, address: &str) -> Result<serde_json::Value> {
-       (**self).generate_to_address(nblocks, address).await
+       <T as BitcoindProvider>::generate_to_address(self, nblocks, address).await
    }
    async fn get_new_address(&self) -> Result<JsonValue> {
        (**self).get_new_address().await
@@ -1297,13 +1358,13 @@ impl<T: DeezelProvider + ?Sized> BitcoinRpcProvider for Box<T> {
        <Self as BitcoinRpcProvider>::get_block(self, hash).await
    }
    async fn get_block_hash(&self, height: u64) -> Result<String> {
-       (**self).get_block_hash(height).await
+       <T as BitcoinRpcProvider>::get_block_hash(self, height).await
    }
    async fn send_raw_transaction(&self, tx_hex: &str) -> Result<String> {
-       (**self).send_raw_transaction(tx_hex).await
+       <T as BitcoinRpcProvider>::send_raw_transaction(self, tx_hex).await
    }
    async fn get_mempool_info(&self) -> Result<serde_json::Value> {
-       (**self).get_mempool_info().await
+       <T as BitcoinRpcProvider>::get_mempool_info(self).await
    }
    async fn estimate_smart_fee(&self, target: u32) -> Result<serde_json::Value> {
        (**self).estimate_smart_fee(target).await
@@ -1315,6 +1376,7 @@ impl<T: DeezelProvider + ?Sized> BitcoinRpcProvider for Box<T> {
        (**self).trace_transaction(txid, vout, block, tx).await
    }
 }
+
 
 #[async_trait(?Send)]
 impl<T: DeezelProvider + ?Sized> MetashrewRpcProvider for Box<T> {
@@ -1362,7 +1424,7 @@ impl<T: DeezelProvider + ?Sized> EsploraProvider for Box<T> {
        (**self).get_block_txids(hash).await
    }
    async fn get_block_header(&self, hash: &str) -> Result<String> {
-       (**self).get_block_header(hash).await
+       <T as EsploraProvider>::get_block_header(self, hash).await
    }
    async fn get_block_raw(&self, hash: &str) -> Result<String> {
        (**self).get_block_raw(hash).await

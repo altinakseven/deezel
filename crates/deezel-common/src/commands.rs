@@ -4,6 +4,7 @@
 //! shared between the deezel CLI crate and the deezel-sys library crate.
 
 use clap::{Parser, Subcommand};
+use serde::{Deserialize, Serialize};
 
 /// Main CLI arguments
 #[derive(Parser, Debug, Clone)]
@@ -11,15 +12,19 @@ use clap::{Parser, Subcommand};
 #[command(about = "DEEZEL - Alkanes SDK")]
 #[command(version = "0.1.0")]
 pub struct Args {
-    /// Bitcoin RPC URL
-    #[arg(long, default_value = "http://bitcoinrpc:bitcoinrpc@localhost:8332")]
-    pub bitcoin_rpc_url: Option<String>,
-
-    /// Sandshrew/Metashrew RPC URL
+    /// Sandshrew RPC URL (defaults based on network if not provided)
     #[arg(long)]
     pub sandshrew_rpc_url: Option<String>,
 
-    /// Esplora API URL (overrides Sandshrew for Esplora calls)
+    /// Bitcoin RPC URL (overrides Sandshrew for bitcoind calls)
+    #[arg(long)]
+    pub bitcoin_rpc_url: Option<String>,
+
+    /// Metashrew RPC URL (overrides Sandshrew for metashrew calls)
+    #[arg(long)]
+    pub metashrew_rpc_url: Option<String>,
+
+    /// Esplora API URL (overrides Sandshrew for Esplora calls, enables REST)
     #[arg(long)]
     pub esplora_url: Option<String>,
 
@@ -288,7 +293,8 @@ impl WalletCommands {
 }
 
 /// Bitcoin Core RPC subcommands
-#[derive(Subcommand, Debug, Clone)]
+#[derive(Subcommand, Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum BitcoindCommands {
     /// Get current block count
     Getblockcount,
@@ -298,6 +304,62 @@ pub enum BitcoindCommands {
         nblocks: u32,
         /// Address to generate to
         address: String,
+    },
+    Getblockchaininfo {
+        #[arg(long)]
+        raw: bool,
+    },
+    Getnetworkinfo {
+        #[arg(long)]
+        raw: bool,
+    },
+    Getrawtransaction {
+        txid: String,
+        #[arg(long)]
+        block_hash: Option<String>,
+        #[arg(long)]
+        raw: bool,
+    },
+    Getblock {
+        hash: String,
+        #[arg(long)]
+        raw: bool,
+    },
+    Getblockhash {
+        height: u64,
+    },
+    Getblockheader {
+        hash: String,
+        #[arg(long)]
+        raw: bool,
+    },
+    Getblockstats {
+        hash: String,
+        #[arg(long)]
+        raw: bool,
+    },
+    Getchaintips {
+        #[arg(long)]
+        raw: bool,
+    },
+    Getmempoolinfo {
+        #[arg(long)]
+        raw: bool,
+    },
+    Getrawmempool {
+        #[arg(long)]
+        raw: bool,
+    },
+    Gettxout {
+        txid: String,
+        vout: u32,
+        #[arg(long)]
+        include_mempool: bool,
+        #[arg(long)]
+        raw: bool,
+    },
+    Sendrawtransaction {
+        tx_hex: String,
     },
 }
 

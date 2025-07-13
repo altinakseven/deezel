@@ -28,6 +28,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 # Core Bitcoin functionality
 bitcoin = { workspace = true }
+bitcoincore-rpc-json = { workspace = true }
 ordinals = { workspace = true }
 protorune-support = { workspace = true }
 deezel-rpgp = { path = "../deezel-rpgp", default-features = false }
@@ -82,15 +83,16 @@ dirs = { workspace = true, optional = true }
 tempfile = { workspace = true, optional = true }
 flate2 = { workspace = true }
 tokio = { workspace = true, features = ["sync", "time"], optional = true }
-reqwest = { workspace = true, features = ["json"], optional = true }
+reqwest = { workspace = true, features = ["json", "rustls-tls"], optional = true, default-features = false }
 url = { version = "2.5.0", optional = true }
 clap = { workspace = true, features = ["derive"] }
 ord = { version = "0.23.2", optional = true }
+bitcoincore-rpc = { version = "0.18.0", optional = true }
 
 [features]
 default = ["wasm-inspection", "native-deps"]
 wasm-inspection = ["wasmi", "wasmprinter", "wat", "spin"]
-native-deps = ["dirs", "tempfile", "tokio", "reqwest", "url", "ord"]
+native-deps = ["dirs", "tempfile", "tokio", "reqwest", "url", "ord", "bitcoincore-rpc"]
 web-compat = ["spin"]
 
 [dev-dependencies]
