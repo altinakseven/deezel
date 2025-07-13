@@ -9,7 +9,8 @@
 //! - Transaction history
 //! - Fee estimation
 
-use crate::{Result, DeezelError, ToString, format};
+use crate::{Result, DeezelError};
+use alloc::{string::ToString, format};
 use crate::traits::*;
 use crate::network::NetworkParams;
 use bitcoin::Network;

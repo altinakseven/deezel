@@ -944,22 +944,30 @@ impl SystemMetashrew for SystemDeezel {
 
 #[async_trait(?Send)]
 impl SystemAlkanes for SystemDeezel {
-   async fn execute_alkanes_command(&self, command: AlkanesCommands) -> deezel_common::Result<()> {
-       let provider = &self.provider;
-       let res: anyhow::Result<()> = match command {
-            AlkanesCommands::Execute { inputs, to, change, fee_rate, envelope, protostones, raw, trace, mine, yes, rebar } => {
-                log::info!("🚀 Starting alkanes execute command with enhanced protostones encoding");
-                
-                // Resolve addresses in the 'to' field
-                let resolved_to = resolve_address_identifiers(&to, provider).await?;
-                
+    async fn execute_alkanes_command(&self, command: AlkanesCommands) -> deezel_common::Result<()> {
+        let provider = &self.provider;
+        let res: anyhow::Result<()> = match command {
+            AlkanesCommands::Execute {
+                fee_rate,
+                to_addresses,
+                change_address,
+                input_requirements,
+                protostones,
+                envelope,
+                raw,
+                trace,
+                mine,
+                yes,
+            } => {
+                log::info!("🚀 Starting enhanced alkanes execute command");
+
                 // Resolve change address if provided
-                let resolved_change = if let Some(change_addr) = change {
+                let resolved_change = if let Some(change_addr) = change_address {
                     Some(resolve_address_identifiers(&change_addr, provider).await?)
                 } else {
                     None
                 };
-                
+
                 // Load envelope data if provided
                 let envelope_data = if let Some(ref envelope_file) = envelope {
                     let expanded_path = expand_tilde(envelope_file)?;
@@ -970,270 +978,235 @@ impl SystemAlkanes for SystemDeezel {
                 } else {
                     None
                 };
-                
-                // Parse input requirements and protostones using deezel-common functions
-                let input_requirements = if let Some(inputs_str) = &inputs {
+
+                // Parse input requirements
+                let parsed_input_requirements = {
                     use deezel_common::alkanes::execute::parse_input_requirements;
-                    let parsed = parse_input_requirements(inputs_str)
-                        .map_err(|e| anyhow!("Failed to parse input requirements: {}", e))?;
-                    
-                    // Convert from alkanes::execute types to traits types
-                    parsed.into_iter().map(|req| {
-                        match req {
-                            deezel_common::alkanes::execute::InputRequirement::Bitcoin { amount } => {
-                                deezel_common::traits::InputRequirement {
-                                    requirement_type: deezel_common::traits::InputRequirementType::Bitcoin,
-                                    amount,
-                                    alkane_id: None,
-                                }
-                            },
-                            deezel_common::alkanes::execute::InputRequirement::Alkanes { block, tx, amount } => {
-                                deezel_common::traits::InputRequirement {
-                                    requirement_type: deezel_common::traits::InputRequirementType::Alkanes,
-                                    amount,
-                                    alkane_id: Some(deezel_common::traits::AlkaneId { block, tx }),
-                                }
-                            },
-                        }
-                    }).collect()
-                } else {
-                    Vec::new()
+                    let mut all_reqs = vec![];
+                    for req_str in &input_requirements {
+                        let parsed = parse_input_requirements(req_str)
+                            .map_err(|e| anyhow!("Failed to parse input requirements: {}", e))?;
+                        all_reqs.extend(parsed);
+                    }
+                    all_reqs
                 };
-                
-                let protostone_specs = {
+
+                // Parse protostones
+                let parsed_protostones = {
                     use deezel_common::alkanes::execute::parse_protostones;
-                    let parsed = parse_protostones(&protostones)
-                        .map_err(|e| anyhow!("Failed to parse protostones: {}", e))?;
-                    
-                    // Convert from alkanes::execute types to traits types
-                    parsed.into_iter().map(|_spec| {
-                        deezel_common::traits::ProtostoneSpec {
-                            name: "protostone".to_string(), // Default name
-                            data: Vec::new(), // Default empty data
-                            encoding: deezel_common::traits::ProtostoneEncoding::Raw, // Default encoding
-                        }
-                    }).collect()
+                    let mut all_specs = vec![];
+                    for proto_str in &protostones {
+                        let parsed = parse_protostones(proto_str)
+                            .map_err(|e| anyhow!("Failed to parse protostones: {}", e))?;
+                        all_specs.extend(parsed);
+                    }
+                    all_specs
                 };
-                
-                // Split resolved_to into individual addresses
-                let to_addresses: Vec<String> = resolved_to.split(',').map(|s| s.trim().to_string()).collect();
-                
-                // Create enhanced execute parameters with Rebar support
-                let execute_params = deezel_common::traits::EnhancedExecuteParams {
+
+                // Resolve 'to' addresses
+                let mut resolved_to_addresses = Vec::new();
+                for addr in &to_addresses {
+                    resolved_to_addresses.push(resolve_address_identifiers(addr, provider).await?);
+                }
+
+                // Create enhanced execute parameters
+                let execute_params = deezel_common::alkanes::execute::EnhancedExecuteParams {
                     fee_rate,
-                    to_addresses,
-                    change_address: resolved_change.clone(),
-                    input_requirements: Some(input_requirements),
-                    protostones: protostone_specs,
+                    to_addresses: resolved_to_addresses,
+                    change_address: resolved_change,
+                    input_requirements: parsed_input_requirements,
+                    protostones: parsed_protostones,
                     envelope_data,
                     raw_output: raw,
                     trace_enabled: trace,
                     mine_enabled: mine,
                     auto_confirm: yes,
-                    rebar_enabled: rebar,
                 };
-                
-                // For now, use the provider's alkanes execute method
-                // TODO: Implement proper enhanced alkanes execution
-                let alkanes_params = deezel_common::traits::AlkanesExecuteParams {
-                    inputs: inputs.clone(),
-                    to: resolved_to,
-                    change: resolved_change,
-                    fee_rate: execute_params.fee_rate,
-                    envelope: envelope.map(|_| "envelope_file".to_string()), // Placeholder since we have the data
-                    protostones: protostones.clone(),
-                    trace: execute_params.trace_enabled,
-                    mine: execute_params.mine_enabled,
-                    auto_confirm: execute_params.auto_confirm,
-                    rebar: execute_params.rebar_enabled,
-                };
-                
-                match provider.execute(alkanes_params).await {
+
+                match provider.execute(execute_params).await {
                     Ok(result) => {
                         if raw {
-                            // Create a serializable version of the result
-                            let serializable_result = serde_json::json!({
-                                "commit_txid": result.commit_txid,
-                                "reveal_txid": result.reveal_txid,
-                                "commit_fee": result.commit_fee,
-                                "reveal_fee": result.reveal_fee,
-                                "inputs_used": result.inputs_used,
-                                "outputs_created": result.outputs_created,
-                                "traces": result.traces
-                            });
-                            println!("{}", serde_json::to_string_pretty(&serializable_result)?);
+                            println!("{}", serde_json::to_string_pretty(&result)?);
                         } else {
-                            // For now, just print the result in a human-readable format
                             println!("✅ Alkanes execution completed successfully!");
                             if let Some(commit_txid) = &result.commit_txid {
                                 println!("🔗 Commit TXID: {}", commit_txid);
                             }
-                            println!("🔗 Reveal TXID: {}", result.reveal_txid);
+                            if let Some(reveal_txid) = &result.reveal_txid {
+                                println!("🔗 Reveal TXID: {}", reveal_txid);
+                            }
                             if let Some(commit_fee) = result.commit_fee {
                                 println!("💰 Commit Fee: {} sats", commit_fee);
                             }
-                            println!("💰 Reveal Fee: {} sats", result.reveal_fee);
+                            if let Some(reveal_fee) = result.reveal_fee {
+                                println!("💰 Reveal Fee: {} sats", reveal_fee);
+                            }
+                            // TODO: Add more human-readable output for traces, etc.
                         }
-                    },
+                    }
                     Err(e) => {
                         if raw {
                             eprintln!("Error: {}", e);
                         } else {
                             println!("❌ Alkanes execution failed: {}", e);
-                            
-                            // Check if this is a fee validation error and provide helpful context
-                            let error_msg = e.to_string();
-                            if error_msg.contains("absurdly high fee rate") || error_msg.contains("fee validation failed") {
-                                println!("\n💡 This appears to be a fee calculation issue.");
-                                println!("🔧 The fee validation system has detected an unusually high fee rate.");
-                                println!("📋 This is likely due to large envelope witness data affecting transaction size calculations.");
-                                println!("🛠️  Try adjusting the fee rate or check the envelope data size.");
-                            }
                         }
                         return Err(e.into());
                     }
                 }
                 Ok(())
-            },
-           AlkanesCommands::Balance { address, raw } => {
-               let balance_result = provider.get_alkanes_balance(address.as_deref()).await?;
-               
-               if raw {
-                   println!("{}", serde_json::to_string_pretty(&balance_result)?);
-               } else {
-                   println!("🪙 Alkanes Balances");
-                   println!("═══════════════════");
-                   println!("{}", serde_json::to_string_pretty(&balance_result)?);
-               }
-               Ok(())
-           },
-           AlkanesCommands::TokenInfo { alkane_id, raw } => {
-               // For now, return a placeholder - this would need to be implemented in the provider
-               let token_info = serde_json::json!({"alkane_id": alkane_id, "status": "not_implemented"});
-               
-               if raw {
-                   println!("{}", serde_json::to_string_pretty(&token_info)?);
-               } else {
-                   println!("🏷️  Alkanes Token Information");
-                   println!("═══════════════════════════");
-                   println!("🔗 Alkane ID: {}", alkane_id);
-                   println!("📋 Token Info: {}", serde_json::to_string_pretty(&token_info)?);
-               }
-               Ok(())
-           },
-           AlkanesCommands::Trace { outpoint, raw } => {
-               let (txid, vout) = parse_outpoint(&outpoint)?;
-               let trace_result = provider.trace_transaction(&txid, vout, None, None).await?;
-               
-               if raw {
-                   println!("{}", serde_json::to_string_pretty(&trace_result)?);
-               } else {
-                   println!("📊 Alkanes Transaction Trace");
-                   println!("═══════════════════════════");
-                   println!("{}", serde_json::to_string_pretty(&trace_result)?);
-               }
-               Ok(())
-           },
-           AlkanesCommands::Inspect { target, raw, disasm, fuzz, fuzz_ranges, meta, codehash } => {
-               let config = deezel_common::traits::AlkanesInspectConfig {
-                   disasm,
-                   fuzz,
-                   fuzz_ranges,
-                   meta,
-                   codehash,
-               };
-               
-               let result = provider.inspect(&target, config).await?;
-               
-               if raw {
-                   // Convert to serializable format
-                   let serializable_result = serde_json::json!({
-                       "alkane_id": {
-                           "block": result.alkane_id.block,
-                           "tx": result.alkane_id.tx
-                       },
-                       "bytecode_length": result.bytecode_length,
-                       "disassembly": result.disassembly,
-                       "metadata": result.metadata,
-                       "codehash": result.codehash,
-                       "fuzzing_results": result.fuzzing_results
-                   });
-                   println!("{}", serde_json::to_string_pretty(&serializable_result)?);
-               } else {
-                   println!("🔍 Alkanes Contract Inspection");
-                   println!("═══════════════════════════");
-                   println!("🏷️  Alkane ID: {:?}", result.alkane_id);
-                   println!("📏 Bytecode length: {} bytes", result.bytecode_length);
-                   
-                   if let Some(disassembly) = result.disassembly {
-                       println!("\n📜 Disassembly:");
-                       println!("{}", disassembly);
-                   }
-                   
-                   if let Some(metadata) = result.metadata {
-                       println!("\n📋 Metadata:");
-                       println!("{}", serde_json::to_string_pretty(&metadata)?);
-                   }
-                   
-                   if let Some(codehash) = result.codehash {
-                       println!("\n🔐 Code Hash: {}", codehash);
-                   }
-                   
-                   if let Some(fuzzing_results) = result.fuzzing_results {
-                       println!("\n🧪 Fuzzing Results:");
-                       println!("{}", serde_json::to_string_pretty(&fuzzing_results)?);
-                   }
-               }
-               Ok(())
-           },
-           AlkanesCommands::Getbytecode { alkane_id, raw } => {
-               let bytecode = AlkanesProvider::get_bytecode(provider, &alkane_id).await?;
-               
-               if raw {
-                   let json_result = serde_json::json!({
-                       "alkane_id": alkane_id,
-                       "bytecode": bytecode
-                   });
-                   println!("{}", serde_json::to_string_pretty(&json_result)?);
-               } else {
-                   println!("🔍 Alkanes Contract Bytecode");
-                   println!("═══════════════════════════");
-                   println!("🏷️  Alkane ID: {}", alkane_id);
-                   
-                   if bytecode.is_empty() || bytecode == "0x" {
-                       println!("❌ No bytecode found for this contract");
-                   } else {
-                       // Remove 0x prefix if present for display
-                       let clean_bytecode = bytecode.strip_prefix("0x").unwrap_or(&bytecode);
-                       
-                       println!("💾 Bytecode:");
-                       println!("   Length: {} bytes", clean_bytecode.len() / 2);
-                       println!("   Hex: {}", bytecode);
-                       
-                       // Show first few bytes for quick inspection
-                       if clean_bytecode.len() >= 8 {
-                           println!("   First 4 bytes: {}", &clean_bytecode[..8]);
-                       }
-                   }
-               }
-               Ok(())
-           },
-           AlkanesCommands::Simulate { contract_id, params, raw } => {
-               let result = provider.simulate(&contract_id, params.as_deref()).await?;
-               
-               if raw {
-                   println!("{}", serde_json::to_string_pretty(&result)?);
-               } else {
-                   println!("🧪 Alkanes Contract Simulation");
-                   println!("═══════════════════════════");
-                   println!("🔗 Contract ID: {}", contract_id);
-                   println!("📊 Result: {}", serde_json::to_string_pretty(&result)?);
-               }
-               Ok(())
-           },
-       };
-       res.map_err(|e| DeezelError::Wallet(e.to_string()))
-   }
+            }
+            AlkanesCommands::Balance { address, raw } => {
+                let balance_result = provider.get_alkanes_balance(address.as_deref()).await?;
+
+                if raw {
+                    println!("{}", serde_json::to_string_pretty(&balance_result)?);
+                } else {
+                    println!("🪙 Alkanes Balances");
+                    println!("═══════════════════");
+                    println!("{}", serde_json::to_string_pretty(&balance_result)?);
+                }
+                Ok(())
+            }
+            AlkanesCommands::TokenInfo { alkane_id, raw } => {
+                // For now, return a placeholder - this would need to be implemented in the provider
+                let token_info =
+                    serde_json::json!({"alkane_id": alkane_id, "status": "not_implemented"});
+
+                if raw {
+                    println!("{}", serde_json::to_string_pretty(&token_info)?);
+                } else {
+                    println!("🏷️  Alkanes Token Information");
+                    println!("═══════════════════════════");
+                    println!("🔗 Alkane ID: {}", alkane_id);
+                    println!("📋 Token Info: {}", serde_json::to_string_pretty(&token_info)?);
+                }
+                Ok(())
+            }
+            AlkanesCommands::Trace { outpoint, raw } => {
+                let (txid, vout) = parse_outpoint(&outpoint)?;
+                let trace_result = provider.trace_transaction(&txid, vout, None, None).await?;
+
+                if raw {
+                    println!("{}", serde_json::to_string_pretty(&trace_result)?);
+                } else {
+                    println!("📊 Alkanes Transaction Trace");
+                    println!("═══════════════════════════");
+                    println!("{}", serde_json::to_string_pretty(&trace_result)?);
+                }
+                Ok(())
+            }
+            AlkanesCommands::Inspect {
+                target,
+                raw,
+                disasm,
+                fuzz,
+                fuzz_ranges,
+                meta,
+                codehash,
+            } => {
+                let config = deezel_common::traits::AlkanesInspectConfig {
+                    disasm,
+                    fuzz,
+                    fuzz_ranges,
+                    meta,
+                    codehash,
+                };
+
+                let result = provider.inspect(&target, config).await?;
+
+                if raw {
+                    // Convert to serializable format
+                    let serializable_result = serde_json::json!({
+                        "alkane_id": {
+                            "block": result.alkane_id.block,
+                            "tx": result.alkane_id.tx
+                        },
+                        "bytecode_length": result.bytecode_length,
+                        "disassembly": result.disassembly,
+                        "metadata": result.metadata,
+                        "codehash": result.codehash,
+                        "fuzzing_results": result.fuzzing_results
+                    });
+                    println!("{}", serde_json::to_string_pretty(&serializable_result)?);
+                } else {
+                    println!("🔍 Alkanes Contract Inspection");
+                    println!("═══════════════════════════");
+                    println!("🏷️  Alkane ID: {:?}", result.alkane_id);
+                    println!("📏 Bytecode length: {} bytes", result.bytecode_length);
+
+                    if let Some(disassembly) = result.disassembly {
+                        println!("\n📜 Disassembly:");
+                        println!("{}", disassembly);
+                    }
+
+                    if let Some(metadata) = result.metadata {
+                        println!("\n📋 Metadata:");
+                        println!("{}", serde_json::to_string_pretty(&metadata)?);
+                    }
+
+                    if let Some(codehash) = result.codehash {
+                        println!("\n🔐 Code Hash: {}", codehash);
+                    }
+
+                    if let Some(fuzzing_results) = result.fuzzing_results {
+                        println!("\n🧪 Fuzzing Results:");
+                        println!("{}", serde_json::to_string_pretty(&fuzzing_results)?);
+                    }
+                }
+                Ok(())
+            }
+            AlkanesCommands::Getbytecode { alkane_id, raw } => {
+                let bytecode = AlkanesProvider::get_bytecode(provider, &alkane_id).await?;
+
+                if raw {
+                    let json_result = serde_json::json!({
+                        "alkane_id": alkane_id,
+                        "bytecode": bytecode
+                    });
+                    println!("{}", serde_json::to_string_pretty(&json_result)?);
+                } else {
+                    println!("🔍 Alkanes Contract Bytecode");
+                    println!("═══════════════════════════");
+                    println!("🏷️  Alkane ID: {}", alkane_id);
+
+                    if bytecode.is_empty() || bytecode == "0x" {
+                        println!("❌ No bytecode found for this contract");
+                    } else {
+                        // Remove 0x prefix if present for display
+                        let clean_bytecode = bytecode.strip_prefix("0x").unwrap_or(&bytecode);
+
+                        println!("💾 Bytecode:");
+                        println!("   Length: {} bytes", clean_bytecode.len() / 2);
+                        println!("   Hex: {}", bytecode);
+
+                        // Show first few bytes for quick inspection
+                        if clean_bytecode.len() >= 8 {
+                            println!("   First 4 bytes: {}", &clean_bytecode[..8]);
+                        }
+                    }
+                }
+                Ok(())
+            }
+            AlkanesCommands::Simulate {
+                contract_id,
+                params,
+                raw,
+            } => {
+                let result = provider.simulate(&contract_id, params.as_deref()).await?;
+
+                if raw {
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                } else {
+                    println!("🧪 Alkanes Contract Simulation");
+                    println!("═══════════════════════════");
+                    println!("🔗 Contract ID: {}", contract_id);
+                    println!("📊 Result: {}", serde_json::to_string_pretty(&result)?);
+                }
+                Ok(())
+            }
+        };
+        res.map_err(|e| DeezelError::Wallet(e.to_string()))
+    }
 }
 
 #[async_trait(?Send)]

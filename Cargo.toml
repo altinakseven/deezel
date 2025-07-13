@@ -9,7 +9,11 @@
 
 [workspace]
 members = [
-  "crates/*"
+  "crates/deezel",
+  "crates/deezel-common",
+  "crates/deezel-rpgp",
+  "crates/deezel-web",
+  "crates/deezel-sys"
 ]
 resolver = "2"
 

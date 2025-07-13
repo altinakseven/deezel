@@ -18,12 +18,7 @@ use std::collections::HashMap;
 use alloc::collections::BTreeMap as HashMap;
 
 
-use crate::{ToString, format};
-
-#[cfg(not(target_arch = "wasm32"))]
-use std::{vec, vec::Vec, string::String};
-#[cfg(target_arch = "wasm32")]
-use alloc::{vec, vec::Vec, string::String};
+use alloc::{string::{String, ToString}, vec, vec::Vec, format};
 
 /// Runestone manager that works with any provider
 pub struct RunestoneManager<P: DeezelProvider> {

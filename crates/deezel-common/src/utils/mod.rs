@@ -8,4 +8,4 @@ pub mod hex;
 pub use protostone::*;
 
 // Re-export alkane utilities for backward compatibility
-pub use crate::alkanes::utils::parse_alkane_id;
+pub use crate::alkanes::parsing::parse_input_requirements as parse_alkane_id;

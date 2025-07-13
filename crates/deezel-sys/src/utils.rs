@@ -3,43 +3,12 @@
 use anyhow::{anyhow, Result};
 use deezel_common::provider::ConcreteProvider;
 use deezel_common::traits::AddressResolver;
+use std::str::FromStr;
 
-/// Check if a string looks like a shorthand address identifier (e.g., "p2tr:0", "p2wpkh", etc.)
-pub fn is_shorthand_address_identifier(input: &str) -> bool {
-    // Pattern: address_type or address_type:index
-    // Valid address types: p2tr, p2pkh, p2sh, p2wpkh, p2wsh
-    let parts: Vec<&str> = input.split(':').collect();
-    
-    if parts.is_empty() || parts.len() > 2 {
-        return false;
-    }
-    
-    // Check if first part is a valid address type
-    let address_type = parts[0].to_lowercase();
-    let valid_types = ["p2tr", "p2pkh", "p2sh", "p2wpkh", "p2wsh"];
-    
-    if !valid_types.contains(&address_type.as_str()) {
-        return false;
-    }
-    
-    // If there's a second part, it should be a valid index
-    if parts.len() == 2 && parts[1].parse::<u32>().is_err() {
-        return false;
-    }
-    
-    true
-}
-
-/// Resolve address identifiers in a string using the provided provider
-/// Supports both full format \[self:p2tr:0\] and shorthand format p2tr:0
+/// Resolve a single address identifier string (e.g., "p2tr:0" or a concrete address)
 pub async fn resolve_address_identifiers(input: &str, provider: &ConcreteProvider) -> Result<String> {
-    // Check if input contains full identifiers like [self:p2tr:0]
-    if provider.contains_identifiers(input) {
-        return provider.resolve_all_identifiers(input).await.map_err(|e| anyhow!("{}", e));
-    }
-    
-    // Check if input is a shorthand address identifier like "p2tr:0"
-    if is_shorthand_address_identifier(input) {
+    // If it's not a valid address, assume it's an identifier
+    if bitcoin::Address::from_str(input).is_err() {
         // Convert shorthand to full format and resolve
         let full_identifier = format!("[self:{}]", input);
         return provider.resolve_all_identifiers(&full_identifier).await.map_err(|e| anyhow!("{}", e));

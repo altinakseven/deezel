@@ -89,9 +89,10 @@ bitcoincore-rpc = { version = "0.18.0", optional = true }
 tabled = { version = "0.15.0", optional = true }
 
 [features]
-default = ["wasm-inspection", "native-deps"]
+default = ["wasm-inspection", "native-deps", "std"]
+std = []
 wasm-inspection = ["wasmi", "wasmprinter", "wat", "spin"]
-native-deps = ["dirs", "tempfile", "tokio", "reqwest", "url", "ord", "bitcoincore-rpc", "tabled"]
+native-deps = ["dirs", "tempfile", "tokio", "reqwest", "url", "ord", "bitcoincore-rpc", "tabled", "std"]
 web-compat = ["spin"]
 
 [dev-dependencies]

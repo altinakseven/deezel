@@ -3,13 +3,10 @@
 //! This module provides enhanced formatting capabilities for runestone analysis
 //! with emoji styling and detailed output formatting.
 
-use crate::{Result, ToString, format};
+use crate::Result;
+use alloc::{string::{String, ToString}, format};
 use serde_json::Value as JsonValue;
 
-#[cfg(not(target_arch = "wasm32"))]
-use std::string::String;
-#[cfg(target_arch = "wasm32")]
-use alloc::string::String;
 
 /// Format runestone with enhanced styling
 pub fn format_runestone_with_decoded_messages(runestone_data: &JsonValue) -> Result<String> {

@@ -6,6 +6,8 @@
 use crate::traits::*;
 use crate::{Result, DeezelError, JsonValue};
 use crate::ord;
+use crate::alkanes::execute::EnhancedAlkanesExecutor;
+use crate::alkanes::types::{EnhancedExecuteParams, EnhancedExecuteResult};
 use async_trait::async_trait;
 use alloc::format;
 use alloc::string::{String, ToString};
@@ -1568,40 +1570,9 @@ impl RunestoneProvider for ConcreteProvider {
 
 #[async_trait(?Send)]
 impl AlkanesProvider for ConcreteProvider {
-    async fn execute(&self, _params: AlkanesExecuteParams) -> Result<AlkanesExecuteResult> {
-        unimplemented!()
-    }
-    
-    async fn get_balance(&self, address: Option<&str>) -> Result<Vec<AlkanesBalance>> {
-        let addr = address.ok_or_else(|| DeezelError::Wallet("get_balance requires an address".to_string()))?;
-        let result = self.get_protorunes_by_address(addr).await?;
-        serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
-    }
-
-    async fn get_alkanes_balance(&self, address: Option<&str>) -> Result<Vec<AlkanesBalance>> {
-        <Self as AlkanesProvider>::get_balance(self, address).await
-    }
-    
-    async fn get_token_info(&self, alkane_id: &str) -> Result<serde_json::Value> {
-        let params = serde_json::json!(["gettokeninfo", alkane_id, "latest"]);
-        self.call(&self.metashrew_rpc_url, "metashrew_view", params, 1).await
-    }
-    
-    async fn trace(&self, outpoint: &str) -> Result<serde_json::Value> {
-        let params = serde_json::json!(["trace", outpoint, "latest"]);
-        self.call(&self.metashrew_rpc_url, "metashrew_view", params, 1).await
-    }
-    
-    async fn inspect(&self, _target: &str, _config: AlkanesInspectConfig) -> Result<AlkanesInspectResult> {
-        unimplemented!()
-    }
-
-    async fn get_bytecode(&self, _alkane_id: &str) -> Result<String> {
-        unimplemented!()
-    }
-
-    async fn simulate(&self, _contract_id: &str, _params: Option<&str>) -> Result<JsonValue> {
-        unimplemented!()
+    async fn execute(&self, params: EnhancedExecuteParams) -> Result<EnhancedExecuteResult> {
+        let executor = EnhancedAlkanesExecutor::new(self);
+        executor.execute(params).await
     }
 }
 

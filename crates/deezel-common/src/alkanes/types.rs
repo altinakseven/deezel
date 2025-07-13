@@ -1,6 +1,7 @@
 //! Types for alkanes smart contract operations
 
 use serde::{Deserialize, Serialize};
+use alkanes_support::cellpack::Cellpack;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::{string::String, vec::Vec};
@@ -12,6 +13,52 @@ use alloc::{string::String, vec::Vec};
 pub struct AlkaneId {
     pub block: u64,
     pub tx: u64,
+}
+
+/// Input requirement specification
+#[derive(Debug, Clone)]
+pub enum InputRequirement {
+    /// Alkanes token requirement: (block, tx, amount) where 0 means ALL
+    Alkanes { block: u64, tx: u64, amount: u64 },
+    /// Bitcoin requirement: amount in satoshis
+    Bitcoin { amount: u64 },
+}
+
+/// Output target specification for protostones
+#[derive(Debug, Clone)]
+pub enum OutputTarget {
+    /// Target specific output index (vN)
+    Output(u32),
+    /// Target specific protostone (pN)
+    Protostone(u32),
+    /// Split across all spendable outputs
+    Split,
+}
+
+/// Protostone edict specification
+#[derive(Debug, Clone)]
+pub struct ProtostoneEdict {
+    pub alkane_id: AlkaneId,
+    pub amount: u64,
+    pub target: OutputTarget,
+}
+
+/// Protostone specification
+#[derive(Debug, Clone)]
+pub struct ProtostoneSpec {
+    /// Optional cellpack message (using alkanes_support::cellpack::Cellpack)
+    pub cellpack: Option<Cellpack>,
+    /// List of edicts for this protostone
+    pub edicts: Vec<ProtostoneEdict>,
+    /// Bitcoin transfer specification (for B: transfers)
+    pub bitcoin_transfer: Option<BitcoinTransfer>,
+}
+
+/// Bitcoin transfer specification
+#[derive(Debug, Clone)]
+pub struct BitcoinTransfer {
+    pub amount: u64,
+    pub target: OutputTarget,
 }
 
 /// Alkane balance information
@@ -166,4 +213,31 @@ pub struct TokenDeployResult {
 pub struct TransactionResult {
     pub txid: String,
     pub fee: u64,
+}
+
+/// Enhanced execute parameters
+#[derive(Debug, Clone)]
+pub struct EnhancedExecuteParams {
+    pub fee_rate: Option<f32>,
+    pub to_addresses: Vec<String>,
+    pub change_address: Option<String>,
+    pub input_requirements: Vec<InputRequirement>,
+    pub protostones: Vec<ProtostoneSpec>,
+    pub envelope_data: Option<Vec<u8>>,
+    pub raw_output: bool,
+    pub trace_enabled: bool,
+    pub mine_enabled: bool,
+    pub auto_confirm: bool,
+}
+
+/// Enhanced execute result for commit/reveal pattern
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnhancedExecuteResult {
+    pub commit_txid: Option<String>,
+    pub reveal_txid: String,
+    pub commit_fee: Option<u64>,
+    pub reveal_fee: u64,
+    pub inputs_used: Vec<String>,
+    pub outputs_created: Vec<String>,
+    pub traces: Option<Vec<serde_json::Value>>,
 }

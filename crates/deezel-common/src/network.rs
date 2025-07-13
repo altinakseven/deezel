@@ -3,7 +3,8 @@
 //! This module provides network configuration for different Bitcoin networks
 //! including mainnet, testnet, signet, regtest, and custom networks.
 
-use crate::{Result, DeezelError, ToString, format};
+use crate::{Result, DeezelError};
+use alloc::{string::ToString, format};
 use bitcoin::Network;
 use serde::{Deserialize, Serialize, Serializer, Deserializer};
 use alloc::vec;

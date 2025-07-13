@@ -1,4 +1,5 @@
-#![cfg_attr(target_arch = "wasm32", no_std)]
+#![cfg_attr(not(feature = "std"), no_std)]
+
 //! Deezel Common Library
 //!
 //! This library provides the core functionality for the deezel project,
@@ -7,7 +8,7 @@
 //! The library is structured around trait abstractions that allow the same
 //! business logic to work across different environments:
 //! - Native CLI applications
-//! - WASM web applications  
+//! - WASM web applications
 //! - Testing environments
 //!
 //! ## Architecture
@@ -27,25 +28,26 @@ pub mod provider;
 
 extern crate alloc;
 
-
-
-#[cfg(target_arch = "wasm32")]
+#[cfg(not(feature = "std"))]
 pub use alloc::{
     string::{String, ToString},
     format,
     vec,
+    vec::Vec,
 };
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(feature = "std")]
+pub mod vendored_ord;
 pub use std::{
     string::{String, ToString},
     format,
     vec,
+    vec::Vec,
 };
 
 // Core modules
 pub mod address;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(feature = "std")]
 pub mod commands;
 pub mod traits;
 pub mod network;
@@ -144,11 +146,8 @@ impl DeezelError {
 
 // Implement error trait for both WASM and non-WASM targets
 // This is needed for anyhow compatibility
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(feature = "std")]
 impl std::error::Error for DeezelError {}
-
-#[cfg(target_arch = "wasm32")]
-impl core::error::Error for DeezelError {}
 
 // For anyhow compatibility, we need to implement conversion from DeezelError to anyhow::Error
 // This is needed for the ? operator to work with anyhow::Result
@@ -157,15 +156,6 @@ impl core::error::Error for DeezelError {}
 pub type Result<T> = core::result::Result<T, DeezelError>;
 
 /// Convert anyhow::Error to DeezelError
-#[cfg(not(target_arch = "wasm32"))]
-impl From<anyhow::Error> for DeezelError {
-    fn from(err: anyhow::Error) -> Self {
-        DeezelError::Wallet(err.to_string())
-    }
-}
-
-/// Convert anyhow::Error to DeezelError (WASM version)
-#[cfg(target_arch = "wasm32")]
 impl From<anyhow::Error> for DeezelError {
     fn from(err: anyhow::Error) -> Self {
         DeezelError::Wallet(alloc::format!("{}", err))
@@ -175,85 +165,71 @@ impl From<anyhow::Error> for DeezelError {
 /// Convert serde_json::Error to DeezelError
 impl From<serde_json::Error> for DeezelError {
     fn from(err: serde_json::Error) -> Self {
-        #[cfg(target_arch = "wasm32")]
-        {
-            DeezelError::Serialization(alloc::format!("{}", err))
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            DeezelError::Serialization(err.to_string())
-        }
+        DeezelError::Serialization(alloc::format!("{}", err))
     }
 }
 
 impl From<bitcoin::address::ParseError> for DeezelError {
     fn from(err: bitcoin::address::ParseError) -> Self {
-        DeezelError::AddressResolution(err.to_string())
+        DeezelError::AddressResolution(format!("{:?}", err))
     }
 }
 
 impl From<bitcoin::address::FromScriptError> for DeezelError {
     fn from(err: bitcoin::address::FromScriptError) -> Self {
-        DeezelError::AddressResolution(err.to_string())
+        DeezelError::AddressResolution(format!("{:?}", err))
     }
 }
 
 
 impl From<bitcoin::sighash::TaprootError> for DeezelError {
     fn from(err: bitcoin::sighash::TaprootError) -> Self {
-        DeezelError::Transaction(err.to_string())
+        DeezelError::Transaction(format!("{:?}", err))
     }
 }
 
 impl From<bitcoin::sighash::P2wpkhError> for DeezelError {
     fn from(err: bitcoin::sighash::P2wpkhError) -> Self {
-        DeezelError::Transaction(err.to_string())
+        DeezelError::Transaction(format!("{:?}", err))
     }
 }
 
 /// Convert bitcoin::consensus::encode::Error to DeezelError
 impl From<bitcoin::consensus::encode::Error> for DeezelError {
     fn from(err: bitcoin::consensus::encode::Error) -> Self {
-        #[cfg(target_arch = "wasm32")]
-        {
-            DeezelError::Transaction(alloc::format!("{}", err))
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            DeezelError::Transaction(err.to_string())
-        }
+        DeezelError::Transaction(alloc::format!("{}", err))
     }
 }
 
 impl From<bitcoin::blockdata::transaction::ParseOutPointError> for DeezelError {
     fn from(err: bitcoin::blockdata::transaction::ParseOutPointError) -> Self {
-        DeezelError::Transaction(err.to_string())
+        DeezelError::Transaction(format!("{:?}", err))
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(feature = "std")]
 impl From<std::io::Error> for DeezelError {
     fn from(err: std::io::Error) -> Self {
-        DeezelError::Io(err.to_string())
+        DeezelError::Io(format!("{:?}", err))
     }
 }
 
 
 impl From<hex::FromHexError> for DeezelError {
     fn from(err: hex::FromHexError) -> Self {
-        DeezelError::Hex(err.to_string())
+        DeezelError::Hex(format!("{:?}", err))
     }
 }
 
 impl From<bitcoin::hashes::hex::HexToBytesError> for DeezelError {
     fn from(err: bitcoin::hashes::hex::HexToBytesError) -> Self {
-        DeezelError::Hex(err.to_string())
+        DeezelError::Hex(format!("{:?}", err))
     }
 }
 
 impl From<bitcoin::bip32::Error> for DeezelError {
     fn from(err: bitcoin::bip32::Error) -> Self {
-        DeezelError::Wallet(err.to_string())
+        DeezelError::Wallet(format!("{:?}", err))
     }
 }
 
@@ -265,20 +241,20 @@ impl From<bip39::ErrorKind> for DeezelError {
 
 impl From<bitcoin::secp256k1::Error> for DeezelError {
     fn from(err: bitcoin::secp256k1::Error) -> Self {
-        DeezelError::Crypto(err.to_string())
+        DeezelError::Crypto(format!("{:?}", err))
     }
 }
 
 impl From<bitcoin::hashes::hex::HexToArrayError> for DeezelError {
     fn from(err: bitcoin::hashes::hex::HexToArrayError) -> Self {
-        DeezelError::Hex(err.to_string())
+        DeezelError::Hex(format!("{:?}", err))
     }
 }
 
 #[cfg(feature = "native-deps")]
 impl From<reqwest::Error> for DeezelError {
     fn from(err: reqwest::Error) -> Self {
-        DeezelError::Network(err.to_string())
+        DeezelError::Network(format!("{:?}", err))
     }
 }
 

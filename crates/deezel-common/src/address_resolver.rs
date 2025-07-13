@@ -857,34 +857,6 @@ impl OrdProvider for StandaloneAddressResolver {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-#[async_trait(?Send)]
-impl AlkanesProvider for StandaloneAddressResolver {
-    async fn execute(&self, _params: AlkanesExecuteParams) -> Result<AlkanesExecuteResult> {
-        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
-    }
-    async fn get_balance(&self, _address: Option<&str>) -> Result<Vec<AlkanesBalance>> {
-        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
-    }
-    async fn get_alkanes_balance(&self, _address: Option<&str>) -> Result<Vec<AlkanesBalance>> {
-       Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
-   }
-    async fn get_token_info(&self, _alkane_id: &str) -> Result<serde_json::Value> {
-        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
-    }
-    async fn trace(&self, _outpoint: &str) -> Result<serde_json::Value> {
-        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
-    }
-    async fn inspect(&self, _target: &str, _config: AlkanesInspectConfig) -> Result<AlkanesInspectResult> {
-        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
-    }
-    async fn get_bytecode(&self, _alkane_id: &str) -> Result<String> {
-        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
-    }
-    async fn simulate(&self, _contract_id: &str, _params: Option<&str>) -> Result<serde_json::Value> {
-        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
-    }
-}
 
 #[cfg(not(target_arch = "wasm32"))]
 #[async_trait(?Send)]
@@ -914,6 +886,14 @@ impl KeystoreProvider for StandaloneAddressResolver {
     
     async fn get_keystore_info(&self, _master_public_key: &str, _master_fingerprint: &str, _created_at: u64, _version: &str) -> Result<KeystoreInfo> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support keystore operations".to_string()))
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[async_trait(?Send)]
+impl AlkanesProvider for StandaloneAddressResolver {
+    async fn execute(&self, _params: crate::alkanes::types::EnhancedExecuteParams) -> Result<crate::alkanes::types::EnhancedExecuteResult> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
     }
 }
 

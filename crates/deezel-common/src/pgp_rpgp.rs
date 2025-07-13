@@ -20,7 +20,7 @@ use crate::{
     traits::{PgpProvider, PgpKeyPair, PgpKey, PgpDecryptResult, PgpKeyInfo, PgpAlgorithm},
     Result, DeezelError,
 };
-use crate::{format, ToString, vec};
+use alloc::{format, string::ToString, vec};
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;

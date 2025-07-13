@@ -32,11 +32,15 @@ use bitcoin::{
     block::Header as BlockHeader, BlockHash, OutPoint,
     ScriptBuf, TxMerkleNode, Txid,
 };
-use ord::InscriptionId;
-use ordinals::{Rarity, Rune, Sat, SatPoint};
+use alloc::{
+    string::{String, ToString},
+    vec::Vec,
+    collections::BTreeMap,
+};
+use core::fmt::{self, Display, Formatter};
+use crate::vendored_ord::{InscriptionId, SpacedRune};
+use ordinals::{Rarity, Sat, SatPoint};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
-use std::fmt::{self, Display, Formatter};
 #[cfg(feature = "native-deps")]
 use tabled::Tabled;
 
@@ -324,26 +328,6 @@ pub enum Charm {
     Palindrome,
 }
 
-#[derive(
-    Copy, Clone, Debug, PartialEq, Ord, PartialOrd, Eq, Default, Serialize, Deserialize,
-)]
-pub struct SpacedRune {
-    pub rune: Rune,
-    pub spacers: u32,
-}
-
-impl Display for SpacedRune {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let rune = self.rune.to_string();
-        for (i, c) in rune.chars().enumerate() {
-            write!(f, "{c}")?;
-            if i < rune.len() - 1 && self.spacers & (1 << i) != 0 {
-                write!(f, "•")?;
-            }
-        }
-        Ok(())
-    }
-}
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Clone, Copy)]
 pub struct Pile {

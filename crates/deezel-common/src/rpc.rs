@@ -3,7 +3,8 @@
 //! This module provides trait-based RPC client functionality that can work
 //! across different environments using the provider system.
 
-use crate::{Result, DeezelError, ToString, format};
+use crate::{Result, DeezelError};
+use alloc::{string::ToString, format};
 use crate::traits::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -267,10 +268,6 @@ impl<P: DeezelProvider> RpcClient<P> {
         self.provider.get_esplora_blocks_tip_height().await
     }
     
-    /// Simulate alkanes execution
-    pub async fn simulate(&self, contract_id: &str, params: Option<&str>) -> Result<serde_json::Value> {
-        self.provider.simulate(contract_id, params).await
-    }
     
     /// Trace transaction
     pub async fn trace_transaction(&self, txid: &str, vout: u32, block: Option<&str>, tx: Option<&str>) -> Result<serde_json::Value> {
@@ -474,7 +471,7 @@ mod tests {
     impl TimeProvider for MockProvider {
         fn now_secs(&self) -> u64 { 1640995200 }
         fn now_millis(&self) -> u64 { 1640995200000 }
-        fn sleep_ms(&self, _ms: u64) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
+        fn sleep_ms(&self, _ms: u64) -> core::pin::Pin<Box<dyn core::future::Future<Output = ()>>> {
             Box::pin(async {})
         }
     }
