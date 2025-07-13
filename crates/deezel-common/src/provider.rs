@@ -291,50 +291,58 @@ impl JsonRpcProvider for ConcreteProvider {
     }
     
     async fn get_bytecode(&self, block: &str, tx: &str) -> Result<String> {
-        use crate::rpc::{StandaloneRpcClient, RpcConfig};
-        use alkanes_support::proto::alkanes::{BytecodeRequest, AlkaneId, Uint128};
-        use protobuf::Message;
+        #[cfg(feature = "native-deps")]
+        {
+            use crate::rpc::{StandaloneRpcClient, RpcConfig};
+            use alkanes_support::proto::alkanes::{BytecodeRequest, AlkaneId, Uint128};
+            use protobuf::Message;
 
-        let rpc_config = RpcConfig {
-            bitcoin_rpc_url: self.bitcoin_rpc_url.clone(),
-            metashrew_rpc_url: self.metashrew_rpc_url.clone(),
-            sandshrew_rpc_url: self.metashrew_rpc_url.clone(), // sandshrew_rpc_url is the same as metashrew
-            timeout_seconds: 600,
-        };
+            let rpc_config = RpcConfig {
+                bitcoin_rpc_url: self.bitcoin_rpc_url.clone(),
+                metashrew_rpc_url: self.metashrew_rpc_url.clone(),
+                sandshrew_rpc_url: self.metashrew_rpc_url.clone(), // sandshrew_rpc_url is the same as metashrew
+                timeout_seconds: 600,
+            };
 
-        let rpc_client = StandaloneRpcClient::new(rpc_config);
-        
-        let mut bytecode_request = BytecodeRequest::new();
-        let mut alkane_id = AlkaneId::new();
+            let rpc_client = StandaloneRpcClient::new(rpc_config);
+            
+            let mut bytecode_request = BytecodeRequest::new();
+            let mut alkane_id = AlkaneId::new();
 
-        let block_u128 = block.parse::<u128>().map_err(|e| DeezelError::Other(e.to_string()))?;
-        let tx_u128 = tx.parse::<u128>().map_err(|e| DeezelError::Other(e.to_string()))?;
+            let block_u128 = block.parse::<u128>().map_err(|e| DeezelError::Other(e.to_string()))?;
+            let tx_u128 = tx.parse::<u128>().map_err(|e| DeezelError::Other(e.to_string()))?;
 
-        let mut block_uint128 = Uint128::new();
-        block_uint128.lo = (block_u128 & 0xFFFFFFFFFFFFFFFF) as u64;
-        block_uint128.hi = (block_u128 >> 64) as u64;
+            let mut block_uint128 = Uint128::new();
+            block_uint128.lo = (block_u128 & 0xFFFFFFFFFFFFFFFF) as u64;
+            block_uint128.hi = (block_u128 >> 64) as u64;
 
-        let mut tx_uint128 = Uint128::new();
-        tx_uint128.lo = (tx_u128 & 0xFFFFFFFFFFFFFFFF) as u64;
-        tx_uint128.hi = (tx_u128 >> 64) as u64;
+            let mut tx_uint128 = Uint128::new();
+            tx_uint128.lo = (tx_u128 & 0xFFFFFFFFFFFFFFFF) as u64;
+            tx_uint128.hi = (tx_u128 >> 64) as u64;
 
-        alkane_id.block = protobuf::MessageField::some(block_uint128);
-        alkane_id.tx = protobuf::MessageField::some(tx_uint128);
+            alkane_id.block = protobuf::MessageField::some(block_uint128);
+            alkane_id.tx = protobuf::MessageField::some(tx_uint128);
 
-        bytecode_request.id = protobuf::MessageField::some(alkane_id);
+            bytecode_request.id = protobuf::MessageField::some(alkane_id);
 
-        let encoded_bytes = bytecode_request.write_to_bytes().map_err(|e| DeezelError::Other(e.to_string()))?;
-        let hex_input = format!("0x{}", hex::encode(encoded_bytes));
+            let encoded_bytes = bytecode_request.write_to_bytes().map_err(|e| DeezelError::Other(e.to_string()))?;
+            let hex_input = format!("0x{}", hex::encode(encoded_bytes));
 
-        let result = rpc_client.http_call(
-            &self.metashrew_rpc_url,
-            "metashrew_view",
-            serde_json::json!(["getbytecode", hex_input, "latest"])
-        ).await?;
+            let result = rpc_client.http_call(
+                &self.metashrew_rpc_url,
+                "metashrew_view",
+                serde_json::json!(["getbytecode", hex_input, "latest"])
+            ).await?;
 
-        result.as_str()
-            .ok_or_else(|| DeezelError::RpcError("Invalid bytecode response".to_string()))
-            .map(|s| s.to_string())
+            result.as_str()
+                .ok_or_else(|| DeezelError::RpcError("Invalid bytecode response".to_string()))
+                .map(|s| s.to_string())
+        }
+        #[cfg(not(feature = "native-deps"))]
+        {
+            let _ = (block, tx);
+            Err(DeezelError::NotImplemented("get_bytecode is not available without native-deps feature".to_string()))
+        }
     }
 }
 
@@ -528,14 +536,21 @@ impl TimeProvider for ConcreteProvider {
         unimplemented!()
     }
     
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(feature = "native-deps")]
     fn sleep_ms(&self, _ms: u64) -> std::pin::Pin<Box<dyn core::future::Future<Output = ()> + Send>> {
         Box::pin(tokio::time::sleep(std::time::Duration::from_millis(_ms)))
     }
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(not(feature = "native-deps"))]
     fn sleep_ms(&self, _ms: u64) -> std::pin::Pin<Box<dyn core::future::Future<Output = ()>>> {
-        Box::pin(gloo_timers::future::sleep(std::time::Duration::from_millis(_ms)))
+        #[cfg(target_arch = "wasm32")]
+        {
+            Box::pin(gloo_timers::future::sleep(std::time::Duration::from_millis(_ms)))
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            unimplemented!("sleep_ms is not implemented for non-wasm targets without native-deps feature")
+        }
     }
 }
 
@@ -658,15 +673,18 @@ impl WalletProvider for ConcreteProvider {
     }
     
     async fn get_address(&self) -> Result<String> {
-        match &self.wallet_state {
-            WalletState::Unlocked { mnemonic, .. } => {
-                let path = bitcoin::bip32::DerivationPath::from_str("m/86'/0'/0'/0/0").unwrap();
-                let network = self.get_network();
-                let address = crate::keystore::derive_address(mnemonic, &path, network)?;
-                Ok(address.to_string())
-            },
-            WalletState::Locked(_) => Err(DeezelError::Wallet("Wallet is locked. Cannot get address without unlocking.".to_string())),
-            WalletState::None => Err(DeezelError::Wallet("No wallet loaded".to_string())),
+        #[cfg(feature = "native-deps")]
+        {
+            match &self.wallet_state {
+                WalletState::Unlocked { mnemonic, .. } => {
+                    let path = bitcoin::bip32::DerivationPath::from_str("m/86'/0'/0'/0/0").unwrap();
+                    let network = self.get_network();
+                    let address = crate::keystore::derive_address(mnemonic, &path, network)?;
+                    Ok(address.to_string())
+                },
+                WalletState::Locked(_) => Err(DeezelError::Wallet("Wallet is locked. Cannot get address without unlocking.".to_string())),
+                WalletState::None => Err(DeezelError::Wallet("No wallet loaded".to_string())),
+            }
         }
         #[cfg(not(feature = "native-deps"))]
         {

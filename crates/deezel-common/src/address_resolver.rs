@@ -513,9 +513,22 @@ impl PgpProvider for StandaloneAddressResolver {
 impl TimeProvider for StandaloneAddressResolver {
     fn now_secs(&self) -> u64 { 0 }
     fn now_millis(&self) -> u64 { 0 }
-   fn sleep_ms(&self, _ms: u64) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
-       Box::pin(tokio::time::sleep(std::time::Duration::from_millis(_ms)))
-   }
+    #[cfg(feature = "native-deps")]
+    fn sleep_ms(&self, _ms: u64) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
+        Box::pin(tokio::time::sleep(std::time::Duration::from_millis(_ms)))
+    }
+
+    #[cfg(not(feature = "native-deps"))]
+    fn sleep_ms(&self, _ms: u64) -> std::pin::Pin<Box<dyn core::future::Future<Output = ()>>> {
+        #[cfg(target_arch = "wasm32")]
+        {
+            Box::pin(gloo_timers::future::sleep(std::time::Duration::from_millis(_ms)))
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            unimplemented!("sleep_ms is not implemented for non-wasm targets without native-deps feature")
+        }
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]

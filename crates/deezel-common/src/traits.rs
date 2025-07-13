@@ -171,9 +171,9 @@ pub trait TimeProvider {
     fn now_millis(&self) -> u64;
     
     /// Sleep for the specified duration (in milliseconds)
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(feature = "native-deps")]
     fn sleep_ms(&self, ms: u64) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>;
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(not(feature = "native-deps"))]
     fn sleep_ms(&self, ms: u64) -> std::pin::Pin<Box<dyn core::future::Future<Output = ()>>>;
 }
 
@@ -1165,11 +1165,11 @@ impl<T: DeezelProvider + ?Sized> TimeProvider for Box<T> {
    fn now_millis(&self) -> u64 {
        (**self).now_millis()
    }
-   #[cfg(not(target_arch = "wasm32"))]
+   #[cfg(feature = "native-deps")]
    fn sleep_ms(&self, ms: u64) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
        (**self).sleep_ms(ms)
    }
-   #[cfg(target_arch = "wasm32")]
+   #[cfg(not(feature = "native-deps"))]
    fn sleep_ms(&self, ms: u64) -> std::pin::Pin<Box<dyn core::future::Future<Output = ()>>> {
        (**self).sleep_ms(ms)
    }

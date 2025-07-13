@@ -94,7 +94,7 @@ impl deezel_common::TimeProvider for WebTime {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn sleep_ms(&self, ms: u64) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
+    fn sleep_ms(&self, ms: u64) -> std::pin::Pin<Box<dyn core::future::Future<Output = ()>>> {
         Box::pin(async move {
             // For non-WASM targets, we'll use a simple busy wait
             // This is not ideal but works for the web provider context
@@ -107,7 +107,7 @@ impl deezel_common::TimeProvider for WebTime {
         })
     }
     #[cfg(target_arch = "wasm32")]
-    fn sleep_ms(&self, ms: u64) -> core::pin::Pin<Box<dyn core::future::Future<Output = ()>>> {
+    fn sleep_ms(&self, ms: u64) -> std::pin::Pin<Box<dyn core::future::Future<Output = ()>>> {
         Box::pin(WebSleep::new(ms))
     }
 }
