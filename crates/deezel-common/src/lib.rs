@@ -99,6 +99,7 @@ pub enum DeezelError {
     Pgp(String),
     Hex(String),
     NotImplemented(String),
+    NotConfigured(String),
     Other(String),
 }
 
@@ -125,6 +126,7 @@ impl core::fmt::Display for DeezelError {
             DeezelError::Pgp(msg) => write!(f, "PGP error: {}", msg),
             DeezelError::Hex(msg) => write!(f, "Hex error: {}", msg),
             DeezelError::NotImplemented(msg) => write!(f, "Not implemented: {}", msg),
+            DeezelError::NotConfigured(msg) => write!(f, "Not configured: {}", msg),
             DeezelError::Other(msg) => write!(f, "Other error: {}", msg),
         }
     }

@@ -1374,6 +1374,57 @@ impl OrdProvider for BrowserWalletProvider {
     async fn get_inscriptions_in_block(&self, block_hash: &str) -> Result<JsonValue> {
         self.web_provider.get_inscriptions_in_block(block_hash).await
     }
+    async fn get_ord_address_info(&self, address: &str) -> Result<JsonValue> {
+        self.web_provider.get_ord_address_info(address).await
+    }
+
+    async fn get_block_info(&self, query: &str) -> Result<JsonValue> {
+        self.web_provider.get_block_info(query).await
+    }
+
+    async fn get_ord_block_count(&self) -> Result<JsonValue> {
+        self.web_provider.get_ord_block_count().await
+    }
+
+    async fn get_ord_blocks(&self) -> Result<JsonValue> {
+        self.web_provider.get_ord_blocks().await
+    }
+
+    async fn get_children(&self, inscription_id: &str, page: Option<u32>) -> Result<JsonValue> {
+        self.web_provider.get_children(inscription_id, page).await
+    }
+
+    async fn get_content(&self, inscription_id: &str) -> Result<Vec<u8>> {
+        self.web_provider.get_content(inscription_id).await
+    }
+
+    async fn get_inscriptions(&self, page: Option<u32>) -> Result<JsonValue> {
+        self.web_provider.get_inscriptions(page).await
+    }
+
+    async fn get_output(&self, output: &str) -> Result<JsonValue> {
+        self.web_provider.get_output(output).await
+    }
+
+    async fn get_parents(&self, inscription_id: &str, page: Option<u32>) -> Result<JsonValue> {
+        self.web_provider.get_parents(inscription_id, page).await
+    }
+
+    async fn get_rune(&self, rune: &str) -> Result<JsonValue> {
+        self.web_provider.get_rune(rune).await
+    }
+
+    async fn get_runes(&self, page: Option<u32>) -> Result<JsonValue> {
+        self.web_provider.get_runes(page).await
+    }
+
+    async fn get_sat(&self, sat: u64) -> Result<JsonValue> {
+        self.web_provider.get_sat(sat).await
+    }
+
+    async fn get_tx_info(&self, txid: &str) -> Result<JsonValue> {
+        self.web_provider.get_tx_info(txid).await
+    }
 }
 
 #[async_trait(?Send)]

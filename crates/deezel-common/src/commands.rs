@@ -115,10 +115,14 @@ pub enum Commands {
         command: PgpCommands,
     },
     /// Interact with an ord indexer
-    Ord {
-        #[command(subcommand)]
-        command: OrdCommands,
-    },
+    Ord(OrdArgs),
+}
+
+/// Arguments for the `ord` subcommand
+#[derive(Parser, Debug, Clone)]
+pub struct OrdArgs {
+    #[command(subcommand)]
+    pub command: OrdCommands,
 }
 
 /// Wallet subcommands
@@ -926,6 +930,111 @@ pub enum OrdCommands {
         /// Block hash
         #[arg(long)]
         hash: String,
+        /// Output in raw JSON format
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Get address information
+    Address {
+        /// Address
+        address: String,
+        /// Output in raw JSON format
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Get block information
+    Block {
+        /// Block hash or height
+        query: String,
+        /// Output in raw JSON format
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Get latest block count
+    BlockCount {
+        /// Output in raw JSON format
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Get latest blocks
+    Blocks {
+        /// Output in raw JSON format
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Get children of an inscription
+    Children {
+        /// Inscription ID
+        inscription_id: String,
+        /// Page number
+        #[arg(long)]
+        page: Option<u32>,
+        /// Output in raw JSON format
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Get inscription content
+    Content {
+        /// Inscription ID
+        inscription_id: String,
+    },
+    /// Get all inscriptions
+    Inscriptions {
+        /// Page number
+        #[arg(long)]
+        page: Option<u32>,
+        /// Output in raw JSON format
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Get output information
+    Output {
+        /// Output point (txid:vout)
+        output: String,
+        /// Output in raw JSON format
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Get parents of an inscription
+    Parents {
+        /// Inscription ID
+        inscription_id: String,
+        /// Page number
+        #[arg(long)]
+        page: Option<u32>,
+        /// Output in raw JSON format
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Get rune information
+    Rune {
+        /// Rune name or ID
+        rune: String,
+        /// Output in raw JSON format
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Get all runes
+    Runes {
+        /// Page number
+        #[arg(long)]
+        page: Option<u32>,
+        /// Output in raw JSON format
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Get sat information
+    Sat {
+        /// Sat number
+        sat: u64,
+        /// Output in raw JSON format
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Get transaction information
+    Tx {
+        /// Transaction ID
+        txid: String,
         /// Output in raw JSON format
         #[arg(long)]
         raw: bool,

@@ -811,6 +811,45 @@ impl OrdProvider for StandaloneAddressResolver {
     async fn get_inscriptions_in_block(&self, _block_hash: &str) -> Result<JsonValue> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support ord operations".to_string()))
     }
+    async fn get_ord_address_info(&self, _address: &str) -> Result<JsonValue> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support ord operations".to_string()))
+    }
+    async fn get_block_info(&self, _query: &str) -> Result<JsonValue> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support ord operations".to_string()))
+    }
+    async fn get_ord_block_count(&self) -> Result<JsonValue> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support ord operations".to_string()))
+    }
+    async fn get_ord_blocks(&self) -> Result<JsonValue> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support ord operations".to_string()))
+    }
+    async fn get_children(&self, _inscription_id: &str, _page: Option<u32>) -> Result<JsonValue> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support ord operations".to_string()))
+    }
+    async fn get_content(&self, _inscription_id: &str) -> Result<Vec<u8>> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support ord operations".to_string()))
+    }
+    async fn get_inscriptions(&self, _page: Option<u32>) -> Result<JsonValue> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support ord operations".to_string()))
+    }
+    async fn get_output(&self, _output: &str) -> Result<JsonValue> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support ord operations".to_string()))
+    }
+    async fn get_parents(&self, _inscription_id: &str, _page: Option<u32>) -> Result<JsonValue> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support ord operations".to_string()))
+    }
+    async fn get_rune(&self, _rune: &str) -> Result<JsonValue> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support ord operations".to_string()))
+    }
+    async fn get_runes(&self, _page: Option<u32>) -> Result<JsonValue> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support ord operations".to_string()))
+    }
+    async fn get_sat(&self, _sat: u64) -> Result<JsonValue> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support ord operations".to_string()))
+    }
+    async fn get_tx_info(&self, _txid: &str) -> Result<JsonValue> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support ord operations".to_string()))
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]

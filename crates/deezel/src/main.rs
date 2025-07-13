@@ -49,7 +49,7 @@ async fn execute_command(system: &SystemDeezel, args: Args) -> Result<()> {
         deezel_common::commands::Commands::Monitor { command } => system.execute_monitor_command(command).await.map_err(anyhow::Error::from),
         deezel_common::commands::Commands::Esplora { command } => system.execute_esplora_command(command).await.map_err(anyhow::Error::from),
         deezel_common::commands::Commands::Pgp { command } => system.execute_pgp_command(command).await.map_err(anyhow::Error::from),
-        deezel_common::commands::Commands::Ord { command } => system.execute_ord_command(command).await.map_err(anyhow::Error::from),
+        deezel_common::commands::Commands::Ord(args) => system.execute_ord_command(args.command).await.map_err(anyhow::Error::from),
     };
 
     result

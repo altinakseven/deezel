@@ -1821,6 +1821,120 @@ impl SystemOrd for SystemDeezel {
                 }
                 Ok(())
             },
+            OrdCommands::Address { address, raw } => {
+                let result = provider.get_ord_address_info(&address).await?;
+                if raw {
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                } else {
+                    println!("Address {}:\n{}", address, serde_json::to_string_pretty(&result)?);
+                }
+                Ok(())
+            },
+            OrdCommands::Block { query, raw } => {
+                let result = provider.get_block_info(&query).await?;
+                if raw {
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                } else {
+                    println!("Block {}:\n{}", query, serde_json::to_string_pretty(&result)?);
+                }
+                Ok(())
+            },
+            OrdCommands::BlockCount { raw } => {
+                let result = provider.get_ord_block_count().await?;
+                if raw {
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                } else {
+                    println!("Block count:\n{}", serde_json::to_string_pretty(&result)?);
+                }
+                Ok(())
+            },
+            OrdCommands::Blocks { raw } => {
+                let result = provider.get_ord_blocks().await?;
+                if raw {
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                } else {
+                    println!("Blocks:\n{}", serde_json::to_string_pretty(&result)?);
+                }
+                Ok(())
+            },
+            OrdCommands::Children { inscription_id, page, raw } => {
+                let result = provider.get_children(&inscription_id, page).await?;
+                if raw {
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                } else {
+                    println!("Children of {}:\n{}", inscription_id, serde_json::to_string_pretty(&result)?);
+                }
+                Ok(())
+            },
+            OrdCommands::Content { inscription_id } => {
+                let result = provider.get_content(&inscription_id).await?;
+                use std::io::{self, Write};
+                io::stdout().write_all(&result)?;
+                Ok(())
+            },
+            OrdCommands::Inscriptions { page, raw } => {
+                let result = provider.get_inscriptions(page).await?;
+                if raw {
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                } else {
+                    println!("Inscriptions:\n{}", serde_json::to_string_pretty(&result)?);
+                }
+                Ok(())
+            },
+            OrdCommands::Output { output, raw } => {
+                let result = provider.get_output(&output).await?;
+                if raw {
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                } else {
+                    println!("Output {}:\n{}", output, serde_json::to_string_pretty(&result)?);
+                }
+                Ok(())
+            },
+            OrdCommands::Parents { inscription_id, page, raw } => {
+                let result = provider.get_parents(&inscription_id, page).await?;
+                if raw {
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                } else {
+                    println!("Parents of {}:\n{}", inscription_id, serde_json::to_string_pretty(&result)?);
+                }
+                Ok(())
+            },
+            OrdCommands::Rune { rune, raw } => {
+                let result = provider.get_rune(&rune).await?;
+                if raw {
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                } else {
+                    println!("Rune {}:\n{}", rune, serde_json::to_string_pretty(&result)?);
+                }
+                Ok(())
+            },
+            OrdCommands::Runes { page, raw } => {
+                let result = provider.get_runes(page).await?;
+                if raw {
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                } else {
+                    println!("Runes:\n{}", serde_json::to_string_pretty(&result)?);
+                }
+                Ok(())
+            },
+            OrdCommands::Sat { sat, raw } => {
+                let result = provider.get_sat(sat).await?;
+                if raw {
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                } else {
+                    println!("Sat {}:\n{}", sat, serde_json::to_string_pretty(&result)?);
+                }
+                Ok(())
+            },
+            OrdCommands::Tx { txid, raw } => {
+                let result = provider.get_tx_info(&txid).await?;
+                if raw {
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                } else {
+                    println!("Transaction {}:\n{}", txid, serde_json::to_string_pretty(&result)?);
+                }
+                Ok(())
+            },
         };
         res.map_err(|e| DeezelError::Wallet(e.to_string()))
     }
