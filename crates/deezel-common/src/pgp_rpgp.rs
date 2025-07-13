@@ -16,7 +16,6 @@ use deezel_rpgp::{
     ser::Serialize,
     types::{KeyDetails, PublicKeyTrait},
 };
-#[cfg(not(target_arch = "wasm32"))]
 use crate::{
     traits::{PgpProvider, PgpKeyPair, PgpKey, PgpDecryptResult, PgpKeyInfo, PgpAlgorithm},
     Result, DeezelError,
