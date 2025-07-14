@@ -110,6 +110,7 @@ impl SystemDeezel {
             args.esplora_url.clone(),
             args.provider.clone(),
             Some(std::path::PathBuf::from(&wallet_file)),
+            None,
         ).await?;
 
         if let Some(passphrase) = &args.passphrase {
@@ -652,20 +653,20 @@ impl SystemWallet for SystemDeezel {
                
                if raw {
                    // Convert to serializable format
-                   let serializable_utxos: Vec<serde_json::Value> = utxos.iter().map(|utxo| {
+                   let serializable_utxos: Vec<serde_json::Value> = utxos.iter().map(|(_outpoint, utxo_info)| {
                        serde_json::json!({
-                           "txid": utxo.txid,
-                           "vout": utxo.vout,
-                           "amount": utxo.amount,
-                           "address": utxo.address,
-                           "confirmations": utxo.confirmations,
-                           "frozen": utxo.frozen,
-                           "freeze_reason": utxo.freeze_reason,
-                           "block_height": utxo.block_height,
-                           "has_inscriptions": utxo.has_inscriptions,
-                           "has_runes": utxo.has_runes,
-                           "has_alkanes": utxo.has_alkanes,
-                           "is_coinbase": utxo.is_coinbase
+                           "txid": utxo_info.txid,
+                           "vout": utxo_info.vout,
+                           "amount": utxo_info.amount,
+                           "address": utxo_info.address,
+                           "confirmations": utxo_info.confirmations,
+                           "frozen": utxo_info.frozen,
+                           "freeze_reason": utxo_info.freeze_reason,
+                           "block_height": utxo_info.block_height,
+                           "has_inscriptions": utxo_info.has_inscriptions,
+                           "has_runes": utxo_info.has_runes,
+                           "has_alkanes": utxo_info.has_alkanes,
+                           "is_coinbase": utxo_info.is_coinbase
                        })
                    }).collect();
                    println!("{}", serde_json::to_string_pretty(&serializable_utxos)?);
@@ -676,40 +677,40 @@ impl SystemWallet for SystemDeezel {
                    if utxos.is_empty() {
                        println!("No UTXOs found");
                    } else {
-                       let total_amount: u64 = utxos.iter().map(|u| u.amount).sum();
+                       let total_amount: u64 = utxos.iter().map(|(_, u)| u.amount).sum();
                        println!("📊 Total: {} UTXOs, {} sats\n", utxos.len(), total_amount);
                        
-                       for (i, utxo) in utxos.iter().enumerate() {
-                           println!("{}. 🔗 {}:{}", i + 1, utxo.txid, utxo.vout);
-                           println!("   💰 Amount: {} sats", utxo.amount);
-                           println!("   🏠 Address: {}", utxo.address);
-                           println!("   ✅ Confirmations: {}", utxo.confirmations);
+                       for (i, (outpoint, utxo_info)) in utxos.iter().enumerate() {
+                           println!("{}. 🔗 {}:{}", i + 1, outpoint.txid, outpoint.vout);
+                           println!("   💰 Amount: {} sats", utxo_info.amount);
+                           println!("   🏠 Address: {}", utxo_info.address);
+                           println!("   ✅ Confirmations: {}", utxo_info.confirmations);
                            
-                           if let Some(block_height) = utxo.block_height {
+                           if let Some(block_height) = utxo_info.block_height {
                                println!("   📦 Block: {}", block_height);
                            }
                            
                            // Show special properties
                            let mut properties = Vec::new();
-                           if utxo.is_coinbase {
+                           if utxo_info.is_coinbase {
                                properties.push("coinbase");
                            }
-                           if utxo.has_inscriptions {
+                           if utxo_info.has_inscriptions {
                                properties.push("inscriptions");
                            }
-                           if utxo.has_runes {
+                           if utxo_info.has_runes {
                                properties.push("runes");
                            }
-                           if utxo.has_alkanes {
+                           if utxo_info.has_alkanes {
                                properties.push("alkanes");
                            }
                            if !properties.is_empty() {
                                println!("   🏷️  Properties: {}", properties.join(", "));
                            }
                            
-                           if utxo.frozen {
+                           if utxo_info.frozen {
                                println!("   ❄️  Status: FROZEN");
-                               if let Some(reason) = &utxo.freeze_reason {
+                               if let Some(reason) = &utxo_info.freeze_reason {
                                    println!("   📝 Reason: {}", reason);
                                }
                            } else {

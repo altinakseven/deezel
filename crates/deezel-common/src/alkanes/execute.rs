@@ -17,12 +17,16 @@
 use crate::{Result, DeezelError, DeezelProvider, JsonValue};
 use crate::traits::{WalletProvider, UtxoInfo};
 use bitcoin::{Transaction, ScriptBuf, OutPoint, TxOut, Address, XOnlyPublicKey};
-use crate::vendored_ord::{Edict, RuneId, Runestone};
+use crate::vendored_ord::{RuneId, Runestone};
 use core::str::FromStr;
 use alloc::{vec, vec::Vec, string::{String, ToString}, format};
 pub use super::types::{EnhancedExecuteParams, EnhancedExecuteResult, InputRequirement, ProtostoneSpec, OutputTarget};
 use super::envelope::AlkanesEnvelope;
-use crate::utils::protostone::{Protostone, Protostones};
+use anyhow::anyhow;
+use protorune_support::protostone::{Protostone, into_protostone_edicts};
+use crate::utils::protostone::Protostones;
+use crate::vendored_ord::Edict;
+
 
 /// Enhanced alkanes executor
 pub struct EnhancedAlkanesExecutor<'a, T: DeezelProvider> {
@@ -39,18 +43,15 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
     pub async fn execute(&self, params: EnhancedExecuteParams) -> Result<EnhancedExecuteResult> {
         log::info!("Starting enhanced alkanes execution");
         
-        if params.envelope_data.is_some() {
-            // Contract deployment with envelope BIN data
+        self.validate_envelope_cellpack_usage(&params)?;
+
+        if let Some(envelope_data) = &params.envelope_data {
             log::info!("CONTRACT DEPLOYMENT: Using envelope with BIN data for contract deployment");
-            let envelope_data = params.envelope_data.as_ref().unwrap();
             log::info!("Envelope data size: {} bytes", envelope_data.len());
-            
             let envelope = AlkanesEnvelope::for_contract(envelope_data.clone());
             log::info!("Created AlkanesEnvelope with BIN protocol tag and gzip compression");
-            
             self.execute_commit_reveal_pattern(params, &envelope).await
         } else {
-            // Contract execution without envelope
             log::info!("CONTRACT EXECUTION: Single transaction without envelope");
             self.execute_single_transaction(&params).await
         }
@@ -116,8 +117,7 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
         log::info!("Creating commit transaction");
 
         let internal_key = self.provider.get_internal_key().await?;
-        let network = self.provider.get_network();
-        let commit_address = self.create_commit_address_for_envelope(envelope, network, internal_key).await?;
+        let commit_address = self.create_commit_address_for_envelope(envelope, internal_key).await?;
 
         log::info!("Envelope commit address: {}", commit_address);
 
@@ -194,10 +194,10 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
     async fn create_commit_address_for_envelope(
         &self,
         envelope: &AlkanesEnvelope,
-        network: bitcoin::Network,
         internal_key: XOnlyPublicKey,
     ) -> Result<Address> {
         use bitcoin::taproot::TaprootBuilder;
+        let network = self.provider.get_network();
 
         let reveal_script = envelope.build_reveal_script();
 
@@ -316,8 +316,14 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
     async fn select_utxos(&self, requirements: &[InputRequirement]) -> Result<Vec<OutPoint>> {
         log::info!("Selecting UTXOs for {} requirements", requirements.len());
 
-        let utxos = self.provider.get_utxos(false, None).await?;
-        log::debug!("Found {} spendable wallet UTXOs", utxos.len());
+        let utxos = self.provider.get_utxos(true, None).await?; // Include frozen to check reasons
+        log::debug!("Found {} total wallet UTXOs", utxos.len());
+
+        let spendable_utxos: Vec<(OutPoint, UtxoInfo)> = utxos.into_iter()
+            .filter(|(_, info)| !info.frozen)
+            .collect();
+        
+        log::info!("Found {} spendable (non-frozen) wallet UTXOs", spendable_utxos.len());
 
         let mut selected_outpoints = Vec::new();
         let mut bitcoin_needed = 0u64;
@@ -338,11 +344,10 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
         log::info!("Need {} sats Bitcoin and {} different alkanes tokens", bitcoin_needed, alkanes_needed.len());
 
         let mut bitcoin_collected = 0u64;
-        // In a full implementation, we would check the alkanes balance of each UTXO.
+        // TODO: Implement alkanes balance checking for each UTXO
         // For now, we just select enough UTXOs to cover the Bitcoin requirement.
-        // The logic for selecting specific alkanes is a TODO.
 
-        for (outpoint, utxo) in utxos {
+        for (outpoint, utxo) in spendable_utxos {
             if bitcoin_collected < bitcoin_needed {
                 bitcoin_collected += utxo.amount;
                 selected_outpoints.push(outpoint);
@@ -413,7 +418,7 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
         log::info!("Constructing runestone with {} protostones", protostones.len());
 
         let mut edicts = Vec::new();
-        let mut protostone_messages = Protostones::new();
+        let mut all_protostones = Vec::new();
 
         for spec in protostones {
             for edict_spec in &spec.edicts {
@@ -430,34 +435,46 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
             }
 
             let message = if let Some(cellpack) = &spec.cellpack {
-                // TODO: Implement proper cellpack enciphering
-                log::warn!("Cellpack enciphering not yet implemented, using placeholder.");
-                cellpack.inputs.iter().map(|&x| x as u8).collect()
+                // Use the real cellpack enciphering logic
+                let cellpack_bytes = cellpack.encipher();
+                log::info!("Encoded cellpack to {} bytes", cellpack_bytes.len());
+                cellpack_bytes
             } else {
                 Vec::new()
             };
 
-            protostone_messages.add(Protostone {
+            let edicts_clone = edicts.iter().map(|e| ordinals::Edict {
+                id: ordinals::RuneId {
+                    block: e.id.block,
+                    tx: e.id.tx,
+                },
+                amount: e.amount,
+                output: e.output,
+            }).collect();
+
+            all_protostones.push(Protostone {
                 protocol_tag: 1, // ALKANES protocol tag
                 message,
+                edicts: into_protostone_edicts(edicts_clone),
+                burn: None,
+                refund: None,
+                pointer: None,
+                from: None,
             });
         }
 
-        let mut protocol_payload_u8 = Vec::new();
-        for p in protostone_messages.iter() {
-            leb128::write::unsigned(&mut protocol_payload_u8, p.protocol_tag as u64).unwrap();
-            leb128::write::unsigned(&mut protocol_payload_u8, p.message.len() as u64).unwrap();
-            protocol_payload_u8.extend(&p.message);
-        }
-        
-        let protocol_payload = protocol_payload_u8.into_iter().map(u128::from).collect();
+        let protocol_payload = if !all_protostones.is_empty() {
+            Some(all_protostones.encipher()?)
+        } else {
+            None
+        };
 
         let runestone = Runestone {
             edicts,
             etching: None,
             mint: None,
             pointer: None,
-            protocol: Some(protocol_payload),
+            protocol: protocol_payload,
         };
 
         Ok(runestone.encipher())
@@ -546,6 +563,7 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
         fee_rate: Option<f32>,
         envelope: &AlkanesEnvelope,
     ) -> Result<(Transaction, u64)> {
+        log::info!("Building script-path reveal transaction with {} inputs", all_inputs.len());
         use bitcoin::psbt::Psbt;
 
         let op_return_output = TxOut {
@@ -567,29 +585,30 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
         })?;
 
         let internal_key = self.provider.get_internal_key().await?;
-        let network = self.provider.get_network();
 
         for (i, outpoint) in all_inputs.iter().enumerate() {
             if i == 0 {
-                let commit_address = self.create_commit_address_for_envelope(envelope, network, internal_key).await?;
-                let commit_output_value = 50_546u64; // Placeholder
-                psbt.inputs[i].witness_utxo = Some(TxOut {
-                    value: bitcoin::Amount::from_sat(commit_output_value),
-                    script_pubkey: commit_address.script_pubkey(),
-                });
+                // First input is the commit output, configure for script-path spend
+                let commit_utxo = self.provider.get_utxo(outpoint).await?
+                    .ok_or_else(|| DeezelError::Wallet(format!("Commit UTXO not found: {}", outpoint)))?;
+
+                psbt.inputs[i].witness_utxo = Some(commit_utxo);
+                psbt.inputs[i].tap_internal_key = Some(internal_key);
 
                 let (taproot_spend_info, control_block) = self.create_taproot_spend_info_for_envelope(envelope, internal_key).await?;
-                psbt.inputs[i].tap_internal_key = Some(internal_key);
-                
                 let script_map = taproot_spend_info.script_map();
                 if let Some(((script, leaf_version), _)) = script_map.iter().next() {
                     use alloc::collections::BTreeMap;
                     let mut tap_scripts = BTreeMap::new();
-                    tap_scripts.insert(control_block.clone(), (script.clone(), *leaf_version));
+                    tap_scripts.insert(control_block, (script.clone(), *leaf_version));
                     psbt.inputs[i].tap_scripts = tap_scripts;
+                } else {
+                    return Err(DeezelError::Other("No script found in taproot spend info for envelope".to_string()));
                 }
             } else {
-                let utxo_info = self.provider.get_utxo(outpoint).await?.ok_or_else(|| DeezelError::Wallet(format!("UTXO not found: {}", outpoint)))?;
+                // Additional inputs are regular wallet UTXOs for key-path spend
+                let utxo_info = self.provider.get_utxo(outpoint).await?
+                    .ok_or_else(|| DeezelError::Wallet(format!("UTXO not found: {}", outpoint)))?;
                 if utxo_info.script_pubkey.is_p2tr() {
                     psbt.inputs[i].tap_internal_key = Some(internal_key);
                 }
@@ -600,13 +619,16 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
         let signed_psbt = self.provider.sign_psbt(&psbt).await?;
         let mut tx = signed_psbt.clone().extract_tx()?;
 
+        // Manually construct witnesses
         for (i, _) in all_inputs.iter().enumerate() {
             if i == 0 {
+                // First input: script-path spend with 3-element witness
                 let reveal_script = envelope.build_reveal_script();
                 let (_, control_block) = self.create_taproot_spend_info_for_envelope(envelope, internal_key).await?;
                 let signature = self.create_taproot_script_signature(&tx, i, reveal_script.as_bytes(), &control_block.serialize()).await?;
                 tx.input[i].witness = envelope.create_complete_witness(&signature, control_block)?;
             } else {
+                // Other inputs: key-path spend
                 if let Some(psbt_input) = signed_psbt.inputs.get(i) {
                     if let Some(tap_key_sig) = &psbt_input.tap_key_sig {
                         tx.input[i].witness = bitcoin::Witness::p2tr_key_spend(tap_key_sig);
@@ -691,8 +713,13 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
             .map_err(|e| DeezelError::Transaction(e.to_string()))?;
 
         let signature = self.provider.sign_taproot_script_spend(sighash.into()).await?;
+        
+        let taproot_signature = taproot::Signature {
+            signature,
+            sighash_type: TapSighashType::Default,
+        };
 
-        Ok(signature.as_ref().to_vec())
+        Ok(taproot_signature.to_vec())
     }
 
     /// Traces the reveal transaction to get the results of protostone execution.
@@ -721,7 +748,7 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
         for (_vout, output) in tx.output.iter().enumerate() {
             if output.script_pubkey.is_op_return() {
                 protostone_count += 1;
-                let trace_vout = tx.output.len() as u32 + protostone_count + 1;
+                let trace_vout = tx.output.len() as u32 + protostone_count - 1;
                 
                 match self.provider.trace_outpoint(txid, trace_vout).await {
                     Ok(trace_result) => {
@@ -785,6 +812,30 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
             }
             self.provider.sleep_ms(1000).await;
         }
+    }
+
+    fn validate_envelope_cellpack_usage(&self, params: &EnhancedExecuteParams) -> Result<()> {
+        let has_envelope = params.envelope_data.is_some();
+        let has_cellpacks = params.protostones.iter().any(|p| p.cellpack.is_some());
+
+        if has_envelope && !has_cellpacks {
+            return Err(DeezelError::Other(anyhow!(
+                "Incomplete deployment: Envelope provided but no cellpack to trigger deployment."
+            ).to_string()));
+        }
+
+        if !has_envelope && has_cellpacks {
+            // This is a valid execution of an existing contract
+            return Ok(());
+        }
+        
+        if !has_envelope && !has_cellpacks && !params.protostones.is_empty() {
+             return Err(DeezelError::Other(anyhow!(
+                "No operation: Protostones provided without envelope or cellpack."
+            ).to_string()));
+        }
+        
+        Ok(())
     }
 
     /// Waits for the Esplora indexer to be synchronized with the Bitcoin node.
