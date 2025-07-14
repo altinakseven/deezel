@@ -20,6 +20,8 @@ use crate::{
 #[cfg(feature = "std")]
 use crate::normalize_lines::{normalize_lines, NormalizedReader};
 
+#[cfg(feature = "std")]
+use crate::line_writer::LineBreak;
 
 
 /// Implementation of a Cleartext Signed Message.

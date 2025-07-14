@@ -4,6 +4,10 @@
 // that couldn't fit in the main provider.rs file due to size constraints.
 
 use async_trait::async_trait;
+use bitcoin::{
+    secp256k1::{schnorr::Signature, All, Secp256k1, Message},
+    OutPoint, TxOut,
+};
 use deezel_common::{*, alkanes::{AlkanesInspectConfig, AlkanesInspectResult, AlkaneBalance}};
 use serde_json::Value as JsonValue;
 
@@ -285,5 +289,17 @@ impl DeezelProvider for WebProvider {
 
     fn clone_box(&self) -> Box<dyn DeezelProvider> {
         Box::new(self.clone())
+    }
+
+    fn secp(&self) -> &Secp256k1<All> {
+        todo!()
+    }
+
+    async fn get_utxo(&self, _outpoint: &OutPoint) -> Result<Option<TxOut>> {
+        todo!()
+    }
+
+    async fn sign_taproot_script_spend(&self, _msg: Message) -> Result<Signature> {
+        todo!()
     }
 }

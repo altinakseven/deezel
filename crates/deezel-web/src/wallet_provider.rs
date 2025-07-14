@@ -55,7 +55,11 @@ use alloc::{
 };
 
 use async_trait::async_trait;
-use bitcoin::{Network, Transaction, psbt::Psbt, secp256k1::Keypair, XOnlyPublicKey};
+use bitcoin::{
+    secp256k1::{schnorr::Signature, All, Keypair, Secp256k1, Message},
+    Network, OutPoint, Psbt, Transaction, TxOut, XOnlyPublicKey,
+};
+use std::str::FromStr;
 use deezel_common::{*, alkanes::{AlkanesInspectConfig, AlkanesInspectResult, AlkaneBalance}};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -784,6 +788,7 @@ impl CryptoProvider for BrowserWalletProvider {
     }
 }
 
+#[async_trait(?Send)]
 impl TimeProvider for BrowserWalletProvider {
     fn now_secs(&self) -> u64 {
         self.web_provider.now_secs()
@@ -793,8 +798,8 @@ impl TimeProvider for BrowserWalletProvider {
         self.web_provider.now_millis()
     }
     
-    fn sleep_ms(&self, ms: u64) -> core::pin::Pin<Box<dyn core::future::Future<Output = ()>>> {
-        self.web_provider.sleep_ms(ms)
+    async fn sleep_ms(&self, ms: u64) {
+        self.web_provider.sleep_ms(ms).await
     }
 }
 
@@ -909,7 +914,7 @@ impl WalletProvider for BrowserWalletProvider {
         self.broadcast_transaction(signed_tx_hex).await
     }
     
-    async fn get_utxos(&self, _include_frozen: bool, addresses: Option<Vec<String>>) -> Result<Vec<UtxoInfo>> {
+    async fn get_utxos(&self, _include_frozen: bool, addresses: Option<Vec<String>>) -> Result<Vec<(OutPoint, UtxoInfo)>> {
         // Use our Esplora provider for accurate UTXO information
         let addresses_to_check = if let Some(addrs) = addresses {
             addrs
@@ -926,11 +931,13 @@ impl WalletProvider for BrowserWalletProvider {
             
             if let Some(utxos_array) = utxos_json.as_array() {
                 for utxo in utxos_array {
-                    if let (Some(txid), Some(vout), Some(value)) = (
+                    if let (Some(txid_str), Some(vout), Some(value)) = (
                         utxo.get("txid").and_then(|t| t.as_str()),
                         utxo.get("vout").and_then(|v| v.as_u64()),
                         utxo.get("value").and_then(|v| v.as_u64()),
                     ) {
+                        let txid = bitcoin::Txid::from_str(txid_str).map_err(|e| DeezelError::Transaction(e.to_string()))?;
+                        let outpoint = OutPoint::new(txid, vout as u32);
                         let status = utxo.get("status");
                         let confirmations = status
                             .and_then(|s| s.get("block_height"))
@@ -942,7 +949,7 @@ impl WalletProvider for BrowserWalletProvider {
                             })
                             .unwrap_or(0);
                         
-                        all_utxos.push(UtxoInfo {
+                        let utxo_info = UtxoInfo {
                             txid: txid.to_string(),
                             vout: vout as u32,
                             amount: value,
@@ -956,7 +963,8 @@ impl WalletProvider for BrowserWalletProvider {
                             has_runes: false,
                             has_alkanes: false,
                             is_coinbase: false,
-                        });
+                        };
+                        all_utxos.push((outpoint, utxo_info));
                     }
                 }
             }
@@ -1596,5 +1604,17 @@ impl DeezelProvider for BrowserWalletProvider {
 
     fn clone_box(&self) -> Box<dyn DeezelProvider> {
         Box::new(self.clone())
+    }
+
+    fn secp(&self) -> &Secp256k1<All> {
+        self.web_provider.secp()
+    }
+
+    async fn get_utxo(&self, outpoint: &OutPoint) -> Result<Option<TxOut>> {
+        self.web_provider.get_utxo(outpoint).await
+    }
+
+    async fn sign_taproot_script_spend(&self, msg: Message) -> Result<Signature> {
+        self.web_provider.sign_taproot_script_spend(msg).await
     }
 }

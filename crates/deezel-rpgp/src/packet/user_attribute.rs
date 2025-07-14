@@ -1,3 +1,5 @@
+#[cfg(test)]
+extern crate std;
 use alloc::string::ToString;
 use alloc::vec;
 use alloc::format;
@@ -358,7 +360,8 @@ impl PacketTrait for UserAttribute {
 
 #[cfg(test)]
 mod tests {
-    use prop::collection::vec;
+    use proptest::collection::vec;
+    use alloc::vec::Vec;
     use proptest::prelude::*;
 
     use super::*;

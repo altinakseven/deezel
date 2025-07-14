@@ -27,10 +27,11 @@ use hex;
 
 use crate::pgp::DeezelPgpProvider;
 use deezel_common::{
-    keystore::{Keystore, PbkdfParams},
-    traits::{KeystoreAddress, KeystoreInfo, KeystoreProvider},
+    traits::KeystoreProvider,
     DeezelError, Result as CommonResult,
 };
+pub use deezel_common::keystore::{AddressInfo, Keystore, PbkdfParams};
+pub use deezel_common::traits::{KeystoreAddress, KeystoreInfo};
 use async_trait::async_trait;
 use alloc::collections::BTreeMap;
 

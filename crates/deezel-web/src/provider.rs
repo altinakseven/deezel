@@ -465,6 +465,7 @@ impl CryptoProvider for WebProvider {
     }
 }
 
+#[async_trait(?Send)]
 impl TimeProvider for WebProvider {
     fn now_secs(&self) -> u64 {
         self.time.now_secs()
@@ -474,8 +475,8 @@ impl TimeProvider for WebProvider {
         self.time.now_millis()
     }
 
-    fn sleep_ms(&self, ms: u64) -> core::pin::Pin<Box<dyn core::future::Future<Output = ()>>> {
-        self.time.sleep_ms(ms)
+    async fn sleep_ms(&self, ms: u64) {
+        self.time.sleep_ms(ms).await
     }
 }
 

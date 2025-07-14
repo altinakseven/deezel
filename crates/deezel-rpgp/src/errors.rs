@@ -6,6 +6,8 @@ use core::num::TryFromIntError;
 
 use ed25519_dalek::SignatureError;
 use snafu::Snafu;
+#[cfg(feature = "std")]
+use snafu::Backtrace;
 
 pub type Result<T, E = Error> = core::result::Result<T, E>;
 

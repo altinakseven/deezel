@@ -620,7 +620,7 @@ mod tests {
         let s2k = StringToKey::Argon2 {
             salt: [
                 0xe1, 0x4c, 0xac, 0x47, 0x15, 0x34, 0x59, 0x18, 0xa9, 0x62, 0xdc, 0xa3, 0x47, 0xe1,
-                0x43, 0xf8,
+                0x14, 0x3f8,
             ],
             t: 1,
             p: 4,
@@ -677,7 +677,7 @@ mod tests {
             // println!("reading {}", filename);
 
             let armored = std::fs::read_to_string(filename).expect("failed to load msg");
-            let (msg, header) = Message::from_armor(&armored).expect("failed to parse msg");
+            let (msg, header) = Message::from_armor(armored.as_bytes()).expect("failed to parse msg");
 
             // dbg!(&header);
             let mut decrypted = msg
@@ -731,7 +731,7 @@ mod tests {
 
         // println!("reading {}", filename);
         let armored = std::fs::read_to_string(filename).expect("failed to load msg");
-        let (msg, _header) = Message::from_armor(&armored).expect("parse");
+        let (msg, _header) = Message::from_armor(armored.as_bytes()).expect("parse");
 
         let mut decrypted = msg
             .decrypt_with_password(&"password".into())

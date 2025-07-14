@@ -1,4 +1,5 @@
 extern crate alloc;
+use crate::types::Tag;
 use crate::io::{self, BufRead, Write};
 use bytes::Bytes;
 #[cfg(feature = "bzip2")]

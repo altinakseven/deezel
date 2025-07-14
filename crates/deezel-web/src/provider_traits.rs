@@ -4,7 +4,8 @@
 //! that couldn't fit in the main provider.rs file due to size constraints.
 
 use async_trait::async_trait;
-use bitcoin::Network;
+use bitcoin::{Network, OutPoint};
+use std::str::FromStr;
 use deezel_common::*;
 use serde_json::Value as JsonValue;
 
@@ -100,8 +101,8 @@ impl WalletProvider for WebProvider {
 
         for address in addrs_to_check {
             let utxos = WalletProvider::get_utxos(self, true, Some(vec![address])).await?;
-            let confirmed: u64 = utxos.iter().filter(|u| u.confirmations > 0).map(|u| u.amount).sum();
-            let pending: i64 = utxos.iter().filter(|u| u.confirmations == 0).map(|u| u.amount as i64).sum();
+            let confirmed: u64 = utxos.iter().filter(|(_, u)| u.confirmations > 0).map(|(_, u)| u.amount).sum();
+            let pending: i64 = utxos.iter().filter(|(_, u)| u.confirmations == 0).map(|(_, u)| u.amount as i64).sum();
             total_confirmed += confirmed;
             total_pending += pending;
         }
@@ -143,7 +144,7 @@ impl WalletProvider for WebProvider {
         Ok("web_mock_txid_".to_string() + &hex::encode(self.random_bytes(16)?))
     }
 
-    async fn get_utxos(&self, include_frozen: bool, addresses: Option<Vec<String>>) -> Result<Vec<UtxoInfo>> {
+    async fn get_utxos(&self, include_frozen: bool, addresses: Option<Vec<String>>) -> Result<Vec<(OutPoint, UtxoInfo)>> {
         let addresses = if let Some(addresses) = addresses {
             addresses
         } else {
@@ -154,6 +155,11 @@ impl WalletProvider for WebProvider {
             let result = EsploraProvider::get_address_utxo(self, &address).await?;
             if let Some(utxo_array) = result.as_array() {
                 for utxo in utxo_array {
+                    let txid_str = utxo["txid"].as_str().unwrap_or_default();
+                    let vout = utxo["vout"].as_u64().unwrap_or_default() as u32;
+                    let txid = bitcoin::Txid::from_str(txid_str).map_err(|e| DeezelError::Transaction(e.to_string()))?;
+                    let outpoint = OutPoint::new(txid, vout);
+
                     let status = utxo.get("status");
                     let confirmations = if let Some(s) = status {
                         if s.get("confirmed").and_then(|c| c.as_bool()).unwrap_or(false) {
@@ -166,8 +172,8 @@ impl WalletProvider for WebProvider {
                     };
 
                     let utxo_info = UtxoInfo {
-                        txid: utxo["txid"].as_str().unwrap_or_default().to_string(),
-                        vout: utxo["vout"].as_u64().unwrap_or_default() as u32,
+                        txid: txid.to_string(),
+                        vout,
                         amount: utxo["value"].as_u64().unwrap_or_default(),
                         address: address.clone(),
                         script_pubkey: None,
@@ -181,7 +187,7 @@ impl WalletProvider for WebProvider {
                         is_coinbase: false,
                     };
                     if include_frozen || !utxo_info.frozen {
-                        utxos.push(utxo_info);
+                        utxos.push((outpoint, utxo_info));
                     }
                 }
             }
