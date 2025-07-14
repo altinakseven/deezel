@@ -16,6 +16,7 @@ use std::io::Read;
 pub mod utils;
 pub mod pgp;
 pub mod keystore;
+use deezel_common::alkanes::AlkanesInspectConfig;
 use utils::*;
 use pgp::DeezelPgpProvider;
 use keystore::{KeystoreManager, KeystoreCreateParams};
@@ -1032,15 +1033,11 @@ impl SystemAlkanes for SystemDeezel {
                             if let Some(commit_txid) = result.commit_txid {
                                 println!("🔗 Commit TXID: {}", commit_txid);
                             }
-                            if let Some(reveal_txid) = result.reveal_txid {
-                                println!("🔗 Reveal TXID: {}", reveal_txid);
-                            }
+                            println!("🔗 Reveal TXID: {}", result.reveal_txid);
                             if let Some(commit_fee) = result.commit_fee {
                                 println!("💰 Commit Fee: {} sats", commit_fee);
                             }
-                            if let Some(reveal_fee) = result.reveal_fee {
-                                println!("💰 Reveal Fee: {} sats", reveal_fee);
-                            }
+                            println!("💰 Reveal Fee: {} sats", result.reveal_fee);
                             // TODO: Add more human-readable output for traces, etc.
                         }
                     }
@@ -1056,7 +1053,7 @@ impl SystemAlkanes for SystemDeezel {
                 Ok(())
             }
             AlkanesCommands::Balance { address, raw } => {
-                let balance_result = provider.get_alkanes_balance(address.as_deref()).await?;
+                let balance_result = deezel_common::AlkanesProvider::get_balance(provider, address.as_deref()).await?;
 
                 if raw {
                     println!("{}", serde_json::to_string_pretty(&balance_result)?);
@@ -1064,21 +1061,6 @@ impl SystemAlkanes for SystemDeezel {
                     println!("🪙 Alkanes Balances");
                     println!("═══════════════════");
                     println!("{}", serde_json::to_string_pretty(&balance_result)?);
-                }
-                Ok(())
-            }
-            AlkanesCommands::TokenInfo { alkane_id, raw } => {
-                // For now, return a placeholder - this would need to be implemented in the provider
-                let token_info =
-                    serde_json::json!({"alkane_id": alkane_id, "status": "not_implemented"});
-
-                if raw {
-                    println!("{}", serde_json::to_string_pretty(&token_info)?);
-                } else {
-                    println!("🏷️  Alkanes Token Information");
-                    println!("═══════════════════════════");
-                    println!("🔗 Alkane ID: {}", alkane_id);
-                    println!("📋 Token Info: {}", serde_json::to_string_pretty(&token_info)?);
                 }
                 Ok(())
             }
@@ -1104,12 +1086,13 @@ impl SystemAlkanes for SystemDeezel {
                 meta,
                 codehash,
             } => {
-                let config = deezel_common::traits::AlkanesInspectConfig {
+                let config = AlkanesInspectConfig {
                     disasm,
                     fuzz,
                     fuzz_ranges,
                     meta,
                     codehash,
+                    raw,
                 };
 
                 let result = provider.inspect(&target, config).await?;
@@ -1155,7 +1138,7 @@ impl SystemAlkanes for SystemDeezel {
                 }
                 Ok(())
             }
-            AlkanesCommands::Getbytecode { alkane_id, raw } => {
+            AlkanesCommands::GetBytecode { alkane_id, raw } => {
                 let bytecode = AlkanesProvider::get_bytecode(provider, &alkane_id).await?;
 
                 if raw {
@@ -1201,6 +1184,42 @@ impl SystemAlkanes for SystemDeezel {
                     println!("═══════════════════════════");
                     println!("🔗 Contract ID: {}", contract_id);
                     println!("📊 Result: {}", serde_json::to_string_pretty(&result)?);
+                }
+                Ok(())
+            }
+            AlkanesCommands::GetBlock { height, raw } => {
+                let result = AlkanesProvider::get_block(provider, height).await?;
+                if raw {
+                    println!("{:#?}", result);
+                } else {
+                    println!("📦 Alkanes Block {}:\n{:#?}", height, result);
+                }
+                Ok(())
+            }
+            AlkanesCommands::Sequence { txid, vout, raw } => {
+                let result = provider.sequence(&txid, vout).await?;
+                if raw {
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                } else {
+                    println!("🔢 Sequence for {}:{}:\n{}", txid, vout, serde_json::to_string_pretty(&result)?);
+                }
+                Ok(())
+            }
+            AlkanesCommands::SpendablesByAddress { address, raw } => {
+                let result = provider.spendables_by_address(&address).await?;
+                if raw {
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                } else {
+                    println!("💰 Spendables for {}:\n{}", address, serde_json::to_string_pretty(&result)?);
+                }
+                Ok(())
+            }
+            AlkanesCommands::TraceBlock { height, raw } => {
+                let result = provider.trace_block(height).await?;
+                if raw {
+                    println!("{:#?}", result);
+                } else {
+                    println!("📊 Trace for block {}:\n{:#?}", height, result);
                 }
                 Ok(())
             }

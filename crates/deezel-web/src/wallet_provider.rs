@@ -56,7 +56,7 @@ use alloc::{
 
 use async_trait::async_trait;
 use bitcoin::{Network, Transaction, psbt::Psbt, secp256k1::Keypair, XOnlyPublicKey};
-use deezel_common::*;
+use deezel_common::{*, alkanes::{AlkanesInspectConfig, AlkanesInspectResult, AlkaneBalance}};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::*;
@@ -1438,34 +1438,50 @@ impl AlkanesProvider for BrowserWalletProvider {
     async fn execute(&self, params: deezel_common::alkanes::types::EnhancedExecuteParams) -> Result<deezel_common::alkanes::types::EnhancedExecuteResult> {
         self.web_provider.execute(params).await
     }
-    
-    // async fn get_balance(&self, address: Option<&str>) -> Result<Vec<AlkanesBalance>> {
-    //     AlkanesProvider::get_balance(&self.web_provider, address).await
-    // }
 
-    // async fn get_alkanes_balance(&self, address: Option<&str>) -> Result<Vec<AlkanesBalance>> {
-    //    self.web_provider.get_alkanes_balance(address).await
-    // }
-    
-    // async fn get_token_info(&self, alkane_id: &str) -> Result<JsonValue> {
-    //     self.web_provider.get_token_info(alkane_id).await
-    // }
-    
-    // async fn trace(&self, outpoint: &str) -> Result<JsonValue> {
-    //     self.web_provider.trace(outpoint).await
-    // }
-    
-    // async fn inspect(&self, target: &str, config: AlkanesInspectConfig) -> Result<AlkanesInspectResult> {
-    //     self.web_provider.inspect(target, config).await
-    // }
-    
-    // async fn get_bytecode(&self, alkane_id: &str) -> Result<String> {
-    //     AlkanesProvider::get_bytecode(&self.web_provider, alkane_id).await
-    // }
-    
-    // async fn simulate(&self, contract_id: &str, params: Option<&str>) -> Result<JsonValue> {
-    //     self.web_provider.simulate(contract_id, params).await
-    // }
+    async fn protorunes_by_address(&self, address: &str) -> Result<JsonValue> {
+        self.web_provider.protorunes_by_address(address).await
+    }
+
+    async fn protorunes_by_outpoint(&self, txid: &str, vout: u32) -> Result<protorune_support::proto::protorune::OutpointResponse> {
+        self.web_provider.protorunes_by_outpoint(txid, vout).await
+    }
+
+    async fn simulate(&self, contract_id: &str, params: Option<&str>) -> Result<JsonValue> {
+        self.web_provider.simulate(contract_id, params).await
+    }
+
+    async fn trace(&self, outpoint: &str) -> Result<alkanes_support::proto::alkanes::Trace> {
+        self.web_provider.trace(outpoint).await
+    }
+
+    async fn get_block(&self, height: u64) -> Result<alkanes_support::proto::alkanes::BlockResponse> {
+        AlkanesProvider::get_block(&self.web_provider, height).await
+    }
+
+    async fn sequence(&self, txid: &str, vout: u32) -> Result<JsonValue> {
+        self.web_provider.sequence(txid, vout).await
+    }
+
+    async fn spendables_by_address(&self, address: &str) -> Result<JsonValue> {
+        self.web_provider.spendables_by_address(address).await
+    }
+
+    async fn trace_block(&self, height: u64) -> Result<alkanes_support::proto::alkanes::Trace> {
+        self.web_provider.trace_block(height).await
+    }
+
+    async fn get_bytecode(&self, alkane_id: &str) -> Result<String> {
+        AlkanesProvider::get_bytecode(&self.web_provider, alkane_id).await
+    }
+
+    async fn inspect(&self, target: &str, config: AlkanesInspectConfig) -> Result<AlkanesInspectResult> {
+        self.web_provider.inspect(target, config).await
+    }
+
+    async fn get_balance(&self, address: Option<&str>) -> Result<Vec<AlkaneBalance>> {
+        AlkanesProvider::get_balance(&self.web_provider, address).await
+    }
 }
 
 #[async_trait(?Send)]

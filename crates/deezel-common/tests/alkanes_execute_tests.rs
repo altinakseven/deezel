@@ -1,41 +1,34 @@
 //! tests for the enhanced alkanes executor
 
-use super::*;
-use crate::alkanes::execute::{EnhancedAlkanesExecutor, EnhancedExecuteParams, InputRequirement, ProtostoneSpec};
-use crate::provider::MockDeezelProvider;
+#[path = "mock_provider.rs"]
+mod mock_provider;
+
+use deezel_common::alkanes::execute::{EnhancedAlkanesExecutor, EnhancedExecuteParams};
+use deezel_common::alkanes::types::EnhancedExecuteResult;
+use mock_provider::MockProvider;
 use anyhow::Result;
-use async_trait::async_trait;
-use std::sync::{Arc, Mutex};
+
+use serde_json::json;
 
 #[tokio::test]
 async fn test_execute_single_transaction_flow() -> Result<()> {
-    let mut mock_provider = MockDeezelProvider::new();
+    // 1. Setup the mock provider with a canned response
+    let mock_response = EnhancedExecuteResult {
+        commit_txid: None,
+        reveal_txid: "dummy_txid".to_string(),
+        commit_fee: None,
+        reveal_fee: 1000,
+        inputs_used: vec![],
+        outputs_created: vec![],
+        traces: None,
+    };
+    let mock_provider = MockProvider::new()
+        .with_response("alkanes_execute", json!(mock_response));
 
-    // Setup mock expectations
-    mock_provider
-        .expect_get_network()
-        .returning(|| bitcoin::Network::Regtest);
-    mock_provider
-        .expect_validate_protostones()
-        .returning(|_| Ok(()));
-    mock_provider
-        .expect_select_utxos()
-        .returning(|_, _| Ok(vec![]));
-    mock_provider
-        .expect_construct_runestone()
-        .returning(|_| Ok(None));
-    mock_provider
-        .expect_build_transaction()
-        .returning(|_, _, _, _, _| Ok(("dummy_psbt".to_string(), 1000)));
-    mock_provider
-        .expect_sign_transaction()
-        .returning(|_| Ok("dummy_signed_tx".to_string()));
-    mock_provider
-        .expect_broadcast()
-        .returning(|_| Ok("dummy_txid".to_string()));
-
+    // 2. Create the executor with the mock provider
     let executor = EnhancedAlkanesExecutor::new(&mock_provider);
 
+    // 3. Define the parameters for the execute call
     let params = EnhancedExecuteParams {
         fee_rate: Some(1.0),
         to_addresses: vec!["bcrt1q...".to_string()],
@@ -49,12 +42,14 @@ async fn test_execute_single_transaction_flow() -> Result<()> {
         auto_confirm: true,
     };
 
+    // 4. Execute the call
     let result = executor.execute(params).await?;
 
+    // 5. Assert the results match the canned response
     assert!(result.commit_txid.is_none());
-    assert_eq!(result.reveal_txid.unwrap(), "dummy_txid");
+    assert_eq!(result.reveal_txid, "dummy_txid");
     assert!(result.commit_fee.is_none());
-    assert_eq!(result.reveal_fee.unwrap(), 1000);
+    assert_eq!(result.reveal_fee, 1000);
 
     Ok(())
 }

@@ -28,6 +28,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 # Core Bitcoin functionality
 bitcoin = { workspace = true }
+bitcoin_hashes = { workspace = true, package = "bitcoin-hashes" }
 ordinals = { workspace = true }
 protorune-support = { workspace = true }
 deezel-rpgp = { path = "../deezel-rpgp", default-features = false }
@@ -99,6 +100,7 @@ web-compat = ["spin"]
 tokio = { workspace = true, features = ["macros", "rt", "time", "sync", "test-util"] }
 env_logger = "0.10"
 wiremock = "0.6.0"
+mockall = { workspace = true }
 
 # WASM-specific configuration
 [target.'cfg(target_arch = "wasm32")'.dependencies]

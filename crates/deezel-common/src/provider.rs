@@ -7,7 +7,15 @@ use crate::traits::*;
 use crate::{Result, DeezelError, JsonValue};
 use crate::ord;
 use crate::alkanes::execute::EnhancedAlkanesExecutor;
-use crate::alkanes::types::{EnhancedExecuteParams, EnhancedExecuteResult};
+use crate::alkanes::inspector::{AlkaneInspector, InspectionConfig};
+use crate::alkanes::types::{
+	EnhancedExecuteParams, EnhancedExecuteResult, AlkanesInspectConfig, AlkanesInspectResult,
+	AlkaneBalance, AlkaneId,
+};
+use crate::utils::hex::reverse_txid_bytes;
+use alkanes_support::proto::alkanes as alkanes_pb;
+use protorune_support::proto::protorune as protorune_pb;
+use protobuf::Message;
 use async_trait::async_trait;
 use alloc::format;
 use alloc::string::{String, ToString};
@@ -47,6 +55,7 @@ use bitcoin::{
     sighash::{SighashCache, Prevouts, TapSighashType},
     bip32::{DerivationPath, Xpriv, Xpub},
 };
+use bitcoin_hashes::Hash;
 use ordinals::{Runestone, Artifact};
 
 #[cfg(feature = "native-deps")]
@@ -270,6 +279,21 @@ impl ConcreteProvider {
             .ok_or_else(|| DeezelError::Wallet(format!("Address {} not found in keystore", address)))
     }
 
+    async fn metashrew_view_call(&self, method: &str, hex_input: &str) -> Result<Vec<u8>> {
+        let result = self.call(
+            &self.metashrew_rpc_url,
+            "metashrew_view",
+            serde_json::json!([method, hex_input, "latest"]),
+            1, // Using a static ID for simplicity, can be made dynamic if needed
+        ).await?;
+
+        let hex_response = result.as_str().ok_or_else(|| {
+            DeezelError::RpcError("metashrew_view response was not a string".to_string())
+        })?;
+
+        let bytes = hex::decode(hex_response.strip_prefix("0x").unwrap_or(hex_response))?;
+        Ok(bytes)
+    }
 }
 
 #[async_trait(?Send)]
@@ -325,59 +349,10 @@ impl JsonRpcProvider for ConcreteProvider {
         }
     }
     
-    async fn get_bytecode(&self, block: &str, tx: &str) -> Result<String> {
-        #[cfg(feature = "native-deps")]
-        {
-            use crate::rpc::{StandaloneRpcClient, RpcConfig};
-            use alkanes_support::proto::alkanes::{BytecodeRequest, AlkaneId, Uint128};
-            use protobuf::Message;
-
-            let rpc_config = RpcConfig {
-                bitcoin_rpc_url: self.bitcoin_rpc_url.clone(),
-                metashrew_rpc_url: self.metashrew_rpc_url.clone(),
-                sandshrew_rpc_url: self.metashrew_rpc_url.clone(), // sandshrew_rpc_url is the same as metashrew
-                timeout_seconds: 600,
-            };
-
-            let rpc_client = StandaloneRpcClient::new(rpc_config);
-            
-            let mut bytecode_request = BytecodeRequest::new();
-            let mut alkane_id = AlkaneId::new();
-
-            let block_u128 = block.parse::<u128>().map_err(|e| DeezelError::Other(e.to_string()))?;
-            let tx_u128 = tx.parse::<u128>().map_err(|e| DeezelError::Other(e.to_string()))?;
-
-            let mut block_uint128 = Uint128::new();
-            block_uint128.lo = (block_u128 & 0xFFFFFFFFFFFFFFFF) as u64;
-            block_uint128.hi = (block_u128 >> 64) as u64;
-
-            let mut tx_uint128 = Uint128::new();
-            tx_uint128.lo = (tx_u128 & 0xFFFFFFFFFFFFFFFF) as u64;
-            tx_uint128.hi = (tx_u128 >> 64) as u64;
-
-            alkane_id.block = protobuf::MessageField::some(block_uint128);
-            alkane_id.tx = protobuf::MessageField::some(tx_uint128);
-
-            bytecode_request.id = protobuf::MessageField::some(alkane_id);
-
-            let encoded_bytes = bytecode_request.write_to_bytes().map_err(|e| DeezelError::Other(e.to_string()))?;
-            let hex_input = format!("0x{}", hex::encode(encoded_bytes));
-
-            let result = rpc_client.http_call(
-                &self.metashrew_rpc_url,
-                "metashrew_view",
-                serde_json::json!(["getbytecode", hex_input, "latest"])
-            ).await?;
-
-            result.as_str()
-                .ok_or_else(|| DeezelError::RpcError("Invalid bytecode response".to_string()))
-                .map(|s| s.to_string())
-        }
-        #[cfg(not(feature = "native-deps"))]
-        {
-            let _ = (block, tx);
-            Err(DeezelError::NotImplemented("get_bytecode is not available without native-deps feature".to_string()))
-        }
+    async fn get_bytecode(&self, _block: &str, _tx: &str) -> Result<String> {
+        Err(DeezelError::NotImplemented(
+            "get_bytecode is part of AlkanesProvider, not JsonRpcProvider".to_string(),
+        ))
     }
 }
 
@@ -1573,6 +1548,251 @@ impl AlkanesProvider for ConcreteProvider {
     async fn execute(&self, params: EnhancedExecuteParams) -> Result<EnhancedExecuteResult> {
         let executor = EnhancedAlkanesExecutor::new(self);
         executor.execute(params).await
+    }
+
+    async fn protorunes_by_address(&self, address: &str) -> Result<JsonValue> {
+        let mut request = protorune_pb::WalletRequest::new();
+        request.wallet = address.as_bytes().to_vec();
+        let hex_input = format!("0x{}", hex::encode(request.write_to_bytes()?));
+        let response_bytes = self.metashrew_view_call("protorunesbyaddress", &hex_input).await?;
+        if response_bytes.is_empty() {
+            return Ok(serde_json::Value::Array(vec![]));
+        }
+        let proto_sheet = protorune_pb::BalanceSheet::parse_from_bytes(&response_bytes)?;
+
+        let entries: Vec<serde_json::Value> = proto_sheet.entries.into_iter().map(|item| {
+            let rune = item.rune.as_ref();
+            let rune_id = rune.and_then(|r| r.runeId.as_ref());
+            serde_json::json!({
+                "rune": {
+                    "runeId": {
+                        "height": rune_id.and_then(|id| id.height.as_ref()).map_or(0, |h| h.lo),
+                        "txindex": rune_id.and_then(|id| id.txindex.as_ref()).map_or(0, |t| t.lo)
+                    },
+                    "name": rune.map_or("".to_string(), |r| r.name.clone()),
+                    "divisibility": rune.map_or(0, |r| r.divisibility),
+                    "spacers": rune.map_or(0, |r| r.spacers),
+                    "symbol": rune.map_or("".to_string(), |r| r.symbol.clone()),
+                },
+                "balance": item.balance.as_ref().map_or(0, |b| b.lo)
+            })
+        }).collect();
+
+        Ok(serde_json::json!({ "entries": entries }))
+    }
+
+    async fn protorunes_by_outpoint(
+  &self,
+  txid: &str,
+  vout: u32,
+ ) -> Result<protorune_pb::OutpointResponse> {
+  let mut request = protorune_pb::Outpoint::new();
+  let reversed_txid_hex = reverse_txid_bytes(txid)?;
+  request.txid = hex::decode(reversed_txid_hex)?;
+  request.vout = vout;
+  let hex_input = format!("0x{}", hex::encode(request.write_to_bytes()?));
+  let response_bytes = self.metashrew_view_call("protorunesbyoutpoint", &hex_input).await?;
+  if response_bytes.is_empty() {
+   return Ok(protorune_pb::OutpointResponse::new());
+  }
+  let proto_response = protorune_pb::OutpointResponse::parse_from_bytes(&response_bytes)?;
+  Ok(proto_response)
+ }
+
+    async fn simulate(&self, contract_id: &str, params: Option<&str>) -> Result<JsonValue> {
+        let parts: Vec<&str> = contract_id.split(':').collect();
+        if parts.len() != 2 {
+            return Err(DeezelError::InvalidParameters("Invalid contract_id format. Expected 'block:tx'".to_string()));
+        }
+        let block = parts[0].parse::<u64>()?;
+        let tx = parts[1].parse::<u64>()?;
+
+        let mut alkane_id = alkanes_pb::AlkaneId::new();
+        let mut block_uint128 = alkanes_pb::Uint128::new();
+        block_uint128.lo = block;
+        let mut tx_uint128 = alkanes_pb::Uint128::new();
+        tx_uint128.lo = tx;
+        alkane_id.block = ::protobuf::MessageField::some(block_uint128);
+        alkane_id.tx = ::protobuf::MessageField::some(tx_uint128);
+
+        let mut request = alkanes_pb::BytecodeRequest::new();
+        request.id = ::protobuf::MessageField::some(alkane_id);
+        
+        let contract_id_hex = format!("0x{}", hex::encode(request.write_to_bytes()?));
+        let params_hex = params.map(|p| format!("0x{}", hex::encode(p.as_bytes()))).unwrap_or_else(|| "0x".to_string());
+
+        let rpc_params = serde_json::json!([contract_id_hex, params_hex]);
+
+        self.call(&self.metashrew_rpc_url, "alkanes_simulate", rpc_params, 1).await
+    }
+
+    async fn trace(&self, outpoint: &str) -> Result<alkanes_pb::Trace> {
+        let parts: Vec<&str> = outpoint.split(':').collect();
+        if parts.len() != 2 {
+            return Err(DeezelError::InvalidParameters("Invalid outpoint format. Expected 'txid:vout'".to_string()));
+        }
+        let txid = bitcoin::Txid::from_str(parts[0])?;
+        let vout = parts[1].parse::<u32>()?;
+
+        let mut out_point_pb = alkanes_pb::Outpoint::new();
+        out_point_pb.txid = txid.to_raw_hash().as_byte_array().to_vec();
+        out_point_pb.vout = vout;
+
+        let hex_input = format!("0x{}", hex::encode(out_point_pb.write_to_bytes()?));
+        let response_bytes = self.metashrew_view_call("trace", &hex_input).await?;
+        
+        let trace = alkanes_pb::Trace::parse_from_bytes(&response_bytes)?;
+        Ok(trace)
+    }
+
+    async fn get_block(&self, height: u64) -> Result<alkanes_pb::BlockResponse> {
+        let mut block_request = alkanes_pb::BlockRequest::new();
+        block_request.height = height as u32;
+        
+        let hex_input = format!("0x{}", hex::encode(block_request.write_to_bytes()?));
+        let response_bytes = self.metashrew_view_call("getblock", &hex_input).await?;
+
+        let block_response = alkanes_pb::BlockResponse::parse_from_bytes(&response_bytes)?;
+        Ok(block_response)
+    }
+
+    async fn sequence(&self, txid: &str, vout: u32) -> Result<JsonValue> {
+        let params = serde_json::json!([txid, vout]);
+        self.call(&self.metashrew_rpc_url, "alkanes_sequence", params, 1).await
+    }
+
+    async fn spendables_by_address(&self, address: &str) -> Result<JsonValue> {
+        let mut request = protorune_pb::WalletRequest::new();
+        request.wallet = address.as_bytes().to_vec();
+        let hex_input = format!("0x{}", hex::encode(request.write_to_bytes()?));
+        let response_bytes = self.metashrew_view_call("spendablesbyaddress", &hex_input).await?;
+        if response_bytes.is_empty() {
+            return Ok(serde_json::json!([]));
+        }
+        let wallet_response = protorune_pb::WalletResponse::parse_from_bytes(&response_bytes)?;
+        let entries: Vec<serde_json::Value> = wallet_response.outpoints.into_iter().map(|item| {
+            serde_json::json!({
+                "outpoint": {
+                    "txid": hex::encode(&item.outpoint.as_ref().map_or(vec![], |o| o.txid.clone())),
+                    "vout": item.outpoint.as_ref().map_or(0, |o| o.vout),
+                },
+                "amount": item.output.as_ref().map_or(0, |o| o.value),
+                "script": hex::encode(&item.output.as_ref().map_or(vec![], |o| o.script.clone())),
+                "runes": item.balances.iter().map(|balance| {
+                    balance.entries.iter().map(|entry| {
+                        serde_json::json!({
+                            "runeId": {
+                                "height": entry.rune.as_ref().and_then(|r| r.runeId.as_ref()).map_or(0, |id| id.height.as_ref().map_or(0, |h| h.lo)),
+                                "txindex": entry.rune.as_ref().and_then(|r| r.runeId.as_ref()).map_or(0, |id| id.txindex.as_ref().map_or(0, |t| t.lo)),
+                            },
+                            "amount": entry.balance.as_ref().map_or(0, |a| a.lo),
+                        })
+                    }).collect::<Vec<_>>()
+                }).flatten().collect::<Vec<_>>(),
+            })
+        }).collect();
+        Ok(serde_json::json!(entries))
+    }
+
+    async fn trace_block(&self, height: u64) -> Result<alkanes_pb::Trace> {
+        let mut block_request = alkanes_pb::BlockRequest::new();
+        block_request.height = height as u32;
+        
+        let hex_input = format!("0x{}", hex::encode(block_request.write_to_bytes()?));
+        let response_bytes = self.metashrew_view_call("traceblock", &hex_input).await?;
+
+        let trace = alkanes_pb::Trace::parse_from_bytes(&response_bytes)?;
+        Ok(trace)
+    }
+
+    async fn get_bytecode(&self, alkane_id: &str) -> Result<String> {
+        let parts: Vec<&str> = alkane_id.split(':').collect();
+        if parts.len() != 2 {
+            return Err(DeezelError::InvalidParameters("Invalid alkane_id format. Expected 'block:tx'".to_string()));
+        }
+        let block = parts[0].parse::<u64>()?;
+        let tx = parts[1].parse::<u64>()?;
+
+        let mut alkane_id_pb = alkanes_pb::AlkaneId::new();
+        let mut block_uint128 = alkanes_pb::Uint128::new();
+        block_uint128.lo = block;
+        let mut tx_uint128 = alkanes_pb::Uint128::new();
+        tx_uint128.lo = tx;
+        alkane_id_pb.block = ::protobuf::MessageField::some(block_uint128);
+        alkane_id_pb.tx = ::protobuf::MessageField::some(tx_uint128);
+
+        let mut request = alkanes_pb::BytecodeRequest::new();
+        request.id = ::protobuf::MessageField::some(alkane_id_pb);
+
+        let hex_input = format!("0x{}", hex::encode(request.write_to_bytes()?));
+        let response_bytes = self.metashrew_view_call("getbytecode", &hex_input).await?;
+
+        Ok(format!("0x{}", hex::encode(response_bytes)))
+    }
+
+    async fn inspect(
+  &self,
+  target: &str,
+  config: AlkanesInspectConfig,
+ ) -> Result<AlkanesInspectResult> {
+  let inspector = AlkaneInspector::new(self.clone());
+  let parts: Vec<&str> = target.split(':').collect();
+  if parts.len() != 2 {
+   return Err(DeezelError::InvalidParameters(
+    "Invalid target format. Expected 'block:tx'".to_string(),
+   ));
+  }
+  let block = parts[0].parse::<u64>()?;
+  let tx = parts[1].parse::<u64>()?;
+  let alkane_id = AlkaneId { block, tx };
+  let inspection_config = InspectionConfig {
+   disasm: config.disasm,
+   fuzz: config.fuzz,
+   fuzz_ranges: config.fuzz_ranges,
+   meta: config.meta,
+   codehash: config.codehash,
+   raw: config.raw,
+  };
+  let result = inspector.inspect_alkane(&alkane_id, &inspection_config).await.map_err(|e| DeezelError::Other(e.to_string()))?;
+  Ok(serde_json::from_value(serde_json::to_value(result)?)?)
+ }
+
+    async fn get_balance(&self, address: Option<&str>) -> Result<Vec<AlkaneBalance>> {
+        let addr_str = match address {
+            Some(a) => a.to_string(),
+            None => WalletProvider::get_address(self).await?,
+        };
+        let mut request = protorune_pb::WalletRequest::new();
+        request.wallet = addr_str.as_bytes().to_vec();
+        let hex_input = format!("0x{}", hex::encode(request.write_to_bytes()?));
+        let response_bytes = self.metashrew_view_call("balancesbyaddress", &hex_input).await?;
+        if response_bytes.is_empty() {
+            return Ok(vec![]);
+        }
+        let proto_sheet = protorune_pb::BalanceSheet::parse_from_bytes(&response_bytes)?;
+
+        let result: Vec<AlkaneBalance> = proto_sheet
+            .entries
+            .into_iter()
+            .map(|item| {
+                let (alkane_id, name, symbol) = item.rune.as_ref().map_or(
+                    (AlkaneId { block: 0, tx: 0 }, String::new(), String::new()),
+                    |r| {
+                        let id = r.runeId.as_ref().map_or(AlkaneId { block: 0, tx: 0 }, |rid| AlkaneId {
+                            block: rid.height.as_ref().map_or(0, |b| b.lo),
+                            tx: rid.txindex.as_ref().map_or(0, |t| t.lo),
+                        });
+                        (id, r.name.clone(), r.symbol.clone())
+                    },
+                );
+
+                let balance = item.balance.as_ref().map_or(0, |b| b.lo);
+
+                AlkaneBalance { alkane_id, name, symbol, balance }
+            })
+            .collect();
+
+        Ok(result)
     }
 }
 

@@ -214,12 +214,30 @@ impl DeezelAddress {
 
     /// Convert to address string
     pub fn to_string(&self) -> Result<String> {
-        unimplemented!()
+        let btc_network = bitcoin::Network::from_str(&self.network.bech32_hrp)
+            .map_err(|_| anyhow!("Invalid bech32 hrp in network config"))?;
+        let script_pubkey = self.payload.script_pubkey();
+        let address = bitcoin::Address::from_script(&script_pubkey, btc_network)
+            .map_err(|e| anyhow!("Failed to create address from script: {}", e))?;
+        Ok(address.to_string())
     }
 
     /// Parse address from string
-    pub fn from_str(_address_str: &str, _network: &NetworkConfig) -> Result<Self> {
-        unimplemented!()
+    pub fn from_str(address_str: &str, network: &NetworkConfig) -> Result<Self> {
+        let btc_network = bitcoin::Network::from_str(&network.bech32_hrp)
+            .map_err(|_| anyhow!("Invalid bech32 hrp in network config"))?;
+        let address = bitcoin::Address::from_str(address_str)
+            .map_err(|e| anyhow!("Failed to parse address string: {}", e))?
+            .require_network(btc_network)
+            .map_err(|e| anyhow!("Address does not match required network: {}", e))?;
+        
+        let script_pubkey = address.script_pubkey();
+        let payload = Payload::from_script(&script_pubkey)?;
+
+        Ok(DeezelAddress {
+            payload,
+            network: network.clone(),
+        })
     }
 }
 

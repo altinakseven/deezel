@@ -16,7 +16,7 @@ pub struct AlkaneId {
 }
 
 /// Input requirement specification
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum InputRequirement {
     /// Alkanes token requirement: (block, tx, amount) where 0 means ALL
     Alkanes { block: u64, tx: u64, amount: u64 },
@@ -25,7 +25,7 @@ pub enum InputRequirement {
 }
 
 /// Output target specification for protostones
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum OutputTarget {
     /// Target specific output index (vN)
     Output(u32),
@@ -36,7 +36,7 @@ pub enum OutputTarget {
 }
 
 /// Protostone edict specification
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProtostoneEdict {
     pub alkane_id: AlkaneId,
     pub amount: u64,
@@ -44,9 +44,10 @@ pub struct ProtostoneEdict {
 }
 
 /// Protostone specification
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProtostoneSpec {
     /// Optional cellpack message (using alkanes_support::cellpack::Cellpack)
+    #[serde(skip)]
     pub cellpack: Option<Cellpack>,
     /// List of edicts for this protostone
     pub edicts: Vec<ProtostoneEdict>,
@@ -55,7 +56,7 @@ pub struct ProtostoneSpec {
 }
 
 /// Bitcoin transfer specification
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BitcoinTransfer {
     pub amount: u64,
     pub target: OutputTarget,
@@ -216,7 +217,7 @@ pub struct TransactionResult {
 }
 
 /// Enhanced execute parameters
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnhancedExecuteParams {
     pub fee_rate: Option<f32>,
     pub to_addresses: Vec<String>,
@@ -240,4 +241,77 @@ pub struct EnhancedExecuteResult {
     pub inputs_used: Vec<String>,
     pub outputs_created: Vec<String>,
     pub traces: Option<Vec<serde_json::Value>>,
+}
+
+/// Alkanes inspect configuration
+#[derive(Debug, Clone, serde::Serialize, Deserialize)]
+pub struct AlkanesInspectConfig {
+    pub disasm: bool,
+    pub fuzz: bool,
+    pub fuzz_ranges: Option<String>,
+    pub meta: bool,
+    pub codehash: bool,
+    pub raw: bool,
+}
+
+/// Alkanes inspect result
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlkanesInspectResult {
+    pub alkane_id: AlkaneId,
+    pub bytecode_length: usize,
+    pub disassembly: Option<String>,
+    pub metadata: Option<AlkaneMetadata>,
+    pub codehash: Option<String>,
+    pub fuzzing_results: Option<FuzzingResults>,
+}
+
+/// Alkane metadata
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlkaneMetadata {
+    pub name: String,
+    pub version: String,
+    pub description: Option<String>,
+    pub methods: Vec<AlkaneMethod>,
+}
+
+/// Alkane method
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlkaneMethod {
+    pub name: String,
+    pub opcode: u128,
+    pub params: Vec<String>,
+    pub returns: String,
+}
+
+/// Fuzzing results
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FuzzingResults {
+    pub total_opcodes_tested: usize,
+    pub opcodes_filtered_out: usize,
+    pub successful_executions: usize,
+    pub failed_executions: usize,
+    pub implemented_opcodes: Vec<u128>,
+    pub opcode_results: Vec<ExecutionResult>,
+}
+
+
+/// Execution result
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecutionResult {
+    pub success: bool,
+    pub return_value: Option<i32>,
+    pub return_data: Vec<u8>,
+    pub error: Option<String>,
+    pub execution_time_micros: u128,
+    pub opcode: u128,
+    pub host_calls: Vec<HostCall>,
+}
+
+/// Host call
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HostCall {
+    pub function_name: String,
+    pub parameters: Vec<String>,
+    pub result: String,
+    pub timestamp_micros: u128,
 }

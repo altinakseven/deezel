@@ -92,6 +92,7 @@ pub enum DeezelError {
     Serialization(String),
     Validation(String),
     Configuration(String),
+    InvalidParameters(String),
     AddressResolution(String),
     Transaction(String),
     Monitor(String),
@@ -119,6 +120,7 @@ impl core::fmt::Display for DeezelError {
             DeezelError::Serialization(msg) => write!(f, "Serialization error: {}", msg),
             DeezelError::Validation(msg) => write!(f, "Validation error: {}", msg),
             DeezelError::Configuration(msg) => write!(f, "Configuration error: {}", msg),
+            DeezelError::InvalidParameters(msg) => write!(f, "Invalid parameters: {}", msg),
             DeezelError::AddressResolution(msg) => write!(f, "Address resolution error: {}", msg),
             DeezelError::Transaction(msg) => write!(f, "Transaction error: {}", msg),
             DeezelError::Monitor(msg) => write!(f, "Monitoring error: {}", msg),
@@ -166,6 +168,12 @@ impl From<anyhow::Error> for DeezelError {
 impl From<serde_json::Error> for DeezelError {
     fn from(err: serde_json::Error) -> Self {
         DeezelError::Serialization(alloc::format!("{}", err))
+    }
+}
+
+impl From<protobuf::Error> for DeezelError {
+    fn from(err: protobuf::Error) -> Self {
+        DeezelError::Serialization(alloc::format!("Protobuf error: {}", err))
     }
 }
 
@@ -218,6 +226,12 @@ impl From<std::io::Error> for DeezelError {
 impl From<hex::FromHexError> for DeezelError {
     fn from(err: hex::FromHexError) -> Self {
         DeezelError::Hex(format!("{:?}", err))
+    }
+}
+
+impl From<std::num::ParseIntError> for DeezelError {
+    fn from(err: std::num::ParseIntError) -> Self {
+        DeezelError::Parse(format!("Failed to parse integer: {}", err))
     }
 }
 

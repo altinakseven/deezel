@@ -20,12 +20,12 @@ use bitcoin::{Transaction, ScriptBuf, OutPoint, TxOut, Address};
 use crate::vendored_ord::{Edict, RuneId, Runestone};
 use core::str::FromStr;
 use alloc::{vec, vec::Vec, string::{String, ToString}, format};
-use super::types::{EnhancedExecuteParams, EnhancedExecuteResult, InputRequirement, ProtostoneSpec, OutputTarget};
+pub use super::types::{EnhancedExecuteParams, EnhancedExecuteResult, InputRequirement, ProtostoneSpec, OutputTarget};
 use super::envelope::AlkanesEnvelope;
 
 /// Enhanced alkanes executor
 pub struct EnhancedAlkanesExecutor<'a, T: DeezelProvider> {
-    provider: &'a T,
+    pub provider: &'a T,
 }
 
 impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
@@ -110,7 +110,7 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
         })
     }
 
-    fn validate_protostones(&self, protostones: &[ProtostoneSpec], num_outputs: usize) -> Result<()> {
+    pub fn validate_protostones(&self, protostones: &[ProtostoneSpec], num_outputs: usize) -> Result<()> {
         log::info!("Validating {} protostones against {} outputs", protostones.len(), num_outputs);
         
         for (i, protostone) in protostones.iter().enumerate() {

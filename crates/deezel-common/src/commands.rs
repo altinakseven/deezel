@@ -384,7 +384,7 @@ pub enum MetashrewCommands {
 #[derive(Subcommand, Debug, Clone)]
 pub enum AlkanesCommands {
     /// Get bytecode for an alkanes contract
-    Getbytecode {
+    GetBytecode {
         /// Alkane ID (format: block:tx)
         alkane_id: String,
         /// Show raw JSON output
@@ -433,14 +433,6 @@ pub enum AlkanesCommands {
         #[arg(long)]
         raw: bool,
     },
-    /// Get token information
-    TokenInfo {
-        /// Alkane ID (format: block:tx)
-        alkane_id: String,
-        /// Show raw JSON output
-        #[arg(long)]
-        raw: bool,
-    },
     /// Trace an alkanes transaction
     Trace {
         /// Transaction outpoint (format: txid:vout)
@@ -479,6 +471,40 @@ pub enum AlkanesCommands {
         /// Simulation parameters
         #[arg(long)]
         params: Option<String>,
+        /// Show raw JSON output
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Get block data
+    GetBlock {
+        /// Block height
+        height: u64,
+        /// Show raw JSON output
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Get sequence of an outpoint
+    Sequence {
+        /// Transaction ID
+        txid: String,
+        /// Output index
+        vout: u32,
+        /// Show raw JSON output
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Get spendable outpoints by address
+    SpendablesByAddress {
+        /// Address to query
+        address: String,
+        /// Show raw JSON output
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Trace a block
+    TraceBlock {
+        /// Block height
+        height: u64,
         /// Show raw JSON output
         #[arg(long)]
         raw: bool,

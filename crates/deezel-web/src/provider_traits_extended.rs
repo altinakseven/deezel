@@ -4,7 +4,7 @@
 // that couldn't fit in the main provider.rs file due to size constraints.
 
 use async_trait::async_trait;
-use deezel_common::*;
+use deezel_common::{*, alkanes::{AlkanesInspectConfig, AlkanesInspectResult, AlkaneBalance}};
 use serde_json::Value as JsonValue;
 
 #[cfg(target_arch = "wasm32")]
@@ -49,52 +49,49 @@ impl AlkanesProvider for WebProvider {
         serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
     }
 
-    // async fn get_balance(&self, address: Option<&str>) -> Result<Vec<AlkanesBalance>> {
-    //     let params = if let Some(addr) = address {
-    //         serde_json::json!([addr])
-    //     } else {
-    //         serde_json::json!([])
-    //     };
-    //     let result = self.call(self.sandshrew_rpc_url(), "alkanes_balance", params, 1).await?;
-    //     serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
-    // }
+    async fn protorunes_by_address(&self, _address: &str) -> Result<JsonValue> {
+        unimplemented!()
+    }
 
-    // async fn get_token_info(&self, alkane_id: &str) -> Result<JsonValue> {
-    //     self.call(self.sandshrew_rpc_url(), "alkanes_token_info", serde_json::json!([alkane_id]), 1).await
-    // }
+    async fn protorunes_by_outpoint(&self, _txid: &str, _vout: u32) -> Result<protorune_support::proto::protorune::OutpointResponse> {
+        unimplemented!()
+    }
 
-    // async fn get_alkanes_balance(&self, address: Option<&str>) -> Result<Vec<AlkanesBalance>> {
-    //    let params = if let Some(addr) = address {
-    //        serde_json::json!([addr])
-    //    } else {
-    //        serde_json::json!([])
-    //    };
-    //    let result = self.call(self.sandshrew_rpc_url(), "alkanes_balance", params, 1).await?;
-    //    serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
-    // }
+    async fn simulate(&self, _contract_id: &str, _params: Option<&str>) -> Result<JsonValue> {
+        unimplemented!()
+    }
 
-    // async fn trace(&self, outpoint: &str) -> Result<JsonValue> {
-    //     self.call(self.sandshrew_rpc_url(), "alkanes_trace", serde_json::json!([outpoint]), 1).await
-    // }
+    async fn trace(&self, _outpoint: &str) -> Result<alkanes_support::proto::alkanes::Trace> {
+        unimplemented!()
+    }
 
-    // async fn inspect(&self, target: &str, config: AlkanesInspectConfig) -> Result<AlkanesInspectResult> {
-    //     let result = self.call(self.sandshrew_rpc_url(), "alkanes_inspect", serde_json::json!([target, config]), 1).await?;
-    //     serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
-    // }
+    async fn get_block(&self, _height: u64) -> Result<alkanes_support::proto::alkanes::BlockResponse> {
+        unimplemented!()
+    }
 
-    // async fn get_bytecode(&self, alkane_id: &str) -> Result<String> {
-    //     let result = self.call(self.sandshrew_rpc_url(), "alkanes_bytecode", serde_json::json!([alkane_id]), 1).await?;
-    //     Ok(result.as_str().unwrap_or_default().to_string())
-    // }
+    async fn sequence(&self, _txid: &str, _vout: u32) -> Result<JsonValue> {
+        unimplemented!()
+    }
 
-    // async fn simulate(&self, contract_id: &str, params: Option<&str>) -> Result<JsonValue> {
-    //     let p = if let Some(p_str) = params {
-    //         serde_json::json!([contract_id, p_str])
-    //     } else {
-    //         serde_json::json!([contract_id])
-    //     };
-    //     self.call(self.sandshrew_rpc_url(), "alkanes_simulate", p, 1).await
-    // }
+    async fn spendables_by_address(&self, _address: &str) -> Result<JsonValue> {
+        unimplemented!()
+    }
+
+    async fn trace_block(&self, _height: u64) -> Result<alkanes_support::proto::alkanes::Trace> {
+        unimplemented!()
+    }
+
+    async fn get_bytecode(&self, _alkane_id: &str) -> Result<String> {
+        unimplemented!()
+    }
+
+    async fn inspect(&self, _target: &str, _config: AlkanesInspectConfig) -> Result<AlkanesInspectResult> {
+        unimplemented!()
+    }
+
+    async fn get_balance(&self, _address: Option<&str>) -> Result<Vec<AlkaneBalance>> {
+        unimplemented!()
+    }
 }
 // MonitorProvider implementation
 #[async_trait(?Send)]

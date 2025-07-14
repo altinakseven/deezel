@@ -1,0 +1,775 @@
+use deezel_common::*;
+use async_trait::async_trait;
+use serde_json::Value as JsonValue;
+use std::collections::HashMap;
+use bitcoin::{Network, Transaction};
+use deezel_common::alkanes::{EnhancedExecuteParams, EnhancedExecuteResult};
+// use deezel_common::alkanes_pb;
+// use deezel_common::protorune_pb;
+
+/// Mock provider for testing
+#[derive(Clone)]
+pub struct MockProvider {
+    pub responses: HashMap<String, JsonValue>,
+    pub network: Network,
+}
+
+impl Default for MockProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl MockProvider {
+    pub fn new() -> Self {
+        Self {
+            responses: HashMap::new(),
+            network: Network::Regtest,
+        }
+    }
+    
+    pub fn with_response(mut self, key: &str, value: JsonValue) -> Self {
+        self.responses.insert(key.to_string(), value);
+        self
+    }
+}
+
+#[async_trait(?Send)]
+impl JsonRpcProvider for MockProvider {
+    async fn call(&self, _url: &str, method: &str, _params: JsonValue, _id: u64) -> Result<JsonValue> {
+        self.responses.get(method)
+            .cloned()
+            .ok_or_else(|| DeezelError::JsonRpc(format!("No mock response for method: {}", method)))
+    }
+    
+    async fn get_bytecode(&self, _block: &str, _tx: &str) -> Result<String> {
+        Ok("mock_bytecode".to_string())
+    }
+}
+
+#[async_trait(?Send)]
+impl StorageProvider for MockProvider {
+    async fn read(&self, _key: &str) -> Result<Vec<u8>> {
+        Ok(b"mock_data".to_vec())
+    }
+    
+    async fn write(&self, _key: &str, _data: &[u8]) -> Result<()> {
+        Ok(())
+    }
+    
+    async fn exists(&self, _key: &str) -> Result<bool> {
+        Ok(true)
+    }
+    
+    async fn delete(&self, _key: &str) -> Result<()> {
+        Ok(())
+    }
+    
+    async fn list_keys(&self, _prefix: &str) -> Result<Vec<String>> {
+        Ok(vec!["mock_key".to_string()])
+    }
+    
+    fn storage_type(&self) -> &'static str {
+        "mock"
+    }
+}
+
+#[async_trait(?Send)]
+impl NetworkProvider for MockProvider {
+    async fn get(&self, _url: &str) -> Result<Vec<u8>> {
+        Ok(b"mock_response".to_vec())
+    }
+    
+    async fn post(&self, _url: &str, _body: &[u8], _content_type: &str) -> Result<Vec<u8>> {
+        Ok(b"mock_response".to_vec())
+    }
+    
+    async fn is_reachable(&self, _url: &str) -> bool {
+        true
+    }
+}
+
+#[async_trait(?Send)]
+impl CryptoProvider for MockProvider {
+    fn random_bytes(&self, len: usize) -> Result<Vec<u8>> {
+        Ok(vec![0u8; len])
+    }
+    
+    fn sha256(&self, _data: &[u8]) -> Result<[u8; 32]> {
+        Ok([0u8; 32])
+    }
+    
+    fn sha3_256(&self, _data: &[u8]) -> Result<[u8; 32]> {
+        Ok([0u8; 32])
+    }
+    
+    async fn encrypt_aes_gcm(&self, data: &[u8], _key: &[u8], _nonce: &[u8]) -> Result<Vec<u8>> {
+        Ok(data.to_vec())
+    }
+    
+    async fn decrypt_aes_gcm(&self, data: &[u8], _key: &[u8], _nonce: &[u8]) -> Result<Vec<u8>> {
+        Ok(data.to_vec())
+    }
+    
+    async fn pbkdf2_derive(&self, _password: &[u8], _salt: &[u8], _iterations: u32, key_len: usize) -> Result<Vec<u8>> {
+        Ok(vec![0u8; key_len])
+    }
+}
+
+impl TimeProvider for MockProvider {
+    fn now_secs(&self) -> u64 {
+        1640995200 // 2022-01-01 00:00:00 UTC
+    }
+    
+    fn now_millis(&self) -> u64 {
+        1640995200000
+    }
+    
+    fn sleep_ms(&self, _ms: u64) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()>>> {
+        Box::pin(async {})
+    }
+}
+
+impl LogProvider for MockProvider {
+    fn debug(&self, _message: &str) {}
+    fn info(&self, _message: &str) {}
+    fn warn(&self, _message: &str) {}
+    fn error(&self, _message: &str) {}
+}
+
+#[async_trait(?Send)]
+impl WalletProvider for MockProvider {
+    async fn create_wallet(&self, _config: WalletConfig, _mnemonic: Option<String>, _passphrase: Option<String>) -> Result<WalletInfo> {
+        Ok(WalletInfo {
+            address: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4".to_string(),
+            network: self.network,
+            mnemonic: Some("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about".to_string()),
+        })
+    }
+    
+    async fn load_wallet(&self, _config: WalletConfig, _passphrase: Option<String>) -> Result<WalletInfo> {
+        self.create_wallet(WalletConfig {
+            wallet_path: "test".to_string(),
+            network: self.network,
+            bitcoin_rpc_url: "http://localhost:8332".to_string(),
+            metashrew_rpc_url: "http://localhost:8080".to_string(),
+            network_params: None,
+        }, None, None).await
+    }
+    
+    async fn get_balance(&self, _addresses: Option<Vec<String>>) -> Result<WalletBalance> {
+        Ok(WalletBalance {
+            confirmed: 100000000,
+            pending: 0,
+        })
+    }
+    
+    async fn get_address(&self) -> Result<String> {
+        Ok("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4".to_string())
+    }
+    
+    async fn get_addresses(&self, count: u32) -> Result<Vec<AddressInfo>> {
+        let mut addresses = Vec::new();
+        for i in 0..count {
+            addresses.push(AddressInfo {
+                address: format!("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t{}", i),
+                script_type: "p2wpkh".to_string(),
+                derivation_path: format!("m/84'/0'/0'/0/{}", i),
+                index: i,
+                used: false,
+            });
+        }
+        Ok(addresses)
+    }
+    
+    async fn send(&self, _params: SendParams) -> Result<String> {
+        Ok("mock_txid".to_string())
+    }
+    
+    async fn get_utxos(&self, _include_frozen: bool, _addresses: Option<Vec<String>>) -> Result<Vec<UtxoInfo>> {
+        Ok(vec![UtxoInfo {
+            txid: "mock_txid".to_string(),
+            vout: 0,
+            amount: 100000000,
+            address: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4".to_string(),
+            script_pubkey: Some(bitcoin::ScriptBuf::new()),
+            confirmations: 6,
+            frozen: false,
+            freeze_reason: None,
+            block_height: Some(800000),
+            has_inscriptions: false,
+            has_runes: false,
+            has_alkanes: false,
+            is_coinbase: false,
+        }])
+    }
+    
+    async fn get_history(&self, _count: u32, _address: Option<String>) -> Result<Vec<TransactionInfo>> {
+        Ok(vec![TransactionInfo {
+            txid: "mock_txid".to_string(),
+            block_height: Some(800000),
+            block_time: Some(1640995200),
+            confirmed: true,
+            fee: Some(1000),
+            inputs: vec![],
+            outputs: vec![],
+        }])
+    }
+    
+    async fn freeze_utxo(&self, _utxo: String, _reason: Option<String>) -> Result<()> {
+        Ok(())
+    }
+    
+    async fn unfreeze_utxo(&self, _utxo: String) -> Result<()> {
+        Ok(())
+    }
+    
+    async fn create_transaction(&self, _params: SendParams) -> Result<String> {
+        Ok("mock_tx_hex".to_string())
+    }
+    
+    async fn sign_transaction(&self, _tx_hex: String) -> Result<String> {
+        Ok("mock_signed_tx_hex".to_string())
+    }
+    
+    async fn broadcast_transaction(&self, _tx_hex: String) -> Result<String> {
+        Ok("mock_txid".to_string())
+    }
+    
+    async fn estimate_fee(&self, _target: u32) -> Result<FeeEstimate> {
+        Ok(FeeEstimate {
+            fee_rate: 10.0,
+            target_blocks: 6,
+        })
+    }
+    
+    async fn get_fee_rates(&self) -> Result<FeeRates> {
+        Ok(FeeRates {
+            fast: 20.0,
+            medium: 10.0,
+            slow: 5.0,
+        })
+    }
+    
+    async fn sync(&self) -> Result<()> {
+        Ok(())
+    }
+    
+    async fn backup(&self) -> Result<String> {
+        Ok("mock_backup_data".to_string())
+    }
+    
+    async fn get_mnemonic(&self) -> Result<Option<String>> {
+        Ok(Some("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about".to_string()))
+    }
+    
+    fn get_network(&self) -> Network {
+        self.network
+    }
+    
+    async fn get_internal_key(&self) -> Result<bitcoin::XOnlyPublicKey> {
+        Ok(bitcoin::XOnlyPublicKey::from_slice(&[0; 32]).unwrap())
+    }
+    
+    async fn sign_psbt(&self, psbt: &bitcoin::psbt::Psbt) -> Result<bitcoin::psbt::Psbt> {
+        Ok(psbt.clone())
+    }
+    
+    async fn get_keypair(&self) -> Result<bitcoin::secp256k1::Keypair> {
+        use bitcoin::secp256k1::{Secp256k1, SecretKey};
+        let secp = Secp256k1::new();
+        let secret_key = SecretKey::from_slice(&[1; 32]).unwrap();
+        Ok(bitcoin::secp256k1::Keypair::from_secret_key(&secp, &secret_key))
+    }
+
+    fn set_passphrase(&mut self, _passphrase: Option<String>) {}
+}
+
+#[async_trait(?Send)]
+impl AddressResolver for MockProvider {
+    async fn resolve_all_identifiers(&self, input: &str) -> Result<String> {
+        // Replace identifiers with actual addresses
+        let result = input.replace("p2tr:0", "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4");
+        Ok(result)
+    }
+    
+    fn contains_identifiers(&self, input: &str) -> bool {
+        input.contains("p2tr:") || input.contains("p2wpkh:")
+    }
+    
+    async fn get_address(&self, _address_type: &str, _index: u32) -> Result<String> {
+        Ok("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4".to_string())
+    }
+    
+    async fn list_identifiers(&self) -> Result<Vec<String>> {
+        Ok(vec!["p2tr:0".to_string(), "p2wpkh:0".to_string()])
+    }
+}
+
+#[async_trait(?Send)]
+impl BitcoinRpcProvider for MockProvider {
+    async fn get_block_count(&self) -> Result<u64> {
+        Ok(800000)
+    }
+    
+    async fn generate_to_address(&self, _nblocks: u32, _address: &str) -> Result<JsonValue> {
+        Ok(serde_json::json!(["mock_block_hash"]))
+    }
+    
+    async fn get_new_address(&self) -> Result<JsonValue> {
+        Ok(serde_json::json!("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"))
+    }
+    
+    async fn get_transaction_hex(&self, _txid: &str) -> Result<String> {
+        Ok("mock_tx_hex".to_string())
+    }
+    
+    async fn get_block(&self, _hash: &str) -> Result<JsonValue> {
+        Ok(serde_json::json!({"height": 800000}))
+    }
+    
+    async fn get_block_hash(&self, _height: u64) -> Result<String> {
+        Ok("mock_block_hash".to_string())
+    }
+    
+    async fn send_raw_transaction(&self, _tx_hex: &str) -> Result<String> {
+        Ok("mock_txid".to_string())
+    }
+    
+    async fn get_mempool_info(&self) -> Result<JsonValue> {
+        Ok(serde_json::json!({"size": 1000}))
+    }
+    
+    async fn estimate_smart_fee(&self, _target: u32) -> Result<JsonValue> {
+        Ok(serde_json::json!({"feerate": 0.00010000}))
+    }
+    
+    async fn get_esplora_blocks_tip_height(&self) -> Result<u64> {
+        Ok(800000)
+    }
+    
+    async fn trace_transaction(&self, _txid: &str, _vout: u32, _block: Option<&str>, _tx: Option<&str>) -> Result<JsonValue> {
+        Ok(serde_json::json!({"trace": "mock_trace"}))
+    }
+}
+
+#[async_trait(?Send)]
+impl MetashrewRpcProvider for MockProvider {
+    async fn get_metashrew_height(&self) -> Result<u64> {
+        Ok(800001)
+    }
+    
+    async fn get_contract_meta(&self, _block: &str, _tx: &str) -> Result<JsonValue> {
+        Ok(serde_json::json!({"name": "test_contract"}))
+    }
+    
+    async fn trace_outpoint(&self, _txid: &str, _vout: u32) -> Result<JsonValue> {
+        Ok(serde_json::json!({"trace": "mock_trace"}))
+    }
+    
+    async fn get_spendables_by_address(&self, _address: &str) -> Result<JsonValue> {
+        Ok(serde_json::json!([]))
+    }
+    
+    async fn get_protorunes_by_address(&self, _address: &str) -> Result<JsonValue> {
+        Ok(serde_json::json!([]))
+    }
+    
+    async fn get_protorunes_by_outpoint(&self, _txid: &str, _vout: u32) -> Result<JsonValue> {
+        Ok(serde_json::json!({}))
+    }
+}
+
+#[async_trait(?Send)]
+impl EsploraProvider for MockProvider {
+    async fn get_address_info(&self, _address: &str) -> Result<JsonValue> {
+        todo!()
+    }
+    async fn get_blocks_tip_hash(&self) -> Result<String> {
+        Ok("mock_tip_hash".to_string())
+    }
+    
+    async fn get_blocks_tip_height(&self) -> Result<u64> {
+        Ok(800000)
+    }
+    
+    async fn get_blocks(&self, _start_height: Option<u64>) -> Result<JsonValue> {
+        Ok(serde_json::json!([]))
+    }
+    
+    async fn get_block_by_height(&self, _height: u64) -> Result<String> {
+        Ok("mock_block_hash".to_string())
+    }
+    
+    async fn get_block(&self, _hash: &str) -> Result<JsonValue> {
+        Ok(serde_json::json!({"height": 800000}))
+    }
+    
+    async fn get_block_status(&self, _hash: &str) -> Result<JsonValue> {
+        Ok(serde_json::json!({"confirmed": true}))
+    }
+    
+    async fn get_block_txids(&self, _hash: &str) -> Result<JsonValue> {
+        Ok(serde_json::json!(["mock_txid"]))
+    }
+    
+    async fn get_block_header(&self, _hash: &str) -> Result<String> {
+        Ok("mock_header".to_string())
+    }
+    
+    async fn get_block_raw(&self, _hash: &str) -> Result<String> {
+        Ok("mock_raw_block".to_string())
+    }
+    
+    async fn get_block_txid(&self, _hash: &str, _index: u32) -> Result<String> {
+        Ok("mock_txid".to_string())
+    }
+    
+    async fn get_block_txs(&self, _hash: &str, _start_index: Option<u32>) -> Result<JsonValue> {
+        Ok(serde_json::json!([]))
+    }
+    
+    async fn get_address(&self, _address: &str) -> Result<JsonValue> {
+        Ok(serde_json::json!({"balance": 100000000}))
+    }
+    
+    async fn get_address_txs(&self, _address: &str) -> Result<JsonValue> {
+        Ok(serde_json::json!([]))
+    }
+    
+    async fn get_address_txs_chain(&self, _address: &str, _last_seen_txid: Option<&str>) -> Result<JsonValue> {
+        Ok(serde_json::json!([]))
+    }
+    
+    async fn get_address_txs_mempool(&self, _address: &str) -> Result<JsonValue> {
+        Ok(serde_json::json!([]))
+    }
+    
+    async fn get_address_utxo(&self, _address: &str) -> Result<JsonValue> {
+        Ok(serde_json::json!([]))
+    }
+    
+    async fn get_address_prefix(&self, _prefix: &str) -> Result<JsonValue> {
+        Ok(serde_json::json!([]))
+    }
+    
+    async fn get_tx(&self, _txid: &str) -> Result<JsonValue> {
+        Ok(serde_json::json!({"txid": "mock_txid"}))
+    }
+    
+    async fn get_tx_hex(&self, _txid: &str) -> Result<String> {
+        Ok("mock_tx_hex".to_string())
+    }
+    
+    async fn get_tx_raw(&self, _txid: &str) -> Result<String> {
+        Ok("mock_raw_tx".to_string())
+    }
+    
+    async fn get_tx_status(&self, _txid: &str) -> Result<JsonValue> {
+        Ok(serde_json::json!({"confirmed": true}))
+    }
+    
+    async fn get_tx_merkle_proof(&self, _txid: &str) -> Result<JsonValue> {
+        Ok(serde_json::json!({"proof": "mock_proof"}))
+    }
+    
+    async fn get_tx_merkleblock_proof(&self, _txid: &str) -> Result<String> {
+        Ok("mock_merkleblock_proof".to_string())
+    }
+    
+    async fn get_tx_outspend(&self, _txid: &str, _index: u32) -> Result<JsonValue> {
+        Ok(serde_json::json!({"spent": false}))
+    }
+    
+    async fn get_tx_outspends(&self, _txid: &str) -> Result<JsonValue> {
+        Ok(serde_json::json!([]))
+    }
+    
+    async fn broadcast(&self, _tx_hex: &str) -> Result<String> {
+        Ok("mock_txid".to_string())
+    }
+    
+    async fn get_mempool(&self) -> Result<JsonValue> {
+        Ok(serde_json::json!({"count": 1000}))
+    }
+    
+    async fn get_mempool_txids(&self) -> Result<JsonValue> {
+        Ok(serde_json::json!(["mock_txid"]))
+    }
+    
+    async fn get_mempool_recent(&self) -> Result<JsonValue> {
+        Ok(serde_json::json!([]))
+    }
+    
+    async fn get_fee_estimates(&self) -> Result<JsonValue> {
+        Ok(serde_json::json!({"1": 20.0, "6": 10.0, "144": 5.0}))
+    }
+}
+
+#[async_trait(?Send)]
+impl RunestoneProvider for MockProvider {
+    async fn decode_runestone(&self, _tx: &Transaction) -> Result<JsonValue> {
+        Ok(serde_json::json!({"etching": {"rune": "BITCOIN"}}))
+    }
+    
+    async fn format_runestone_with_decoded_messages(&self, _tx: &Transaction) -> Result<JsonValue> {
+        Ok(serde_json::json!({"formatted": "mock_formatted_runestone"}))
+    }
+    
+    async fn analyze_runestone(&self, _txid: &str) -> Result<JsonValue> {
+        Ok(serde_json::json!({"analysis": "mock_analysis"}))
+    }
+}
+
+#[async_trait(?Send)]
+impl AlkanesProvider for MockProvider {
+    async fn execute(&self, _params: EnhancedExecuteParams) -> Result<EnhancedExecuteResult> {
+        if let Some(response) = self.responses.get("alkanes_execute") {
+            serde_json::from_value(response.clone()).map_err(|e| DeezelError::JsonRpc(e.to_string()).into())
+        } else {
+            Err(DeezelError::JsonRpc("No mock response for alkanes_execute".to_string()).into())
+        }
+    }
+    async fn protorunes_by_address(&self, _address: &str) -> Result<JsonValue> {
+        todo!()
+    }
+    async fn protorunes_by_outpoint(&self, _txid: &str, _vout: u32) -> Result<protorune_support::proto::protorune::OutpointResponse> {
+        Err(DeezelError::NotImplemented("protorunes_by_outpoint".to_string()))
+    }
+    async fn simulate(&self, _contract_id: &str, _params: Option<&str>) -> Result<JsonValue> {
+        todo!()
+    }
+    async fn trace(&self, _outpoint: &str) -> Result<alkanes_support::proto::alkanes::Trace> {
+        Err(DeezelError::NotImplemented("trace".to_string()))
+    }
+    async fn get_block(&self, _height: u64) -> Result<alkanes_support::proto::alkanes::BlockResponse> {
+        Err(DeezelError::NotImplemented("get_block".to_string()))
+    }
+    async fn sequence(&self, _txid: &str, _vout: u32) -> Result<JsonValue> {
+        todo!()
+    }
+    async fn spendables_by_address(&self, _address: &str) -> Result<JsonValue> {
+        todo!()
+    }
+    async fn trace_block(&self, _height: u64) -> Result<alkanes_support::proto::alkanes::Trace> {
+        Err(DeezelError::NotImplemented("trace_block".to_string()))
+    }
+    async fn get_bytecode(&self, _alkane_id: &str) -> Result<String> {
+        todo!()
+    }
+    async fn inspect(&self, _target: &str, _config: deezel_common::alkanes::AlkanesInspectConfig) -> Result<deezel_common::alkanes::AlkanesInspectResult> {
+        todo!()
+    }
+    async fn get_balance(&self, _address: Option<&str>) -> Result<Vec<deezel_common::alkanes::AlkaneBalance>> {
+        todo!()
+    }
+}
+
+#[async_trait(?Send)]
+impl MonitorProvider for MockProvider {
+    async fn monitor_blocks(&self, _start: Option<u64>) -> Result<()> {
+        Ok(())
+    }
+    
+    async fn get_block_events(&self, _height: u64) -> Result<Vec<BlockEvent>> {
+        Ok(vec![BlockEvent {
+            event_type: "transaction".to_string(),
+            block_height: 800000,
+            txid: "mock_txid".to_string(),
+            data: serde_json::json!({"amount": 100000}),
+        }])
+    }
+}
+
+#[async_trait(?Send)]
+impl PgpProvider for MockProvider {
+    async fn generate_keypair(&self, _user_id: &str, _passphrase: Option<&str>) -> Result<PgpKeyPair> {
+        let key = PgpKey {
+            key_data: b"mock_key_data".to_vec(),
+            is_private: false,
+            fingerprint: "mock_fingerprint".to_string(),
+            key_id: "mock_key_id".to_string(),
+            user_ids: vec!["mock_user_id".to_string()],
+            creation_time: 0,
+            expiration_time: None,
+            algorithm: PgpAlgorithm {
+                public_key_algorithm: "RSA".to_string(),
+                symmetric_algorithm: None,
+                hash_algorithm: None,
+                compression_algorithm: None,
+            },
+        };
+        Ok(PgpKeyPair {
+            public_key: key.clone(),
+            private_key: key,
+            fingerprint: "mock_fingerprint".to_string(),
+            key_id: "mock_key_id".to_string(),
+        })
+    }
+
+    async fn import_key(&self, _armored_key: &str) -> Result<PgpKey> {
+        Ok(PgpKey {
+            key_data: b"mock_key_data".to_vec(),
+            is_private: false,
+            fingerprint: "mock_fingerprint".to_string(),
+            key_id: "mock_key_id".to_string(),
+            user_ids: vec!["mock_user_id".to_string()],
+            creation_time: 0,
+            expiration_time: None,
+            algorithm: PgpAlgorithm {
+                public_key_algorithm: "RSA".to_string(),
+                symmetric_algorithm: None,
+                hash_algorithm: None,
+                compression_algorithm: None,
+            },
+        })
+    }
+
+    async fn export_key(&self, _key: &PgpKey, _include_private: bool) -> Result<String> {
+        Ok("mock_exported_key".to_string())
+    }
+
+    async fn encrypt(&self, data: &[u8], _recipient_keys: &[PgpKey], _armor: bool) -> Result<Vec<u8>> {
+        Ok(data.to_vec())
+    }
+
+    async fn decrypt(&self, encrypted_data: &[u8], _private_key: &PgpKey, _passphrase: Option<&str>) -> Result<Vec<u8>> {
+        Ok(encrypted_data.to_vec())
+    }
+
+    async fn sign(&self, _data: &[u8], _private_key: &PgpKey, _passphrase: Option<&str>, _armor: bool) -> Result<Vec<u8>> {
+        Ok(b"mock_signature".to_vec())
+    }
+
+    async fn verify(&self, _data: &[u8], _signature: &[u8], _public_key: &PgpKey) -> Result<bool> {
+        Ok(true)
+    }
+
+    async fn encrypt_and_sign(&self, data: &[u8], _recipient_keys: &[PgpKey], _signing_key: &PgpKey, _passphrase: Option<&str>, _armor: bool) -> Result<Vec<u8>> {
+        Ok(data.to_vec())
+    }
+
+    async fn decrypt_and_verify(&self, encrypted_data: &[u8], _private_key: &PgpKey, _sender_public_key: &PgpKey, _passphrase: Option<&str>) -> Result<PgpDecryptResult> {
+        Ok(PgpDecryptResult {
+            data: encrypted_data.to_vec(),
+            signature_valid: true,
+            signer_key_id: Some("mock_key_id".to_string()),
+            signature_time: None,
+        })
+    }
+
+    async fn list_pgp_keys(&self) -> Result<Vec<PgpKeyInfo>> {
+        Ok(vec![])
+    }
+
+    async fn get_key(&self, _identifier: &str) -> Result<Option<PgpKey>> {
+        Ok(None)
+    }
+
+    async fn delete_key(&self, _identifier: &str) -> Result<()> {
+        Ok(())
+    }
+
+    async fn change_passphrase(&self, key: &PgpKey, _old_passphrase: Option<&str>, _new_passphrase: Option<&str>) -> Result<PgpKey> {
+        Ok(key.clone())
+    }
+}
+
+#[async_trait(?Send)]
+impl KeystoreProvider for MockProvider {
+    async fn derive_addresses(&self, _master_public_key: &str, _network: Network, _script_types: &[&str], _start_index: u32, _count: u32) -> Result<Vec<KeystoreAddress>> {
+        Ok(vec![])
+    }
+    
+    async fn get_default_addresses(&self, _master_public_key: &str, _network: Network) -> Result<Vec<KeystoreAddress>> {
+        Ok(vec![])
+    }
+    
+    fn parse_address_range(&self, _range_spec: &str) -> Result<(String, u32, u32)> {
+        Ok(("p2tr".to_string(), 0, 10))
+    }
+    
+    async fn get_keystore_info(&self, _master_public_key: &str, _master_fingerprint: &str, _created_at: u64, _version: &str) -> Result<KeystoreInfo> {
+        Ok(KeystoreInfo {
+            master_public_key: "mock_mpk".to_string(),
+            master_fingerprint: "mock_fingerprint".to_string(),
+            created_at: 0,
+            version: "1".to_string(),
+        })
+    }
+}
+
+use deezel_common::ord::{
+    AddressInfo as OrdAddressInfo, Block as OrdBlock, Blocks as OrdBlocks, Children as OrdChildren,
+    Inscription as OrdInscription, Inscriptions as OrdInscriptions, Output as OrdOutput,
+    ParentInscriptions as OrdParents, SatResponse as OrdSat, RuneInfo as OrdRuneInfo,
+    Runes as OrdRunes, TxInfo as OrdTxInfo,
+};
+
+#[async_trait(?Send)]
+impl OrdProvider for MockProvider {
+    async fn get_inscription(&self, _inscription_id: &str) -> Result<OrdInscription> {
+        todo!()
+    }
+    async fn get_inscriptions_in_block(&self, _block_hash: &str) -> Result<OrdInscriptions> {
+        todo!()
+    }
+    async fn get_ord_address_info(&self, _address: &str) -> Result<OrdAddressInfo> {
+        todo!()
+    }
+    async fn get_block_info(&self, _query: &str) -> Result<OrdBlock> {
+        todo!()
+    }
+    async fn get_ord_block_count(&self) -> Result<u64> {
+        todo!()
+    }
+    async fn get_ord_blocks(&self) -> Result<OrdBlocks> {
+        todo!()
+    }
+    async fn get_children(&self, _inscription_id: &str, _page: Option<u32>) -> Result<OrdChildren> {
+        todo!()
+    }
+    async fn get_content(&self, _inscription_id: &str) -> Result<Vec<u8>> {
+        todo!()
+    }
+    async fn get_inscriptions(&self, _page: Option<u32>) -> Result<OrdInscriptions> {
+        todo!()
+    }
+    async fn get_output(&self, _output: &str) -> Result<OrdOutput> {
+        todo!()
+    }
+    async fn get_parents(&self, _inscription_id: &str, _page: Option<u32>) -> Result<OrdParents> {
+        todo!()
+    }
+    async fn get_rune(&self, _rune: &str) -> Result<OrdRuneInfo> {
+        todo!()
+    }
+    async fn get_runes(&self, _page: Option<u32>) -> Result<OrdRunes> {
+        todo!()
+    }
+    async fn get_sat(&self, _sat: u64) -> Result<OrdSat> {
+        todo!()
+    }
+    async fn get_tx_info(&self, _txid: &str) -> Result<OrdTxInfo> {
+        todo!()
+    }
+}
+
+#[async_trait(?Send)]
+impl DeezelProvider for MockProvider {
+    fn provider_name(&self) -> &str {
+        "mock"
+    }
+    
+    async fn initialize(&self) -> Result<()> {
+        Ok(())
+    }
+    
+    async fn shutdown(&self) -> Result<()> {
+        Ok(())
+    }
+
+    fn clone_box(&self) -> Box<dyn DeezelProvider> {
+        Box::new(self.clone())
+    }
+}

@@ -895,6 +895,50 @@ impl AlkanesProvider for StandaloneAddressResolver {
     async fn execute(&self, _params: crate::alkanes::types::EnhancedExecuteParams) -> Result<crate::alkanes::types::EnhancedExecuteResult> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
     }
+
+    async fn protorunes_by_address(&self, _address: &str) -> Result<crate::JsonValue> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
+    }
+
+    async fn protorunes_by_outpoint(&self, _txid: &str, _vout: u32) -> Result<protorune_support::proto::protorune::OutpointResponse> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
+    }
+
+    async fn simulate(&self, _contract_id: &str, _params: Option<&str>) -> Result<crate::JsonValue> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
+    }
+
+    async fn trace(&self, _outpoint: &str) -> Result<alkanes_support::proto::alkanes::Trace> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
+    }
+
+    async fn get_block(&self, _height: u64) -> Result<alkanes_support::proto::alkanes::BlockResponse> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
+    }
+
+    async fn sequence(&self, _txid: &str, _vout: u32) -> Result<crate::JsonValue> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
+    }
+
+    async fn spendables_by_address(&self, _address: &str) -> Result<crate::JsonValue> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
+    }
+
+    async fn trace_block(&self, _height: u64) -> Result<alkanes_support::proto::alkanes::Trace> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
+    }
+
+    async fn get_bytecode(&self, _alkane_id: &str) -> Result<String> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
+    }
+
+    async fn inspect(&self, _target: &str, _config: crate::alkanes::AlkanesInspectConfig) -> Result<crate::alkanes::AlkanesInspectResult> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
+    }
+
+    async fn get_balance(&self, _address: Option<&str>) -> Result<Vec<crate::alkanes::AlkaneBalance>> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]

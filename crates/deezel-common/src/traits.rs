@@ -27,6 +27,8 @@ use crate::ord::{
     Runes as OrdRunes, TxInfo as OrdTxInfo,
 };
 use crate::alkanes::types::{EnhancedExecuteParams, EnhancedExecuteResult};
+use alkanes_support::proto::alkanes as alkanes_pb;
+use protorune_support::proto::protorune as protorune_pb;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::{vec::Vec, boxed::Box, string::String};
@@ -736,94 +738,17 @@ pub trait OrdProvider {
 pub trait AlkanesProvider {
     /// Execute alkanes smart contract
     async fn execute(&self, params: EnhancedExecuteParams) -> Result<EnhancedExecuteResult>;
-}
-
-/// Alkanes balance
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct AlkanesBalance {
-    pub name: String,
-    pub symbol: String,
-    pub balance: u128,
-    pub alkane_id: AlkaneId,
-}
-
-/// Alkane ID
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct AlkaneId {
-    pub block: u64,
-    pub tx: u64,
-}
-
-/// Alkanes inspect configuration
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct AlkanesInspectConfig {
-    pub disasm: bool,
-    pub fuzz: bool,
-    pub fuzz_ranges: Option<String>,
-    pub meta: bool,
-    pub codehash: bool,
-}
-
-/// Alkanes inspect result
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct AlkanesInspectResult {
-    pub alkane_id: AlkaneId,
-    pub bytecode_length: usize,
-    pub disassembly: Option<String>,
-    pub metadata: Option<AlkaneMetadata>,
-    pub codehash: Option<String>,
-    pub fuzzing_results: Option<FuzzingResults>,
-}
-
-/// Alkane metadata
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct AlkaneMetadata {
-    pub name: String,
-    pub version: String,
-    pub description: Option<String>,
-    pub methods: Vec<AlkaneMethod>,
-}
-
-/// Alkane method
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct AlkaneMethod {
-    pub name: String,
-    pub opcode: u128,
-    pub params: Vec<String>,
-    pub returns: String,
-}
-
-/// Fuzzing results
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct FuzzingResults {
-    pub total_opcodes_tested: usize,
-    pub opcodes_filtered_out: usize,
-    pub successful_executions: usize,
-    pub failed_executions: usize,
-    pub implemented_opcodes: Vec<u128>,
-    pub opcode_results: Vec<ExecutionResult>,
-}
-
-
-/// Execution result
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct ExecutionResult {
-    pub success: bool,
-    pub return_value: Option<i32>,
-    pub return_data: Vec<u8>,
-    pub error: Option<String>,
-    pub execution_time_micros: u128,
-    pub opcode: u128,
-    pub host_calls: Vec<HostCall>,
-}
-
-/// Host call
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct HostCall {
-    pub function_name: String,
-    pub parameters: Vec<String>,
-    pub result: String,
-    pub timestamp_micros: u128,
+    async fn protorunes_by_address(&self, address: &str) -> Result<JsonValue>;
+    async fn protorunes_by_outpoint(&self, txid: &str, vout: u32) -> Result<protorune_pb::OutpointResponse>;
+    async fn simulate(&self, contract_id: &str, params: Option<&str>) -> Result<JsonValue>;
+    async fn trace(&self, outpoint: &str) -> Result<alkanes_pb::Trace>;
+    async fn get_block(&self, height: u64) -> Result<alkanes_pb::BlockResponse>;
+    async fn sequence(&self, txid: &str, vout: u32) -> Result<JsonValue>;
+    async fn spendables_by_address(&self, address: &str) -> Result<JsonValue>;
+    async fn trace_block(&self, height: u64) -> Result<alkanes_pb::Trace>;
+    async fn get_bytecode(&self, alkane_id: &str) -> Result<String>;
+    async fn inspect(&self, target: &str, config: crate::alkanes::AlkanesInspectConfig) -> Result<crate::alkanes::AlkanesInspectResult>;
+    async fn get_balance(&self, address: Option<&str>) -> Result<Vec<crate::alkanes::AlkaneBalance>>;
 }
 
 /// Trait for monitoring operations
@@ -1333,9 +1258,42 @@ impl<T: DeezelProvider + ?Sized> OrdProvider for Box<T> {
 
 #[async_trait(?Send)]
 impl<T: DeezelProvider + ?Sized> AlkanesProvider for Box<T> {
-   async fn execute(&self, params: EnhancedExecuteParams) -> Result<EnhancedExecuteResult> {
-       (**self).execute(params).await
-   }
+    async fn execute(&self, params: EnhancedExecuteParams) -> Result<EnhancedExecuteResult> {
+        (**self).execute(params).await
+    }
+    async fn protorunes_by_address(&self, address: &str) -> Result<JsonValue> {
+        (**self).protorunes_by_address(address).await
+    }
+    async fn protorunes_by_outpoint(&self, txid: &str, vout: u32) -> Result<protorune_pb::OutpointResponse> {
+        AlkanesProvider::protorunes_by_outpoint(&**self, txid, vout).await
+    }
+    async fn simulate(&self, contract_id: &str, params: Option<&str>) -> Result<JsonValue> {
+        (**self).simulate(contract_id, params).await
+    }
+    async fn trace(&self, outpoint: &str) -> Result<alkanes_pb::Trace> {
+        (**self).trace(outpoint).await
+    }
+    async fn get_block(&self, height: u64) -> Result<alkanes_pb::BlockResponse> {
+        AlkanesProvider::get_block(&**self, height).await
+    }
+    async fn sequence(&self, txid: &str, vout: u32) -> Result<JsonValue> {
+        (**self).sequence(txid, vout).await
+    }
+    async fn spendables_by_address(&self, address: &str) -> Result<JsonValue> {
+        (**self).spendables_by_address(address).await
+    }
+    async fn trace_block(&self, height: u64) -> Result<alkanes_pb::Trace> {
+        (**self).trace_block(height).await
+    }
+    async fn get_bytecode(&self, alkane_id: &str) -> Result<String> {
+        AlkanesProvider::get_bytecode(&**self, alkane_id).await
+    }
+    async fn inspect(&self, target: &str, config: crate::alkanes::AlkanesInspectConfig) -> Result<crate::alkanes::AlkanesInspectResult> {
+        (**self).inspect(target, config).await
+    }
+    async fn get_balance(&self, address: Option<&str>) -> Result<Vec<crate::alkanes::AlkaneBalance>> {
+        AlkanesProvider::get_balance(&**self, address).await
+    }
 }
 
 #[async_trait(?Send)]
