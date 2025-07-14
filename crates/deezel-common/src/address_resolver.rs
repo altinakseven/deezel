@@ -568,7 +568,7 @@ impl WalletProvider for StandaloneAddressResolver {
     async fn send(&self, _params: SendParams) -> Result<String> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support wallet operations".to_string()))
     }
-    async fn get_utxos(&self, _include_frozen: bool, _addresses: Option<Vec<String>>) -> Result<Vec<UtxoInfo>> {
+    async fn get_utxos(&self, _include_frozen: bool, _addresses: Option<Vec<String>>) -> Result<Vec<(bitcoin::OutPoint, UtxoInfo)>> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support wallet operations".to_string()))
     }
     async fn get_history(&self, _count: u32, _address: Option<String>) -> Result<Vec<TransactionInfo>> {

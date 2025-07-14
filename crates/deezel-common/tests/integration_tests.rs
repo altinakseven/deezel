@@ -3,11 +3,7 @@
 //! This test suite provides comprehensive coverage of the deezel-common library
 //! functionality using mock providers to test the trait-based architecture.
 
-use deezel_common::*;
-use bitcoin::Network;
-
 mod mock_provider;
-use mock_provider::MockProvider;
 
 // Test modules
 mod alkanes_execute_unit_tests;

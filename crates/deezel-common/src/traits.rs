@@ -226,7 +226,7 @@ pub trait WalletProvider {
     async fn send(&self, params: SendParams) -> Result<String>;
     
     /// Get UTXOs
-    async fn get_utxos(&self, include_frozen: bool, addresses: Option<Vec<String>>) -> Result<Vec<UtxoInfo>>;
+    async fn get_utxos(&self, include_frozen: bool, addresses: Option<Vec<String>>) -> Result<Vec<(bitcoin::OutPoint, UtxoInfo)>>;
     
     /// Get transaction history
     async fn get_history(&self, count: u32, address: Option<String>) -> Result<Vec<TransactionInfo>>;
@@ -979,7 +979,7 @@ impl<T: DeezelProvider + ?Sized> WalletProvider for Box<T> {
    async fn send(&self, params: SendParams) -> Result<String> {
        (**self).send(params).await
    }
-   async fn get_utxos(&self, include_frozen: bool, addresses: Option<Vec<String>>) -> Result<Vec<UtxoInfo>> {
+   async fn get_utxos(&self, include_frozen: bool, addresses: Option<Vec<String>>) -> Result<Vec<(bitcoin::OutPoint, UtxoInfo)>> {
        (**self).get_utxos(include_frozen, addresses).await
    }
    async fn get_history(&self, count: u32, address: Option<String>) -> Result<Vec<TransactionInfo>> {

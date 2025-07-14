@@ -2,36 +2,46 @@ use deezel_common::*;
 use async_trait::async_trait;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
-use bitcoin::{Network, Transaction};
+use std::sync::{Arc, Mutex};
+use bitcoin::secp256k1::{Secp256k1, All, schnorr, SecretKey};
+use bitcoin::key::Keypair;
 use deezel_common::alkanes::{EnhancedExecuteParams, EnhancedExecuteResult};
-// use deezel_common::alkanes_pb;
-// use deezel_common::protorune_pb;
+use bitcoin::{Address, Network, OutPoint, Transaction, TxOut, XOnlyPublicKey};
 
 /// Mock provider for testing
 #[derive(Clone)]
 pub struct MockProvider {
     pub responses: HashMap<String, JsonValue>,
     pub network: Network,
+    pub utxos: Arc<Mutex<Vec<(OutPoint, TxOut)>>>,
+    pub broadcasted_txs: Arc<Mutex<Vec<String>>>,
+    pub secp: Secp256k1<All>,
+    pub secret_key: SecretKey,
+    pub internal_key: XOnlyPublicKey,
 }
 
 impl Default for MockProvider {
     fn default() -> Self {
-        Self::new()
+        Self::new(Network::Regtest)
     }
 }
 
 impl MockProvider {
-    pub fn new() -> Self {
+    pub fn new(network: Network) -> Self {
+        let secp = Secp256k1::new();
+        let (secret_key, public_key) = secp.generate_keypair(&mut rand::thread_rng());
+        let (internal_key, _) = public_key.x_only_public_key();
         Self {
             responses: HashMap::new(),
-            network: Network::Regtest,
+            network,
+            utxos: Arc::new(Mutex::new(vec![])),
+            broadcasted_txs: Arc::new(Mutex::new(vec![])),
+            secp,
+            secret_key,
+            internal_key,
         }
     }
     
-    pub fn with_response(mut self, key: &str, value: JsonValue) -> Self {
-        self.responses.insert(key.to_string(), value);
-        self
-    }
 }
 
 #[async_trait(?Send)]
@@ -166,7 +176,8 @@ impl WalletProvider for MockProvider {
     }
     
     async fn get_address(&self) -> Result<String> {
-        Ok("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4".to_string())
+        let address = Address::p2tr(&self.secp, self.internal_key, None, self.network);
+        Ok(address.to_string())
     }
     
     async fn get_addresses(&self, count: u32) -> Result<Vec<AddressInfo>> {
@@ -187,22 +198,27 @@ impl WalletProvider for MockProvider {
         Ok("mock_txid".to_string())
     }
     
-    async fn get_utxos(&self, _include_frozen: bool, _addresses: Option<Vec<String>>) -> Result<Vec<UtxoInfo>> {
-        Ok(vec![UtxoInfo {
-            txid: "mock_txid".to_string(),
-            vout: 0,
-            amount: 100000000,
-            address: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4".to_string(),
-            script_pubkey: Some(bitcoin::ScriptBuf::new()),
-            confirmations: 6,
-            frozen: false,
-            freeze_reason: None,
-            block_height: Some(800000),
-            has_inscriptions: false,
-            has_runes: false,
-            has_alkanes: false,
-            is_coinbase: false,
-        }])
+    async fn get_utxos(&self, _include_frozen: bool, _addresses: Option<Vec<String>>) -> Result<Vec<(OutPoint, UtxoInfo)>> {
+        let utxos = self.utxos.lock().unwrap();
+        let utxo_infos = utxos.iter().map(|(outpoint, tx_out)| {
+            let info = UtxoInfo {
+                txid: outpoint.txid.to_string(),
+                vout: outpoint.vout,
+                amount: tx_out.value.to_sat(),
+                address: Address::from_script(&tx_out.script_pubkey, self.network).unwrap().to_string(),
+                script_pubkey: Some(tx_out.script_pubkey.clone()),
+                confirmations: 10,
+                frozen: false,
+                freeze_reason: None,
+                block_height: Some(100),
+                has_inscriptions: false,
+                has_runes: false,
+                has_alkanes: false,
+                is_coinbase: false,
+            };
+            (*outpoint, info)
+        }).collect();
+        Ok(utxo_infos)
     }
     
     async fn get_history(&self, _count: u32, _address: Option<String>) -> Result<Vec<TransactionInfo>> {
@@ -233,8 +249,10 @@ impl WalletProvider for MockProvider {
         Ok("mock_signed_tx_hex".to_string())
     }
     
-    async fn broadcast_transaction(&self, _tx_hex: String) -> Result<String> {
-        Ok("mock_txid".to_string())
+    async fn broadcast_transaction(&self, tx_hex: String) -> Result<String> {
+        let txid = bitcoin::consensus::deserialize::<Transaction>(&hex::decode(&tx_hex).unwrap()).unwrap().compute_txid().to_string();
+        self.broadcasted_txs.lock().unwrap().push(tx_hex);
+        Ok(txid)
     }
     
     async fn estimate_fee(&self, _target: u32) -> Result<FeeEstimate> {
@@ -268,19 +286,16 @@ impl WalletProvider for MockProvider {
         self.network
     }
     
-    async fn get_internal_key(&self) -> Result<bitcoin::XOnlyPublicKey> {
-        Ok(bitcoin::XOnlyPublicKey::from_slice(&[0; 32]).unwrap())
+    async fn get_internal_key(&self) -> Result<XOnlyPublicKey> {
+        Ok(self.internal_key)
     }
     
     async fn sign_psbt(&self, psbt: &bitcoin::psbt::Psbt) -> Result<bitcoin::psbt::Psbt> {
         Ok(psbt.clone())
     }
     
-    async fn get_keypair(&self) -> Result<bitcoin::secp256k1::Keypair> {
-        use bitcoin::secp256k1::{Secp256k1, SecretKey};
-        let secp = Secp256k1::new();
-        let secret_key = SecretKey::from_slice(&[1; 32]).unwrap();
-        Ok(bitcoin::secp256k1::Keypair::from_secret_key(&secp, &secret_key))
+    async fn get_keypair(&self) -> Result<Keypair> {
+        Ok(Keypair::from_secret_key(&self.secp, &self.secret_key))
     }
 
     fn set_passphrase(&mut self, _passphrase: Option<String>) {}
@@ -774,18 +789,20 @@ impl DeezelProvider for MockProvider {
         Box::new(self.clone())
     }
 
-    fn secp(&self) -> &bitcoin::secp256k1::Secp256k1<bitcoin::secp256k1::All> {
-        todo!()
+    fn secp(&self) -> &Secp256k1<All> {
+        &self.secp
     }
 
-    async fn get_utxo(&self, _outpoint: &bitcoin::OutPoint) -> Result<Option<bitcoin::TxOut>> {
-        todo!()
+    async fn get_utxo(&self, outpoint: &OutPoint) -> Result<Option<TxOut>> {
+        let utxos = self.utxos.lock().unwrap();
+        Ok(utxos.iter().find(|(op, _)| op == outpoint).map(|(_, tx_out)| tx_out.clone()))
     }
 
     async fn sign_taproot_script_spend(
         &self,
-        _sighash: bitcoin::secp256k1::Message,
-    ) -> Result<bitcoin::secp256k1::schnorr::Signature> {
-        todo!()
+        sighash: bitcoin::secp256k1::Message,
+    ) -> Result<schnorr::Signature> {
+        let keypair = Keypair::from_secret_key(&self.secp, &self.secret_key);
+        Ok(self.secp.sign_schnorr(&sighash, &keypair))
     }
 }

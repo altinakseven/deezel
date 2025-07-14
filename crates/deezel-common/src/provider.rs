@@ -103,7 +103,12 @@ impl ConcreteProvider {
         wallet_path: Option<PathBuf>,
         #[cfg(target_arch = "wasm32")]
         wallet_path: Option<String>,
+        http_client: Option<Arc<reqwest::Client>>,
     ) -> Result<Self> {
+        let client = http_client.unwrap_or_else(|| {
+            Arc::new(reqwest::Client::builder().user_agent(format!("deezel/{}", crate::VERSION)).use_rustls_tls().build().unwrap())
+        });
+
        let mut new_self = Self {
            bitcoin_rpc_url,
            metashrew_rpc_url,
@@ -114,7 +119,7 @@ impl ConcreteProvider {
            passphrase: None,
            wallet_state: WalletState::None,
            #[cfg(feature = "native-deps")]
-           http_client: Arc::new(reqwest::Client::builder().user_agent(format!("deezel/{}", crate::VERSION)).use_rustls_tls().build()?),
+           http_client: client,
        };
 
        // Try to load the keystore metadata if a path is provided
@@ -319,7 +324,7 @@ impl JsonRpcProvider for ConcreteProvider {
             use crate::rpc::{RpcRequest, RpcResponse};
             let request = RpcRequest::new(method, params, id);
             let response = self.http_client
-                .post(&self.bitcoin_rpc_url)
+                .post(url)
                 .json(&request)
                 .send()
                 .await
@@ -339,8 +344,15 @@ impl JsonRpcProvider for ConcreteProvider {
                 return Ok(raw_result);
             }
 
-            // If both fail, return a generic error
-            Err(DeezelError::Network("Failed to decode RPC response".to_string()))
+            // If that also fails, check if the response is just a plain string
+            // This is needed for some Esplora endpoints that return plain text
+            if !response_text.starts_with('{') && !response_text.starts_with('[') {
+                // It's likely a plain string, wrap it in a JsonValue
+                return Ok(serde_json::Value::String(response_text));
+            }
+
+            // If all attempts fail, return a generic error
+            Err(DeezelError::Network(format!("Failed to decode RPC response: {}", response_text)))
         }
         #[cfg(not(feature = "native-deps"))]
         {
@@ -756,7 +768,7 @@ impl WalletProvider for ConcreteProvider {
         self.broadcast_transaction(signed_tx_hex).await
     }
     
-    async fn get_utxos(&self, _include_frozen: bool, addresses: Option<Vec<String>>) -> Result<Vec<UtxoInfo>> {
+    async fn get_utxos(&self, _include_frozen: bool, addresses: Option<Vec<String>>) -> Result<Vec<(OutPoint, UtxoInfo)>> {
         let addrs_to_check = if let Some(provided_addresses) = addresses {
             provided_addresses
         } else {
@@ -775,7 +787,7 @@ impl WalletProvider for ConcreteProvider {
             let utxos_json = self.get_address_utxo(&address).await?;
             if let Some(utxos_array) = utxos_json.as_array() {
                 for utxo in utxos_array {
-                    if let (Some(txid), Some(vout), Some(value)) = (
+                    if let (Some(txid_str), Some(vout), Some(value)) = (
                         utxo.get("txid").and_then(|t| t.as_str()),
                         utxo.get("vout").and_then(|v| v.as_u64()),
                         utxo.get("value").and_then(|v| v.as_u64()),
@@ -783,9 +795,10 @@ impl WalletProvider for ConcreteProvider {
                         let status = utxo.get("status");
                         let confirmed = status.and_then(|s| s.get("confirmed")).and_then(|c| c.as_bool()).unwrap_or(false);
                         let block_height = status.and_then(|s| s.get("block_height")).and_then(|h| h.as_u64());
-
-                        all_utxos.push(UtxoInfo {
-                            txid: txid.to_string(),
+                        
+                        let outpoint = OutPoint::from_str(&format!("{}:{}", txid_str, vout))?;
+                        let utxo_info = UtxoInfo {
+                            txid: txid_str.to_string(),
                             vout: vout as u32,
                             amount: value,
                             address: address.clone(),
@@ -798,7 +811,8 @@ impl WalletProvider for ConcreteProvider {
                             has_runes: false, // Not supported yet
                             has_alkanes: false, // Not supported yet
                             is_coinbase: false, // Not easily determined from Esplora
-                        });
+                        };
+                        all_utxos.push((outpoint, utxo_info));
                     }
                 }
             }
@@ -855,7 +869,8 @@ impl WalletProvider for ConcreteProvider {
         let target_amount = Amount::from_sat(params.amount);
         let fee_rate = params.fee_rate.unwrap_or(1.0); // Default to 1 sat/vbyte
 
-        let (selected_utxos, total_input_amount) = self.select_coins(utxos, target_amount)?;
+        let utxo_infos: Vec<UtxoInfo> = utxos.into_iter().map(|(_, info)| info).collect();
+        let (selected_utxos, total_input_amount) = self.select_coins(utxo_infos, target_amount)?;
 
         // 4. Build the transaction skeleton
         let mut tx = Transaction {
@@ -1915,18 +1930,19 @@ impl MonitorProvider for ConcreteProvider {
 #[cfg(all(test, feature = "native-deps"))]
 mod esplora_provider_tests {
     use super::*;
-    use wiremock::matchers::{method, body_json};
+    use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
     use serde_json::json;
 
     async fn setup() -> (MockServer, ConcreteProvider) {
         let server = MockServer::start().await;
         let provider = ConcreteProvider::new(
-            server.uri(),
-            server.uri(),
-            server.uri(),
-            Some(server.uri()),
+            server.uri(), // bitcoin rpc
+            server.uri(), // metashrew rpc
+            server.uri(), // sandshrew rpc
+            Some(server.uri()), // esplora url
             "regtest".to_string(),
+            None,
             None,
         ).await.unwrap();
         (server, provider)
@@ -1937,21 +1953,10 @@ mod esplora_provider_tests {
         // Arrange
         let (server, provider) = setup().await;
         let mock_hash = "0000000000000000000abcde".to_string();
-
-        let rpc_response = json!({
-            "jsonrpc": "2.0",
-            "result": mock_hash,
-            "id": 1
-        });
-
-        Mock::given(method("POST"))
-            .and(body_json(json!({
-                "jsonrpc": "2.0",
-                "method": "esplora_blocks:tip:hash",
-                "params": [],
-                "id": 1
-            })))
-            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+        
+        Mock::given(method("GET"))
+            .and(path("/blocks/tip/hash"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(mock_hash.clone()))
             .mount(&server)
             .await;
 
@@ -1969,20 +1974,9 @@ mod esplora_provider_tests {
         let (server, provider) = setup().await;
         let mock_height = 800000;
 
-        let rpc_response = json!({
-            "jsonrpc": "2.0",
-            "result": mock_height,
-            "id": 1
-        });
-
-        Mock::given(method("POST"))
-            .and(body_json(json!({
-                "jsonrpc": "2.0",
-                "method": "esplora_blocks:tip:height",
-                "params": [],
-                "id": 1
-            })))
-            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+        Mock::given(method("GET"))
+            .and(path("/blocks/tip/height"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(mock_height.to_string()))
             .mount(&server)
             .await;
 
@@ -2001,20 +1995,9 @@ mod esplora_provider_tests {
         let mock_height = 800000;
         let mock_hash = "0000000000000000000abcde".to_string();
 
-        let rpc_response = json!({
-            "jsonrpc": "2.0",
-            "result": mock_hash,
-            "id": 1
-        });
-
-        Mock::given(method("POST"))
-            .and(body_json(json!({
-                "jsonrpc": "2.0",
-                "method": "esplora_block:height",
-                "params": [mock_height],
-                "id": 1
-            })))
-            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+        Mock::given(method("GET"))
+            .and(path(format!("/block-height/{}", mock_height)))
+            .respond_with(ResponseTemplate::new(200).set_body_string(mock_hash.clone()))
             .mount(&server)
             .await;
 
@@ -2023,7 +2006,7 @@ mod esplora_provider_tests {
 
         // Assert
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "0000000000000000000abcde");
+        assert_eq!(result.unwrap(), mock_hash);
     }
 
     #[tokio::test]
@@ -2046,20 +2029,9 @@ mod esplora_provider_tests {
             "difficulty": 17899999999999.99
         });
 
-        let rpc_response = json!({
-            "jsonrpc": "2.0",
-            "result": mock_block,
-            "id": 1
-        });
-
-        Mock::given(method("POST"))
-            .and(body_json(json!({
-                "jsonrpc": "2.0",
-                "method": "esplora_block",
-                "params": [mock_hash],
-                "id": 1
-            })))
-            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+        Mock::given(method("GET"))
+            .and(path(format!("/block/{}", mock_hash)))
+            .respond_with(ResponseTemplate::new(200).set_body_json(mock_block.clone()))
             .mount(&server)
             .await;
 
@@ -2068,8 +2040,7 @@ mod esplora_provider_tests {
 
         // Assert
         assert!(result.is_ok());
-        let block_val = result.unwrap();
-        assert_eq!(block_val, mock_block);
+        assert_eq!(result.unwrap(), mock_block);
     }
 
     #[tokio::test]
@@ -2083,20 +2054,9 @@ mod esplora_provider_tests {
             "next_best": "00000000000000000002a3b2b3b4b5b6b7b8b9bacbdcedfefe010203"
         });
 
-        let rpc_response = json!({
-            "jsonrpc": "2.0",
-            "result": mock_status,
-            "id": 1
-        });
-
-        Mock::given(method("POST"))
-            .and(body_json(json!({
-                "jsonrpc": "2.0",
-                "method": "esplora_block:status",
-                "params": [mock_hash],
-                "id": 1
-            })))
-            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+        Mock::given(method("GET"))
+            .and(path(format!("/block/{}/status", mock_hash)))
+            .respond_with(ResponseTemplate::new(200).set_body_json(mock_status.clone()))
             .mount(&server)
             .await;
 
@@ -2118,20 +2078,9 @@ mod esplora_provider_tests {
             "f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3b2a1f6e5"
         ]);
 
-        let rpc_response = json!({
-            "jsonrpc": "2.0",
-            "result": mock_txids,
-            "id": 1
-        });
-
-        Mock::given(method("POST"))
-            .and(body_json(json!({
-                "jsonrpc": "2.0",
-                "method": "esplora_block:txids",
-                "params": [mock_hash],
-                "id": 1
-            })))
-            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+        Mock::given(method("GET"))
+            .and(path(format!("/block/{}/txids", mock_hash)))
+            .respond_with(ResponseTemplate::new(200).set_body_json(mock_txids.clone()))
             .mount(&server)
             .await;
 
@@ -2151,20 +2100,9 @@ mod esplora_provider_tests {
         let mock_index = 5;
         let mock_txid = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2";
 
-        let rpc_response = json!({
-            "jsonrpc": "2.0",
-            "result": mock_txid,
-            "id": 1
-        });
-
-        Mock::given(method("POST"))
-            .and(body_json(json!({
-                "jsonrpc": "2.0",
-                "method": "esplora_block:txid",
-                "params": [mock_hash, mock_index],
-                "id": 1
-            })))
-            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+        Mock::given(method("GET"))
+            .and(path(format!("/block/{}/txid/{}", mock_hash, mock_index)))
+            .respond_with(ResponseTemplate::new(200).set_body_string(mock_txid))
             .mount(&server)
             .await;
 
@@ -2198,20 +2136,9 @@ mod esplora_provider_tests {
             }
         });
 
-        let rpc_response = json!({
-            "jsonrpc": "2.0",
-            "result": mock_tx,
-            "id": 1
-        });
-
-        Mock::given(method("POST"))
-            .and(body_json(json!({
-                "jsonrpc": "2.0",
-                "method": "esplora_tx",
-                "params": [mock_txid],
-                "id": 1
-            })))
-            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+        Mock::given(method("GET"))
+            .and(path(format!("/tx/{}", mock_txid)))
+            .respond_with(ResponseTemplate::new(200).set_body_json(mock_tx.clone()))
             .mount(&server)
             .await;
 
@@ -2235,20 +2162,9 @@ mod esplora_provider_tests {
             "block_time": 1629886679
         });
 
-        let rpc_response = json!({
-            "jsonrpc": "2.0",
-            "result": mock_status,
-            "id": 1
-        });
-
-        Mock::given(method("POST"))
-            .and(body_json(json!({
-                "jsonrpc": "2.0",
-                "method": "esplora_tx:status",
-                "params": [mock_txid],
-                "id": 1
-            })))
-            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+        Mock::given(method("GET"))
+            .and(path(format!("/tx/{}/status", mock_txid)))
+            .respond_with(ResponseTemplate::new(200).set_body_json(mock_status.clone()))
             .mount(&server)
             .await;
 
@@ -2267,20 +2183,9 @@ mod esplora_provider_tests {
         let mock_txid = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2";
         let mock_hex = "02000000000101...";
 
-        let rpc_response = json!({
-            "jsonrpc": "2.0",
-            "result": mock_hex,
-            "id": 1
-        });
-
-        Mock::given(method("POST"))
-            .and(body_json(json!({
-                "jsonrpc": "2.0",
-                "method": "esplora_tx:hex",
-                "params": [mock_txid],
-                "id": 1
-            })))
-            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+        Mock::given(method("GET"))
+            .and(path(format!("/tx/{}/hex", mock_txid)))
+            .respond_with(ResponseTemplate::new(200).set_body_string(mock_hex))
             .mount(&server)
             .await;
 
@@ -2297,22 +2202,11 @@ mod esplora_provider_tests {
         // Arrange
         let (server, provider) = setup().await;
         let mock_txid = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2";
-        let mock_raw = "02000000000101..."; // Using hex as placeholder for raw bytes string
+        let mock_raw = vec![0x02, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01];
 
-        let rpc_response = json!({
-            "jsonrpc": "2.0",
-            "result": mock_raw,
-            "id": 1
-        });
-
-        Mock::given(method("POST"))
-            .and(body_json(json!({
-                "jsonrpc": "2.0",
-                "method": "esplora_tx:raw",
-                "params": [mock_txid],
-                "id": 1
-            })))
-            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+        Mock::given(method("GET"))
+            .and(path(format!("/tx/{}/raw", mock_txid)))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(mock_raw.clone()))
             .mount(&server)
             .await;
 
@@ -2321,7 +2215,7 @@ mod esplora_provider_tests {
 
         // Assert
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), mock_raw);
+        assert_eq!(result.unwrap(), hex::encode(mock_raw));
     }
 
     #[tokio::test]
@@ -2337,20 +2231,9 @@ mod esplora_provider_tests {
             "pos": 123
         });
 
-        let rpc_response = json!({
-            "jsonrpc": "2.0",
-            "result": mock_proof,
-            "id": 1
-        });
-
-        Mock::given(method("POST"))
-            .and(body_json(json!({
-                "jsonrpc": "2.0",
-                "method": "esplora_tx:merkle-proof",
-                "params": [mock_txid],
-                "id": 1
-            })))
-            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+        Mock::given(method("GET"))
+            .and(path(format!("/tx/{}/merkle-proof", mock_txid)))
+            .respond_with(ResponseTemplate::new(200).set_body_json(mock_proof.clone()))
             .mount(&server)
             .await;
 
@@ -2380,20 +2263,9 @@ mod esplora_provider_tests {
             }
         });
 
-        let rpc_response = json!({
-            "jsonrpc": "2.0",
-            "result": mock_outspend,
-            "id": 1
-        });
-
-        Mock::given(method("POST"))
-            .and(body_json(json!({
-                "jsonrpc": "2.0",
-                "method": "esplora_tx:outspend",
-                "params": [mock_txid, mock_index],
-                "id": 1
-            })))
-            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+        Mock::given(method("GET"))
+            .and(path(format!("/tx/{}/outspend/{}", mock_txid, mock_index)))
+            .respond_with(ResponseTemplate::new(200).set_body_json(mock_outspend.clone()))
             .mount(&server)
             .await;
 
@@ -2427,20 +2299,9 @@ mod esplora_provider_tests {
             }
         ]);
 
-        let rpc_response = json!({
-            "jsonrpc": "2.0",
-            "result": mock_outspends,
-            "id": 1
-        });
-
-        Mock::given(method("POST"))
-            .and(body_json(json!({
-                "jsonrpc": "2.0",
-                "method": "esplora_tx:outspends",
-                "params": [mock_txid],
-                "id": 1
-            })))
-            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+        Mock::given(method("GET"))
+            .and(path(format!("/tx/{}/outspends", mock_txid)))
+            .respond_with(ResponseTemplate::new(200).set_body_json(mock_outspends.clone()))
             .mount(&server)
             .await;
 
@@ -2463,20 +2324,9 @@ mod esplora_provider_tests {
             "mempool_stats": { "funded_txo_count": 0, "funded_txo_sum": 0, "spent_txo_count": 0, "spent_txo_sum": 0, "tx_count": 0 }
         });
 
-        let rpc_response = json!({
-            "jsonrpc": "2.0",
-            "result": mock_address_info,
-            "id": 1
-        });
-
-        Mock::given(method("POST"))
-            .and(body_json(json!({
-                "jsonrpc": "2.0",
-                "method": "esplora_address",
-                "params": [mock_address],
-                "id": 1
-            })))
-            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+        Mock::given(method("GET"))
+            .and(path(format!("/address/{}", mock_address)))
+            .respond_with(ResponseTemplate::new(200).set_body_json(mock_address_info.clone()))
             .mount(&server)
             .await;
 
@@ -2497,20 +2347,9 @@ mod esplora_provider_tests {
             { "txid": "a1b2c3d4...", "status": { "confirmed": true } }
         ]);
 
-        let rpc_response = json!({
-            "jsonrpc": "2.0",
-            "result": mock_txs,
-            "id": 1
-        });
-
-        Mock::given(method("POST"))
-            .and(body_json(json!({
-                "jsonrpc": "2.0",
-                "method": "esplora_address:txs",
-                "params": [mock_address],
-                "id": 1
-            })))
-            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+        Mock::given(method("GET"))
+            .and(path(format!("/address/{}/txs", mock_address)))
+            .respond_with(ResponseTemplate::new(200).set_body_json(mock_txs.clone()))
             .mount(&server)
             .await;
 
@@ -2532,20 +2371,9 @@ mod esplora_provider_tests {
             { "txid": "e5f6g7h8...", "status": { "confirmed": true } }
         ]);
 
-        let rpc_response = json!({
-            "jsonrpc": "2.0",
-            "result": mock_txs,
-            "id": 1
-        });
-
-        Mock::given(method("POST"))
-            .and(body_json(json!({
-                "jsonrpc": "2.0",
-                "method": "esplora_address:txs:chain",
-                "params": [mock_address, mock_last_txid],
-                "id": 1
-            })))
-            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+        Mock::given(method("GET"))
+            .and(path(format!("/address/{}/txs/chain/{}", mock_address, mock_last_txid)))
+            .respond_with(ResponseTemplate::new(200).set_body_json(mock_txs.clone()))
             .mount(&server)
             .await;
 
@@ -2566,20 +2394,9 @@ mod esplora_provider_tests {
             { "txid": "mempooltx...", "status": { "confirmed": false } }
         ]);
 
-        let rpc_response = json!({
-            "jsonrpc": "2.0",
-            "result": mock_txs,
-            "id": 1
-        });
-
-        Mock::given(method("POST"))
-            .and(body_json(json!({
-                "jsonrpc": "2.0",
-                "method": "esplora_address:txs:mempool",
-                "params": [mock_address],
-                "id": 1
-            })))
-            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+        Mock::given(method("GET"))
+            .and(path(format!("/address/{}/txs/mempool", mock_address)))
+            .respond_with(ResponseTemplate::new(200).set_body_json(mock_txs.clone()))
             .mount(&server)
             .await;
 
@@ -2597,23 +2414,12 @@ mod esplora_provider_tests {
         let (server, provider) = setup().await;
         let mock_address = "bc1q...";
         let mock_utxos = json!([
-            { "txid": "utxotx...", "vout": 0, "value": 12345 }
+            { "txid": "utxotx...", "vout": 0, "value": 12345, "status": { "confirmed": true } }
         ]);
 
-        let rpc_response = json!({
-            "jsonrpc": "2.0",
-            "result": mock_utxos,
-            "id": 1
-        });
-
-        Mock::given(method("POST"))
-            .and(body_json(json!({
-                "jsonrpc": "2.0",
-                "method": "esplora_address:utxo",
-                "params": [mock_address],
-                "id": 1
-            })))
-            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+        Mock::given(method("GET"))
+            .and(path(format!("/address/{}/utxo", mock_address)))
+            .respond_with(ResponseTemplate::new(200).set_body_json(mock_utxos.clone()))
             .mount(&server)
             .await;
 
@@ -2636,20 +2442,9 @@ mod esplora_provider_tests {
             "fee_histogram": [[1.0, 12345]]
         });
 
-        let rpc_response = json!({
-            "jsonrpc": "2.0",
-            "result": mock_mempool_info,
-            "id": 1
-        });
-
-        Mock::given(method("POST"))
-            .and(body_json(json!({
-                "jsonrpc": "2.0",
-                "method": "esplora_mempool",
-                "params": [],
-                "id": 1
-            })))
-            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+        Mock::given(method("GET"))
+            .and(path("/mempool"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(mock_mempool_info.clone()))
             .mount(&server)
             .await;
 
@@ -2669,20 +2464,9 @@ mod esplora_provider_tests {
             "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
         ]);
 
-        let rpc_response = json!({
-            "jsonrpc": "2.0",
-            "result": mock_txids,
-            "id": 1
-        });
-
-        Mock::given(method("POST"))
-            .and(body_json(json!({
-                "jsonrpc": "2.0",
-                "method": "esplora_mempool:txids",
-                "params": [],
-                "id": 1
-            })))
-            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+        Mock::given(method("GET"))
+            .and(path("/mempool/txids"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(mock_txids.clone()))
             .mount(&server)
             .await;
 
@@ -2702,20 +2486,9 @@ mod esplora_provider_tests {
             { "txid": "a1b2c3d4...", "fee": 1000, "vsize": 200, "value": 12345 }
         ]);
 
-        let rpc_response = json!({
-            "jsonrpc": "2.0",
-            "result": mock_recent,
-            "id": 1
-        });
-
-        Mock::given(method("POST"))
-            .and(body_json(json!({
-                "jsonrpc": "2.0",
-                "method": "esplora_mempool:recent",
-                "params": [],
-                "id": 1
-            })))
-            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+        Mock::given(method("GET"))
+            .and(path("/mempool/recent"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(mock_recent.clone()))
             .mount(&server)
             .await;
 
@@ -2733,20 +2506,9 @@ mod esplora_provider_tests {
         let (server, provider) = setup().await;
         let mock_fees = json!({ "1": 10.0, "6": 5.0, "144": 1.0 });
 
-        let rpc_response = json!({
-            "jsonrpc": "2.0",
-            "result": mock_fees,
-            "id": 1
-        });
-
-        Mock::given(method("POST"))
-            .and(body_json(json!({
-                "jsonrpc": "2.0",
-                "method": "esplora_fee-estimates",
-                "params": [],
-                "id": 1
-            })))
-            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+        Mock::given(method("GET"))
+            .and(path("/fee-estimates"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(mock_fees.clone()))
             .mount(&server)
             .await;
 
@@ -2765,20 +2527,9 @@ mod esplora_provider_tests {
         let mock_tx_hex = "0100000001...";
         let mock_txid = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2";
 
-        let rpc_response = json!({
-            "jsonrpc": "2.0",
-            "result": mock_txid,
-            "id": 1
-        });
-
         Mock::given(method("POST"))
-            .and(body_json(json!({
-                "jsonrpc": "2.0",
-                "method": "esplora_broadcast",
-                "params": [mock_tx_hex],
-                "id": 1
-            })))
-            .respond_with(ResponseTemplate::new(200).set_body_json(rpc_response))
+            .and(path("/tx"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(mock_txid))
             .mount(&server)
             .await;
 

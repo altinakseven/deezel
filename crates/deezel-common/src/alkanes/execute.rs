@@ -15,7 +15,7 @@
 //! - Transaction tracing with metashrew synchronization
 
 use crate::{Result, DeezelError, DeezelProvider, JsonValue};
-use crate::traits::WalletProvider;
+use crate::traits::{WalletProvider, UtxoInfo};
 use bitcoin::{Transaction, ScriptBuf, OutPoint, TxOut, Address, XOnlyPublicKey};
 use crate::vendored_ord::{Edict, RuneId, Runestone};
 use core::str::FromStr;
@@ -342,10 +342,10 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
         // For now, we just select enough UTXOs to cover the Bitcoin requirement.
         // The logic for selecting specific alkanes is a TODO.
 
-        for utxo in utxos {
+        for (outpoint, utxo) in utxos {
             if bitcoin_collected < bitcoin_needed {
                 bitcoin_collected += utxo.amount;
-                selected_outpoints.push(OutPoint::from_str(&format!("{}:{}", utxo.txid, utxo.vout))?);
+                selected_outpoints.push(outpoint);
             } else {
                 break;
             }
@@ -389,6 +389,7 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
         let network = self.provider.get_network();
 
         for addr_str in to_addresses {
+            log::debug!("Parsing to_address in create_outputs: '{}'", addr_str);
             let address = Address::from_str(addr_str)?.require_network(network)?;
             outputs.push(TxOut {
                 value: bitcoin::Amount::from_sat(546), // Dust
@@ -397,6 +398,7 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
         }
 
         if let Some(change_addr_str) = change_address {
+            log::debug!("Parsing change_address in create_outputs: '{}'", change_addr_str);
             let address = Address::from_str(change_addr_str)?.require_network(network)?;
             outputs.push(TxOut {
                 value: bitcoin::Amount::from_sat(0), // Placeholder, will be set later
@@ -494,9 +496,10 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
         
         // Configure inputs for signing
         let all_wallet_utxos = self.provider.get_utxos(true, None).await?;
+        let all_wallet_utxos_map: std::collections::HashMap<OutPoint, UtxoInfo> = all_wallet_utxos.into_iter().map(|(op, info)| (op, info)).collect();
+
         for (i, outpoint) in utxos.iter().enumerate() {
-            let utxo_info = all_wallet_utxos.iter()
-                .find(|u| u.txid == outpoint.txid.to_string() && u.vout == outpoint.vout)
+            let utxo_info = all_wallet_utxos_map.get(outpoint)
                 .ok_or_else(|| DeezelError::Wallet(format!("UTXO not found: {}", outpoint)))?;
             
             psbt.inputs[i].witness_utxo = Some(TxOut {

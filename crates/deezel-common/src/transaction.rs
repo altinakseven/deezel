@@ -28,10 +28,11 @@ impl<P: DeezelProvider> TransactionConstructor<P> {
     /// Create a simple send transaction
     pub async fn create_send_transaction(&self, params: SendTransactionParams) -> Result<Transaction> {
         // Get UTXOs for the transaction
-        let utxos = self.select_utxos(&params).await?;
+        let utxos_with_outpoints = self.select_utxos(&params).await?;
         
         // Calculate fees
         let fee_rate = params.fee_rate.unwrap_or(1.0);
+        let utxos: Vec<UtxoInfo> = utxos_with_outpoints.iter().map(|(_, info)| info.clone()).collect();
         let estimated_size = self.estimate_transaction_size(&utxos, &params.outputs)?;
         let fee = (estimated_size as f32 * fee_rate) as u64;
         
@@ -45,12 +46,9 @@ impl<P: DeezelProvider> TransactionConstructor<P> {
         
         // Add inputs
         let mut _total_input = 0u64;
-        for utxo in &utxos {
+        for (outpoint, utxo) in &utxos_with_outpoints {
             tx.input.push(TxIn {
-                previous_output: OutPoint {
-                    txid: utxo.txid.parse().map_err(|_| DeezelError::Parse("Invalid TXID".to_string()))?,
-                    vout: utxo.vout,
-                },
+                previous_output: *outpoint,
                 script_sig: ScriptBuf::new(),
                 sequence: bitcoin::Sequence::ENABLE_RBF_NO_LOCKTIME,
                 witness: Witness::new(),
@@ -222,7 +220,7 @@ impl<P: DeezelProvider> TransactionConstructor<P> {
     }
     
     /// Select UTXOs for transaction
-    async fn select_utxos(&self, params: &SendTransactionParams) -> Result<Vec<UtxoInfo>> {
+    async fn select_utxos(&self, params: &SendTransactionParams) -> Result<Vec<(OutPoint, UtxoInfo)>> {
         let available_utxos = self.provider.get_utxos(false, params.from_addresses.clone()).await?;
         
         let total_needed = params.outputs.iter().map(|o| o.amount).sum::<u64>() + 1000; // Add fee estimate
@@ -232,14 +230,14 @@ impl<P: DeezelProvider> TransactionConstructor<P> {
         let mut total_selected = 0u64;
         
         let mut sorted_utxos = available_utxos;
-        sorted_utxos.sort_by(|a, b| b.amount.cmp(&a.amount));
+        sorted_utxos.sort_by(|a, b| b.1.amount.cmp(&a.1.amount));
         
-        for utxo in sorted_utxos {
+        for (outpoint, utxo) in sorted_utxos {
             if utxo.frozen {
                 continue;
             }
             
-            selected.push(utxo.clone());
+            selected.push((outpoint, utxo.clone()));
             total_selected += utxo.amount;
             
             if total_selected >= total_needed {

@@ -182,7 +182,7 @@ impl<P: DeezelProvider> WalletManager<P> {
     /// Get UTXOs
     pub async fn get_utxos(&self) -> Result<Vec<UtxoInfo>> {
         let trait_utxos = self.provider.get_utxos(false, None).await?;
-        let wallet_utxos = trait_utxos.into_iter().map(|utxo| UtxoInfo {
+        let wallet_utxos = trait_utxos.into_iter().map(|(_, utxo)| UtxoInfo {
             txid: utxo.txid,
             vout: utxo.vout,
             amount: utxo.amount,
@@ -199,7 +199,7 @@ impl<P: DeezelProvider> WalletManager<P> {
         let utxos = self.provider.get_utxos(false, None).await?;
         let mut enriched = Vec::new();
         
-        for utxo in utxos {
+        for (_, utxo) in utxos {
             enriched.push(EnrichedUtxo {
                 utxo: UtxoInfo {
                     txid: utxo.txid.clone(),
@@ -227,7 +227,7 @@ impl<P: DeezelProvider> WalletManager<P> {
         let utxos = self.provider.get_utxos(false, Some(vec![address.to_string()])).await?;
         let mut enriched = Vec::new();
         
-        for utxo in utxos {
+        for (_, utxo) in utxos {
             enriched.push(EnrichedUtxo {
                 utxo: UtxoInfo {
                     txid: utxo.txid.clone(),

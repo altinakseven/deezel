@@ -15,6 +15,9 @@ members = [
   "crates/deezel-web",
   "crates/deezel-sys"
 ]
+exclude = [
+    "crates/deezel-rpgp",
+]
 resolver = "2"
 
 [workspace.dependencies]
