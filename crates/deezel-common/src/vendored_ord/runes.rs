@@ -143,7 +143,7 @@ impl Runestone {
         use bitcoin::blockdata::opcodes;
         use bitcoin::blockdata::script::Builder;
 
-        let mut payload: Vec<u8> = Vec::new();
+        let payload: Vec<u8> = Vec::new();
         // A real implementation would serialize the runestone fields into payload
         // using varint encoding.
         // For example:
@@ -153,7 +153,7 @@ impl Runestone {
         Builder::new()
             .push_opcode(opcodes::all::OP_RETURN)
             .push_slice(b"R") // Magic number
-            .push_slice((&payload[..]).try_into().unwrap())
+            .push_slice::<&bitcoin::script::PushBytes>((&payload[..]).try_into().unwrap())
             .into_script()
     }
 }

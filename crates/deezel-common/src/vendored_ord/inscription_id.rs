@@ -83,6 +83,7 @@ impl Default for InscriptionId {
   }
 }
 
+#[allow(dead_code)]
 impl InscriptionId {
   pub(crate) fn from_value(value: &[u8]) -> Option<Self> {
     if value.len() < Txid::LEN {

@@ -957,7 +957,7 @@ impl SystemAlkanes for SystemDeezel {
                 raw,
                 trace,
                 mine,
-                yes,
+                auto_confirm,
             } => {
                 log::info!("🚀 Starting enhanced alkanes execute command");
 
@@ -981,7 +981,7 @@ impl SystemAlkanes for SystemDeezel {
 
                 // Parse input requirements
                 let parsed_input_requirements = {
-                    use deezel_common::alkanes::execute::parse_input_requirements;
+                    use deezel_common::alkanes::parsing::parse_input_requirements;
                     let mut all_reqs = vec![];
                     for req_str in &input_requirements {
                         let parsed = parse_input_requirements(req_str)
@@ -993,7 +993,7 @@ impl SystemAlkanes for SystemDeezel {
 
                 // Parse protostones
                 let parsed_protostones = {
-                    use deezel_common::alkanes::execute::parse_protostones;
+                    use deezel_common::alkanes::parsing::parse_protostones;
                     let mut all_specs = vec![];
                     for proto_str in &protostones {
                         let parsed = parse_protostones(proto_str)
@@ -1010,7 +1010,7 @@ impl SystemAlkanes for SystemDeezel {
                 }
 
                 // Create enhanced execute parameters
-                let execute_params = deezel_common::alkanes::execute::EnhancedExecuteParams {
+                let execute_params = deezel_common::alkanes::types::EnhancedExecuteParams {
                     fee_rate,
                     to_addresses: resolved_to_addresses,
                     change_address: resolved_change,
@@ -1020,7 +1020,7 @@ impl SystemAlkanes for SystemDeezel {
                     raw_output: raw,
                     trace_enabled: trace,
                     mine_enabled: mine,
-                    auto_confirm: yes,
+                    auto_confirm,
                 };
 
                 match provider.execute(execute_params).await {
@@ -1029,10 +1029,10 @@ impl SystemAlkanes for SystemDeezel {
                             println!("{}", serde_json::to_string_pretty(&result)?);
                         } else {
                             println!("✅ Alkanes execution completed successfully!");
-                            if let Some(commit_txid) = &result.commit_txid {
+                            if let Some(commit_txid) = result.commit_txid {
                                 println!("🔗 Commit TXID: {}", commit_txid);
                             }
-                            if let Some(reveal_txid) = &result.reveal_txid {
+                            if let Some(reveal_txid) = result.reveal_txid {
                                 println!("🔗 Reveal TXID: {}", reveal_txid);
                             }
                             if let Some(commit_fee) = result.commit_fee {

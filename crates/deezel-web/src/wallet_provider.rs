@@ -1435,37 +1435,37 @@ impl OrdProvider for BrowserWalletProvider {
 
 #[async_trait(?Send)]
 impl AlkanesProvider for BrowserWalletProvider {
-    async fn execute(&self, params: AlkanesExecuteParams) -> Result<AlkanesExecuteResult> {
+    async fn execute(&self, params: deezel_common::alkanes::types::EnhancedExecuteParams) -> Result<deezel_common::alkanes::types::EnhancedExecuteResult> {
         self.web_provider.execute(params).await
     }
     
-    async fn get_balance(&self, address: Option<&str>) -> Result<Vec<AlkanesBalance>> {
-        AlkanesProvider::get_balance(&self.web_provider, address).await
-    }
+    // async fn get_balance(&self, address: Option<&str>) -> Result<Vec<AlkanesBalance>> {
+    //     AlkanesProvider::get_balance(&self.web_provider, address).await
+    // }
 
-    async fn get_alkanes_balance(&self, address: Option<&str>) -> Result<Vec<AlkanesBalance>> {
-       self.web_provider.get_alkanes_balance(address).await
-   }
+    // async fn get_alkanes_balance(&self, address: Option<&str>) -> Result<Vec<AlkanesBalance>> {
+    //    self.web_provider.get_alkanes_balance(address).await
+    // }
     
-    async fn get_token_info(&self, alkane_id: &str) -> Result<JsonValue> {
-        self.web_provider.get_token_info(alkane_id).await
-    }
+    // async fn get_token_info(&self, alkane_id: &str) -> Result<JsonValue> {
+    //     self.web_provider.get_token_info(alkane_id).await
+    // }
     
-    async fn trace(&self, outpoint: &str) -> Result<JsonValue> {
-        self.web_provider.trace(outpoint).await
-    }
+    // async fn trace(&self, outpoint: &str) -> Result<JsonValue> {
+    //     self.web_provider.trace(outpoint).await
+    // }
     
-    async fn inspect(&self, target: &str, config: AlkanesInspectConfig) -> Result<AlkanesInspectResult> {
-        self.web_provider.inspect(target, config).await
-    }
+    // async fn inspect(&self, target: &str, config: AlkanesInspectConfig) -> Result<AlkanesInspectResult> {
+    //     self.web_provider.inspect(target, config).await
+    // }
     
-    async fn get_bytecode(&self, alkane_id: &str) -> Result<String> {
-        AlkanesProvider::get_bytecode(&self.web_provider, alkane_id).await
-    }
+    // async fn get_bytecode(&self, alkane_id: &str) -> Result<String> {
+    //     AlkanesProvider::get_bytecode(&self.web_provider, alkane_id).await
+    // }
     
-    async fn simulate(&self, contract_id: &str, params: Option<&str>) -> Result<JsonValue> {
-        self.web_provider.simulate(contract_id, params).await
-    }
+    // async fn simulate(&self, contract_id: &str, params: Option<&str>) -> Result<JsonValue> {
+    //     self.web_provider.simulate(contract_id, params).await
+    // }
 }
 
 #[async_trait(?Send)]

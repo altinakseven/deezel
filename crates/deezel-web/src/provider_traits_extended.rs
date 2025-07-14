@@ -44,57 +44,57 @@ impl RunestoneProvider for WebProvider {
 // AlkanesProvider implementation
 #[async_trait(?Send)]
 impl AlkanesProvider for WebProvider {
-    async fn execute(&self, params: AlkanesExecuteParams) -> Result<AlkanesExecuteResult> {
+    async fn execute(&self, params: deezel_common::alkanes::types::EnhancedExecuteParams) -> Result<deezel_common::alkanes::types::EnhancedExecuteResult> {
         let result = self.call(self.sandshrew_rpc_url(), "alkanes_execute", serde_json::to_value(params)?, 1).await?;
         serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
     }
 
-    async fn get_balance(&self, address: Option<&str>) -> Result<Vec<AlkanesBalance>> {
-        let params = if let Some(addr) = address {
-            serde_json::json!([addr])
-        } else {
-            serde_json::json!([])
-        };
-        let result = self.call(self.sandshrew_rpc_url(), "alkanes_balance", params, 1).await?;
-        serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
-    }
+    // async fn get_balance(&self, address: Option<&str>) -> Result<Vec<AlkanesBalance>> {
+    //     let params = if let Some(addr) = address {
+    //         serde_json::json!([addr])
+    //     } else {
+    //         serde_json::json!([])
+    //     };
+    //     let result = self.call(self.sandshrew_rpc_url(), "alkanes_balance", params, 1).await?;
+    //     serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
+    // }
 
-    async fn get_token_info(&self, alkane_id: &str) -> Result<JsonValue> {
-        self.call(self.sandshrew_rpc_url(), "alkanes_token_info", serde_json::json!([alkane_id]), 1).await
-    }
+    // async fn get_token_info(&self, alkane_id: &str) -> Result<JsonValue> {
+    //     self.call(self.sandshrew_rpc_url(), "alkanes_token_info", serde_json::json!([alkane_id]), 1).await
+    // }
 
-    async fn get_alkanes_balance(&self, address: Option<&str>) -> Result<Vec<AlkanesBalance>> {
-       let params = if let Some(addr) = address {
-           serde_json::json!([addr])
-       } else {
-           serde_json::json!([])
-       };
-       let result = self.call(self.sandshrew_rpc_url(), "alkanes_balance", params, 1).await?;
-       serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
-   }
+    // async fn get_alkanes_balance(&self, address: Option<&str>) -> Result<Vec<AlkanesBalance>> {
+    //    let params = if let Some(addr) = address {
+    //        serde_json::json!([addr])
+    //    } else {
+    //        serde_json::json!([])
+    //    };
+    //    let result = self.call(self.sandshrew_rpc_url(), "alkanes_balance", params, 1).await?;
+    //    serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
+    // }
 
-    async fn trace(&self, outpoint: &str) -> Result<JsonValue> {
-        self.call(self.sandshrew_rpc_url(), "alkanes_trace", serde_json::json!([outpoint]), 1).await
-    }
+    // async fn trace(&self, outpoint: &str) -> Result<JsonValue> {
+    //     self.call(self.sandshrew_rpc_url(), "alkanes_trace", serde_json::json!([outpoint]), 1).await
+    // }
 
-    async fn inspect(&self, target: &str, config: AlkanesInspectConfig) -> Result<AlkanesInspectResult> {
-        let result = self.call(self.sandshrew_rpc_url(), "alkanes_inspect", serde_json::json!([target, config]), 1).await?;
-        serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
-    }
+    // async fn inspect(&self, target: &str, config: AlkanesInspectConfig) -> Result<AlkanesInspectResult> {
+    //     let result = self.call(self.sandshrew_rpc_url(), "alkanes_inspect", serde_json::json!([target, config]), 1).await?;
+    //     serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
+    // }
 
-    async fn get_bytecode(&self, alkane_id: &str) -> Result<String> {
-        let result = self.call(self.sandshrew_rpc_url(), "alkanes_bytecode", serde_json::json!([alkane_id]), 1).await?;
-        Ok(result.as_str().unwrap_or_default().to_string())
-    }
+    // async fn get_bytecode(&self, alkane_id: &str) -> Result<String> {
+    //     let result = self.call(self.sandshrew_rpc_url(), "alkanes_bytecode", serde_json::json!([alkane_id]), 1).await?;
+    //     Ok(result.as_str().unwrap_or_default().to_string())
+    // }
 
-    async fn simulate(&self, contract_id: &str, params: Option<&str>) -> Result<JsonValue> {
-        let p = if let Some(p_str) = params {
-            serde_json::json!([contract_id, p_str])
-        } else {
-            serde_json::json!([contract_id])
-        };
-        self.call(self.sandshrew_rpc_url(), "alkanes_simulate", p, 1).await
-    }
+    // async fn simulate(&self, contract_id: &str, params: Option<&str>) -> Result<JsonValue> {
+    //     let p = if let Some(p_str) = params {
+    //         serde_json::json!([contract_id, p_str])
+    //     } else {
+    //         serde_json::json!([contract_id])
+    //     };
+    //     self.call(self.sandshrew_rpc_url(), "alkanes_simulate", p, 1).await
+    // }
 }
 // MonitorProvider implementation
 #[async_trait(?Send)]
