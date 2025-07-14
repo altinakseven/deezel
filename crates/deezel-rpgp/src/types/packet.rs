@@ -1,6 +1,7 @@
 extern crate alloc;
 use crate::io::BufRead;
 
+use byteorder::WriteBytesExt;
 use crate::io::Write;
 use log::debug;
 use num_enum::{FromPrimitive, IntoPrimitive, TryFromPrimitive};
