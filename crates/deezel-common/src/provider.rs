@@ -537,6 +537,7 @@ impl PgpProvider for ConcreteProvider {
     }
 }
 
+#[async_trait(?Send)]
 impl TimeProvider for ConcreteProvider {
     fn now_secs(&self) -> u64 {
         unimplemented!()
@@ -547,18 +548,19 @@ impl TimeProvider for ConcreteProvider {
     }
     
     #[cfg(feature = "native-deps")]
-    fn sleep_ms(&self, _ms: u64) -> core::pin::Pin<Box<dyn core::future::Future<Output = ()>>> {
-        Box::pin(tokio::time::sleep(core::time::Duration::from_millis(_ms)))
+    async fn sleep_ms(&self, ms: u64) {
+        tokio::time::sleep(core::time::Duration::from_millis(ms)).await;
     }
 
     #[cfg(not(feature = "native-deps"))]
-    fn sleep_ms(&self, _ms: u64) -> core::pin::Pin<Box<dyn core::future::Future<Output = ()>>> {
+    async fn sleep_ms(&self, ms: u64) {
         #[cfg(target_arch = "wasm32")]
         {
-            Box::pin(gloo_timers::future::sleep(core::time::Duration::from_millis(_ms)))
+            gloo_timers::future::sleep(core::time::Duration::from_millis(ms)).await;
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
+            let _ = ms;
             unimplemented!("sleep_ms is not implemented for non-wasm targets without native-deps feature")
         }
     }
@@ -1852,6 +1854,30 @@ impl DeezelProvider for ConcreteProvider {
         // - Clean up resources
         Ok(())
     }
+
+    fn secp(&self) -> &Secp256k1<All> {
+        // This is a temporary solution. A proper implementation would have a shared secp context.
+        unimplemented!()
+    }
+
+    async fn get_utxo(&self, outpoint: &OutPoint) -> Result<Option<TxOut>> {
+        let tx_info = self.get_tx(&outpoint.txid.to_string()).await?;
+        let vout_info = tx_info["vout"].get(outpoint.vout as usize)
+            .ok_or_else(|| DeezelError::Wallet(format!("Vout {} not found for tx {}", outpoint.vout, outpoint.txid)))?;
+        
+        let amount = vout_info["value"].as_u64()
+            .ok_or_else(|| DeezelError::Wallet("UTXO value not found".to_string()))?;
+        let script_pubkey_hex = vout_info["scriptpubkey"].as_str()
+            .ok_or_else(|| DeezelError::Wallet("UTXO script pubkey not found".to_string()))?;
+        
+        let script_pubkey = ScriptBuf::from(Vec::from_hex(script_pubkey_hex)?);
+        Ok(Some(TxOut { value: Amount::from_sat(amount), script_pubkey }))
+    }
+
+    async fn sign_taproot_script_spend(&self, _sighash: bitcoin::secp256k1::Message) -> Result<bitcoin::secp256k1::schnorr::Signature> {
+        Err(DeezelError::NotImplemented("sign_taproot_script_spend not implemented for ConcreteProvider".to_string()))
+    }
+
 }
 
 // Implement KeystoreProvider trait for ConcreteProvider

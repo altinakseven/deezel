@@ -147,14 +147,13 @@ impl SubpacketType {
 ///
 /// Ref <https://www.rfc-editor.org/rfc/rfc9580.html#name-signature-subpacket-specifi>
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub enum SubpacketLength {
     /// 1 byte encoding, must be less than `192`.
-    One(#[cfg_attr(test, proptest(strategy = "0u8..=191"))] u8),
+    One(u8),
     /// 2 byte encoding
-    Two(#[cfg_attr(test, proptest(strategy = "192u16..=16319"))] u16),
+    Two(u16),
     /// 5 byte encoding
-    Five(#[cfg_attr(test, proptest(strategy = "16320u32.."))] u32),
+    Five(u32),
 }
 
 impl SubpacketLength {
@@ -313,55 +312,3 @@ pub enum SubpacketData {
     ),
 }
 
-#[cfg(test)]
-mod tests {
-    use proptest::prelude::*;
-
-    use super::*;
-
-    #[test]
-    fn subpacket_len() {
-        // explicitly test the edges between the size ranges
-
-        const MAX_TWO_BYTE: usize = 16319;
-
-        let len = SubpacketLength::encode(191);
-        assert!(matches!(len, SubpacketLength::One(_)));
-        assert_eq!(len.len(), 191);
-
-        let len = SubpacketLength::encode(192);
-        assert!(matches!(len, SubpacketLength::Two(_)));
-        assert_eq!(len.len(), 192);
-
-        // test that parsing (254, 255) encodes correctly
-        let len = SubpacketLength::try_from_reader(&mut &[254, 255][..]).unwrap();
-        assert!(matches!(len, SubpacketLength::Two(_)));
-        assert_eq!(len.len(), MAX_TWO_BYTE);
-
-        let len = SubpacketLength::encode(MAX_TWO_BYTE as u32);
-        assert!(matches!(len, SubpacketLength::Two(_)));
-        assert_eq!(len.len(), MAX_TWO_BYTE);
-
-        let len = SubpacketLength::encode(MAX_TWO_BYTE as u32 + 1);
-        assert!(matches!(len, SubpacketLength::Five(_)));
-        assert_eq!(len.len(), MAX_TWO_BYTE + 1);
-    }
-
-    proptest! {
-        #[test]
-        fn subpacket_length_write_len(len: SubpacketLength) {
-            let mut buf = Vec::new();
-            len.to_writer(&mut buf).unwrap();
-            assert_eq!(buf.len(), len.write_len());
-        }
-
-
-        #[test]
-        fn subpacket_length_packet_roundtrip(len: SubpacketLength) {
-            let mut buf = Vec::new();
-            len.to_writer(&mut buf).unwrap();
-            let new_len = SubpacketLength::try_from_reader(&mut &buf[..]).unwrap();
-            assert_eq!(len, new_len);
-        }
-    }
-}

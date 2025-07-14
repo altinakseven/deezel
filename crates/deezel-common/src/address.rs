@@ -214,8 +214,12 @@ impl DeezelAddress {
 
     /// Convert to address string
     pub fn to_string(&self) -> Result<String> {
-        let btc_network = bitcoin::Network::from_str(&self.network.bech32_hrp)
-            .map_err(|_| anyhow!("Invalid bech32 hrp in network config"))?;
+        let btc_network = match self.network.bech32_hrp.as_str() {
+            "bc" => bitcoin::Network::Bitcoin,
+            "tb" => bitcoin::Network::Testnet,
+            "bcrt" => bitcoin::Network::Regtest,
+            _ => return Err(anyhow!("Unsupported custom network HRP for string conversion")),
+        };
         let script_pubkey = self.payload.script_pubkey();
         let address = bitcoin::Address::from_script(&script_pubkey, btc_network)
             .map_err(|e| anyhow!("Failed to create address from script: {}", e))?;
@@ -224,11 +228,16 @@ impl DeezelAddress {
 
     /// Parse address from string
     pub fn from_str(address_str: &str, network: &NetworkConfig) -> Result<Self> {
-        let btc_network = bitcoin::Network::from_str(&network.bech32_hrp)
-            .map_err(|_| anyhow!("Invalid bech32 hrp in network config"))?;
+        let expected_btc_network = match network.bech32_hrp.as_str() {
+            "bc" => bitcoin::Network::Bitcoin,
+            "tb" => bitcoin::Network::Testnet,
+            "bcrt" => bitcoin::Network::Regtest,
+            _ => return Err(anyhow!("Unsupported custom network HRP for parsing")),
+        };
+
         let address = bitcoin::Address::from_str(address_str)
             .map_err(|e| anyhow!("Failed to parse address string: {}", e))?
-            .require_network(btc_network)
+            .require_network(expected_btc_network)
             .map_err(|e| anyhow!("Address does not match required network: {}", e))?;
         
         let script_pubkey = address.script_pubkey();

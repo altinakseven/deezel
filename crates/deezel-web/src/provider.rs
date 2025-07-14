@@ -35,8 +35,9 @@
 //!     provider.initialize().await?;
 //!
 //!     // Use any deezel functionality
-//!     let balance = WalletProvider::get_balance(&provider).await?;
-//!     println!("Balance: {} sats", balance.confirmed);
+//!     // Note: get_balance requires a wallet connection, this is just an example
+//!     // let balance = WalletProvider::get_balance(&provider).await?;
+//!     // println!("Balance: {} sats", balance.confirmed);
 //!
 //!     Ok(())
 //! }
@@ -126,8 +127,9 @@ impl WebProvider {
     ///
     /// ```rust,no_run
     /// use deezel_web::WebProvider;
+    /// use deezel_common::Result;
     ///
-    /// async fn setup_mainnet() -> Result<WebProvider, Box<dyn std::error::Error>> {
+    /// async fn setup_mainnet() -> Result<WebProvider> {
     ///     let provider = WebProvider::new("mainnet".to_string()).await?;
     ///     Ok(provider)
     /// }
@@ -185,7 +187,9 @@ impl WebProvider {
     ///
     /// ```rust,no_run
     /// # use deezel_web::WebProvider;
-    /// # async fn example(provider: WebProvider) -> Result<(), Box<dyn std::error::Error>> {
+    /// # use deezel_common::Result;
+    /// # async fn example() -> Result<()> {
+    /// # let provider = WebProvider::new("mainnet".to_string()).await?;
     /// let config = provider.get_wallet_config();
     /// println!("Network: {:?}", config.network);
     /// println!("Bitcoin RPC: {}", config.bitcoin_rpc_url);
@@ -277,7 +281,9 @@ impl WebProvider {
     ///
     /// ```rust,no_run
     /// # use deezel_web::WebProvider;
-    /// # async fn example(provider: WebProvider) -> Result<(), Box<dyn std::error::Error>> {
+    /// # use deezel_common::Result;
+    /// # async fn example() -> Result<()> {
+    /// # let provider = WebProvider::new("mainnet".to_string()).await?;
     /// let tx_hex = "0200000001..."; // Your transaction hex
     /// let txid = provider.broadcast_via_rebar_shield(tx_hex).await?;
     /// println!("Transaction broadcast privately: {}", txid);

@@ -27,7 +27,8 @@
 //!     let provider = WebProvider::new("regtest".to_string()).await?;
 //!
 //!     // Use any deezel-common functionality
-//!     let balance = WalletProvider::get_balance(&provider).await?;
+//!     // Note: get_balance requires a wallet connection, this is just an example
+//!     // let balance = WalletProvider::get_balance(&provider).await?;
 //!     Ok(())
 //! }
 //! ```

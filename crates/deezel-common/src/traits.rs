@@ -172,15 +172,16 @@ pub trait PgpProvider {
 }
 
 /// Trait for time operations
+#[async_trait(?Send)]
 pub trait TimeProvider {
     /// Get current Unix timestamp in seconds
     fn now_secs(&self) -> u64;
     
     /// Get current Unix timestamp in milliseconds
     fn now_millis(&self) -> u64;
-    
-    /// Sleep for the specified duration (in milliseconds)
-    fn sleep_ms(&self, ms: u64) -> core::pin::Pin<Box<dyn core::future::Future<Output = ()>>>;
+
+    /// Sleep for a specified duration in milliseconds
+    async fn sleep_ms(&self, ms: u64);
 }
 
 /// Trait for logging operations
@@ -802,6 +803,16 @@ pub trait DeezelProvider:
     
     /// Shutdown the provider
     async fn shutdown(&self) -> Result<()>;
+
+    /// Get a reference to the secp256k1 context
+    fn secp(&self) -> &bitcoin::secp256k1::Secp256k1<bitcoin::secp256k1::All>;
+
+    /// Get a single UTXO by its outpoint
+    async fn get_utxo(&self, outpoint: &bitcoin::OutPoint) -> Result<Option<bitcoin::TxOut>>;
+
+    /// Sign a taproot script spend sighash
+    async fn sign_taproot_script_spend(&self, sighash: bitcoin::secp256k1::Message) -> Result<bitcoin::secp256k1::schnorr::Signature>;
+
 }
 
 impl Clone for Box<dyn DeezelProvider> {
@@ -920,6 +931,7 @@ impl<T: DeezelProvider + ?Sized> PgpProvider for Box<T> {
    }
 }
 
+#[async_trait(?Send)]
 impl<T: DeezelProvider + ?Sized> TimeProvider for Box<T> {
    fn now_secs(&self) -> u64 {
        (**self).now_secs()
@@ -927,8 +939,8 @@ impl<T: DeezelProvider + ?Sized> TimeProvider for Box<T> {
    fn now_millis(&self) -> u64 {
        (**self).now_millis()
    }
-   fn sleep_ms(&self, ms: u64) -> core::pin::Pin<Box<dyn core::future::Future<Output = ()>>> {
-       (**self).sleep_ms(ms)
+   async fn sleep_ms(&self, ms: u64) {
+       (**self).sleep_ms(ms).await
    }
 }
 
@@ -1324,18 +1336,27 @@ impl<T: DeezelProvider + ?Sized> KeystoreProvider for Box<T> {
 
 #[async_trait(?Send)]
 impl<T: DeezelProvider + ?Sized> DeezelProvider for Box<T> {
-   fn provider_name(&self) -> &str {
-       (**self).provider_name()
-   }
-   fn clone_box(&self) -> Box<dyn DeezelProvider> {
-       (**self).clone_box()
-   }
-   async fn initialize(&self) -> Result<()> {
-       (**self).initialize().await
-   }
-   async fn shutdown(&self) -> Result<()> {
-       (**self).shutdown().await
-   }
+    fn provider_name(&self) -> &str {
+        (**self).provider_name()
+    }
+    fn clone_box(&self) -> Box<dyn DeezelProvider> {
+        (**self).clone_box()
+    }
+    async fn initialize(&self) -> Result<()> {
+        (**self).initialize().await
+    }
+    async fn shutdown(&self) -> Result<()> {
+        (**self).shutdown().await
+    }
+    fn secp(&self) -> &bitcoin::secp256k1::Secp256k1<bitcoin::secp256k1::All> {
+        (**self).secp()
+    }
+    async fn get_utxo(&self, outpoint: &bitcoin::OutPoint) -> Result<Option<bitcoin::TxOut>> {
+        (**self).get_utxo(outpoint).await
+    }
+    async fn sign_taproot_script_spend(&self, sighash: bitcoin::secp256k1::Message) -> Result<bitcoin::secp256k1::schnorr::Signature> {
+        (**self).sign_taproot_script_spend(sighash).await
+    }
 }
 
 /// Trait for system-level wallet operations, corresponding to CLI commands

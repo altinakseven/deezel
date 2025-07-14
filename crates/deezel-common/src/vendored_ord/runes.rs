@@ -133,6 +133,7 @@ pub struct Runestone {
     pub etching: Option<Etching>,
     pub mint: Option<RuneId>,
     pub pointer: Option<u32>,
+    pub protocol: Option<Vec<u128>>,
 }
 
 impl Runestone {
@@ -143,12 +144,15 @@ impl Runestone {
         use bitcoin::blockdata::opcodes;
         use bitcoin::blockdata::script::Builder;
 
-        let payload: Vec<u8> = Vec::new();
+        let mut payload: Vec<u8> = Vec::new();
         // A real implementation would serialize the runestone fields into payload
         // using varint encoding.
-        // For example:
-        // if let Some(etching) = self.etching { ... }
-        // for edict in &self.edicts { ... }
+        if let Some(protocol) = &self.protocol {
+            // Simple serialization for now
+            for val in protocol {
+                payload.extend_from_slice(&val.to_le_bytes());
+            }
+        }
         
         Builder::new()
             .push_opcode(opcodes::all::OP_RETURN)

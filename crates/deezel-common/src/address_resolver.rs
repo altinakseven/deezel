@@ -516,22 +516,24 @@ impl PgpProvider for StandaloneAddressResolver {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+#[async_trait(?Send)]
 impl TimeProvider for StandaloneAddressResolver {
     fn now_secs(&self) -> u64 { 0 }
     fn now_millis(&self) -> u64 { 0 }
     #[cfg(feature = "native-deps")]
-    fn sleep_ms(&self, _ms: u64) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()>>> {
-        Box::pin(tokio::time::sleep(std::time::Duration::from_millis(_ms)))
+    async fn sleep_ms(&self, ms: u64) {
+        tokio::time::sleep(std::time::Duration::from_millis(ms)).await
     }
 
     #[cfg(not(feature = "native-deps"))]
-    fn sleep_ms(&self, _ms: u64) -> std::pin::Pin<Box<dyn core::future::Future<Output = ()>>> {
+    async fn sleep_ms(&self, ms: u64) {
         #[cfg(target_arch = "wasm32")]
         {
-            Box::pin(gloo_timers::future::sleep(std::time::Duration::from_millis(_ms)))
+            gloo_timers::future::sleep(std::time::Duration::from_millis(ms)).await
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
+            let _ = ms;
             unimplemented!("sleep_ms is not implemented for non-wasm targets without native-deps feature")
         }
     }
@@ -962,5 +964,14 @@ impl DeezelProvider for StandaloneAddressResolver {
     fn clone_box(&self) -> Box<dyn DeezelProvider> {
         Box::new(self.clone())
     }
+    fn secp(&self) -> &bitcoin::secp256k1::Secp256k1<bitcoin::secp256k1::All> {
+        unimplemented!()
     }
+    async fn get_utxo(&self, _outpoint: &bitcoin::OutPoint) -> Result<Option<bitcoin::TxOut>> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support get_utxo".to_string()))
+    }
+    async fn sign_taproot_script_spend(&self, _sighash: bitcoin::secp256k1::Message) -> Result<bitcoin::secp256k1::schnorr::Signature> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support sign_taproot_script_spend".to_string()))
+    }
+}
 }

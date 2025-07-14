@@ -116,6 +116,7 @@ impl CryptoProvider for MockProvider {
     }
 }
 
+#[async_trait(?Send)]
 impl TimeProvider for MockProvider {
     fn now_secs(&self) -> u64 {
         1640995200 // 2022-01-01 00:00:00 UTC
@@ -125,8 +126,8 @@ impl TimeProvider for MockProvider {
         1640995200000
     }
     
-    fn sleep_ms(&self, _ms: u64) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()>>> {
-        Box::pin(async {})
+    async fn sleep_ms(&self, _ms: u64) {
+        // No-op for mock
     }
 }
 
@@ -771,5 +772,20 @@ impl DeezelProvider for MockProvider {
 
     fn clone_box(&self) -> Box<dyn DeezelProvider> {
         Box::new(self.clone())
+    }
+
+    fn secp(&self) -> &bitcoin::secp256k1::Secp256k1<bitcoin::secp256k1::All> {
+        todo!()
+    }
+
+    async fn get_utxo(&self, _outpoint: &bitcoin::OutPoint) -> Result<Option<bitcoin::TxOut>> {
+        todo!()
+    }
+
+    async fn sign_taproot_script_spend(
+        &self,
+        _sighash: bitcoin::secp256k1::Message,
+    ) -> Result<bitcoin::secp256k1::schnorr::Signature> {
+        todo!()
     }
 }

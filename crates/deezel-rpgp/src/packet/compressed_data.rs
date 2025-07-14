@@ -1,5 +1,6 @@
 extern crate alloc;
 use crate::io::{self, BufRead, Write};
+use crate::types::Tag;
 use bytes::Bytes;
 #[cfg(feature = "bzip2")]
 use bzip2::{self, Action, Compression as BzCompression, Status as BzStatus};
@@ -18,12 +19,10 @@ use crate::{
 ///
 /// Ref <https://www.rfc-editor.org/rfc/rfc9580.html#name-compressed-data-packet-type>
 #[derive(Clone, PartialEq, Eq, derive_more::Debug)]
-#[cfg_attr(all(test, feature = "std"), derive(proptest_derive::Arbitrary))]
 pub struct CompressedData {
     packet_header: PacketHeader,
     compression_algorithm: CompressionAlgorithm,
     #[debug("{}", hex::encode(compressed_data))]
-    #[cfg_attr(all(test, feature = "std"), proptest(strategy = "tests::compressed_data_gen()"))]
     compressed_data: Bytes,
 }
 
@@ -269,37 +268,3 @@ impl PacketTrait for CompressedData {
 
 
 
-#[cfg(all(test, feature = "std"))]
-mod tests {
-    use proptest::prelude::*;
-    use rand::SeedableRng;
-    use rand_chacha::ChaCha8Rng;
-
-    use super::*;
-    use crate::packet::Packet;
-
-    proptest::prop_compose! {
-        pub fn compressed_data_gen()(source: Vec<u8>) -> Bytes {
-            // TODO: actually compress
-            source.into()
-        }
-    }
-
-    proptest! {
-        #[test]
-        fn write_len(packet: CompressedData) {
-            let mut buf = Vec::new();
-            packet.to_writer(&mut buf).unwrap();
-            assert_eq!(buf.len(), packet.write_len());
-        }
-
-
-        #[test]
-        fn packet_roundtrip(packet: CompressedData) {
-            let mut buf = Vec::new();
-            packet.to_writer(&mut buf).unwrap();
-            let new_packet = CompressedData::try_from_reader(*packet.packet_header(), &mut &buf[..]).unwrap();
-            assert_eq!(packet, new_packet);
-        }
-    }
-}

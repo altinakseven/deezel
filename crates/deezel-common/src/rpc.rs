@@ -468,11 +468,12 @@ mod tests {
         async fn pbkdf2_derive(&self, _password: &[u8], _salt: &[u8], _iterations: u32, key_len: usize) -> Result<Vec<u8>> { Ok(vec![0; key_len]) }
     }
     
+    #[async_trait(?Send)]
     impl TimeProvider for MockProvider {
         fn now_secs(&self) -> u64 { 1640995200 }
         fn now_millis(&self) -> u64 { 1640995200000 }
-        fn sleep_ms(&self, _ms: u64) -> core::pin::Pin<Box<dyn core::future::Future<Output = ()>>> {
-            Box::pin(async {})
+        async fn sleep_ms(&self, _ms: u64) {
+            // no-op for mock
         }
     }
     

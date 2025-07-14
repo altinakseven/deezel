@@ -222,6 +222,18 @@ impl From<std::io::Error> for DeezelError {
     }
 }
 
+impl From<bitcoin::psbt::Error> for DeezelError {
+    fn from(err: bitcoin::psbt::Error) -> Self {
+        DeezelError::Transaction(format!("PSBT error: {}", err))
+    }
+}
+
+impl From<bitcoin::psbt::ExtractTxError> for DeezelError {
+    fn from(err: bitcoin::psbt::ExtractTxError) -> Self {
+        DeezelError::Transaction(format!("PSBT extraction error: {}", err))
+    }
+}
+
 
 impl From<hex::FromHexError> for DeezelError {
     fn from(err: hex::FromHexError) -> Self {
