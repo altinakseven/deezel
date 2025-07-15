@@ -1,9 +1,35 @@
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+// ESM-compatible way to get __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+function mapToObject(map) {
+  const obj = {};
+  for (let [key, value] of map) {
+    if (value instanceof Map) {
+      obj[key] = mapToObject(value);
+    } else if (Array.isArray(value)) {
+      obj[key] = value.map(item => item instanceof Map ? mapToObject(item) : item);
+    }
+    else {
+      obj[key] = value;
+    }
+  }
+  return obj;
+}
+
 import('deezel-web').then(deezel_web => {
-  const block_hex = "0100000000000000000000000000000000000000000000000000000000000000000000003ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a29ab5f49ffff001d1dac2b7c0101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d0104455468652054696d65732030332f4a616e2f32303039204368616e63656c6c6f72206f6e206272696e6b206f66207365636f6e64206261696c6f757420666f722062616e6b73ffffffff0100f2052a01000000434104678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38c4f35504e51ec112de5c384df7ba0b8d578a4c702b6bf11d5facffffffff00";
+  // Read the block hex from the file
+  const blockHexPath = path.join(__dirname, 'block.hex');
+  const block_hex = fs.readFileSync(blockHexPath, 'utf8').trim();
 
   try {
     const block_data = deezel_web.parse_block(block_hex);
-    console.log(JSON.stringify(block_data, null, 2));
+    const block_obj = mapToObject(block_data);
+    console.log(JSON.stringify(block_obj, null, 2));
   } catch (e) {
     console.error("Error parsing block:", e);
   }
