@@ -1,8 +1,11 @@
 use serde::{Deserialize, Serialize};
-use std::fmt::{self, Display, Formatter};
-use std::str::FromStr;
+use core::fmt::{self, Display, Formatter};
+use core::str::FromStr;
 use crate::serde_string;
+use alloc::string::String;
+use alloc::vec::Vec;
 use core::convert::TryInto;
+use alloc::string::ToString;
 
 #[derive(Debug, PartialEq, Copy, Clone, Eq, PartialOrd, Ord, Default)]
 pub struct Rune(pub u128);

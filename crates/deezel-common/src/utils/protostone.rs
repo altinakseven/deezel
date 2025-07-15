@@ -1,3 +1,4 @@
+use crate::Vec;
 use anyhow::Result;
 use protorune_support::{
     protostone::{split_bytes, Protostone},

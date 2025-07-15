@@ -7,6 +7,7 @@ use crate::traits::*;
 use crate::{Result, DeezelError, JsonValue};
 use crate::ord;
 use crate::alkanes::execute::EnhancedAlkanesExecutor;
+#[cfg(feature = "wasm-inspection")]
 use crate::alkanes::inspector::{AlkaneInspector, InspectionConfig};
 use crate::alkanes::types::{
 	EnhancedExecuteParams, EnhancedExecuteResult, AlkanesInspectConfig, AlkanesInspectResult,
@@ -88,8 +89,6 @@ pub struct ConcreteProvider {
     wallet_path: Option<String>,
     passphrase: Option<String>,
     wallet_state: WalletState,
-    #[cfg(feature = "native-deps")]
-    http_client: Arc<reqwest::Client>,
 }
 
 impl ConcreteProvider {
@@ -103,12 +102,7 @@ impl ConcreteProvider {
         wallet_path: Option<PathBuf>,
         #[cfg(target_arch = "wasm32")]
         wallet_path: Option<String>,
-        http_client: Option<Arc<reqwest::Client>>,
     ) -> Result<Self> {
-        let client = http_client.unwrap_or_else(|| {
-            Arc::new(reqwest::Client::builder().user_agent(format!("deezel/{}", crate::VERSION)).use_rustls_tls().build().unwrap())
-        });
-
        let mut new_self = Self {
            bitcoin_rpc_url,
            metashrew_rpc_url,
@@ -118,8 +112,6 @@ impl ConcreteProvider {
            wallet_path: wallet_path.clone(),
            passphrase: None,
            wallet_state: WalletState::None,
-           #[cfg(feature = "native-deps")]
-           http_client: client,
        };
 
        // Try to load the keystore metadata if a path is provided
@@ -1748,6 +1740,7 @@ impl AlkanesProvider for ConcreteProvider {
         Ok(format!("0x{}", hex::encode(response_bytes)))
     }
 
+    #[cfg(feature = "wasm-inspection")]
     async fn inspect(
   &self,
   target: &str,
@@ -1774,6 +1767,17 @@ impl AlkanesProvider for ConcreteProvider {
   let result = inspector.inspect_alkane(&alkane_id, &inspection_config).await.map_err(|e| DeezelError::Other(e.to_string()))?;
   Ok(serde_json::from_value(serde_json::to_value(result)?)?)
  }
+
+    #[cfg(not(feature = "wasm-inspection"))]
+    async fn inspect(
+        &self,
+        _target: &str,
+        _config: AlkanesInspectConfig,
+    ) -> Result<AlkanesInspectResult> {
+        Err(DeezelError::NotImplemented(
+            "Alkanes inspection is not available without the 'wasm-inspection' feature".to_string(),
+        ))
+    }
 
     async fn get_balance(&self, address: Option<&str>) -> Result<Vec<AlkaneBalance>> {
         let addr_str = match address {

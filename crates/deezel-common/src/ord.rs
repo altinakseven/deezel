@@ -38,6 +38,9 @@ use alloc::{
     collections::BTreeMap,
 };
 use core::fmt::{self, Display, Formatter};
+#[cfg(feature = "std")]
+use crate::vendored_ord::{InscriptionId, SpacedRune};
+#[cfg(not(feature = "std"))]
 use crate::vendored_ord::{InscriptionId, SpacedRune};
 use ordinals::{Rarity, Sat, SatPoint};
 use serde::{Deserialize, Serialize};

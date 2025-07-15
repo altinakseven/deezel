@@ -4,6 +4,7 @@
 // Key differences: uses gzip compression, no content-type tags, proper BIN protocol structure
 
 use crate::DeezelError;
+use alloc::format;
 use anyhow::Result;
 use bitcoin::{
     blockdata::opcodes,
@@ -11,6 +12,7 @@ use bitcoin::{
     taproot::ControlBlock, ScriptBuf, Witness,
 };
 use flate2::{write::GzEncoder, Compression};
+#[cfg(feature = "std")]
 use std::io::Write;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -45,12 +47,20 @@ impl AlkanesEnvelope {
 
     /// Compress payload using gzip compression (matching alkanes-rs reference)
     /// CRITICAL FIX: Added gzip compression like alkanes-rs reference
+    #[cfg(feature = "std")]
     fn compress_payload(&self) -> Result<Vec<u8>, DeezelError> {
         let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
         encoder.write_all(&self.payload)
             .map_err(|e| DeezelError::Other(format!("Failed to write payload to gzip encoder: {}", e)))?;
         encoder.finish()
             .map_err(|e| DeezelError::Other(format!("Failed to finish gzip compression: {}", e)))
+    }
+
+    #[cfg(not(feature = "std"))]
+    fn compress_payload(&self) -> Result<Vec<u8>, DeezelError> {
+        // This is a temporary workaround for no_std builds.
+        // A full no_std compression implementation will be added later.
+        Ok(self.payload.clone())
     }
 
     /// Build the reveal script following alkanes-rs reference EXACTLY

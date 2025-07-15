@@ -1,7 +1,10 @@
 use bitcoin::{hashes::Hash, Txid};
 use serde::{Deserialize, Deserializer, Serialize};
-use std::fmt::{self, Display, Formatter};
-use std::str::FromStr;
+use core::fmt::{self, Display, Formatter};
+use core::str::FromStr;
+use alloc::string::String;
+use alloc::vec::Vec;
+use alloc::string::ToString;
 
 // Helper macro for serde
 #[macro_export]
@@ -148,8 +151,11 @@ pub enum ParseError {
   Length(usize),
   Separator(char),
   Txid(bitcoin::hashes::hex::HexToArrayError),
-  Index(std::num::ParseIntError),
+  Index(core::num::ParseIntError),
 }
+
+#[cfg(feature = "std")]
+impl std::error::Error for ParseError {}
 
 impl Display for ParseError {
   fn fmt(&self, f: &mut Formatter) -> fmt::Result {
@@ -163,6 +169,7 @@ impl Display for ParseError {
   }
 }
 
+#[cfg(feature = "std")]
 impl std::error::Error for ParseError {}
 
 impl FromStr for InscriptionId {

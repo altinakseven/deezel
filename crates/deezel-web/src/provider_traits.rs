@@ -5,7 +5,7 @@
 
 use async_trait::async_trait;
 use bitcoin::{Network, OutPoint};
-use std::str::FromStr;
+use core::str::FromStr;
 use deezel_common::*;
 use serde_json::Value as JsonValue;
 

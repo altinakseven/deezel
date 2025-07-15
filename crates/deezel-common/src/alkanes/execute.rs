@@ -17,7 +17,6 @@
 use crate::{Result, DeezelError, DeezelProvider, JsonValue};
 use crate::traits::{WalletProvider, UtxoInfo};
 use bitcoin::{Transaction, ScriptBuf, OutPoint, TxOut, Address, XOnlyPublicKey};
-use crate::vendored_ord::{RuneId, Runestone};
 use core::str::FromStr;
 use alloc::{vec, vec::Vec, string::{String, ToString}, format};
 pub use super::types::{EnhancedExecuteParams, EnhancedExecuteResult, InputRequirement, ProtostoneSpec, OutputTarget};
@@ -25,7 +24,7 @@ use super::envelope::AlkanesEnvelope;
 use anyhow::anyhow;
 use protorune_support::protostone::{Protostone, into_protostone_edicts};
 use crate::utils::protostone::Protostones;
-use crate::vendored_ord::Edict;
+use ordinals::{RuneId, Runestone, Edict};
 
 
 /// Enhanced alkanes executor
@@ -422,7 +421,7 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
 
         for spec in protostones {
             for edict_spec in &spec.edicts {
-                let id = RuneId {
+                let id = ordinals::RuneId {
                     block: edict_spec.alkane_id.block,
                     tx: edict_spec.alkane_id.tx as u32,
                 };
@@ -431,7 +430,7 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
                     OutputTarget::Output(v) => v,
                     _ => 0, // Other cases not handled yet
                 };
-                edicts.push(Edict { id, amount, output });
+                edicts.push(ordinals::Edict { id, amount, output });
             }
 
             let message = if let Some(cellpack) = &spec.cellpack {
@@ -469,7 +468,7 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
             None
         };
 
-        let runestone = Runestone {
+        let runestone = ordinals::Runestone {
             edicts,
             etching: None,
             mint: None,
@@ -513,7 +512,7 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
         
         // Configure inputs for signing
         let all_wallet_utxos = self.provider.get_utxos(true, None).await?;
-        let all_wallet_utxos_map: std::collections::HashMap<OutPoint, UtxoInfo> = all_wallet_utxos.into_iter().map(|(op, info)| (op, info)).collect();
+        let all_wallet_utxos_map: alloc::collections::BTreeMap<OutPoint, UtxoInfo> = all_wallet_utxos.into_iter().map(|(op, info)| (op, info)).collect();
 
         for (i, outpoint) in utxos.iter().enumerate() {
             let utxo_info = all_wallet_utxos_map.get(outpoint)

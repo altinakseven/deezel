@@ -36,14 +36,7 @@ pub use alloc::{
     vec::Vec,
 };
 
-#[cfg(feature = "std")]
 pub mod vendored_ord;
-pub use std::{
-    string::{String, ToString},
-    format,
-    vec,
-    vec::Vec,
-};
 
 // Core modules
 pub mod address;
@@ -241,8 +234,8 @@ impl From<hex::FromHexError> for DeezelError {
     }
 }
 
-impl From<std::num::ParseIntError> for DeezelError {
-    fn from(err: std::num::ParseIntError) -> Self {
+impl From<core::num::ParseIntError> for DeezelError {
+    fn from(err: core::num::ParseIntError) -> Self {
         DeezelError::Parse(format!("Failed to parse integer: {}", err))
     }
 }

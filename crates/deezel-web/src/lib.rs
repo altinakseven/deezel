@@ -58,6 +58,7 @@ pub mod time;
 pub mod logging;
 pub mod utils;
 pub mod wallet_provider;
+pub mod parser;
 
 // Provider trait implementations (included in provider module)
 mod provider_traits;
