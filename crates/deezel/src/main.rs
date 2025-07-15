@@ -70,7 +70,11 @@ async fn execute_bitcoind_command(
             let hash = bitcoin::BlockHash::from_str(&hash)?;
             let block = <dyn DeezelProvider as BitcoinRpcProvider>::get_block(provider, &hash.to_string(), raw).await?;
             if raw {
-                println!("{}", block);
+                if let Some(s) = block.as_str() {
+                    println!("{}", s);
+                } else {
+                    println!("{}", block);
+                }
             } else {
                 println!("{}", pretty_print_json(&block));
             }
@@ -82,7 +86,11 @@ async fn execute_bitcoind_command(
         BitcoindCommands::Getmempoolinfo { raw } => {
             let info = <dyn DeezelProvider as BitcoinRpcProvider>::get_mempool_info(provider).await?;
             if raw {
-                println!("{}", serde_json::to_string(&info)?);
+                if let Some(s) = info.as_str() {
+                    println!("{}", s);
+                } else {
+                    println!("{}", info);
+                }
             } else {
                 println!("{}", pretty_print_json(&serde_json::to_value(&info)?));
             }
@@ -112,7 +120,12 @@ async fn execute_ord_command(
         OrdCommands::Inscription { id, raw } => {
             if raw {
                 let inscription = provider.get_inscription(&id).await?;
-                println!("{}", serde_json::to_string(&inscription)?);
+                let json_value = serde_json::to_value(&inscription)?;
+                if let Some(s) = json_value.as_str() {
+                    println!("{}", s);
+                } else {
+                    println!("{}", json_value);
+                }
             } else {
                 let inscription = provider.get_inscription(&id).await?;
                 print_inscription(&inscription);
@@ -121,7 +134,12 @@ async fn execute_ord_command(
         OrdCommands::InscriptionsInBlock { hash, raw } => {
             if raw {
                 let inscriptions = provider.get_inscriptions_in_block(&hash).await?;
-                println!("{}", serde_json::to_string(&inscriptions)?);
+                let json_value = serde_json::to_value(&inscriptions)?;
+                if let Some(s) = json_value.as_str() {
+                    println!("{}", s);
+                } else {
+                    println!("{}", json_value);
+                }
             } else {
                 let inscriptions = provider.get_inscriptions_in_block(&hash).await?;
                 let inscription_futures = inscriptions.ids.into_iter().map(|id| {
@@ -136,7 +154,12 @@ async fn execute_ord_command(
         OrdCommands::Address { address, raw } => {
             if raw {
                 let info = provider.get_ord_address_info(&address).await?;
-                println!("{}", serde_json::to_string(&info)?);
+                let json_value = serde_json::to_value(&info)?;
+                if let Some(s) = json_value.as_str() {
+                    println!("{}", s);
+                } else {
+                    println!("{}", json_value);
+                }
             } else {
                 let info = provider.get_ord_address_info(&address).await?;
                 print_address_info(&info);
@@ -145,7 +168,12 @@ async fn execute_ord_command(
         OrdCommands::Block { query, raw } => {
             if raw {
                 let info = provider.get_block_info(&query).await?;
-                println!("{}", serde_json::to_string(&info)?);
+                let json_value = serde_json::to_value(&info)?;
+                if let Some(s) = json_value.as_str() {
+                    println!("{}", s);
+                } else {
+                    println!("{}", json_value);
+                }
             } else {
                 let info = provider.get_block_info(&query).await?;
                 if let Some(info) = info.info {
@@ -158,7 +186,12 @@ async fn execute_ord_command(
         OrdCommands::BlockCount { raw } => {
             if raw {
                 let info = provider.get_ord_block_count().await?;
-                println!("{}", serde_json::to_string(&info)?);
+                let json_value = serde_json::to_value(&info)?;
+                if let Some(s) = json_value.as_str() {
+                    println!("{}", s);
+                } else {
+                    println!("{}", json_value);
+                }
             } else {
                 let info = provider.get_ord_block_count().await?;
                 println!("{}", serde_json::to_string_pretty(&info)?);
@@ -167,7 +200,12 @@ async fn execute_ord_command(
         OrdCommands::Blocks { raw } => {
             if raw {
                 let info = provider.get_ord_blocks().await?;
-                println!("{}", serde_json::to_string(&info)?);
+                let json_value = serde_json::to_value(&info)?;
+                if let Some(s) = json_value.as_str() {
+                    println!("{}", s);
+                } else {
+                    println!("{}", json_value);
+                }
             } else {
                 let info = provider.get_ord_blocks().await?;
                 print_blocks(&info);
@@ -176,7 +214,12 @@ async fn execute_ord_command(
         OrdCommands::Children { id, page, raw } => {
             if raw {
                 let children = provider.get_children(&id, page).await?;
-                println!("{}", serde_json::to_string(&children)?);
+                let json_value = serde_json::to_value(&children)?;
+                if let Some(s) = json_value.as_str() {
+                    println!("{}", s);
+                } else {
+                    println!("{}", json_value);
+                }
             } else {
                 let children = provider.get_children(&id, page).await?;
                 let inscription_futures = children.ids.into_iter().map(|id| {
@@ -196,7 +239,12 @@ async fn execute_ord_command(
         OrdCommands::Inscriptions { page, raw } => {
             if raw {
                 let inscriptions = provider.get_inscriptions(page).await?;
-                println!("{}", serde_json::to_string(&inscriptions)?);
+                let json_value = serde_json::to_value(&inscriptions)?;
+                if let Some(s) = json_value.as_str() {
+                    println!("{}", s);
+                } else {
+                    println!("{}", json_value);
+                }
             } else {
                 let inscriptions = provider.get_inscriptions(page).await?;
                 let inscription_futures = inscriptions.ids.into_iter().map(|id| {
@@ -211,7 +259,12 @@ async fn execute_ord_command(
         OrdCommands::Output { outpoint, raw } => {
             if raw {
                 let output = provider.get_output(&outpoint).await?;
-                println!("{}", serde_json::to_string(&output)?);
+                let json_value = serde_json::to_value(&output)?;
+                if let Some(s) = json_value.as_str() {
+                    println!("{}", s);
+                } else {
+                    println!("{}", json_value);
+                }
             } else {
                 let output = provider.get_output(&outpoint).await?;
                 print_output(&output);
@@ -220,7 +273,12 @@ async fn execute_ord_command(
         OrdCommands::Parents { id, page, raw } => {
             if raw {
                 let parents = provider.get_parents(&id, page).await?;
-                println!("{}", serde_json::to_string(&parents)?);
+                let json_value = serde_json::to_value(&parents)?;
+                if let Some(s) = json_value.as_str() {
+                    println!("{}", s);
+                } else {
+                    println!("{}", json_value);
+                }
             } else {
                 let parents = provider.get_parents(&id, page).await?;
                 print_parents(&parents);
@@ -229,7 +287,12 @@ async fn execute_ord_command(
         OrdCommands::Rune { rune, raw } => {
             if raw {
                 let rune_info = provider.get_rune(&rune).await?;
-                println!("{}", serde_json::to_string(&rune_info)?);
+                let json_value = serde_json::to_value(&rune_info)?;
+                if let Some(s) = json_value.as_str() {
+                    println!("{}", s);
+                } else {
+                    println!("{}", json_value);
+                }
             } else {
                 let rune_info = provider.get_rune(&rune).await?;
                 print_rune(&rune_info);
@@ -238,7 +301,12 @@ async fn execute_ord_command(
         OrdCommands::Runes { page, raw } => {
             if raw {
                 let runes = provider.get_runes(page).await?;
-                println!("{}", serde_json::to_string(&runes)?);
+                let json_value = serde_json::to_value(&runes)?;
+                if let Some(s) = json_value.as_str() {
+                    println!("{}", s);
+                } else {
+                    println!("{}", json_value);
+                }
             } else {
                 let runes = provider.get_runes(page).await?;
                 print_runes(&runes);
@@ -247,7 +315,12 @@ async fn execute_ord_command(
         OrdCommands::Sat { sat, raw } => {
             if raw {
                 let sat_info = provider.get_sat(sat).await?;
-                println!("{}", serde_json::to_string(&sat_info)?);
+                let json_value = serde_json::to_value(&sat_info)?;
+                if let Some(s) = json_value.as_str() {
+                    println!("{}", s);
+                } else {
+                    println!("{}", json_value);
+                }
             } else {
                 let sat_info = provider.get_sat(sat).await?;
                 print_sat_response(&sat_info);
@@ -256,7 +329,12 @@ async fn execute_ord_command(
         OrdCommands::Tx { txid, raw } => {
             if raw {
                 let tx_info = provider.get_tx_info(&txid).await?;
-                println!("{}", serde_json::to_string(&tx_info)?);
+                let json_value = serde_json::to_value(&tx_info)?;
+                if let Some(s) = json_value.as_str() {
+                    println!("{}", s);
+                } else {
+                    println!("{}", json_value);
+                }
             } else {
                 let tx_info = provider.get_tx_info(&txid).await?;
                 print_tx_info(&tx_info);

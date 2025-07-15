@@ -1331,7 +1331,11 @@ impl SystemEsplora for SystemDeezel {
             EsploraCommands::Blocks { start_height, raw } => {
                 let result = provider.get_blocks(start_height).await?;
                 if raw {
-                    println!("{}", result);
+                    if let Some(s) = result.as_str() {
+                        println!("{}", s.trim_matches('"'));
+                    } else {
+                        println!("{}", result);
+                    }
                 } else {
                     println!("📦 Blocks:\n{}", serde_json::to_string_pretty(&result)?);
                 }
@@ -1349,7 +1353,11 @@ impl SystemEsplora for SystemDeezel {
             EsploraCommands::Block { hash, raw } => {
                 let block = EsploraProvider::get_block(provider, &hash).await?;
                 if raw {
-                    println!("{}", block);
+                    if let Some(s) = block.as_str() {
+                        println!("{}", s.trim_matches('"'));
+                    } else {
+                        println!("{}", block);
+                    }
                 } else {
                     println!("📦 Block {}:\n{}", hash, serde_json::to_string_pretty(&block)?);
                 }
@@ -1358,7 +1366,11 @@ impl SystemEsplora for SystemDeezel {
             EsploraCommands::BlockStatus { hash, raw } => {
                 let status = provider.get_block_status(&hash).await?;
                 if raw {
-                    println!("{}", status);
+                    if let Some(s) = status.as_str() {
+                        println!("{}", s.trim_matches('"'));
+                    } else {
+                        println!("{}", status);
+                    }
                 } else {
                     println!("ℹ️ Block Status {}:\n{}", hash, serde_json::to_string_pretty(&status)?);
                 }
@@ -1367,7 +1379,11 @@ impl SystemEsplora for SystemDeezel {
             EsploraCommands::BlockTxids { hash, raw } => {
                 let txids = provider.get_block_txids(&hash).await?;
                 if raw {
-                    println!("{}", txids);
+                    if let Some(s) = txids.as_str() {
+                        println!("{}", s.trim_matches('"'));
+                    } else {
+                        println!("{}", txids);
+                    }
                 } else {
                     println!("📄 Block Txids {}:\n{}", hash, serde_json::to_string_pretty(&txids)?);
                 }
@@ -1403,7 +1419,11 @@ impl SystemEsplora for SystemDeezel {
             EsploraCommands::BlockTxs { hash, start_index, raw } => {
                 let txs = provider.get_block_txs(&hash, start_index).await?;
                 if raw {
-                    println!("{}", txs);
+                    if let Some(s) = txs.as_str() {
+                        println!("{}", s.trim_matches('"'));
+                    } else {
+                        println!("{}", txs);
+                    }
                 } else {
                     println!("📄 Transactions in block {}:\n{}", hash, serde_json::to_string_pretty(&txs)?);
                 }
@@ -1413,7 +1433,11 @@ impl SystemEsplora for SystemDeezel {
                 let resolved_params = resolve_address_identifiers(&params, provider).await?;
                 let result = EsploraProvider::get_address(provider, &resolved_params).await?;
                 if raw {
-                    println!("{}", result);
+                    if let Some(s) = result.as_str() {
+                        println!("{}", s.trim_matches('"'));
+                    } else {
+                        println!("{}", result);
+                    }
                 } else {
                     println!("🏠 Address {}:\n{}", params, serde_json::to_string_pretty(&result)?);
                 }
@@ -1423,7 +1447,11 @@ impl SystemEsplora for SystemDeezel {
                 let resolved_params = resolve_address_identifiers(&params, provider).await?;
                 let result = provider.get_address_txs(&resolved_params).await?;
                 if raw {
-                    println!("{}", result);
+                    if let Some(s) = result.as_str() {
+                        println!("{}", s.trim_matches('"'));
+                    } else {
+                        println!("{}", result);
+                    }
                 } else {
                     println!("📄 Transactions for address {}:\n{}", params, serde_json::to_string_pretty(&result)?);
                 }
@@ -1444,7 +1472,11 @@ impl SystemEsplora for SystemDeezel {
                 };
                 let result = provider.get_address_txs_chain(&resolved_params, None).await?;
                 if raw {
-                    println!("{}", result);
+                    if let Some(s) = result.as_str() {
+                        println!("{}", s.trim_matches('"'));
+                    } else {
+                        println!("{}", result);
+                    }
                 } else {
                     println!("⛓️ Chain transactions for address {}:\n{}", params, serde_json::to_string_pretty(&result)?);
                 }
@@ -1454,7 +1486,11 @@ impl SystemEsplora for SystemDeezel {
                 let resolved_address = resolve_address_identifiers(&address, provider).await?;
                 let result = provider.get_address_txs_mempool(&resolved_address).await?;
                 if raw {
-                    println!("{}", result);
+                    if let Some(s) = result.as_str() {
+                        println!("{}", s.trim_matches('"'));
+                    } else {
+                        println!("{}", result);
+                    }
                 } else {
                     println!("⏳ Mempool transactions for address {}:\n{}", address, serde_json::to_string_pretty(&result)?);
                 }
@@ -1464,7 +1500,11 @@ impl SystemEsplora for SystemDeezel {
                 let resolved_address = resolve_address_identifiers(&address, provider).await?;
                 let result = provider.get_address_utxo(&resolved_address).await?;
                 if raw {
-                    println!("{}", result);
+                    if let Some(s) = result.as_str() {
+                        println!("{}", s.trim_matches('"'));
+                    } else {
+                        println!("{}", result);
+                    }
                 } else {
                     println!("💰 UTXOs for address {}:\n{}", address, serde_json::to_string_pretty(&result)?);
                 }
@@ -1473,7 +1513,11 @@ impl SystemEsplora for SystemDeezel {
             EsploraCommands::AddressPrefix { prefix, raw } => {
                 let result = provider.get_address_prefix(&prefix).await?;
                 if raw {
-                    println!("{}", result);
+                    if let Some(s) = result.as_str() {
+                        println!("{}", s.trim_matches('"'));
+                    } else {
+                        println!("{}", result);
+                    }
                 } else {
                     println!("🔍 Addresses with prefix '{}':\n{}", prefix, serde_json::to_string_pretty(&result)?);
                 }
@@ -1482,7 +1526,11 @@ impl SystemEsplora for SystemDeezel {
             EsploraCommands::Tx { txid, raw } => {
                 let tx = provider.get_tx(&txid).await?;
                 if raw {
-                    println!("{}", tx);
+                    if let Some(s) = tx.as_str() {
+                        println!("{}", s.trim_matches('"'));
+                    } else {
+                        println!("{}", tx);
+                    }
                 } else {
                     println!("📄 Transaction {}:\n{}", txid, serde_json::to_string_pretty(&tx)?);
                 }
@@ -1509,7 +1557,11 @@ impl SystemEsplora for SystemDeezel {
             EsploraCommands::TxStatus { txid, raw } => {
                 let status = provider.get_tx_status(&txid).await?;
                 if raw {
-                    println!("{}", status);
+                    if let Some(s) = status.as_str() {
+                        println!("{}", s.trim_matches('"'));
+                    } else {
+                        println!("{}", status);
+                    }
                 } else {
                     println!("ℹ️ Status for tx {}:\n{}", txid, serde_json::to_string_pretty(&status)?);
                 }
@@ -1518,7 +1570,11 @@ impl SystemEsplora for SystemDeezel {
             EsploraCommands::TxMerkleProof { txid, raw } => {
                 let proof = provider.get_tx_merkle_proof(&txid).await?;
                 if raw {
-                    println!("{}", proof);
+                    if let Some(s) = proof.as_str() {
+                        println!("{}", s.trim_matches('"'));
+                    } else {
+                        println!("{}", proof);
+                    }
                 } else {
                     println!("🧾 Merkle proof for tx {}:\n{}", txid, serde_json::to_string_pretty(&proof)?);
                 }
@@ -1536,7 +1592,11 @@ impl SystemEsplora for SystemDeezel {
             EsploraCommands::TxOutspend { txid, index, raw } => {
                 let outspend = provider.get_tx_outspend(&txid, index).await?;
                 if raw {
-                    println!("{}", outspend);
+                    if let Some(s) = outspend.as_str() {
+                        println!("{}", s.trim_matches('"'));
+                    } else {
+                        println!("{}", outspend);
+                    }
                 } else {
                     println!("💸 Outspend for tx {}, vout {}:\n{}", txid, index, serde_json::to_string_pretty(&outspend)?);
                 }
@@ -1545,7 +1605,11 @@ impl SystemEsplora for SystemDeezel {
             EsploraCommands::TxOutspends { txid, raw } => {
                 let outspends = provider.get_tx_outspends(&txid).await?;
                 if raw {
-                    println!("{}", outspends);
+                    if let Some(s) = outspends.as_str() {
+                        println!("{}", s.trim_matches('"'));
+                    } else {
+                        println!("{}", outspends);
+                    }
                 } else {
                     println!("💸 Outspends for tx {}:\n{}", txid, serde_json::to_string_pretty(&outspends)?);
                 }
@@ -1566,7 +1630,11 @@ impl SystemEsplora for SystemDeezel {
             EsploraCommands::Mempool { raw } => {
                 let mempool = provider.get_mempool().await?;
                 if raw {
-                    println!("{}", mempool);
+                    if let Some(s) = mempool.as_str() {
+                        println!("{}", s.trim_matches('"'));
+                    } else {
+                        println!("{}", mempool);
+                    }
                 } else {
                     println!("⏳ Mempool Info:\n{}", serde_json::to_string_pretty(&mempool)?);
                 }
@@ -1575,7 +1643,11 @@ impl SystemEsplora for SystemDeezel {
             EsploraCommands::MempoolTxids { raw } => {
                 let txids = provider.get_mempool_txids().await?;
                 if raw {
-                    println!("{}", txids);
+                    if let Some(s) = txids.as_str() {
+                        println!("{}", s.trim_matches('"'));
+                    } else {
+                        println!("{}", txids);
+                    }
                 } else {
                     println!("📄 Mempool Txids:\n{}", serde_json::to_string_pretty(&txids)?);
                 }
@@ -1584,7 +1656,11 @@ impl SystemEsplora for SystemDeezel {
             EsploraCommands::MempoolRecent { raw } => {
                 let recent = provider.get_mempool_recent().await?;
                 if raw {
-                    println!("{}", recent);
+                    if let Some(s) = recent.as_str() {
+                        println!("{}", s.trim_matches('"'));
+                    } else {
+                        println!("{}", recent);
+                    }
                 } else {
                     println!("📄 Recent Mempool Txs:\n{}", serde_json::to_string_pretty(&recent)?);
                 }
@@ -1593,7 +1669,11 @@ impl SystemEsplora for SystemDeezel {
             EsploraCommands::FeeEstimates { raw } => {
                 let estimates = provider.get_fee_estimates().await?;
                 if raw {
-                    println!("{}", estimates);
+                    if let Some(s) = estimates.as_str() {
+                        println!("{}", s.trim_matches('"'));
+                    } else {
+                        println!("{}", estimates);
+                    }
                 } else {
                     println!("💰 Fee Estimates:\n{}", serde_json::to_string_pretty(&estimates)?);
                 }
