@@ -545,7 +545,7 @@ pub trait BitcoinRpcProvider {
     async fn get_transaction_hex(&self, txid: &str) -> Result<String>;
     
     /// Get block by hash
-    async fn get_block(&self, hash: &str) -> Result<JsonValue>;
+    async fn get_block(&self, hash: &str, raw: bool) -> Result<JsonValue>;
     
     /// Get block hash by height
     async fn get_block_hash(&self, height: u64) -> Result<String>;
@@ -1062,8 +1062,8 @@ impl<T: DeezelProvider + ?Sized> BitcoinRpcProvider for Box<T> {
    async fn get_transaction_hex(&self, txid: &str) -> Result<String> {
        (**self).get_transaction_hex(txid).await
    }
-   async fn get_block(&self, hash: &str) -> Result<serde_json::Value> {
-       <Self as BitcoinRpcProvider>::get_block(self, hash).await
+   async fn get_block(&self, hash: &str, raw: bool) -> Result<serde_json::Value> {
+       <Self as BitcoinRpcProvider>::get_block(self, hash, raw).await
    }
    async fn get_block_hash(&self, height: u64) -> Result<String> {
        <T as BitcoinRpcProvider>::get_block_hash(self, height).await

@@ -1086,8 +1086,9 @@ impl BitcoinRpcProvider for ConcreteProvider {
         result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid transaction hex response".to_string()))
     }
     
-    async fn get_block(&self, hash: &str) -> Result<serde_json::Value> {
-        let params = serde_json::json!([hash, 2]); // Verbosity 2 for JSON object
+    async fn get_block(&self, hash: &str, raw: bool) -> Result<serde_json::Value> {
+        let verbosity = if raw { 0 } else { 2 };
+        let params = serde_json::json!([hash, verbosity]);
         self.call(&self.bitcoin_rpc_url, "getblock", params, 1).await
     }
     

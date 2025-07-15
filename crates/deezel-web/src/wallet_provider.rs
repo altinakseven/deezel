@@ -1181,8 +1181,8 @@ impl BitcoinRpcProvider for BrowserWalletProvider {
         self.web_provider.get_transaction_hex(txid).await
     }
     
-    async fn get_block(&self, hash: &str) -> Result<JsonValue> {
-        BitcoinRpcProvider::get_block(&self.web_provider, hash).await
+    async fn get_block(&self, hash: &str, raw: bool) -> Result<JsonValue> {
+        BitcoinRpcProvider::get_block(&self.web_provider, hash, raw).await
     }
     
     async fn get_block_hash(&self, height: u64) -> Result<String> {

@@ -356,8 +356,9 @@ impl BitcoinRpcProvider for WebProvider {
         Ok(result.as_str().unwrap_or("").to_string())
     }
 
-    async fn get_block(&self, hash: &str) -> Result<JsonValue> {
-        let params = serde_json::json!([hash]);
+    async fn get_block(&self, hash: &str, raw: bool) -> Result<JsonValue> {
+        let verbosity = if raw { 0 } else { 2 };
+        let params = serde_json::json!([hash, verbosity]);
         self.call(self.sandshrew_rpc_url(), "getblock", params, 1).await
     }
 

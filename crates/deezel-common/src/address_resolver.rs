@@ -645,7 +645,7 @@ impl BitcoinRpcProvider for StandaloneAddressResolver {
     async fn get_transaction_hex(&self, _txid: &str) -> Result<String> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoin RPC".to_string()))
     }
-    async fn get_block(&self, _hash: &str) -> Result<serde_json::Value> {
+    async fn get_block(&self, _hash: &str, _raw: bool) -> Result<serde_json::Value> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoin RPC".to_string()))
     }
     async fn get_block_hash(&self, _height: u64) -> Result<String> {
