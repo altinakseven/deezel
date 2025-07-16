@@ -1595,6 +1595,7 @@ dependencies = [
  "k256",
  "log",
  "md-5",
+ "memchr",
  "ml-dsa",
  "ml-kem",
  "nom 8.0.0",

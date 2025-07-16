@@ -188,7 +188,7 @@ fn armor_header_line(i: &[u8]) -> IResult<&[u8], BlockType> {
     delimited(
         pair(armor_header_sep, tag(&b"BEGIN "[..])),
         armor_header_type,
-        pair(armor_header_sep, line_ending),
+        armor_header_sep,
     )
     .parse(i)
 }
@@ -310,51 +310,37 @@ pub fn decode(i: &[u8]) -> Result<(BlockType, Headers, Vec<u8>)> {
     };
 
     // Find the footer and extract the base64 content
-    let footer_start = if let Some(pos) = find_footer_start(remaining) {
-        pos
+    let footer = format!("-----END {}-----", typ);
+    let footer_start = remaining
+        .windows(footer.len())
+        .position(|w| w == footer.as_bytes());
+
+    let base64_content = if let Some(footer_start) = footer_start {
+        &remaining[..footer_start]
     } else {
         return Err(crate::errors::Error::from("armor footer not found".to_string()));
     };
 
-    let base64_content = &remaining[..footer_start];
-    
-    // Clean up the base64 content by removing line endings and whitespace
-    let cleaned_base64: Vec<u8> = base64_content
+    let (base64_data, _checksum) = if let Some(pos) = memchr::memrchr(b'\n', base64_content) {
+        if base64_content.get(pos + 1) == Some(&b'=') {
+            // Found checksum
+            (&base64_content[..pos], Some(&base64_content[pos + 1..]))
+        } else {
+            (base64_content, None)
+        }
+    } else {
+        (base64_content, None)
+    };
+
+    let cleaned_base64: Vec<u8> = base64_data
         .iter()
-        .filter(|&&b| !matches!(b, b'\r' | b'\n' | b' ' | b'\t'))
+        .filter(|&&b| !matches!(b, b'\r' | b'\n'))
         .copied()
         .collect();
 
-    // Decode the base64 content
     let mut reader = Base64Reader::new(BufReader::new(Cursor::new(&cleaned_base64)));
     let mut decoded = Vec::new();
     reader.read_to_end(&mut decoded)?;
 
     Ok((typ, headers, decoded))
-}
-
-// Helper function to find the start of the armor footer
-fn find_footer_start(data: &[u8]) -> Option<usize> {
-    // Look for patterns like "=XXXX\n-----END" or "\n-----END" or "-----END"
-    let mut i = 0;
-    while i < data.len() {
-        if data[i..].starts_with(b"-----END") {
-            return Some(i);
-        }
-        if data[i] == b'=' {
-            // Look for checksum pattern like "=XXXX\n-----END"
-            let mut j = i + 1;
-            while j < data.len() && j < i + 10 {
-                if data[j] == b'\n' || data[j] == b'\r' {
-                    if data[j..].starts_with(b"\n-----END") || data[j..].starts_with(b"\r\n-----END") {
-                        return Some(i);
-                    }
-                    break;
-                }
-                j += 1;
-            }
-        }
-        i += 1;
-    }
-    None
 }

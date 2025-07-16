@@ -1,6 +1,5 @@
 //! # Line ending normalization module
 extern crate alloc;
-use alloc::string::String;
 
 use alloc::borrow::Cow;
 use bytes::{Buf, BytesMut};
