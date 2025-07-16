@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 86c9f8284f176c50da3a90f9e41d6f18a846f145cb89cb00eeedf74bcb4f613c # shrinks to params = P384 { p: PublicKey { point: AffinePoint { x: FieldElement(Uint(0x11886BAA7FCACE9A7B22B4B9C89C1F280AAF5AB75536232A7041F83648A5F1A9DBDA119B87C4C5A3A3C340376AF39872)), y: FieldElement(Uint(0x0A167F86C9A08832CDF2F56BB6F51123530611F46DF32985A34E6441BF1250E31499BC3172AA231DDD924ACEA1FF9258)), infinity: 0 } }, hash: Other(0), alg_sym: IDEA }
