@@ -27,15 +27,15 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-cargo build --release
+(cd /data/metashrew/deezel && cargo build --release)
 # Execute the alkanes command with commit/reveal pattern
-/home/ubuntu/deezel/target/release/deezel \
+/data/metashrew/deezel/target/release/deezel \
     --sandshrew-rpc-url http://localhost:18888 \
     -p regtest \
     --wallet-file ~/.deezel/regtest.json.asc \
     --passphrase testtesttest \
     alkanes execute \
-    --inputs B:1000 \
+    --input-requirements B:1000 \
     --change [self:p2tr:2] \
     --to [self:p2tr:1],[self:p2tr:2],[self:p2tr:3] \
     --envelope ~/free_mint.wasm.gz \

@@ -515,7 +515,7 @@ impl SystemWallet for SystemDeezel {
             },
            WalletCommands::Send { address, amount, fee_rate, send_all, from, change, yes } => {
                // Resolve address identifiers
-               let resolved_address = resolve_address_identifiers(&address, &provider).await?;
+               let resolved_address = provider.resolve_all_identifiers(&address).await?;
                let resolved_from = if let Some(from_addr) = from {
                    Some(resolve_address_identifiers(&from_addr, &provider).await?)
                } else {
@@ -904,7 +904,7 @@ impl SystemBitcoind for SystemDeezel {
             },
            BitcoindCommands::Generatetoaddress { nblocks, address } => {
               // Resolve address identifiers if needed
-              let resolved_address = resolve_address_identifiers(&address, provider).await?;
+              let resolved_address = provider.resolve_all_identifiers(&address).await?;
               
               let result = <ConcreteProvider as BitcoinRpcProvider>::generate_to_address(provider, nblocks, &resolved_address).await?;
               println!("Generated {} blocks to address {}", nblocks, resolved_address);

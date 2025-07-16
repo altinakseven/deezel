@@ -1,6 +1,6 @@
 #!/bin/bash
 export RUST_LOG=info
-DEEZEL=/home/ubuntu/deezel/target/release/deezel
+DEEZEL=/data/metashrew/deezel/target/release/deezel
 
 PWD=$(pwd)
 cd /data/alkanes
@@ -31,4 +31,4 @@ echo "Attempting to send transaction..."
 $DEEZEL --wallet-file ~/.deezel/regtest.json.asc -p regtest --sandshrew-rpc-url http://localhost:18888 --passphrase testtesttest wallet send -y --from p2tr:0 [self:p2tr:0] 10000 --fee-rate 1
 
 
-bash /home/ubuntu/deezel/examples/run-alkanes-execute.sh
+bash /data/metashrew/deezel/examples/run-alkanes-execute.sh
