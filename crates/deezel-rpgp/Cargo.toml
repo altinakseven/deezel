@@ -113,6 +113,7 @@ x25519-dalek = { version = "2.0.1", default-features = false, features = [
 ml-kem = { version = "0.2.1", features = ["zeroize", "deterministic"], optional = true }
 ml-dsa = { version = "0.0.4", features = ["zeroize"], optional = true }
 slh-dsa = { version = "0.0.3", optional = true }
+proptest = { version = "1.7.0", default-features = false, features = ["alloc", "proptest-macro", "std"], optional = true }
 
 
 [dev-dependencies]
@@ -126,13 +127,13 @@ serde = { version = "1.0.217", features = ["derive"] }
 serde_json = "1.0.47"
 criterion = { version = "0.5", features = ["html_reports"] }
 tempfile = "3.14.0"
-proptest = { version = "1.6.0", default-features = false, features = ["alloc", "proptest-macro", "std"] }
 proptest-derive = "0.5.1"
 escape_string = "0.1.2"
 testresult = "0.4.1"
+proptest = "1.7.0"
 
 [features]
-default = ["bzip2"]
+default = ["bzip2", "test-utils"]
 
 # Enables bzip2 support
 bzip2 = ["dep:bzip2"]
@@ -149,7 +150,7 @@ draft-pqc = ["dep:ml-kem", "dep:ml-dsa", "dep:slh-dsa"]
 # Enable std support (for tests)
 std = ["chrono/clock", "regex", "regex/std"]
 
-test-utils = ["std"]
+test-utils = ["std", "dep:proptest"]
 
 
 [profile.bench]

@@ -677,7 +677,7 @@ mod tests {
             // println!("reading {}", filename);
 
             let armored = std::fs::read_to_string(filename).expect("failed to load msg");
-            let (msg, header) = Message::from_armor(armored.as_bytes()).expect("failed to parse msg");
+            let (msg, _header) = Message::from_armor(armored.as_bytes()).expect("failed to parse msg");
 
             // dbg!(&header);
             let mut decrypted = msg

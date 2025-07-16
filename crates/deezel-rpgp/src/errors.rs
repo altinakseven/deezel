@@ -228,14 +228,6 @@ impl From<derive_builder::UninitializedFieldError> for Error {
     }
 }
 
-#[cfg(feature = "std")]
-impl From<std::io::Error> for Error {
-    fn from(err: std::io::Error) -> Self {
-        Self::IO {
-            source: err.into(),
-        }
-    }
-}
 
 macro_rules! unimplemented_err {
     ($e:expr) => {

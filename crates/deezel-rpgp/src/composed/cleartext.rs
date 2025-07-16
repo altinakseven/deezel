@@ -52,7 +52,7 @@ impl CleartextSignedMessage {
     ) -> Result<Self>
     where
     {
-        let bytes = text.as_bytes();
+        let mut bytes = text.as_bytes();
         #[cfg(feature = "std")]
         let signature_text = NormalizedReader::new(&mut bytes, LineBreak::Crlf);
         #[cfg(not(feature = "std"))]

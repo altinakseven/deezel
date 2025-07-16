@@ -3,11 +3,10 @@ use alloc::vec::Vec;
 use alloc::format;
 extern crate alloc;
 use crate::io::{self, BufRead};
+use byteorder::WriteBytesExt;
 
 use bytes::{Bytes, BytesMut};
 use log::debug;
-#[cfg(test)]
-use proptest::prelude::*;
 use rand::{CryptoRng, Rng};
 use sha2::Sha256;
 

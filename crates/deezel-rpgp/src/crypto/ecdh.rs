@@ -663,17 +663,17 @@ mod tests {
     fn test_decrypt_padding() {
         let _ = pretty_env_logger::try_init();
 
-        let (decrypt_key, _headers) = SignedSecretKey::from_armor_single(
-            fs::File::open("./tests/unit-tests/padding/alice.key").unwrap(),
-        )
-        .expect("failed to read decryption key");
+        let key_bytes = fs::read("./tests/unit-tests/padding/alice.key").unwrap();
+        let (decrypt_key, _headers) = SignedSecretKey::from_armor_single(&key_bytes)
+            .expect("failed to read decryption key");
 
         for msg_file in [
             "./tests/unit-tests/padding/msg-short-padding.pgp",
             "./tests/unit-tests/padding/msg-long-padding.pgp",
         ] {
+            let msg = fs::read_to_string(msg_file).expect("failed to read message");
             let (message, _headers) =
-                Message::from_armor_file(msg_file).expect("failed to parse message");
+                Message::from_armor(msg.as_bytes()).expect("failed to parse message");
 
             let mut msg = message
                 .decrypt(&Password::empty(), &decrypt_key)

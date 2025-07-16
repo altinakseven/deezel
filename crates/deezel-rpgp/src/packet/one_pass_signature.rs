@@ -2,6 +2,7 @@ use alloc::string::ToString;
 use alloc::vec::Vec;
 extern crate alloc;
 use crate::io::{self, BufRead};
+use byteorder::WriteBytesExt;
 use bytes::Bytes;
 #[cfg(all(test, feature = "std"))]
 use proptest::prelude::*;

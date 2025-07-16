@@ -412,8 +412,6 @@ impl From<SignedSecretSubKey> for SignedPublicSubKey {
 mod tests {
     #![allow(clippy::unwrap_used)]
 
-    use crate::io;
-
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 
@@ -445,7 +443,7 @@ M0g12vYxoWM8Y81W+bHBw805I8kWVkXU6vFOi+HWvv/ira7ofJu16NnoUkhclkUr
 k0mXubZvyl4GBg==
 -----END PGP PRIVATE KEY BLOCK-----";
 
-        let (ssk, _) = SignedSecretKey::from_armor_single(io::Cursor::new(tsk))?;
+        let (ssk, _) = SignedSecretKey::from_armor_single(tsk.as_bytes())?;
 
         // eprintln!("ssk: {:#02x?}", ssk);
 
@@ -491,7 +489,7 @@ ruh8m7Xo2ehSSFyWRSuTSZe5tm/KXgYG
     fn test_v6_annex_a_5() -> Result<()> {
         let _ = pretty_env_logger::try_init();
 
-        let (ssk, _) = SignedSecretKey::from_armor_single(io::Cursor::new(ANNEX_A_5))?;
+        let (ssk, _) = SignedSecretKey::from_armor_single(ANNEX_A_5.as_bytes())?;
         ssk.verify()?;
 
         let mut rng = ChaCha8Rng::seed_from_u64(0);
@@ -516,7 +514,7 @@ ruh8m7Xo2ehSSFyWRSuTSZe5tm/KXgYG
         let text = b"Hello world";
         let mut rng = ChaCha8Rng::seed_from_u64(0);
 
-        let (ssk, _) = SignedSecretKey::from_armor_single(io::Cursor::new(ANNEX_A_5))?;
+        let (ssk, _) = SignedSecretKey::from_armor_single(ANNEX_A_5.as_bytes())?;
         ssk.verify()?;
 
         // we will test unlock/lock on the primary key

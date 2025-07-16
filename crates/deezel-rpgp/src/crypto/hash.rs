@@ -16,8 +16,17 @@ use crate::{crypto::checksum::Sha1HashCollisionSnafu, util::CloneableDigest};
 /// Available hash algorithms.
 /// Ref: <https://www.rfc-editor.org/rfc/rfc9580.html#name-hash-algorithms>
 #[derive(
-    Debug, PartialEq, Eq, Copy, Clone, FromPrimitive, IntoPrimitive, Hash, derive_more::Display,
+    Debug,
+    PartialEq,
+    Eq,
+    Copy,
+    Clone,
+    FromPrimitive,
+    IntoPrimitive,
+    Hash,
+    derive_more::Display,
 )]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 #[repr(u8)]
 #[non_exhaustive]
 pub enum HashAlgorithm {

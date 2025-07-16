@@ -7,7 +7,8 @@ use alloc::format;
 use core::{
     cmp::Ordering,
 };
-use crate::io::{BufRead, Read, Write};
+use crate::io::{BufRead, Read};
+use byteorder::WriteBytesExt;
 
 use bitfields::bitfield;
 use bytes::Bytes;
@@ -38,7 +39,7 @@ use crate::{
 };
 
 #[cfg(feature = "std")]
-use crate::normalize_lines::NormalizedReader;
+use crate::{line_writer::LineBreak, normalize_lines::NormalizedReader};
 
 /// Signature Packet
 ///
@@ -1032,6 +1033,7 @@ impl Default for SignatureVersion {
 }
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone, FromPrimitive, IntoPrimitive)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 #[repr(u8)]
 pub enum SignatureType {
     /// Signature of a binary document.
@@ -1536,7 +1538,7 @@ pub(super) fn serialize_for_hashing<K: KeyDetails + Serialize>(
             // When a v4 signature is made over a key, the hash data starts with the octet 0x99,
             // followed by a two-octet length of the key, and then the body of the key packet.
             writer.write_u8(0x99)?;
-            writer.write_be_u16(key_len.try_into()?)?;
+            writer.write_u16::<byteorder::BigEndian>(key_len.try_into()?)?;
         }
 
         KeyVersion::V6 => {
@@ -1546,7 +1548,7 @@ pub(super) fn serialize_for_hashing<K: KeyDetails + Serialize>(
             // then octet 0x9B, followed by a four-octet length of the key,
             // and then the body of the key packet.
             writer.write_u8(0x9b)?;
-            writer.write_be_u32(key_len.try_into()?)?;
+            writer.write_u32::<byteorder::BigEndian>(key_len.try_into()?)?;
         }
 
         v => unimplemented_err!("key version {:?}", v),

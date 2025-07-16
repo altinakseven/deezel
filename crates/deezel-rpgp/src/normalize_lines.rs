@@ -1,23 +1,24 @@
-#![cfg(feature = "std")]
 //! # Line ending normalization module
 extern crate alloc;
-use alloc::boxed::Box;
-use alloc::string::{String, ToString};
-use alloc::vec;
-use alloc::format;
+use alloc::string::String;
 
 use alloc::borrow::Cow;
 use bytes::{Buf, BytesMut};
 use spin::Once;
 
-use crate::{line_writer::LineBreak, util::fill_buffer};
+use crate::util::fill_buffer;
+pub use crate::line_writer::LineBreak;
 
-static RE: Once<regex::bytes::Regex> =
-    Once::new(|| regex::bytes::Regex::new(r"(\r\n?|\n)").expect("valid regex"));
+static RE: Once<regex::bytes::Regex> = Once::new();
+
+fn get_re() -> &'static regex::bytes::Regex {
+    RE.call_once(|| regex::bytes::Regex::new(r"(\r\n?|\n)").expect("valid regex"))
+}
 
 use crate::io::{Error, Read};
 
 /// This struct wraps a reader and normalize line endings.
+#[derive(Clone)]
 pub struct NormalizedReader<R>
 where
     R: Read,
@@ -75,13 +76,56 @@ impl<R: Read> NormalizedReader<R> {
             &self.in_buffer[..read]
         };
 
-        let res = RE.call_once(|re| re.replace_all(in_buffer, self.line_break.as_ref()));
+        let res = get_re().replace_all(in_buffer, self.line_break.as_ref());
         self.replaced.clear();
         self.replaced.extend_from_slice(&res);
     }
 
     pub(crate) fn into_inner(self) -> R {
         self.source
+    }
+
+    pub(crate) fn inner_mut(&mut self) -> &mut R {
+        &mut self.source
+    }
+}
+
+#[cfg(feature = "test-utils")]
+pub(crate) fn random_string(max_len: usize) -> String {
+    use rand::{distributions::Alphanumeric, Rng};
+
+    let mut rng = rand::thread_rng();
+    let len = rng.gen_range(0..max_len);
+
+    rand::thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(len)
+        .map(char::from)
+        .collect()
+}
+
+#[cfg(feature = "test-utils")]
+pub(crate) fn check_strings(a: &str, b: &str) {
+    if a != b {
+        let mut a_chars = a.chars();
+        let mut b_chars = b.chars();
+        let mut i = 0;
+        loop {
+            let a_c = a_chars.next();
+            let b_c = b_chars.next();
+            if a_c != b_c {
+                panic!(
+                    "string differ at index {}, a: {:?}, b: {:?}",
+                    i,
+                    a_c,
+                    b_c.clone()
+                );
+            }
+            if a_c.is_none() {
+                break;
+            }
+            i += 1;
+        }
     }
 }
 
@@ -97,7 +141,7 @@ impl<R: Read> Read for NormalizedReader<R> {
 }
 
 pub(crate) fn normalize_lines(s: &str, line_break: LineBreak) -> Cow<'_, str> {
-    let bytes = RE.call_once(|re| re.replace_all(s.as_bytes(), line_break.as_ref()));
+    let bytes = get_re().replace_all(s.as_bytes(), line_break.as_ref());
     match bytes {
         Cow::Borrowed(bytes) => {
             Cow::Borrowed(core::str::from_utf8(bytes).expect("valid bytes in"))

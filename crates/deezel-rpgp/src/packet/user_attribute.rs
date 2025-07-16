@@ -5,6 +5,7 @@ use alloc::vec;
 use alloc::format;
 extern crate alloc;
 use crate::io::{BufRead, Write};
+use byteorder::WriteBytesExt;
 
 use bytes::Bytes;
 #[cfg(feature = "std")]
@@ -139,7 +140,7 @@ impl Serialize for ImageHeader {
                 }
                 ImageHeaderV1::Unknown { format, data } => {
                     let len = (4 + data.len()).try_into()?;
-                    writer.write_le_u16(len)?;
+                    writer.write_u16::<byteorder::LittleEndian>(len)?;
 
                     writer.write_u8(0x01)?; // Version
                     writer.write_u8(*format)?;
@@ -148,7 +149,7 @@ impl Serialize for ImageHeader {
             },
             Self::Unknown { version, data } => {
                 let len = (1 + data.len()).try_into()?;
-                writer.write_le_u16(len)?;
+                writer.write_u16::<byteorder::LittleEndian>(len)?;
 
                 writer.write_u8(*version)?;
                 writer.write_all(data)?;

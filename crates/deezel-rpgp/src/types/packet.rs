@@ -69,7 +69,7 @@ impl PacketLength {
                     writer.write_u8(((len - 192) & 0xFF) as u8)?;
                 } else {
                     writer.write_u8(255)?;
-                    writer.write_be_u32(*len)?;
+                    writer.write_u32::<byteorder::BigEndian>(*len)?;
                 }
             }
             PacketLength::Indeterminate => {
@@ -232,7 +232,7 @@ impl PacketHeaderVersion {
                 } else {
                     // four octets
                     writer.write_u8(0b1000_0010 | (tag << 2))?;
-                    writer.write_be_u32(len as u32)?;
+                    writer.write_u32::<byteorder::BigEndian>(len as u32)?;
                 }
             }
             PacketHeaderVersion::New => {
@@ -244,7 +244,7 @@ impl PacketHeaderVersion {
                     writer.write_u8(((len - 192) & 0xFF) as u8)?;
                 } else {
                     writer.write_u8(255)?;
-                    writer.write_be_u32(len as u32)?;
+                    writer.write_u32::<byteorder::BigEndian>(len as u32)?;
                 }
             }
         }

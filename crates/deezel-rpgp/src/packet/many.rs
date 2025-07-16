@@ -62,10 +62,14 @@ impl<'a, R: BufRead> Iterator for PacketParser<R> {
             .and_then(|mut body| {
                 match Packet::from_reader(header, &mut body) {
                     Ok(packet) => Ok(packet),
-                    Err(Error::PacketParsing { source }) if source.is_incomplete() => {
+                    Err(Error::PacketParsing { source, .. }) if source.is_incomplete() => {
                         debug!("incomplete packet for: {:?}", source);
                         // not bailing, we are just skipping incomplete bodies
-                        Err(Error::PacketIncomplete { source })
+                        Err(Error::PacketIncomplete {
+                            source,
+                            #[cfg(feature = "std")]
+                            backtrace: snafu::GenerateImplicitData::generate(),
+                        })
                     }
                     Err(err) => Err(err),
                 }

@@ -5,8 +5,6 @@ extern crate alloc;
 use crate::io::{BufRead, Write};
 
 use chrono::{TimeZone, Utc};
-#[cfg(feature = "std")]
-use chrono::SubsecRound;
 use generic_array::GenericArray;
 use log::debug;
 use rand::{CryptoRng, Rng};
@@ -709,7 +707,6 @@ where
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use chrono::{SubsecRound, Utc};
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 

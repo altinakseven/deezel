@@ -1,7 +1,22 @@
 extern crate alloc;
 use num_enum::{FromPrimitive, IntoPrimitive};
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn arbitrary(alg in any::<PublicKeyAlgorithm>()) {
+            let num: u8 = alg.into();
+            assert_eq!(alg, PublicKeyAlgorithm::from(num));
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone, Copy, FromPrimitive, IntoPrimitive)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 #[repr(u8)]
 #[non_exhaustive]
 pub enum PublicKeyAlgorithm {
