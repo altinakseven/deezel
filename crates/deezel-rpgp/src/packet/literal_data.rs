@@ -5,6 +5,7 @@ use alloc::vec::Vec;
 extern crate alloc;
 use crate::io::{self, BufRead};
 use alloc::borrow::ToOwned;
+use byteorder::{BigEndian, WriteBytesExt};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use chrono::{DateTime, TimeZone, Utc};
 use log::debug;
@@ -22,9 +23,7 @@ use crate::{
 };
 
 #[cfg(feature = "std")]
-use crate::normalize_lines::{
-    check_strings, normalize_lines, random_string, LineBreak, NormalizedReader,
-};
+use crate::normalize_lines::{normalize_lines, LineBreak, NormalizedReader};
 
 /// Literal Data Packet
 /// <https://www.rfc-editor.org/rfc/rfc9580.html#name-literal-data-packet-type-id>
@@ -230,7 +229,7 @@ impl Serialize for LiteralDataHeader {
         writer.write_u8(self.mode.into())?;
         writer.write_u8(name.len().try_into()?)?;
         writer.write_all(name)?;
-        writer.write_be_u32(self.created.timestamp().try_into()?)?;
+        writer.write_u32::<BigEndian>(self.created.timestamp() as u32)?;
         Ok(())
     }
 
@@ -537,7 +536,7 @@ impl<R: io::Read> io::Read for LiteralDataPartialGenerator<R> {
                     .to_writer_new(&mut writer)
                     .map_err(|_e| io::Error::new(io::ErrorKind::Other, "failed to write packet length"))?;
                 debug!("partial packet {:?}", packet_length);
-            };
+};
 
             let mut packet_ser = writer.into_inner();
             packet_ser.extend_from_slice(data);
@@ -559,7 +558,7 @@ mod tests {
     use super::*;
     use crate::{
         packet::Packet,
-        util::test::ChaosReader,
+        util::test::{check_strings, random_string, ChaosReader},
     };
 
     #[test]
@@ -678,7 +677,7 @@ mod tests {
             let s = random_string(&mut rng, file_size);
             let mut generator = LiteralDataGenerator::new(
                 header.clone(),
-                ChaosReader::new(rng.clone(), s.clone()),
+                ChaosReader::new(rng.clone(), s.clone().into()),
                 None,
                 chunk_size as u32,
             )
@@ -698,7 +697,7 @@ mod tests {
 
             assert_eq!(data.header, header);
             let normalized_s = normalize_lines(&s, LineBreak::Crlf);
-            check_strings(data.to_string().unwrap(), normalized_s);
+            check_strings(&data.to_string().unwrap(), &normalized_s.to_string());
         }
     }
 

@@ -81,53 +81,12 @@ impl<R: Read> NormalizedReader<R> {
         self.replaced.extend_from_slice(&res);
     }
 
-    pub(crate) fn into_inner(self) -> R {
-        self.source
-    }
 
     pub(crate) fn inner_mut(&mut self) -> &mut R {
         &mut self.source
     }
 }
 
-#[cfg(feature = "test-utils")]
-pub(crate) fn random_string(max_len: usize) -> String {
-    use rand::{distributions::Alphanumeric, Rng};
-
-    let mut rng = rand::thread_rng();
-    let len = rng.gen_range(0..max_len);
-
-    rand::thread_rng()
-        .sample_iter(&Alphanumeric)
-        .take(len)
-        .map(char::from)
-        .collect()
-}
-
-#[cfg(feature = "test-utils")]
-pub(crate) fn check_strings(a: &str, b: &str) {
-    if a != b {
-        let mut a_chars = a.chars();
-        let mut b_chars = b.chars();
-        let mut i = 0;
-        loop {
-            let a_c = a_chars.next();
-            let b_c = b_chars.next();
-            if a_c != b_c {
-                panic!(
-                    "string differ at index {}, a: {:?}, b: {:?}",
-                    i,
-                    a_c,
-                    b_c.clone()
-                );
-            }
-            if a_c.is_none() {
-                break;
-            }
-            i += 1;
-        }
-    }
-}
 
 impl<R: Read> Read for NormalizedReader<R> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error> {

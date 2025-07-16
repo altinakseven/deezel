@@ -60,7 +60,7 @@ mod tests {
 
                 let mut out = String::new();
                 msg.read_to_string(&mut out)?;
-                check_strings(out, buf);
+                check_strings(&out, &buf);
 
                 let header = msg.literal_data_header().unwrap();
                 assert_eq!(header.file_name(), &b""[..]);
@@ -106,7 +106,7 @@ mod tests {
                         let mut out = String::new();
                         decompressed_message.read_to_string(&mut out)?;
 
-                        check_strings(out, buf);
+                        check_strings(&out, &buf);
 
                         let header = decompressed_message.literal_data_header().unwrap();
                         assert_eq!(header.file_name(), &b""[..]);
@@ -129,7 +129,7 @@ mod tests {
                         let mut out = String::new();
                         decompressed_message.read_to_string(&mut out)?;
 
-                        check_strings(out, buf);
+                        check_strings(&out, &buf);
 
                         let header = decompressed_message.literal_data_header().unwrap();
                         assert_eq!(header.file_name(), &b""[..]);
