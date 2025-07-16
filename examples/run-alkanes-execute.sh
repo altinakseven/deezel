@@ -36,11 +36,11 @@ done
     --passphrase testtesttest \
     alkanes execute \
     --input-requirements B:1000 \
-    --change [self:p2tr:2] \
-    --to [self:p2tr:1],[self:p2tr:2],[self:p2tr:3] \
-    --envelope ~/free_mint.wasm.gz \
+    --change-address [self:p2tr:2] \
+    --to-addresses [self:p2tr:1],[self:p2tr:2],[self:p2tr:3] \
+    --protostones '[C:[2]]' \
+    --envelope /data/metashrew/deezel/examples/free_mint.wasm.gz \
     --mine \
     --fee-rate 1 \
     -y \
     --trace \
-	    '[3,797,101]:v0:v0'

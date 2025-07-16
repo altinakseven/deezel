@@ -517,12 +517,12 @@ impl SystemWallet for SystemDeezel {
                // Resolve address identifiers
                let resolved_address = provider.resolve_all_identifiers(&address).await?;
                let resolved_from = if let Some(from_addr) = from {
-                   Some(resolve_address_identifiers(&from_addr, &provider).await?)
+                   Some(provider.resolve_all_identifiers(&from_addr).await?)
                } else {
                    None
                };
                let resolved_change = if let Some(change_addr) = change {
-                   Some(resolve_address_identifiers(&change_addr, &provider).await?)
+                   Some(provider.resolve_all_identifiers(&change_addr).await?)
                } else {
                    None
                };
@@ -551,7 +551,7 @@ impl SystemWallet for SystemDeezel {
            },
            WalletCommands::SendAll { address, fee_rate, yes } => {
                // Resolve address identifiers
-               let resolved_address = resolve_address_identifiers(&address, &provider).await?;
+               let resolved_address = provider.resolve_all_identifiers(&address).await?;
                
                let send_params = SendParams {
                    address: resolved_address,
@@ -577,7 +577,7 @@ impl SystemWallet for SystemDeezel {
            },
            WalletCommands::CreateTx { address, amount, fee_rate, send_all, yes } => {
                // Resolve address identifiers
-               let resolved_address = resolve_address_identifiers(&address, &provider).await?;
+               let resolved_address = provider.resolve_all_identifiers(&address).await?;
                
                let create_params = SendParams {
                    address: resolved_address,
@@ -642,7 +642,7 @@ impl SystemWallet for SystemDeezel {
            },
            WalletCommands::Utxos { raw, include_frozen, addresses } => {
                let address_list = if let Some(addr_str) = addresses {
-                   let resolved_addresses = resolve_address_identifiers(&addr_str, &provider).await?;
+                   let resolved_addresses = provider.resolve_all_identifiers(&addr_str).await?;
                    Some(resolved_addresses.split(',').map(|s| s.trim().to_string()).collect())
                } else {
                    None
@@ -736,7 +736,7 @@ impl SystemWallet for SystemDeezel {
            },
            WalletCommands::History { count, raw, address } => {
                let resolved_address = if let Some(addr) = address {
-                   Some(resolve_address_identifiers(&addr, &provider).await?)
+                   Some(provider.resolve_all_identifiers(&addr).await?)
                } else {
                    None
                };
@@ -964,7 +964,7 @@ impl SystemAlkanes for SystemDeezel {
 
                 // Resolve change address if provided
                 let resolved_change = if let Some(change_addr) = change_address {
-                    Some(resolve_address_identifiers(&change_addr, provider).await?)
+                    Some(provider.resolve_all_identifiers(&change_addr).await?)
                 } else {
                     None
                 };
@@ -1007,7 +1007,7 @@ impl SystemAlkanes for SystemDeezel {
                 // Resolve 'to' addresses
                 let mut resolved_to_addresses = Vec::new();
                 for addr in &to_addresses {
-                    resolved_to_addresses.push(resolve_address_identifiers(addr, provider).await?);
+                    resolved_to_addresses.push(provider.resolve_all_identifiers(addr).await?);
                 }
 
                 // Create enhanced execute parameters
@@ -1429,7 +1429,7 @@ impl SystemEsplora for SystemDeezel {
                 Ok(())
             },
             EsploraCommands::Address { params, raw } => {
-                let resolved_params = resolve_address_identifiers(&params, provider).await?;
+                let resolved_params = provider.resolve_all_identifiers(&params).await?;
                 let result = EsploraProvider::get_address(provider, &resolved_params).await?;
                 if raw {
                     if let Some(s) = result.as_str() {
@@ -1443,7 +1443,7 @@ impl SystemEsplora for SystemDeezel {
                 Ok(())
             },
             EsploraCommands::AddressTxs { params, raw } => {
-                let resolved_params = resolve_address_identifiers(&params, provider).await?;
+                let resolved_params = provider.resolve_all_identifiers(&params).await?;
                 let result = provider.get_address_txs(&resolved_params).await?;
                 if raw {
                     if let Some(s) = result.as_str() {
@@ -1460,14 +1460,14 @@ impl SystemEsplora for SystemDeezel {
                 let parts: Vec<&str> = params.split(':').collect();
                 let resolved_params = if parts.len() >= 2 {
                     let address_part = parts[0];
-                    let resolved_address = resolve_address_identifiers(address_part, provider).await?;
+                    let resolved_address = provider.resolve_all_identifiers(address_part).await?;
                     if parts.len() == 2 {
                         format!("{}:{}", resolved_address, parts[1])
                     } else {
                         format!("{}:{}", resolved_address, parts[1..].join(":"))
                     }
                 } else {
-                    resolve_address_identifiers(&params, provider).await?
+                    provider.resolve_all_identifiers(&params).await?
                 };
                 let result = provider.get_address_txs_chain(&resolved_params, None).await?;
                 if raw {
@@ -1482,7 +1482,7 @@ impl SystemEsplora for SystemDeezel {
                 Ok(())
             },
             EsploraCommands::AddressTxsMempool { address, raw } => {
-                let resolved_address = resolve_address_identifiers(&address, provider).await?;
+                let resolved_address = provider.resolve_all_identifiers(&address).await?;
                 let result = provider.get_address_txs_mempool(&resolved_address).await?;
                 if raw {
                     if let Some(s) = result.as_str() {
@@ -1496,7 +1496,7 @@ impl SystemEsplora for SystemDeezel {
                 Ok(())
             },
             EsploraCommands::AddressUtxo { address, raw } => {
-                let resolved_address = resolve_address_identifiers(&address, provider).await?;
+                let resolved_address = provider.resolve_all_identifiers(&address).await?;
                 let result = provider.get_address_utxo(&resolved_address).await?;
                 if raw {
                     if let Some(s) = result.as_str() {

@@ -339,6 +339,27 @@ pub struct Pile {
     pub symbol: Option<char>,
 }
 
+/// JSON-RPC method names for Ord endpoints
+pub struct OrdJsonRpcMethods;
+
+impl OrdJsonRpcMethods {
+    pub const ADDRESS: &'static str = "ord_address";
+    pub const BLOCK: &'static str = "ord_block";
+    pub const BLOCK_COUNT: &'static str = "ord_blockcount";
+    pub const BLOCKS: &'static str = "ord_blocks";
+    pub const CHILDREN: &'static str = "ord_children";
+    pub const CONTENT: &'static str = "ord_content";
+    pub const INSCRIPTION: &'static str = "ord_inscription";
+    pub const INSCRIPTIONS: &'static str = "ord_inscriptions";
+    pub const INSCRIPTIONS_IN_BLOCK: &'static str = "ord_inscriptionsinblock";
+    pub const OUTPUT: &'static str = "ord_output";
+    pub const PARENTS: &'static str = "ord_parents";
+    pub const RUNE: &'static str = "ord_rune";
+    pub const RUNES: &'static str = "ord_runes";
+    pub const SAT: &'static str = "ord_sat";
+    pub const TX: &'static str = "ord_tx";
+}
+
 #[cfg(feature = "native-deps")]
 fn display_option<T: Display>(option: &Option<T>) -> String {
     match option {

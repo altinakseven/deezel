@@ -40,7 +40,7 @@ async fn execute_command(system: &SystemDeezel, args: Args) -> Result<()> {
     let result: Result<(), anyhow::Error> = match args.command {
         deezel_common::commands::Commands::Bitcoind { command } => {
             let bitcoind_commands: BitcoindCommands = serde_json::from_value(serde_json::to_value(command)?)?;
-            execute_bitcoind_command(system.provider(), bitcoind_commands).await
+            system.execute_bitcoind_command(bitcoind_commands).await.map_err(anyhow::Error::from)
         },
         deezel_common::commands::Commands::Wallet { command } => system.execute_wallet_command(command).await.map_err(anyhow::Error::from),
         deezel_common::commands::Commands::Walletinfo { raw } => system.execute_walletinfo_command(raw).await.map_err(anyhow::Error::from),
@@ -57,60 +57,7 @@ async fn execute_command(system: &SystemDeezel, args: Args) -> Result<()> {
     result
 }
 
-async fn execute_bitcoind_command(
-    provider: &dyn DeezelProvider,
-    command: BitcoindCommands,
-) -> anyhow::Result<()> {
-    match command {
-        BitcoindCommands::Getblockcount => {
-            let count = <dyn DeezelProvider as BitcoinRpcProvider>::get_block_count(provider).await?;
-            println!("{}", count);
-        },
-        BitcoindCommands::Getblock { hash, raw } => {
-            let hash = bitcoin::BlockHash::from_str(&hash)?;
-            let block = <dyn DeezelProvider as BitcoinRpcProvider>::get_block(provider, &hash.to_string(), raw).await?;
-            if raw {
-                if let Some(s) = block.as_str() {
-                    println!("{}", s);
-                } else {
-                    println!("{}", block);
-                }
-            } else {
-                println!("{}", pretty_print_json(&block));
-            }
-        }
-        BitcoindCommands::Getblockhash { height } => {
-            let hash = <dyn DeezelProvider as BitcoinRpcProvider>::get_block_hash(provider, height).await?;
-            println!("{}", hash);
-        }
-        BitcoindCommands::Getmempoolinfo { raw } => {
-            let info = <dyn DeezelProvider as BitcoinRpcProvider>::get_mempool_info(provider).await?;
-            if raw {
-                if let Some(s) = info.as_str() {
-                    println!("{}", s);
-                } else {
-                    println!("{}", info);
-                }
-            } else {
-                println!("{}", pretty_print_json(&serde_json::to_value(&info)?));
-            }
-        }
-        BitcoindCommands::Sendrawtransaction { tx_hex } => {
-            let _tx: bitcoin::Transaction =
-                bitcoin::consensus::deserialize(&hex::decode(&tx_hex)?)?;
-            let txid = <dyn DeezelProvider as BitcoinRpcProvider>::send_raw_transaction(provider, &tx_hex).await?;
-            println!("{}", txid);
-        }
-        BitcoindCommands::Generatetoaddress { nblocks, address } => {
-            let result = <dyn DeezelProvider as BitcoinRpcProvider>::generate_to_address(provider, nblocks, &address).await?;
-            println!("{}", pretty_print_json(&result));
-        },
-        _ => {
-            println!("This bitcoind command is not yet implemented in deezel-sys.");
-        }
-    }
-    Ok(())
-}
+
 
 async fn execute_ord_command(
     provider: &dyn DeezelProvider,

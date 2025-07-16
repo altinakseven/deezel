@@ -336,7 +336,15 @@ impl JsonRpcProvider for ConcreteProvider {
             }
 
             // If that fails, try to parse as a raw JsonValue (for non-compliant servers)
-            if let Ok(raw_result) = serde_json::from_str::<serde_json::Value>(&response_text) {
+            if let Ok(mut raw_result) = serde_json::from_str::<serde_json::Value>(&response_text) {
+                // Handle cases where the actual result is nested inside a "result" field
+                if let Some(obj) = raw_result.as_object_mut() {
+                    if obj.contains_key("result") {
+                        if let Some(val) = obj.remove("result") {
+                            return Ok(val);
+                        }
+                    }
+                }
                 return Ok(raw_result);
             }
 
@@ -1018,7 +1026,52 @@ impl WalletProvider for ConcreteProvider {
     }
     
     async fn sync(&self) -> Result<()> {
-        unimplemented!()
+        log::info!("Starting backend synchronization...");
+        let max_retries = 60; // ~2 minutes timeout
+        for i in 0..max_retries {
+            // 1. Get bitcoind height (source of truth)
+            let bitcoind_height = match self.get_block_count().await {
+                Ok(h) => h,
+                Err(e) => {
+                    log::warn!("Attempt {}: Failed to get bitcoind height: {}. Retrying...", i + 1, e);
+                    self.sleep_ms(2000).await;
+                    continue;
+                }
+            };
+
+            // 2. Get other service heights
+            let metashrew_height_res = self.get_metashrew_height().await;
+            let esplora_height_res = self.get_blocks_tip_height().await;
+            let ord_height_res = self.get_ord_block_count().await;
+
+            // 3. Check if services are synced
+            // Per .clinerules, metashrew should be +1 block ahead of bitcoind
+            let metashrew_synced = metashrew_height_res.as_ref().map_or(false, |&h| h >= bitcoind_height + 1);
+            let esplora_synced = esplora_height_res.as_ref().map_or(false, |&h| h >= bitcoind_height);
+            let ord_synced = ord_height_res.as_ref().map_or(false, |&h| h >= bitcoind_height);
+
+            log::info!(
+                "Sync attempt {}/{}: bitcoind: {}, metashrew: {} (synced: {}), esplora: {} (synced: {}), ord: {} (synced: {})",
+                i + 1,
+                max_retries,
+                bitcoind_height,
+                metashrew_height_res.map_or_else(|e| format!("err ({})", e), |h| h.to_string()),
+                metashrew_synced,
+                esplora_height_res.map_or_else(|e| format!("err ({})", e), |h| h.to_string()),
+                esplora_synced,
+                ord_height_res.map_or_else(|e| format!("err ({})", e), |h| h.to_string()),
+                ord_synced
+            );
+
+            if metashrew_synced && esplora_synced && ord_synced {
+                log::info!("✅ All backends synchronized successfully!");
+                return Ok(());
+            }
+
+            self.sleep_ms(2000).await;
+        }
+
+        Err(DeezelError::Other(format!("Timeout waiting for backends to sync after {} attempts", max_retries)))
     }
     
     async fn backup(&self) -> Result<String> {
@@ -1121,8 +1174,15 @@ impl BitcoinRpcProvider for ConcreteProvider {
 #[async_trait(?Send)]
 impl MetashrewRpcProvider for ConcreteProvider {
     async fn get_metashrew_height(&self) -> Result<u64> {
-        let result = self.call(&self.metashrew_rpc_url, "metashrew_height", serde_json::Value::Null, 1).await?;
-        result.as_u64().ok_or_else(|| DeezelError::RpcError("Invalid metashrew height response".to_string()))
+        let json = self.call(&self.metashrew_rpc_url, "metashrew_height", serde_json::Value::Null, 1).await?;
+        log::debug!("get_metashrew_height response: {:?}", json);
+        if let Some(count) = json.as_u64() {
+            return Ok(count);
+        }
+        if let Some(count_str) = json.as_str() {
+            return count_str.parse::<u64>().map_err(|_| DeezelError::RpcError("Invalid metashrew height string response".to_string()));
+        }
+        Err(DeezelError::RpcError("Invalid metashrew height response: not a u64 or string".to_string()))
     }
     
     async fn get_contract_meta(&self, block: &str, tx: &str) -> Result<serde_json::Value> {
@@ -2554,78 +2614,85 @@ mod esplora_provider_tests {
 #[async_trait(?Send)]
 impl OrdProvider for ConcreteProvider {
     async fn get_inscription(&self, inscription_id: &str) -> Result<ord::Inscription> {
-        let json = self.call(&self.sandshrew_rpc_url, "ord_getInscription", crate::esplora::params::single(inscription_id), 1).await?;
+        let json = self.call(&self.sandshrew_rpc_url, crate::ord::OrdJsonRpcMethods::INSCRIPTION, crate::esplora::params::single(inscription_id), 1).await?;
         serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
     }
 
     async fn get_inscriptions_in_block(&self, block_hash: &str) -> Result<ord::Inscriptions> {
-        let json = self.call(&self.sandshrew_rpc_url, "ord_getInscriptionsInBlock", crate::esplora::params::single(block_hash), 1).await?;
+        let json = self.call(&self.sandshrew_rpc_url, crate::ord::OrdJsonRpcMethods::INSCRIPTIONS_IN_BLOCK, crate::esplora::params::single(block_hash), 1).await?;
         serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
     }
 
    async fn get_ord_address_info(&self, address: &str) -> Result<ord::AddressInfo> {
-        let json = self.call(&self.sandshrew_rpc_url, "ord_address", crate::esplora::params::single(address), 1).await?;
+        let json = self.call(&self.sandshrew_rpc_url, crate::ord::OrdJsonRpcMethods::ADDRESS, crate::esplora::params::single(address), 1).await?;
         serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
    }
 
    async fn get_block_info(&self, query: &str) -> Result<ord::Block> {
-        let json = self.call(&self.sandshrew_rpc_url, "ord_block", crate::esplora::params::single(query), 1).await?;
+        let json = self.call(&self.sandshrew_rpc_url, crate::ord::OrdJsonRpcMethods::BLOCK, crate::esplora::params::single(query), 1).await?;
         serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
    }
 
    async fn get_ord_block_count(&self) -> Result<u64> {
-        let json = self.call(&self.sandshrew_rpc_url, "ord_blockCount", crate::esplora::params::empty(), 1).await?;
-        json.as_u64().ok_or_else(|| DeezelError::RpcError("Invalid block count response".to_string()))
+        let json = self.call(&self.sandshrew_rpc_url, crate::ord::OrdJsonRpcMethods::BLOCK_COUNT, crate::esplora::params::empty(), 1).await?;
+        log::debug!("get_ord_block_count response: {:?}", json);
+        if let Some(count) = json.as_u64() {
+            return Ok(count);
+        }
+        if let Some(count_str) = json.as_str() {
+            return count_str.parse::<u64>().map_err(|_| DeezelError::RpcError("Invalid block count string response".to_string()));
+        }
+        Err(DeezelError::RpcError("Invalid block count response: not a u64 or string".to_string()))
    }
 
    async fn get_ord_blocks(&self) -> Result<ord::Blocks> {
-        let json = self.call(&self.sandshrew_rpc_url, "ord_blocks", crate::esplora::params::empty(), 1).await?;
+        let json = self.call(&self.sandshrew_rpc_url, crate::ord::OrdJsonRpcMethods::BLOCKS, crate::esplora::params::empty(), 1).await?;
         serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
    }
 
    async fn get_children(&self, inscription_id: &str, page: Option<u32>) -> Result<ord::Children> {
-        let json = self.call(&self.sandshrew_rpc_url, "ord_children", crate::esplora::params::optional_dual(inscription_id, page), 1).await?;
+        let json = self.call(&self.sandshrew_rpc_url, crate::ord::OrdJsonRpcMethods::CHILDREN, crate::esplora::params::optional_dual(inscription_id, page), 1).await?;
         serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
    }
 
    async fn get_content(&self, inscription_id: &str) -> Result<Vec<u8>> {
-        let result = self.call(&self.sandshrew_rpc_url, "ord_content", crate::esplora::params::single(inscription_id), 1).await?;
+        let result = self.call(&self.sandshrew_rpc_url, crate::ord::OrdJsonRpcMethods::CONTENT, crate::esplora::params::single(inscription_id), 1).await?;
         let hex_str = result.as_str().ok_or_else(|| DeezelError::RpcError("Invalid content response".to_string()))?;
         hex::decode(hex_str.strip_prefix("0x").unwrap_or(hex_str)).map_err(|e| DeezelError::Serialization(e.to_string()))
    }
 
    async fn get_inscriptions(&self, page: Option<u32>) -> Result<ord::Inscriptions> {
-        let json = self.call(&self.sandshrew_rpc_url, "ord_inscriptions", crate::esplora::params::optional_single(page), 1).await?;
+        let json = self.call(&self.sandshrew_rpc_url, crate::ord::OrdJsonRpcMethods::INSCRIPTIONS, crate::esplora::params::optional_single(page), 1).await?;
         serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
    }
 
    async fn get_output(&self, output: &str) -> Result<ord::Output> {
-        let json = self.call(&self.sandshrew_rpc_url, "ord_output", crate::esplora::params::single(output), 1).await?;
+        let json = self.call(&self.sandshrew_rpc_url, crate::ord::OrdJsonRpcMethods::OUTPUT, crate::esplora::params::single(output), 1).await?;
         serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
    }
 
    async fn get_parents(&self, inscription_id: &str, page: Option<u32>) -> Result<ord::ParentInscriptions> {
-        let json = self.call(&self.sandshrew_rpc_url, "ord_parents", crate::esplora::params::optional_dual(inscription_id, page), 1).await?;
+        let json = self.call(&self.sandshrew_rpc_url, crate::ord::OrdJsonRpcMethods::PARENTS, crate::esplora::params::optional_dual(inscription_id, page), 1).await?;
         serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
    }
 
    async fn get_rune(&self, rune: &str) -> Result<ord::RuneInfo> {
-        let json = self.call(&self.sandshrew_rpc_url, "ord_rune", crate::esplora::params::single(rune), 1).await?;
+        let json = self.call(&self.sandshrew_rpc_url, crate::ord::OrdJsonRpcMethods::RUNE, crate::esplora::params::single(rune), 1).await?;
         serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
    }
 
    async fn get_runes(&self, page: Option<u32>) -> Result<ord::Runes> {
-        let json = self.call(&self.sandshrew_rpc_url, "ord_runes", crate::esplora::params::optional_single(page), 1).await?;
+        let json = self.call(&self.sandshrew_rpc_url, crate::ord::OrdJsonRpcMethods::RUNES, crate::esplora::params::optional_single(page), 1).await?;
         serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
    }
 
    async fn get_sat(&self, sat: u64) -> Result<ord::SatResponse> {
-        let json = self.call(&self.sandshrew_rpc_url, "ord_sat", crate::esplora::params::single(sat), 1).await?;
+        let json = self.call(&self.sandshrew_rpc_url, crate::ord::OrdJsonRpcMethods::SAT, crate::esplora::params::single(sat), 1).await?;
         serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
    }
 
    async fn get_tx_info(&self, txid: &str) -> Result<ord::TxInfo> {
-        let json = self.call(&self.sandshrew_rpc_url, "ord_tx", crate::esplora::params::single(txid), 1).await?;
+        let json = self.call(&self.sandshrew_rpc_url, crate::ord::OrdJsonRpcMethods::TX, crate::esplora::params::single(txid), 1).await?;
         serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
    }
 }

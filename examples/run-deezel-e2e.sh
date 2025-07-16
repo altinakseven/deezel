@@ -21,8 +21,8 @@ $DEEZEL --wallet-file ~/.deezel/regtest.json.asc -p regtest --sandshrew-rpc-url 
 echo "⛏️  Generating 400 blocks to P2TR address..."
 $DEEZEL --wallet-file ~/.deezel/regtest.json.asc -p regtest --sandshrew-rpc-url http://localhost:18888 --passphrase testtesttest bitcoind generatetoaddress 201 [self:p2tr:0]
 
-echo "Waiting for blockchain sync..."
-sleep 6
+echo "Syncing wallet with blockchain..."
+$DEEZEL --wallet-file ~/.deezel/regtest.json.asc -p regtest --sandshrew-rpc-url http://localhost:18888 --passphrase testtesttest wallet sync
 
 echo "Checking UTXOs after block generation..."
 $DEEZEL --wallet-file ~/.deezel/regtest.json.asc -p regtest --sandshrew-rpc-url http://localhost:18888 --passphrase testtesttest wallet utxos --addresses p2tr:0
