@@ -516,8 +516,12 @@ impl SystemWallet for SystemDeezel {
            WalletCommands::Send { address, amount, fee_rate, send_all, from, change, yes } => {
                // Resolve address identifiers
                let resolved_address = provider.resolve_all_identifiers(&address).await?;
-               let resolved_from = if let Some(from_addr) = from {
-                   Some(provider.resolve_all_identifiers(&from_addr).await?)
+               let resolved_from = if let Some(from_addrs) = from {
+                   let mut resolved = Vec::new();
+                   for addr in from_addrs {
+                       resolved.push(provider.resolve_all_identifiers(&addr).await?);
+                   }
+                   Some(resolved)
                } else {
                    None
                };
@@ -532,7 +536,7 @@ impl SystemWallet for SystemDeezel {
                    amount,
                    fee_rate,
                    send_all,
-                   from_address: resolved_from,
+                   from: resolved_from,
                    change_address: resolved_change,
                    auto_confirm: yes,
                };
@@ -558,7 +562,7 @@ impl SystemWallet for SystemDeezel {
                    amount: 0, // Will be ignored since send_all is true
                    fee_rate,
                    send_all: true,
-                   from_address: None,
+                   from: None,
                    change_address: None,
                    auto_confirm: yes,
                };
@@ -584,7 +588,7 @@ impl SystemWallet for SystemDeezel {
                    amount,
                    fee_rate,
                    send_all,
-                   from_address: None,
+                   from: None,
                    change_address: None,
                    auto_confirm: yes,
                };

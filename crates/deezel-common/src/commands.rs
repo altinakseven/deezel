@@ -178,9 +178,9 @@ pub enum WalletCommands {
         /// Send all available funds
         #[arg(long)]
         send_all: bool,
-        /// Source address (optional)
-        #[arg(long)]
-        from: Option<String>,
+        /// Source addresses (comma-separated)
+        #[arg(long, value_delimiter = ',')]
+        from: Option<Vec<String>>,
         /// Change address (optional)
         #[arg(long)]
         change: Option<String>,

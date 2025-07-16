@@ -172,7 +172,7 @@ impl<P: DeezelProvider> WalletManager<P> {
             amount: params.amount,
             fee_rate: params.fee_rate,
             send_all: params.send_all,
-            from_address: params.from_address,
+            from: params.from,
             change_address: params.change_address,
             auto_confirm: params.auto_confirm,
         };
@@ -290,7 +290,7 @@ impl<P: DeezelProvider> WalletManager<P> {
             amount: params.amount,
             fee_rate: params.fee_rate,
             send_all: params.send_all,
-            from_address: params.from_address,
+            from: params.from,
             change_address: params.change_address,
             auto_confirm: params.auto_confirm,
         };
@@ -370,7 +370,7 @@ pub struct SendParams {
     pub amount: u64,
     pub fee_rate: Option<f32>,
     pub send_all: bool,
-    pub from_address: Option<String>,
+    pub from: Option<Vec<String>>,
     pub change_address: Option<String>,
     pub auto_confirm: bool,
 }

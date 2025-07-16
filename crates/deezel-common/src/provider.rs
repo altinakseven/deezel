@@ -23,7 +23,6 @@ use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
 use alloc::boxed::Box;
-use alloc::sync::Arc;
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::PathBuf;
 use core::str::FromStr;
@@ -862,12 +861,23 @@ impl WalletProvider for ConcreteProvider {
     }
     
     async fn create_transaction(&self, params: SendParams) -> Result<String> {
-        // 1. Get all addresses from the keystore to find UTXOs
-        let all_addresses = self.get_addresses(100).await?; // A reasonable number for a simple wallet
-        let address_strings: Vec<String> = all_addresses.iter().map(|a| a.address.clone()).collect();
+        // 1. Determine which addresses to use for sourcing UTXOs
+        let (address_strings, all_addresses) = if let Some(from_addresses) = &params.from {
+            (from_addresses.clone(), from_addresses.iter().map(|s| AddressInfo {
+                address: s.clone(),
+                index: 0, // Not relevant here
+                derivation_path: "".to_string(), // Not relevant here
+                script_type: "".to_string(), // Not relevant here
+                used: false, // Not relevant here
+            }).collect())
+        } else {
+            // Fallback to discovering addresses if --from is not provided
+            let discovered_addresses = self.get_addresses(100).await?; // A reasonable number for a simple wallet
+            (discovered_addresses.iter().map(|a| a.address.clone()).collect(), discovered_addresses)
+        };
 
-        // 2. Get UTXOs for all our addresses
-        let utxos = self.get_utxos(false, Some(address_strings)).await?;
+        // 2. Get UTXOs for the specified addresses
+        let utxos = self.get_utxos(false, Some(address_strings.clone())).await?;
 
         // 3. Perform coin selection
         let target_amount = Amount::from_sat(params.amount);
@@ -1543,6 +1553,7 @@ impl EsploraProvider for ConcreteProvider {
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
         
+        
         self.call(&self.sandshrew_rpc_url, crate::esplora::EsploraJsonRpcMethods::MEMPOOL, crate::esplora::params::empty(), 1).await
     }
 
@@ -2011,7 +2022,6 @@ mod esplora_provider_tests {
             server.uri(), // sandshrew rpc
             Some(server.uri()), // esplora url
             "regtest".to_string(),
-            None,
             None,
         ).await.unwrap();
         (server, provider)

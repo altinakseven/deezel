@@ -319,7 +319,7 @@ pub struct SendParams {
     pub amount: u64,
     pub fee_rate: Option<f32>,
     pub send_all: bool,
-    pub from_address: Option<String>,
+    pub from: Option<Vec<String>>,
     pub change_address: Option<String>,
     pub auto_confirm: bool,
 }
