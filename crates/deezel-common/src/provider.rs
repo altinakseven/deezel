@@ -89,6 +89,8 @@ pub struct ConcreteProvider {
     wallet_path: Option<String>,
     passphrase: Option<String>,
     wallet_state: WalletState,
+    #[cfg(feature = "native-deps")]
+    http_client: reqwest::Client,
 }
 
 impl ConcreteProvider {
@@ -112,6 +114,8 @@ impl ConcreteProvider {
            wallet_path: wallet_path.clone(),
            passphrase: None,
            wallet_state: WalletState::None,
+           #[cfg(feature = "native-deps")]
+           http_client: reqwest::Client::new(),
        };
 
        // Try to load the keystore metadata if a path is provided

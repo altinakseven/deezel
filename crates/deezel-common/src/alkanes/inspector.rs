@@ -38,7 +38,10 @@ impl Instant {
     fn elapsed(&self) -> Duration { Duration::from_micros(0) }
 }
 
-use crate::{ToString, format};
+#[cfg(not(feature = "std"))]
+use alloc::{string::ToString, format};
+#[cfg(feature = "std")]
+use std::{string::ToString, format};
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::{vec, vec::Vec, boxed::Box, string::String};

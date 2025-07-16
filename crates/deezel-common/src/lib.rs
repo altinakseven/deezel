@@ -36,6 +36,14 @@ pub use alloc::{
     vec::Vec,
 };
 
+#[cfg(feature = "std")]
+pub use std::{
+    string::{String, ToString},
+    format,
+    vec,
+    vec::Vec,
+};
+
 pub mod vendored_ord;
 
 // Core modules

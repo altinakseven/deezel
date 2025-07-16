@@ -1,7 +1,10 @@
 //! Hex encoding utility trait.
 
 use crate::Result;
-use crate::{String, Vec};
+#[cfg(not(feature = "std"))]
+use alloc::{string::String, vec::Vec};
+#[cfg(feature = "std")]
+use std::{string::String, vec::Vec};
 use bitcoin::hashes::hex::FromHex;
 use bitcoin::ScriptBuf;
 use hex;

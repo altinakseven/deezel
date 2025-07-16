@@ -18,7 +18,10 @@ use crate::{Result, DeezelError, DeezelProvider, JsonValue};
 use crate::traits::{WalletProvider, UtxoInfo};
 use bitcoin::{Transaction, ScriptBuf, OutPoint, TxOut, Address, XOnlyPublicKey};
 use core::str::FromStr;
+#[cfg(not(feature = "std"))]
 use alloc::{vec, vec::Vec, string::{String, ToString}, format};
+#[cfg(feature = "std")]
+use std::{vec, vec::Vec, string::{String, ToString}, format};
 pub use super::types::{EnhancedExecuteParams, EnhancedExecuteResult, InputRequirement, ProtostoneSpec, OutputTarget};
 use super::envelope::AlkanesEnvelope;
 use anyhow::anyhow;
@@ -463,7 +466,8 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
         }
 
         let protocol_payload = if !all_protostones.is_empty() {
-            Some(all_protostones.encipher()?)
+            let enciphered = all_protostones.encipher()?;
+            Some(enciphered)
         } else {
             None
         };

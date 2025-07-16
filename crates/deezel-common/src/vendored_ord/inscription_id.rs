@@ -169,8 +169,6 @@ impl Display for ParseError {
   }
 }
 
-#[cfg(feature = "std")]
-impl std::error::Error for ParseError {}
 
 impl FromStr for InscriptionId {
   type Err = ParseError;

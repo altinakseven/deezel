@@ -110,7 +110,6 @@ impl SystemDeezel {
             args.esplora_url.clone(),
             args.provider.clone(),
             Some(std::path::PathBuf::from(&wallet_file)),
-            None,
         ).await?;
 
         if let Some(passphrase) = &args.passphrase {

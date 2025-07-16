@@ -1,6 +1,8 @@
 //! Parsing logic for alkanes commands
-use crate::{String, ToString, Vec};
-use alloc::format;
+#[cfg(not(feature = "std"))]
+use alloc::{string::{String, ToString}, vec::Vec, format};
+#[cfg(feature = "std")]
+use std::{string::{String, ToString}, vec::Vec, format};
 use anyhow::{anyhow, Context, Result};
 use super::types::{InputRequirement, OutputTarget, ProtostoneEdict, ProtostoneSpec, BitcoinTransfer};
 use alkanes_support::cellpack::Cellpack;
@@ -46,8 +48,8 @@ pub fn parse_protostones(protostones_str: &str) -> Result<Vec<ProtostoneSpec>> {
     
     let mut protostones = Vec::new();
     
-    for part in protostone_parts {
-        let spec = parse_single_protostone(&part)?;
+    for part in &protostone_parts {
+        let spec = parse_single_protostone(part)?;
         protostones.push(spec);
     }
     
