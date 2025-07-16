@@ -1045,8 +1045,8 @@ impl WalletProvider for ConcreteProvider {
             let ord_height_res = self.get_ord_block_count().await;
 
             // 3. Check if services are synced
-            // Per .clinerules, metashrew should be +1 block ahead of bitcoind
-            let metashrew_synced = metashrew_height_res.as_ref().map_or(false, |&h| h >= bitcoind_height + 1);
+            // All services should be at least at the same height as bitcoind.
+            let metashrew_synced = metashrew_height_res.as_ref().map_or(false, |&h| h >= bitcoind_height);
             let esplora_synced = esplora_height_res.as_ref().map_or(false, |&h| h >= bitcoind_height);
             let ord_synced = ord_height_res.as_ref().map_or(false, |&h| h >= bitcoind_height);
 
