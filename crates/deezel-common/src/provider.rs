@@ -775,9 +775,8 @@ impl WalletProvider for ConcreteProvider {
         let addrs_to_check = if let Some(provided_addresses) = addresses {
             provided_addresses
         } else {
-            // If no addresses are provided, derive the first 20 from the public key.
-            // This is a common default for wallets (e.g., for discovery).
-            let derived_infos = self.get_addresses(20).await?;
+            // If no addresses are provided, derive the first 101 from the public key to find the coinbase UTXO.
+            let derived_infos = self.get_addresses(101).await?;
             derived_infos.into_iter().map(|info| info.address).collect()
         };
 
@@ -787,8 +786,17 @@ impl WalletProvider for ConcreteProvider {
 
         let mut all_utxos = Vec::new();
         for address in addrs_to_check {
-            let utxos_json = self.get_address_utxo(&address).await?;
+            log::info!("Checking UTXOs for address: {}", address);
+            let utxos_json = self.get_address_utxo(&address).await;
+            
+            if let Err(e) = utxos_json {
+                log::warn!("Failed to get UTXOs for address {}: {}", address, e);
+                continue;
+            }
+            let utxos_json = utxos_json.unwrap();
+
             if let Some(utxos_array) = utxos_json.as_array() {
+                log::info!("Found {} UTXOs for address {}", utxos_array.len(), address);
                 for utxo in utxos_array {
                     if let (Some(txid_str), Some(vout), Some(value)) = (
                         utxo.get("txid").and_then(|t| t.as_str()),
@@ -800,21 +808,30 @@ impl WalletProvider for ConcreteProvider {
                         let block_height = status.and_then(|s| s.get("block_height")).and_then(|h| h.as_u64());
                         
                         let outpoint = OutPoint::from_str(&format!("{}:{}", txid_str, vout))?;
+                        let addr = Address::from_str(&address)?.require_network(self.get_network())?;
                         let utxo_info = UtxoInfo {
                             txid: txid_str.to_string(),
                             vout: vout as u32,
                             amount: value,
                             address: address.clone(),
-                            script_pubkey: None, // Esplora doesn't provide this directly
-                            confirmations: if confirmed { 1 } else { 0 }, // Simplified
-                            frozen: false, // Not supported yet
+                            script_pubkey: Some(addr.script_pubkey()),
+                            confirmations: if confirmed {
+                                if let Some(bh) = block_height {
+                                    let current_height = self.get_block_count().await.unwrap_or(bh);
+                                    current_height.saturating_sub(bh) as u32 + 1
+                                } else {
+                                    1
+                                }
+                            } else { 0 },
+                            frozen: false,
                             freeze_reason: None,
                             block_height,
-                            has_inscriptions: false, // Not supported yet
-                            has_runes: false, // Not supported yet
-                            has_alkanes: false, // Not supported yet
-                            is_coinbase: false, // Not easily determined from Esplora
+                            has_inscriptions: false,
+                            has_runes: false,
+                            has_alkanes: false,
+                            is_coinbase: false,
                         };
+                        log::info!("Found UTXO: {}:{} - {} sats", utxo_info.txid, utxo_info.vout, utxo_info.amount);
                         all_utxos.push((outpoint, utxo_info));
                     }
                 }
@@ -1552,7 +1569,6 @@ impl EsploraProvider for ConcreteProvider {
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
-        
         
         self.call(&self.sandshrew_rpc_url, crate::esplora::EsploraJsonRpcMethods::MEMPOOL, crate::esplora::params::empty(), 1).await
     }
