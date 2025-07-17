@@ -511,6 +511,13 @@ pub enum AlkanesCommands {
     },
 }
 
+impl AlkanesCommands {
+    /// Check if the command requires signing and thus a decrypted private key
+    pub fn requires_signing(&self) -> bool {
+        matches!(self, AlkanesCommands::Execute { .. })
+    }
+}
+
 /// Runestone analysis subcommands
 #[derive(Subcommand, Debug, Clone)]
 pub enum RunestoneCommands {

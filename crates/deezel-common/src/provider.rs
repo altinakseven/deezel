@@ -1235,7 +1235,15 @@ impl WalletProvider for ConcreteProvider {
     }
     
     async fn get_internal_key(&self) -> Result<bitcoin::XOnlyPublicKey> {
-        unimplemented!()
+        let mnemonic = self.get_mnemonic().await?
+            .ok_or_else(|| DeezelError::Wallet("Wallet must be unlocked to get internal key".to_string()))?;
+        let mnemonic = bip39::Mnemonic::from_phrase(&mnemonic, bip39::Language::English)?;
+        let seed = bip39::Seed::new(&mnemonic, "");
+        let network = self.get_network();
+        let xpriv = bitcoin::bip32::Xpriv::new_master(network, seed.as_bytes())?;
+        let secp = bitcoin::secp256k1::Secp256k1::new();
+        let (internal_key, _) = xpriv.to_keypair(&secp).x_only_public_key();
+        Ok(internal_key)
     }
     
     async fn sign_psbt(&self, _psbt: &bitcoin::psbt::Psbt) -> Result<bitcoin::psbt::Psbt> {

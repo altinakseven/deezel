@@ -27,7 +27,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-(cd /data/metashrew/deezel && cargo build --release)
 # Execute the alkanes command with commit/reveal pattern
 /data/metashrew/deezel/target/release/deezel \
     --sandshrew-rpc-url http://localhost:18888 \
@@ -38,9 +37,9 @@ done
     --input-requirements B:1000 \
     --change-address [self:p2tr:2] \
     --to-addresses [self:p2tr:1],[self:p2tr:2],[self:p2tr:3] \
-    --protostones '[C:[2]]' \
     --envelope /data/metashrew/deezel/examples/free_mint.wasm.gz \
     --mine \
     --fee-rate 1 \
     -y \
     --trace \
+    --protostones '[3,797,101]:v0:v0'

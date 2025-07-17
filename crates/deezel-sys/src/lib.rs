@@ -950,7 +950,22 @@ impl SystemMetashrew for SystemDeezel {
 #[async_trait(?Send)]
 impl SystemAlkanes for SystemDeezel {
     async fn execute_alkanes_command(&self, command: AlkanesCommands) -> deezel_common::Result<()> {
-        let provider = &self.provider;
+        let mut provider = self.provider.clone();
+
+        if command.requires_signing() {
+            if let deezel_common::provider::WalletState::Locked(_) = provider.get_wallet_state() {
+                let passphrase = if let Some(ref pass) = self.args.passphrase {
+                    pass.clone()
+                } else {
+                    KeystoreManager::prompt_for_passphrase("Enter passphrase to unlock keystore for signing", false)
+                        .map_err(|e| DeezelError::Wallet(format!("Failed to get passphrase: {}", e)))?
+                };
+                provider.unlock_wallet(&passphrase).await?;
+            } else if let deezel_common::provider::WalletState::None = provider.get_wallet_state() {
+                return Err(DeezelError::Wallet("No wallet found. Please create or specify a wallet file.".to_string()));
+            }
+        }
+
         let res: anyhow::Result<()> = match command {
             AlkanesCommands::Execute {
                 fee_rate,
@@ -1057,7 +1072,7 @@ impl SystemAlkanes for SystemDeezel {
                 Ok(())
             }
             AlkanesCommands::Balance { address, raw } => {
-                let balance_result = deezel_common::AlkanesProvider::get_balance(provider, address.as_deref()).await?;
+                let balance_result = deezel_common::AlkanesProvider::get_balance(&provider, address.as_deref()).await?;
 
                 if raw {
                     println!("{}", serde_json::to_string_pretty(&balance_result)?);
@@ -1143,7 +1158,7 @@ impl SystemAlkanes for SystemDeezel {
                 Ok(())
             }
             AlkanesCommands::GetBytecode { alkane_id, raw } => {
-                let bytecode = AlkanesProvider::get_bytecode(provider, &alkane_id).await?;
+                let bytecode = AlkanesProvider::get_bytecode(&provider, &alkane_id).await?;
 
                 if raw {
                     let json_result = serde_json::json!({
@@ -1192,7 +1207,7 @@ impl SystemAlkanes for SystemDeezel {
                 Ok(())
             }
             AlkanesCommands::GetBlock { height, raw } => {
-                let result = AlkanesProvider::get_block(provider, height).await?;
+                let result = AlkanesProvider::get_block(&provider, height).await?;
                 if raw {
                     println!("{:#?}", result);
                 } else {

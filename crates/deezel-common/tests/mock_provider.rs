@@ -1,4 +1,4 @@
-use deezel_common::*;
+t -a -use deezel_common::*;
 use async_trait::async_trait;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -194,7 +194,7 @@ impl WalletProvider for MockProvider {
         Ok(addresses)
     }
     
-    async fn send(&self, _params: SendParams) -> Result<String> {
+    async fn send(&mut self, _params: SendParams) -> Result<String> {
         Ok("mock_txid".to_string())
     }
     
@@ -245,7 +245,7 @@ impl WalletProvider for MockProvider {
         Ok("mock_tx_hex".to_string())
     }
     
-    async fn sign_transaction(&self, _tx_hex: String) -> Result<String> {
+    async fn sign_transaction(&mut self, _tx_hex: String) -> Result<String> {
         Ok("mock_signed_tx_hex".to_string())
     }
     
@@ -340,7 +340,7 @@ impl BitcoinRpcProvider for MockProvider {
         Ok("mock_tx_hex".to_string())
     }
     
-    async fn get_block(&self, _hash: &str) -> Result<JsonValue> {
+    async fn get_block(&self, _hash: &str, _raw: bool) -> Result<JsonValue> {
         Ok(serde_json::json!({"height": 800000}))
     }
     

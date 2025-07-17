@@ -19,7 +19,7 @@ use deezel_common::{
         OutputTarget, ProtostoneEdict, ProtostoneSpec,
     },
     DeezelError,
-    traits::WalletProvider,
+    traits::{WalletProvider, BitcoinRpcProvider},
 };
 
 use mock_provider::MockProvider;
@@ -193,3 +193,56 @@ async fn test_protostone_validation_error() {
 }
 
 // TODO: Add more tests for complex protostones, etc.
+
+
+#[tokio::test]
+async fn test_alkanes_execute_with_mock_provider_and_protostone() {
+    let _ = env_logger::builder().is_test(true).try_init();
+    
+    // 1. Setup the provider
+    let provider = MockProvider::new(Network::Regtest);
+    let executor = EnhancedAlkanesExecutor::new(&provider);
+
+    // 2. Fund the wallet
+    let funding_outpoint = OutPoint::from_str("c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1:0").unwrap();
+    let address = WalletProvider::get_address(&provider).await.unwrap();
+    let funding_tx_out = TxOut {
+        value: Amount::from_sat(500_000),
+        script_pubkey: Address::from_str(&address).unwrap().require_network(Network::Regtest).unwrap().script_pubkey(),
+    };
+    provider.utxos.lock().unwrap().push((funding_outpoint, funding_tx_out));
+
+    // 3. Setup and run the executor
+    let envelope_path = "/data/metashrew/deezel/examples/free_mint.wasm.gz";
+    let envelope_data = std::fs::read(envelope_path).expect("Failed to read envelope");
+
+    let protostone_str = "[3,797,101]:v0:v0";
+    let protostones = deezel_common::alkanes::parsing::parse_protostones(protostone_str).unwrap();
+
+    let params = EnhancedExecuteParams {
+        fee_rate: Some(1.0),
+        to_addresses: vec![
+            "bcrt1pgrx3gpfuah27jzkv584anak2frwxlq7suv2k25wxm3sg4qa74fsqqj5rja".to_string(),
+            "bcrt1p8h2tvdjucarc3ms7f0pc28z6qqh9v2zgd6t7wrleea3f34llx4wsap88w8".to_string(),
+            "bcrt1pqm36jhdqhgxjpcv0lhth0739jec0h7aygujep39804q24edgw4ks9pcxme".to_string(),
+        ],
+        change_address: Some("bcrt1p8h2tvdjucarc3ms7f0pc28z6qqh9v2zgd6t7wrleea3f34llx4wsap88w8".to_string()),
+        input_requirements: vec![InputRequirement::Bitcoin { amount: 1000 }],
+        protostones,
+        envelope_data: Some(envelope_data),
+        raw_output: false,
+        trace_enabled: true,
+        mine_enabled: true,
+        auto_confirm: true,
+    };
+
+    log::info!("Executing alkanes command...");
+    let result = executor.execute(params).await;
+    log::info!("Execution result: {:?}", result);
+
+    // Assert
+    assert!(result.is_ok(), "Execution failed: {:?}", result.err());
+    let result = result.unwrap();
+    assert!(result.commit_txid.is_some());
+    assert!(!result.reveal_txid.is_empty());
+}
