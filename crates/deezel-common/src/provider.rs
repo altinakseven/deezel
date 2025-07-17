@@ -876,6 +876,14 @@ impl WalletProvider for ConcreteProvider {
                         
                         let outpoint = OutPoint::from_str(&format!("{}:{}", txid_str, vout))?;
                         let addr = Address::from_str(&address)?.require_network(self.get_network())?;
+                        let tx_info = self.get_tx(&txid_str).await?;
+                        let is_coinbase = tx_info
+                            .get("vin")
+                            .and_then(|v| v.as_array())
+                            .map_or(false, |vin| {
+                                vin.len() == 1 && vin[0].get("is_coinbase").and_then(|v| v.as_bool()).unwrap_or(false)
+                            });
+                        
                         let utxo_info = UtxoInfo {
                             txid: txid_str.to_string(),
                             vout: vout as u32,
@@ -896,24 +904,10 @@ impl WalletProvider for ConcreteProvider {
                             has_inscriptions: false,
                             has_runes: false,
                             has_alkanes: false,
-                            is_coinbase: false,
+                            is_coinbase,
                         };
-                        let tx_info = self.get_tx(&txid_str).await?;
-                        let is_coinbase = tx_info.get("vin")
-                            .and_then(|v| v.as_array())
-                            .map_or(false, |vin| vin.len() == 1 && vin[0].get("coinbase").is_some());
 
-                        if is_coinbase && utxo_info.confirmations < 100 {
-                            log::info!("Skipping immature coinbase UTXO: {}:{}", txid_str, vout);
-                            continue;
-                        }
-
-                        let tx_info = self.get_tx(&txid_str).await?;
-                        let is_coinbase = tx_info.get("vin")
-                            .and_then(|v| v.as_array())
-                            .map_or(false, |vin| vin.len() == 1 && vin[0].get("coinbase").is_some());
-
-                        if is_coinbase && utxo_info.confirmations < 100 {
+                        if utxo_info.is_coinbase && utxo_info.confirmations < 100 {
                             log::info!("Skipping immature coinbase UTXO: {}:{}", txid_str, vout);
                             continue;
                         }
