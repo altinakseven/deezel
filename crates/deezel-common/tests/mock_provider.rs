@@ -303,7 +303,10 @@ impl WalletProvider for MockProvider {
         Ok(self.internal_key)
     }
     
-    async fn sign_psbt(&self, psbt: &bitcoin::psbt::Psbt) -> Result<bitcoin::psbt::Psbt> {
+    async fn sign_psbt(&mut self, psbt: &mut bitcoin::psbt::Psbt) -> Result<bitcoin::psbt::Psbt> {
+        let keypair = self.get_keypair().await?;
+        let secp = self.secp();
+        psbt.sign(&keypair, secp).map_err(|e| DeezelError::Other(e.to_string()))?;
         Ok(psbt.clone())
     }
     
@@ -552,12 +555,9 @@ impl RunestoneProvider for MockProvider {
 
 #[async_trait(?Send)]
 impl AlkanesProvider for MockProvider {
-    async fn execute(&self, _params: EnhancedExecuteParams) -> Result<EnhancedExecuteResult> {
-        if let Some(response) = self.responses.get("alkanes_execute") {
-            serde_json::from_value(response.clone()).map_err(|e| DeezelError::JsonRpc(e.to_string()).into())
-        } else {
-            Err(DeezelError::JsonRpc("No mock response for alkanes_execute".to_string()).into())
-        }
+    async fn execute(&mut self, params: EnhancedExecuteParams) -> Result<EnhancedExecuteResult> {
+        let mut executor = EnhancedAlkanesExecutor::new(self);
+        executor.execute(params).await
     }
     async fn protorunes_by_address(&self, _address: &str) -> Result<JsonValue> {
         todo!()

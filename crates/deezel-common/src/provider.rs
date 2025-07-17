@@ -1376,7 +1376,8 @@ impl BitcoinRpcProvider for ConcreteProvider {
     
     async fn send_raw_transaction(&self, tx_hex: &str) -> Result<String> {
         log::info!("Attempting to broadcast transaction hex: {}", tx_hex);
-        let params = serde_json::json!([tx_hex]);
+        // The second parameter is maxfeerate. Setting it to 0 disables the fee check.
+        let params = serde_json::json!([tx_hex, 0]);
         let result = self.call(&self.bitcoin_rpc_url, "sendrawtransaction", params, 1).await;
         
         log::info!("sendrawtransaction result: {:?}", result);
@@ -2200,8 +2201,15 @@ impl DeezelProvider for ConcreteProvider {
         Ok(Some(TxOut { value: Amount::from_sat(amount), script_pubkey }))
     }
 
-    async fn sign_taproot_script_spend(&self, _sighash: bitcoin::secp256k1::Message) -> Result<bitcoin::secp256k1::schnorr::Signature> {
-        Err(DeezelError::NotImplemented("sign_taproot_script_spend not implemented for ConcreteProvider".to_string()))
+    async fn sign_taproot_script_spend(&self, sighash: bitcoin::secp256k1::Message) -> Result<bitcoin::secp256k1::schnorr::Signature> {
+        let keypair = self.get_keypair().await?;
+        let untweaked_keypair = UntweakedKeypair::from(keypair);
+        let secp = bitcoin::secp256k1::Secp256k1::new();
+        #[cfg(not(target_arch = "wasm32"))]
+        let signature = secp.sign_schnorr_with_rng(&sighash, &untweaked_keypair, &mut thread_rng());
+        #[cfg(target_arch = "wasm32")]
+        let signature = secp.sign_schnorr_with_rng(&sighash, &untweaked_keypair, &mut OsRng);
+        Ok(signature)
     }
 
 }

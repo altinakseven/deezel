@@ -32,8 +32,8 @@ use alkanes_support::cellpack::Cellpack;
 async fn test_execute_single_transaction_success() {
     let _ = env_logger::builder().is_test(true).try_init();
     // Setup
-    let provider = MockProvider::new(Network::Regtest);
-    let executor = EnhancedAlkanesExecutor::new(&provider);
+    let mut provider = MockProvider::new(Network::Regtest);
+    let mut executor = EnhancedAlkanesExecutor::new(&mut provider);
     
     let funding_outpoint = OutPoint::from_str("a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1:0").unwrap();
     let address = WalletProvider::get_address(&provider).await.unwrap();
@@ -77,8 +77,8 @@ async fn test_execute_single_transaction_success() {
 async fn test_execute_commit_reveal_success() {
     let _ = env_logger::builder().is_test(true).try_init();
     // Setup
-    let provider = MockProvider::new(Network::Regtest);
-    let executor = EnhancedAlkanesExecutor::new(&provider);
+    let mut provider = MockProvider::new(Network::Regtest);
+    let mut executor = EnhancedAlkanesExecutor::new(&mut provider);
 
     let funding_outpoint = OutPoint::from_str("b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1:0").unwrap();
     let address = WalletProvider::get_address(&provider).await.unwrap();
@@ -121,8 +121,8 @@ async fn test_execute_commit_reveal_success() {
 #[tokio::test]
 async fn test_execute_insufficient_funds() {
     // Setup
-    let provider = MockProvider::new(Network::Regtest);
-    let executor = EnhancedAlkanesExecutor::new(&provider);
+    let mut provider = MockProvider::new(Network::Regtest);
+    let mut executor = EnhancedAlkanesExecutor::new(&mut provider);
 
     // No UTXOs added to the provider
 
@@ -153,8 +153,8 @@ async fn test_execute_insufficient_funds() {
 #[tokio::test]
 async fn test_protostone_validation_error() {
     // Setup
-    let provider = MockProvider::new(Network::Regtest);
-    let executor = EnhancedAlkanesExecutor::new(&provider);
+    let mut provider = MockProvider::new(Network::Regtest);
+    let mut executor = EnhancedAlkanesExecutor::new(&mut provider);
 
     let params = EnhancedExecuteParams {
         fee_rate: Some(1.0),
@@ -203,8 +203,8 @@ async fn test_alkanes_execute_with_mock_provider_and_protostone() {
     let _ = env_logger::builder().is_test(true).try_init();
     
     // 1. Setup the provider
-    let provider = MockProvider::new(Network::Regtest);
-    let executor = EnhancedAlkanesExecutor::new(&provider);
+    let mut provider = MockProvider::new(Network::Regtest);
+    let mut executor = EnhancedAlkanesExecutor::new(&mut provider);
 
     // 2. Fund the wallet
     let funding_outpoint = OutPoint::from_str("c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1:0").unwrap();
