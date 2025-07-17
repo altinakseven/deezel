@@ -261,10 +261,15 @@ fn split_complex_protostone(input: &str) -> Result<Vec<String>> {
     let mut parts = Vec::new();
     let mut current = String::new();
     let mut bracket_depth = 0;
-    
-    while let Some(ch) = input.chars().next() {
+    let mut chars = input.chars().peekable();
+
+    while let Some(ch) = chars.next() {
         match ch {
             '[' => {
+                if bracket_depth == 0 && !current.is_empty() {
+                    parts.push(current.trim().to_string());
+                    current.clear();
+                }
                 bracket_depth += 1;
                 current.push(ch);
             },
@@ -274,17 +279,20 @@ fn split_complex_protostone(input: &str) -> Result<Vec<String>> {
                 if bracket_depth < 0 {
                     return Err(anyhow!("Unmatched closing bracket"));
                 }
+                if bracket_depth == 0 {
+                    parts.push(current.trim().to_string());
+                    current.clear();
+                }
             },
             ':' if bracket_depth == 0 => {
-                // Split on colon only when not inside brackets
-                if !current.trim().is_empty() {
+                if !current.is_empty() {
                     parts.push(current.trim().to_string());
                 }
                 current.clear();
+                // The colon itself is a separator, not part of a token
             },
             ',' if bracket_depth == 0 => {
-                // Also split on comma when not inside brackets (for multiple edicts)
-                if !current.trim().is_empty() {
+                if !current.is_empty() {
                     parts.push(current.trim().to_string());
                 }
                 current.clear();
@@ -294,14 +302,15 @@ fn split_complex_protostone(input: &str) -> Result<Vec<String>> {
             }
         }
     }
-    
+
     if bracket_depth != 0 {
         return Err(anyhow!("Unmatched opening bracket"));
     }
-    
+
     if !current.trim().is_empty() {
         parts.push(current.trim().to_string());
     }
-    
-    Ok(parts)
+
+    // Filter out empty strings that might result from separators
+    Ok(parts.into_iter().filter(|s| !s.is_empty()).collect())
 }

@@ -195,6 +195,9 @@ async fn test_protostone_validation_error() {
 // TODO: Add more tests for complex protostones, etc.
 
 
+use bitcoin::secp256k1::{Secp256k1, All};
+use bitcoin::PublicKey;
+
 #[tokio::test]
 async fn test_alkanes_execute_with_mock_provider_and_protostone() {
     let _ = env_logger::builder().is_test(true).try_init();
@@ -212,7 +215,30 @@ async fn test_alkanes_execute_with_mock_provider_and_protostone() {
     };
     provider.utxos.lock().unwrap().push((funding_outpoint, funding_tx_out));
 
-    // 3. Setup and run the executor
+    // 3. Generate dynamic addresses
+    let secp = Secp256k1::<All>::new();
+    let to_address_1 = {
+        let sk = bitcoin::secp256k1::SecretKey::from_slice(&[1; 32]).unwrap();
+        let pk = PublicKey::new(sk.public_key(&secp));
+        Address::p2tr(&secp, pk.inner.x_only_public_key().0, None, Network::Regtest)
+    };
+    let to_address_2 = {
+        let sk = bitcoin::secp256k1::SecretKey::from_slice(&[2; 32]).unwrap();
+        let pk = PublicKey::new(sk.public_key(&secp));
+        Address::p2tr(&secp, pk.inner.x_only_public_key().0, None, Network::Regtest)
+    };
+    let to_address_3 = {
+        let sk = bitcoin::secp256k1::SecretKey::from_slice(&[3; 32]).unwrap();
+        let pk = PublicKey::new(sk.public_key(&secp));
+        Address::p2tr(&secp, pk.inner.x_only_public_key().0, None, Network::Regtest)
+    };
+    let change_address = {
+        let sk = bitcoin::secp256k1::SecretKey::from_slice(&[4; 32]).unwrap();
+        let pk = PublicKey::new(sk.public_key(&secp));
+        Address::p2tr(&secp, pk.inner.x_only_public_key().0, None, Network::Regtest)
+    };
+
+    // 4. Setup and run the executor
     let envelope_path = "/data/metashrew/deezel/examples/free_mint.wasm.gz";
     let envelope_data = std::fs::read(envelope_path).expect("Failed to read envelope");
 
@@ -222,11 +248,11 @@ async fn test_alkanes_execute_with_mock_provider_and_protostone() {
     let params = EnhancedExecuteParams {
         fee_rate: Some(1.0),
         to_addresses: vec![
-            "bcrt1pgrx3gpfuah27jzkv584anak2frwxlq7suv2k25wxm3sg4qa74fsqqj5rja".to_string(),
-            "bcrt1p8h2tvdjucarc3ms7f0pc28z6qqh9v2zgd6t7wrleea3f34llx4wsap88w8".to_string(),
-            "bcrt1pqm36jhdqhgxjpcv0lhth0739jec0h7aygujep39804q24edgw4ks9pcxme".to_string(),
+            to_address_1.to_string(),
+            to_address_2.to_string(),
+            to_address_3.to_string(),
         ],
-        change_address: Some("bcrt1p8h2tvdjucarc3ms7f0pc28z6qqh9v2zgd6t7wrleea3f34llx4wsap88w8".to_string()),
+        change_address: Some(change_address.to_string()),
         input_requirements: vec![InputRequirement::Bitcoin { amount: 1000 }],
         protostones,
         envelope_data: Some(envelope_data),

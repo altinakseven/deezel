@@ -1,4 +1,4 @@
-t -a -use deezel_common::*;
+use deezel_common::*;
 use async_trait::async_trait;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -201,11 +201,15 @@ impl WalletProvider for MockProvider {
     async fn get_utxos(&self, _include_frozen: bool, _addresses: Option<Vec<String>>) -> Result<Vec<(OutPoint, UtxoInfo)>> {
         let utxos = self.utxos.lock().unwrap();
         let utxo_infos = utxos.iter().map(|(outpoint, tx_out)| {
+            let address = Address::from_script(&tx_out.script_pubkey, self.network)
+                .map(|addr| addr.to_string())
+                .unwrap_or_else(|_| "unknown_script".to_string()); // Handle unrecognized scripts
+
             let info = UtxoInfo {
                 txid: outpoint.txid.to_string(),
                 vout: outpoint.vout,
                 amount: tx_out.value.to_sat(),
-                address: Address::from_script(&tx_out.script_pubkey, self.network).unwrap().to_string(),
+                address,
                 script_pubkey: Some(tx_out.script_pubkey.clone()),
                 confirmations: 10,
                 frozen: false,
@@ -250,9 +254,18 @@ impl WalletProvider for MockProvider {
     }
     
     async fn broadcast_transaction(&self, tx_hex: String) -> Result<String> {
-        let txid = bitcoin::consensus::deserialize::<Transaction>(&hex::decode(&tx_hex).unwrap()).unwrap().compute_txid().to_string();
+        let tx_bytes = hex::decode(&tx_hex).map_err(|e| DeezelError::Hex(e.to_string()))?;
+        let tx: Transaction = bitcoin::consensus::deserialize(&tx_bytes).map_err(|e| DeezelError::Serialization(e.to_string()))?;
+        let txid = tx.compute_txid();
+        
+        // Add the new outputs of this transaction to the UTXO set
+        let mut utxos = self.utxos.lock().unwrap();
+        for (i, tx_out) in tx.output.iter().enumerate() {
+            utxos.push((OutPoint::new(txid, i as u32), tx_out.clone()));
+        }
+
         self.broadcasted_txs.lock().unwrap().push(tx_hex);
-        Ok(txid)
+        Ok(txid.to_string())
     }
     
     async fn estimate_fee(&self, _target: u32) -> Result<FeeEstimate> {

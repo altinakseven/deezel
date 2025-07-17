@@ -92,6 +92,7 @@ pub struct ConcreteProvider {
     wallet_state: WalletState,
     #[cfg(feature = "native-deps")]
     http_client: reqwest::Client,
+    secp: Secp256k1<All>,
 }
 
 impl ConcreteProvider {
@@ -117,6 +118,7 @@ impl ConcreteProvider {
            wallet_state: WalletState::None,
            #[cfg(feature = "native-deps")]
            http_client: reqwest::Client::new(),
+           secp: Secp256k1::new(),
        };
 
        // Try to load the keystore metadata if a path is provided
@@ -2103,8 +2105,7 @@ impl DeezelProvider for ConcreteProvider {
     }
 
     fn secp(&self) -> &Secp256k1<All> {
-        // This is a temporary solution. A proper implementation would have a shared secp context.
-        unimplemented!()
+        &self.secp
     }
 
     async fn get_utxo(&self, outpoint: &OutPoint) -> Result<Option<TxOut>> {

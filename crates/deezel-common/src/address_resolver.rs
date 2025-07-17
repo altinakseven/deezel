@@ -217,30 +217,9 @@ impl<P: DeezelProvider> AddressResolver<P> {
     /// Validate Bitcoin address
     fn validate_bitcoin_address(&self, address: &str) -> Result<()> {
         // Try to parse as Bitcoin address using FromStr trait
-        match bitcoin::Address::from_str(address) {
-            Ok(_) => Ok(()),
-            Err(_) => {
-                // Check if it looks like a Bitcoin address pattern
-                if address.len() < 26 || address.len() > 62 {
-                    return Err(DeezelError::AddressResolution(
-                        format!("Invalid Bitcoin address length: {}", address)
-                    ));
-                }
-                
-                // Check for valid Bitcoin address prefixes
-                if !address.starts_with('1') && 
-                   !address.starts_with('3') && 
-                   !address.starts_with("bc1") && 
-                   !address.starts_with("tb1") && 
-                   !address.starts_with("bcrt1") {
-                    return Err(DeezelError::AddressResolution(
-                        format!("Invalid Bitcoin address format: {}", address)
-                    ));
-                }
-                
-                Ok(())
-            }
-        }
+        bitcoin::Address::from_str(address)
+            .map(|_| ())
+            .map_err(|e| DeezelError::AddressResolution(e.to_string()))
     }
     
     /// Clear the address cache
