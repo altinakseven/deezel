@@ -139,7 +139,7 @@ impl WalletProvider for WebProvider {
         Ok(addresses)
     }
 
-    async fn send(&self, _params: SendParams) -> Result<String> {
+    async fn send(&mut self, _params: SendParams) -> Result<String> {
         // Mock transaction ID
         Ok("web_mock_txid_".to_string() + &hex::encode(self.random_bytes(16)?))
     }
@@ -228,7 +228,7 @@ impl WalletProvider for WebProvider {
         Ok("0100000001000000000000000000000000000000000000000000000000000000000000000000000000ffffffff0100000000000000000000000000".to_string())
     }
 
-    async fn sign_transaction(&self, tx_hex: String) -> Result<String> {
+    async fn sign_transaction(&mut self, tx_hex: String) -> Result<String> {
         // In a real implementation, this would sign the transaction
         Ok(tx_hex + "_signed")
     }

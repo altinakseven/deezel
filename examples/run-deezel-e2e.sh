@@ -1,5 +1,5 @@
 #!/bin/bash
-export RUST_LOG=info
+export RUST_LOG=debug
 DEEZEL=/data/metashrew/deezel/target/release/deezel
 
 PWD=$(pwd)
@@ -14,9 +14,10 @@ rm -f ~/.deezel/regtest.json.asc
 
 echo "🔐 Creating GPG-encrypted wallet (non-interactive mode)..."
 $DEEZEL --wallet-file ~/.deezel/regtest.json.asc -p regtest --sandshrew-rpc-url http://localhost:18888 --passphrase testtesttest wallet create
+$DEEZEL --wallet-file ~/.deezel/regtest.json.asc -p regtest --sandshrew-rpc-url http://localhost:18888 --passphrase testtesttest wallet addresses p2tr:0-100 > /dev/null
 
 echo "🔍 Initial UTXO check..."
-$DEEZEL --wallet-file ~/.deezel/regtest.json.asc -p regtest --sandshrew-rpc-url http://localhost:18888 --passphrase testtesttest wallet utxos --addresses [self:p2tr:100]
+$DEEZEL --wallet-file ~/.deezel/regtest.json.asc -p regtest --sandshrew-rpc-url http://localhost:18888 --passphrase testtesttest wallet utxos
 
 echo "⛏️  Generating 201 blocks to P2TR address..."
 echo "Deriving address for block generation..."
@@ -29,7 +30,7 @@ $DEEZEL --wallet-file ~/.deezel/regtest.json.asc -p regtest --sandshrew-rpc-url 
 
 echo "Checking for matured UTXOs..."
 for i in {1..30}; do
-    UTXOS=$($DEEZEL --wallet-file ~/.deezel/regtest.json.asc -p regtest --sandshrew-rpc-url http://localhost:18888 --passphrase testtesttest wallet utxos --addresses [self:p2tr:100] | grep "No UTXOs found")
+    UTXOS=$($DEEZel --wallet-file ~/.deezel/regtest.json.asc -p regtest --sandshrew-rpc-url http://localhost:18888 --passphrase testtesttest wallet utxos --addresses $GEN_ADDRESS | grep "No UTXOs found")
     if [ -z "$UTXOS" ]; then
         echo "✅ UTXOs found!"
         break
@@ -44,7 +45,7 @@ if [ -n "$UTXOS" ]; then
 fi
 
 echo "Attempting to send transaction..."
-$DEEZEL --wallet-file ~/.deezel/regtest.json.asc -p regtest --sandshrew-rpc-url http://localhost:18888 --passphrase testtesttest wallet send -y --from [self:p2tr:100] [self:p2tr:0] 10000 --fee-rate 1
+$DEEZEL --wallet-file ~/.deezel/regtest.json.asc -p regtest --sandshrew-rpc-url http://localhost:18888 --passphrase testtesttest wallet send -y --from $GEN_ADDRESS [self:p2tr:0] 10000 --fee-rate 1
 
 
 bash /data/metashrew/deezel/examples/run-alkanes-execute.sh

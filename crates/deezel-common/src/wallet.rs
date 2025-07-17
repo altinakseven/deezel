@@ -166,7 +166,7 @@ impl<P: DeezelProvider> WalletManager<P> {
     }
     
     /// Send Bitcoin transaction
-    pub async fn send(&self, params: SendParams) -> Result<String> {
+    pub async fn send(&mut self, params: SendParams) -> Result<String> {
         let trait_params = crate::traits::SendParams {
             address: params.address,
             amount: params.amount,
@@ -298,7 +298,7 @@ impl<P: DeezelProvider> WalletManager<P> {
     }
     
     /// Sign transaction
-    pub async fn sign_transaction(&self, tx_hex: String) -> Result<String> {
+    pub async fn sign_transaction(&mut self, tx_hex: String) -> Result<String> {
         self.provider.sign_transaction(tx_hex).await
     }
     

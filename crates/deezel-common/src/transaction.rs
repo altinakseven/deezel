@@ -275,7 +275,7 @@ impl<P: DeezelProvider> TransactionConstructor<P> {
     }
     
     /// Sign transaction
-    pub async fn sign_transaction(&self, tx: Transaction) -> Result<Transaction> {
+    pub async fn sign_transaction(&mut self, tx: Transaction) -> Result<Transaction> {
         let tx_hex = bitcoin::consensus::encode::serialize_hex(&tx);
         let signed_hex = self.provider.sign_transaction(tx_hex).await?;
         

@@ -906,7 +906,7 @@ impl WalletProvider for BrowserWalletProvider {
         Ok(addresses)
     }
     
-    async fn send(&self, params: SendParams) -> Result<String> {
+    async fn send(&mut self, params: SendParams) -> Result<String> {
         // For sending, we'll create the transaction using our infrastructure
         // then use the wallet to sign it
         let tx_hex = self.create_transaction(params.clone()).await?;
@@ -1029,7 +1029,7 @@ impl WalletProvider for BrowserWalletProvider {
         self.web_provider.create_transaction(params).await
     }
     
-    async fn sign_transaction(&self, tx_hex: String) -> Result<String> {
+    async fn sign_transaction(&mut self, tx_hex: String) -> Result<String> {
         // This is where we use the browser wallet for signing
         // Convert the transaction to PSBT format for wallet signing
         

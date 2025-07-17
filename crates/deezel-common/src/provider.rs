@@ -271,12 +271,59 @@ impl ConcreteProvider {
 }
 
 impl ConcreteProvider {
-    fn find_address_info<'a>(&self, keystore: &'a Keystore, address: &Address, network: Network) -> Result<&'a crate::keystore::AddressInfo> {
-        keystore
+    fn find_address_info<'a>(
+        keystore: &'a mut Keystore,
+        address: &Address,
+        network: Network,
+    ) -> Result<crate::keystore::AddressInfo> {
+        // First, check the existing cache.
+        if let Some(info) = keystore
             .addresses
             .get(&network.to_string())
             .and_then(|addrs| addrs.iter().find(|a| a.address == address.to_string()))
-            .ok_or_else(|| DeezelError::Wallet(format!("Address {} not found in keystore", address)))
+        {
+            return Ok(info.clone());
+        }
+
+        // If not found, attempt to derive it on-the-fly.
+        // This is necessary for signing transactions for addresses that haven't been explicitly
+        // listed or used before. We search a reasonable gap limit.
+        let secp = Secp256k1::<All>::new();
+        let account_xpub = Xpub::from_str(&keystore.account_xpub)
+            .map_err(|e| DeezelError::Wallet(format!("Invalid account xpub in keystore: {}", e)))?;
+
+        // Standard gap limit is 20, but we'll search a bit more to be safe.
+        for i in 0..101 {
+            let address_path_str = format!("0/{}", i);
+            let address_path = DerivationPath::from_str(&address_path_str)?;
+            let derived_xpub = account_xpub.derive_pub(&secp, &address_path)?;
+            let (internal_key, _) = derived_xpub.public_key.x_only_public_key();
+            let derived_address = Address::p2tr(&secp, internal_key, None, network);
+
+            if derived_address == *address {
+                // We found the address! Now we can construct its info and cache it.
+                let full_path = format!("m/86'/1'/0'/{}", address_path_str);
+                let new_info = crate::keystore::AddressInfo {
+                    path: full_path,
+                    address: address.to_string(),
+                    address_type: "p2tr".to_string(),
+                };
+
+                // Add to cache for future lookups.
+                keystore
+                    .addresses
+                    .entry(network.to_string())
+                    .or_default()
+                    .push(new_info.clone());
+
+                return Ok(new_info);
+            }
+        }
+
+        Err(DeezelError::Wallet(format!(
+            "Address {} not found in keystore and could not be derived within the gap limit",
+            address
+        )))
     }
 
     async fn metashrew_view_call(&self, method: &str, hex_input: &str) -> Result<Vec<u8>> {
@@ -760,7 +807,7 @@ impl WalletProvider for ConcreteProvider {
         Ok(addresses)
     }
     
-    async fn send(&self, params: SendParams) -> Result<String> {
+    async fn send(&mut self, params: SendParams) -> Result<String> {
         // 1. Create the transaction
         let tx_hex = self.create_transaction(params).await?;
 
@@ -953,21 +1000,16 @@ impl WalletProvider for ConcreteProvider {
         Ok(bitcoin::consensus::encode::serialize_hex(&tx))
     }
 
-    async fn sign_transaction(&self, tx_hex: String) -> Result<String> {
-        let (keystore, mnemonic) = match &self.wallet_state {
-            WalletState::Unlocked { keystore, mnemonic } => (keystore, mnemonic),
-            _ => return Err(DeezelError::Wallet("Wallet must be unlocked to sign transactions".to_string())),
-        };
-
+    async fn sign_transaction(&mut self, tx_hex: String) -> Result<String> {
         // 1. Deserialize the transaction
         let hex_bytes = hex::decode(tx_hex)?;
         let mut tx: Transaction = bitcoin::consensus::deserialize(&hex_bytes)?;
 
-        // 2. Setup for signing
+        // 2. Setup for signing - gather immutable info first to avoid borrow checker issues.
         let network = self.get_network();
         let secp: Secp256k1<All> = Secp256k1::new();
 
-        // 3. Fetch the previous transaction outputs (prevouts) for signing
+        // 3. Fetch the previous transaction outputs (prevouts) for signing.
         let mut prevouts = Vec::new();
         for input in &tx.input {
             let tx_info = self.get_tx(&input.previous_output.txid.to_string()).await?;
@@ -983,7 +1025,13 @@ impl WalletProvider for ConcreteProvider {
             prevouts.push(TxOut { value: Amount::from_sat(amount), script_pubkey });
         }
 
-        // 4. Sign each input
+        // 4. Get mutable access to the wallet state *after* all immutable borrows are done.
+        let (keystore, mnemonic) = match &mut self.wallet_state {
+            WalletState::Unlocked { keystore, mnemonic } => (keystore, mnemonic),
+            _ => return Err(DeezelError::Wallet("Wallet must be unlocked to sign transactions".to_string())),
+        };
+
+        // 5. Sign each input
         let mut sighash_cache = SighashCache::new(&mut tx);
         for i in 0..prevouts.len() {
             let prev_txout = &prevouts[i];
@@ -991,7 +1039,9 @@ impl WalletProvider for ConcreteProvider {
             // Find the address and its derivation path from our keystore
             let address = Address::from_script(&prev_txout.script_pubkey, network)
                 .map_err(|e| DeezelError::Wallet(format!("Failed to parse address from script: {}", e)))?;
-            let addr_info = self.find_address_info(&keystore, &address, network)?;
+            
+            // This call now takes a mutable keystore and may cache the derived address info.
+            let addr_info = Self::find_address_info(keystore, &address, network)?;
             let path = DerivationPath::from_str(&addr_info.path)?;
 
             // Derive the private key for this input
@@ -1016,7 +1066,7 @@ impl WalletProvider for ConcreteProvider {
             sighash_cache.witness_mut(i).unwrap().clone_from(&witness);
         }
 
-        // 5. Serialize the signed transaction
+        // 6. Serialize the signed transaction
         let signed_tx = sighash_cache.into_transaction();
         Ok(bitcoin::consensus::encode::serialize_hex(&signed_tx))
     }

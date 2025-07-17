@@ -7,7 +7,7 @@
 //! - REST: `/address/{address}/utxo` → JSON-RPC: `esplora_address::utxo` params: [address]
 //! - REST: `/blocks/tip/hash` → JSON-RPC: `esplora_blocks:tip:hash` params: []
 //! - REST: `/block/{hash}` → JSON-RPC: `esplora_block` params: [hash]
-//! - REST: `/tx/{txid}/outspend/{index}` → JSON-RPC: `esplora_tx:outspend` params: [txid, index]
+//! - REST: `/tx/{txid}/outspend/{index}` → JSON-RPC: `esplora_tx::outspend` params: [txid, index]
 
 use serde::{Deserialize, Serialize};
 use alloc::string::String;
@@ -238,7 +238,7 @@ mod tests {
     fn test_method_names() {
         assert_eq!(EsploraJsonRpcMethods::BLOCKS_TIP_HASH, "esplora_blocks:tip:hash");
         assert_eq!(EsploraJsonRpcMethods::ADDRESS_UTXO, "esplora_address::utxo");
-        assert_eq!(EsploraJsonRpcMethods::TX_OUTSPEND, "esplora_tx:outspend");
+        assert_eq!(EsploraJsonRpcMethods::TX_OUTSPEND, "esplora_tx::outspend");
     }
 
     #[test]
