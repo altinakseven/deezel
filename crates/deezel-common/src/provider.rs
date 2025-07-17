@@ -54,6 +54,8 @@ use bitcoin::{
     secp256k1::{Secp256k1, All},
     sighash::{SighashCache, Prevouts, TapSighashType},
     bip32::{DerivationPath, Xpriv, Xpub},
+    key::{TapTweak, UntweakedKeypair},
+    taproot,
 };
 use bitcoin_hashes::Hash;
 use ordinals::{Runestone, Artifact};
@@ -896,6 +898,26 @@ impl WalletProvider for ConcreteProvider {
                             has_alkanes: false,
                             is_coinbase: false,
                         };
+                        let tx_info = self.get_tx(&txid_str).await?;
+                        let is_coinbase = tx_info.get("vin")
+                            .and_then(|v| v.as_array())
+                            .map_or(false, |vin| vin.len() == 1 && vin[0].get("coinbase").is_some());
+
+                        if is_coinbase && utxo_info.confirmations < 100 {
+                            log::info!("Skipping immature coinbase UTXO: {}:{}", txid_str, vout);
+                            continue;
+                        }
+
+                        let tx_info = self.get_tx(&txid_str).await?;
+                        let is_coinbase = tx_info.get("vin")
+                            .and_then(|v| v.as_array())
+                            .map_or(false, |vin| vin.len() == 1 && vin[0].get("coinbase").is_some());
+
+                        if is_coinbase && utxo_info.confirmations < 100 {
+                            log::info!("Skipping immature coinbase UTXO: {}:{}", txid_str, vout);
+                            continue;
+                        }
+
                         log::info!("Found UTXO: {}:{} - {} sats", utxo_info.txid, utxo_info.vout, utxo_info.amount);
                         all_utxos.push((outpoint, utxo_info));
                     }
@@ -1089,6 +1111,8 @@ impl WalletProvider for ConcreteProvider {
             let root_key = Xpriv::new_master(network, seed.as_bytes())?;
             let derived_xpriv = root_key.derive_priv(&secp, &path)?;
             let keypair = derived_xpriv.to_keypair(&secp);
+            let untweaked_keypair = UntweakedKeypair::from(keypair);
+            let tweaked_keypair = untweaked_keypair.tap_tweak(&secp, None);
 
             // Create the sighash
             let sighash = sighash_cache.taproot_key_spend_signature_hash(
@@ -1099,12 +1123,15 @@ impl WalletProvider for ConcreteProvider {
 
             // Sign the sighash
             let msg = bitcoin::secp256k1::Message::from(sighash);
-            let signature = secp.sign_schnorr_with_rng(&msg, &keypair, &mut rand::thread_rng());
+            let signature = secp.sign_schnorr(&msg, &tweaked_keypair.to_keypair());
+            
+            let taproot_signature = taproot::Signature {
+                signature,
+                sighash_type: TapSighashType::Default,
+            };
 
             // Add the signature to the witness
-            let mut witness = Witness::new();
-            witness.push(signature.as_ref());
-            sighash_cache.witness_mut(i).unwrap().clone_from(&witness);
+            sighash_cache.witness_mut(i).unwrap().clone_from(&Witness::p2tr_key_spend(&taproot_signature));
         }
 
         // 6. Serialize the signed transaction
