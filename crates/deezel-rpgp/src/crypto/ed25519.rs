@@ -54,7 +54,10 @@ pub enum Mode {
 pub struct SecretKey {
     /// The secret point.
     #[debug("..")]
-    #[cfg_attr(all(test, feature = "std"), proptest(strategy = "tests::key_gen()"))]
+    #[cfg_attr(
+        all(test, feature = "std"),
+        proptest(strategy = "crate::crypto::ed25519::tests::key_gen()")
+    )]
     secret: ed25519_dalek::SigningKey,
     #[zeroize(skip)]
     pub(crate) mode: Mode,
@@ -192,7 +195,6 @@ pub fn verify(
     Ok(key.verify(hashed, &sig)?)
 }
 
-#[cfg(all(test, feature = "std"))]
 #[cfg(all(test, feature = "std"))]
 mod tests {
     use proptest::prelude::*;

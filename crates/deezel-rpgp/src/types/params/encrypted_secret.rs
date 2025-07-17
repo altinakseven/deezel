@@ -233,7 +233,7 @@ impl EncryptedSecretParams {
     ) -> Result<()> {
         #[cfg(feature = "std")]
         {
-            use byteorder::WriteBytesExt;
+            use crate::io::WriteBytesExt;
             writer.write_u8((&self.s2k_params).into())?;
         }
         #[cfg(not(feature = "std"))]
@@ -258,7 +258,7 @@ impl EncryptedSecretParams {
             } => {
                 #[cfg(feature = "std")]
                 {
-                    use byteorder::WriteBytesExt;
+                    use crate::io::WriteBytesExt;
                     s2k_writer.write_u8((*sym_alg).into())?;
                     s2k_writer.write_u8((*aead_mode).into())?;
                 }
@@ -271,7 +271,7 @@ impl EncryptedSecretParams {
                 if version == KeyVersion::V6 {
                     #[cfg(feature = "std")]
                     {
-                        use byteorder::WriteBytesExt;
+                        use crate::io::WriteBytesExt;
                         s2k_writer.write_u8(s2k.len()?)?;
                     }
                     #[cfg(not(feature = "std"))]
@@ -294,7 +294,7 @@ impl EncryptedSecretParams {
             } => {
                 #[cfg(feature = "std")]
                 {
-                    use byteorder::WriteBytesExt;
+                    use crate::io::WriteBytesExt;
                     s2k_writer.write_u8((*sym_alg).into())?;
                 }
                 #[cfg(not(feature = "std"))]
@@ -303,7 +303,7 @@ impl EncryptedSecretParams {
                 if version == KeyVersion::V6 && matches!(self.s2k_params, S2kParams::Cfb { .. }) {
                     #[cfg(feature = "std")]
                     {
-                        use byteorder::WriteBytesExt;
+                        use crate::io::WriteBytesExt;
                         s2k_writer.write_u8(s2k.len()?)?;
                     }
                     #[cfg(not(feature = "std"))]
@@ -324,7 +324,7 @@ impl EncryptedSecretParams {
 
                 #[cfg(feature = "std")]
                 {
-                    use byteorder::WriteBytesExt;
+                    use crate::io::WriteBytesExt;
                     writer.write_u8(len.try_into()?)?;
                 }
                 #[cfg(not(feature = "std"))]

@@ -205,7 +205,7 @@ impl WalletProvider for MockProvider {
                 txid: outpoint.txid.to_string(),
                 vout: outpoint.vout,
                 amount: tx_out.value.to_sat(),
-                address: Address::from_script(&tx_out.script_pubkey, self.network).unwrap().to_string(),
+                address: Address::from_script(&tx_out.script_pubkey, self.network).ok().map_or("unknown".to_string(), |addr| addr.to_string()),
                 script_pubkey: Some(tx_out.script_pubkey.clone()),
                 confirmations: 10,
                 frozen: false,
@@ -250,9 +250,16 @@ impl WalletProvider for MockProvider {
     }
     
     async fn broadcast_transaction(&self, tx_hex: String) -> Result<String> {
-        let txid = bitcoin::consensus::deserialize::<Transaction>(&hex::decode(&tx_hex).unwrap()).unwrap().compute_txid().to_string();
+        let tx: Transaction = bitcoin::consensus::deserialize(&hex::decode(&tx_hex).unwrap()).unwrap();
+        let txid = tx.compute_txid();
+        
+        let mut utxos = self.utxos.lock().unwrap();
+        for (i, tx_out) in tx.output.iter().enumerate() {
+            utxos.push((OutPoint::new(txid, i as u32), tx_out.clone()));
+        }
+
         self.broadcasted_txs.lock().unwrap().push(tx_hex);
-        Ok(txid)
+        Ok(txid.to_string())
     }
     
     async fn estimate_fee(&self, _target: u32) -> Result<FeeEstimate> {
@@ -340,7 +347,7 @@ impl BitcoinRpcProvider for MockProvider {
         Ok("mock_tx_hex".to_string())
     }
     
-    async fn get_block(&self, _hash: &str) -> Result<JsonValue> {
+    async fn get_block(&self, _hash: &str, _raw: bool) -> Result<JsonValue> {
         Ok(serde_json::json!({"height": 800000}))
     }
     

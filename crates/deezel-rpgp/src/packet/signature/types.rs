@@ -7,8 +7,8 @@ use alloc::format;
 use core::{
     cmp::Ordering,
 };
-use crate::io::{BufRead, Read};
-use byteorder::WriteBytesExt;
+use crate::io::{BufRead, Read, Write, WriteBytesExt};
+use byteorder::BigEndian;
 
 use bitfields::bitfield;
 use bytes::Bytes;
@@ -1033,7 +1033,6 @@ impl Default for SignatureVersion {
 }
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone, FromPrimitive, IntoPrimitive)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 #[repr(u8)]
 pub enum SignatureType {
     /// Signature of a binary document.
@@ -1538,7 +1537,7 @@ pub(super) fn serialize_for_hashing<K: KeyDetails + Serialize>(
             // When a v4 signature is made over a key, the hash data starts with the octet 0x99,
             // followed by a two-octet length of the key, and then the body of the key packet.
             writer.write_u8(0x99)?;
-            writer.write_u16::<byteorder::BigEndian>(key_len.try_into()?)?;
+            writer.write_u16::<BigEndian>(key_len.try_into()?)?;
         }
 
         KeyVersion::V6 => {
@@ -1548,7 +1547,7 @@ pub(super) fn serialize_for_hashing<K: KeyDetails + Serialize>(
             // then octet 0x9B, followed by a four-octet length of the key,
             // and then the body of the key packet.
             writer.write_u8(0x9b)?;
-            writer.write_u32::<byteorder::BigEndian>(key_len.try_into()?)?;
+            writer.write_u32::<BigEndian>(key_len.try_into()?)?;
         }
 
         v => unimplemented_err!("key version {:?}", v),
@@ -1557,5 +1556,42 @@ pub(super) fn serialize_for_hashing<K: KeyDetails + Serialize>(
     key.to_writer(&mut writer)?;
 
     Ok(())
+}
+
+#[cfg(all(test, feature = "std"))]
+mod tests {
+    use proptest::prelude::*;
+    use proptest::strategy::{BoxedStrategy, Strategy};
+
+    use super::*;
+
+    prop_compose! {
+        pub fn arbitrary_signature_type()(
+            num in prop_oneof![
+                Just(0x00u8), Just(0x01), Just(0x02), Just(0x10), Just(0x11), Just(0x12),
+                Just(0x13), Just(0x18), Just(0x19), Just(0x1F), Just(0x20), Just(0x28),
+                Just(0x30), Just(0x40), Just(0x50),
+            ]
+        ) -> SignatureType {
+            SignatureType::from(num)
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn arbitrary(sig_type in arbitrary_signature_type()) {
+            let num: u8 = sig_type.into();
+            assert_eq!(sig_type, SignatureType::from(num));
+        }
+    }
+
+    impl Arbitrary for SignatureType {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            arbitrary_signature_type().boxed()
+        }
+    }
 }
 

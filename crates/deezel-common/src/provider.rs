@@ -1952,7 +1952,6 @@ mod esplora_provider_tests {
             Some(server.uri()), // esplora url
             "regtest".to_string(),
             None,
-            None,
         ).await.unwrap();
         (server, provider)
     }

@@ -5,7 +5,8 @@ use crate::io::{BufRead, Write};
 use core::fmt;
 
 use bitfields::bitfield;
-use byteorder::{ReadBytesExt, WriteBytesExt};
+use crate::io::{ReadBytesExt, WriteBytesExt};
+use byteorder::BigEndian;
 use log::debug;
 
 use crate::{
@@ -179,10 +180,10 @@ impl Serialize for PacketHeader {
                         writer.write_u8(*len as u8)?;
                     } else if *len < 65536 {
                         // two octets
-                        writer.write_u16::<byteorder::BigEndian>(*len as u16)?;
+                        writer.write_u16::<BigEndian>(*len as u16)?;
                     } else {
                         // four octets
-                        writer.write_u32::<byteorder::BigEndian>(*len)?;
+                        writer.write_u32::<BigEndian>(*len)?;
                     }
                 }
                 PacketLength::Indeterminate => {
@@ -329,7 +330,6 @@ mod tests {
         assert_eq!(header.packet_length(), PacketLength::Fixed(4973));
     }
 
-    #[cfg(feature = "std")]
     impl Arbitrary for OldPacketHeader {
         type Parameters = u8; // length type
         type Strategy = BoxedStrategy<Self>;
@@ -352,7 +352,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "std")]
     impl Arbitrary for NewPacketHeader {
         type Parameters = ();
         type Strategy = BoxedStrategy<Self>;
@@ -364,7 +363,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "std")]
     impl Arbitrary for PacketHeader {
         type Parameters = ();
         type Strategy = BoxedStrategy<Self>;
@@ -394,7 +392,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "std")]
     proptest! {
         #[test]
         fn write_len(header: PacketHeader) {

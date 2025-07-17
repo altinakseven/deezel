@@ -15,28 +15,39 @@ pub(crate) fn fill_buffer<R: Read>(
     buffer: &mut [u8],
     chunk_size: Option<usize>,
 ) -> Result<usize, crate::io::Error> {
-    let mut read = 0;
-    let mut chunk_size = chunk_size.unwrap_or(buffer.len());
+    let target_size = chunk_size.unwrap_or(buffer.len());
+    let mut total_read = 0;
 
-    while read < chunk_size {
-        match source.read(&mut buffer[read..]) {
+    while total_read < target_size {
+        let remaining_target = target_size - total_read;
+        let buffer_slice = &mut buffer[total_read..];
+
+        // Determine the slice to read into for this iteration.
+        // It's the smaller of the remaining buffer or the remaining target.
+        let len = buffer_slice.len();
+        let read_buf = &mut buffer_slice[..remaining_target.min(len)];
+
+        if read_buf.is_empty() {
+            // This can happen if target_size > buffer.len() and we've filled the buffer.
+            break;
+        }
+
+        match source.read(read_buf) {
             Ok(0) => {
-                if read == 0 {
-                    // Distinguish between EOF and uninitialized reader
-                    // This helps debug cases where readers are not properly initialized
-                    log::debug!("fill_buffer: reader returned 0 bytes on first read - possibly uninitialized or EOF");
-                }
-                break;
+                break; // EOF
             }
             Ok(n) => {
-                read += n;
-                chunk_size -= n;
+                total_read += n;
             }
-            Err(e) => return Err(e),
+            Err(e) => {
+                if e.kind() != crate::io::ErrorKind::Interrupted {
+                    return Err(e);
+                }
+            }
         }
     }
 
-    Ok(read)
+    Ok(total_read)
 }
 
 macro_rules! impl_try_from_into {
@@ -77,14 +88,16 @@ impl<'a, A, B> TeeWriter<'a, A, B> {
     }
 }
 
-impl<A: hash::Hasher, B: Write> Write for TeeWriter<'_, A, B> {
-    fn write(&mut self, buf: &[u8]) -> Result<usize, crate::io::Error> {
+
+#[cfg(feature = "std")]
+impl<A: hash::Hasher, B: Write> std::io::Write for TeeWriter<'_, A, B> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         self.a.write(buf);
-        self.b.write(buf)
+        self.b.write(buf).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, "tee write failed"))
     }
 
-    fn flush(&mut self) -> Result<(), crate::io::Error> {
-        self.b.flush()
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.b.flush().map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, "tee flush failed"))
     }
 }
 

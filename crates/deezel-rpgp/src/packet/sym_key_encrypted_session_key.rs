@@ -2,8 +2,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use alloc::format;
 extern crate alloc;
-use crate::io::{self, BufRead};
-use byteorder::WriteBytesExt;
+use crate::io::{self, BufRead, WriteBytesExt};
 
 use bytes::{Bytes, BytesMut};
 use log::debug;

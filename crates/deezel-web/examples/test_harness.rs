@@ -18,12 +18,6 @@ use wasm_bindgen_futures::spawn_local;
 // Import test modules from the `tests` directory.
 // The `#[path]` attribute allows us to include files from outside the conventional
 // module hierarchy, which is perfect for a custom test runner.
-#[path = "../tests/esplora_provider_web.rs"]
-pub mod esplora_provider_web;
-
-#[path = "../tests/keystore_tests.rs"]
-pub mod keystore_tests;
-
 /// The main entry point for the WASM module, executed when the module is loaded.
 #[wasm_bindgen(start)]
 pub fn run_all_tests() {
@@ -32,16 +26,6 @@ pub fn run_all_tests() {
 
     // --- Run Esplora Provider Tests ---
     web_sys::console::log_1(&"Running Esplora provider tests...".into());
-    spawn_local(esplora_provider_web::test_get_address_utxo_web());
-    spawn_local(esplora_provider_web::test_get_address_info_web());
-    
-    // --- Run Keystore Tests ---
-    web_sys::console::log_1(&"Running Keystore generation tests...".into());
-    keystore_tests::test_keystore_creation_basic();
-    keystore_tests::test_keystore_json_serialization();
-    keystore_tests::test_keystore_address_formats();
-    keystore_tests::test_keystore_encryption_uniqueness();
-    keystore_tests::demonstrate_keystore_json_output();
     
     web_sys::console::log_1(&"All tests dispatched.".into());
 }

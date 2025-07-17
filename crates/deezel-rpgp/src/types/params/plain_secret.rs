@@ -805,7 +805,7 @@ pub(crate) fn s2k_usage_aead(
     Ok((okm, ad))
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use proptest::prelude::*;
 

@@ -3,8 +3,7 @@ extern crate alloc;
 
 
 use crate::types::Tag;
-use crate::io::{self, BufRead, Write};
-use byteorder::WriteBytesExt;
+use crate::io::{self, BufRead, Write, WriteBytesExt};
 use bytes::Bytes;
 #[cfg(feature = "bzip2")]
 use bzip2::{self, Action, Compression as BzCompression, Status as BzStatus};

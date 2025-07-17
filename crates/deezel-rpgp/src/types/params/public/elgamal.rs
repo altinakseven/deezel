@@ -3,13 +3,12 @@ use crate::io::{BufRead, Write};
 
 use crate::{errors::Result, ser::Serialize, types::Mpi};
 
-#[derive(Debug, PartialEq, Eq, Clone)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+#[derive(Debug, PartialEq, Eq, Clone, Default)]
+#[cfg_attr(all(test, feature = "std"), derive(proptest_derive::Arbitrary))]
 pub struct ElgamalPublicParams {
     p: Mpi,
     g: Mpi,
     y: Mpi,
-    #[cfg_attr(test, proptest(value = "false"))]
     encrypt_only: bool,
 }
 
@@ -54,7 +53,7 @@ impl Serialize for ElgamalPublicParams {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use alloc::{format, vec::Vec};
     use proptest::prelude::*;

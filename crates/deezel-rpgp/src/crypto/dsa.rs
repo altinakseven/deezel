@@ -18,10 +18,13 @@ use crate::{
 
 /// Secret key for DSA.
 #[derive(Clone, PartialEq, derive_more::Debug)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+#[cfg_attr(all(test, feature = "std"), derive(proptest_derive::Arbitrary))]
 pub struct SecretKey {
     #[debug("..")]
-    #[cfg_attr(test, proptest(strategy = "tests::key_gen()"))]
+    #[cfg_attr(
+        all(test, feature = "std"),
+        proptest(strategy = "crate::crypto::dsa::tests::key_gen()")
+    )]
     key: dsa::SigningKey,
 }
 

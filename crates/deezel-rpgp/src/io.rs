@@ -6,10 +6,20 @@
 #![allow(clippy::module_inception)]
 
 #[cfg(feature = "std")]
-pub use std::io::{self, copy, BufRead, BufReader, Cursor, Error, ErrorKind, Read, Result, Write};
+mod std_io {
+    pub use std::io::{self, copy, BufRead, BufReader, Cursor, Error, ErrorKind, Read, Result, Write};
+    pub use byteorder::{ReadBytesExt, WriteBytesExt};
+}
+
+#[cfg(feature = "std")]
+pub use self::std_io::*;
 
 #[cfg(not(feature = "std"))]
 mod no_std_io {
+    pub use alloc::vec::Vec;
+    pub use core::result;
+    pub use bytes::{BufMut, BytesMut};
+
     pub fn copy<R: ?Sized, W: ?Sized>(reader: &mut R, writer: &mut W) -> Result<u64>
     where
         R: Read,
@@ -27,9 +37,6 @@ mod no_std_io {
             written += len as u64;
         }
     }
-    use alloc::vec::Vec;
-    use core::result;
-    use bytes::{BufMut, BytesMut};
 
     /// A `no_std` compatible `io::Error`.
     #[derive(Debug)]
@@ -177,6 +184,65 @@ mod no_std_io {
     impl<'a, R: ?Sized + Read> Read for &'a mut R {
         fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
             (**self).read(buf)
+        }
+    }
+
+    pub trait ReadBytesExt: Read {
+        fn read_u8(&mut self) -> Result<u8>;
+        fn read_u16<T: byteorder::ByteOrder>(&mut self) -> Result<u16>;
+        fn read_u32<T: byteorder::ByteOrder>(&mut self) -> Result<u32>;
+        fn read_u64<T: byteorder::ByteOrder>(&mut self) -> Result<u64>;
+    }
+
+    impl<R: Read + ?Sized> ReadBytesExt for R {
+        fn read_u8(&mut self) -> Result<u8> {
+            let mut buf = [0; 1];
+            self.read_exact(&mut buf)?;
+            Ok(buf[0])
+        }
+
+        fn read_u16<T: byteorder::ByteOrder>(&mut self) -> Result<u16> {
+            let mut buf = [0; 2];
+            self.read_exact(&mut buf)?;
+            Ok(T::read_u16(&buf))
+        }
+
+        fn read_u32<T: byteorder::ByteOrder>(&mut self) -> Result<u32> {
+            let mut buf = [0; 4];
+            self.read_exact(&mut buf)?;
+            Ok(T::read_u32(&buf))
+        }
+
+        fn read_u64<T: byteorder::ByteOrder>(&mut self) -> Result<u64> {
+            let mut buf = [0; 8];
+            self.read_exact(&mut buf)?;
+            Ok(T::read_u64(&buf))
+        }
+    }
+
+    pub trait WriteBytesExt: Write {
+        fn write_u16<T: byteorder::ByteOrder>(&mut self, n: u16) -> Result<()>;
+        fn write_u32<T: byteorder::ByteOrder>(&mut self, n: u32) -> Result<()>;
+        fn write_u64<T: byteorder::ByteOrder>(&mut self, n: u64) -> Result<()>;
+    }
+
+    impl<W: Write + ?Sized> WriteBytesExt for W {
+        fn write_u16<T: byteorder::ByteOrder>(&mut self, n: u16) -> Result<()> {
+            let mut buf = [0; 2];
+            T::write_u16(&mut buf, n);
+            self.write_all(&buf)
+        }
+
+        fn write_u32<T: byteorder::ByteOrder>(&mut self, n: u32) -> Result<()> {
+            let mut buf = [0; 4];
+            T::write_u32(&mut buf, n);
+            self.write_all(&buf)
+        }
+
+        fn write_u64<T: byteorder::ByteOrder>(&mut self, n: u64) -> Result<()> {
+            let mut buf = [0; 8];
+            T::write_u64(&mut buf, n);
+            self.write_all(&buf)
         }
     }
 
@@ -385,6 +451,7 @@ mod no_std_io {
         }
     }
  
+     #[derive(Debug)]
      pub struct BufReader<R> {
          inner: R,
         buf: Vec<u8>,

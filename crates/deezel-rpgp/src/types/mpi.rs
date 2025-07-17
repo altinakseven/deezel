@@ -133,7 +133,7 @@ impl From<Mpi> for BigUint {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use alloc::format;
     use proptest::prelude::*;

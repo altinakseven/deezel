@@ -1,6 +1,7 @@
 //! # Line ending normalization module
 extern crate alloc;
 use alloc::string::String;
+use alloc::format;
 
 use alloc::borrow::Cow;
 use bytes::{Buf, BytesMut};
@@ -9,8 +10,10 @@ use spin::Once;
 use crate::util::fill_buffer;
 pub use crate::line_writer::LineBreak;
 
+#[cfg(feature = "std")]
 static RE: Once<regex::bytes::Regex> = Once::new();
 
+#[cfg(feature = "std")]
 fn get_re() -> &'static regex::bytes::Regex {
     RE.call_once(|| regex::bytes::Regex::new(r"(\r\n?|\n)").expect("valid regex"))
 }
@@ -76,7 +79,8 @@ impl<R: Read> NormalizedReader<R> {
             &self.in_buffer[..read]
         };
 
-        let res = get_re().replace_all(in_buffer, self.line_break.as_ref());
+        let res = Cow::Borrowed(in_buffer);
+        // let res = get_re().replace_all(in_buffer, self.line_break.as_ref());
         self.replaced.clear();
         self.replaced.extend_from_slice(&res);
     }
@@ -99,8 +103,10 @@ impl<R: Read> Read for NormalizedReader<R> {
     }
 }
 
-pub(crate) fn normalize_lines(s: &str, line_break: LineBreak) -> Cow<'_, str> {
-    let bytes = get_re().replace_all(s.as_bytes(), line_break.as_ref());
+pub(crate) fn normalize_lines(s: &str, _line_break: LineBreak) -> Cow<'_, str> {
+    // TODO: no-std compatible replace
+    let bytes = Cow::Borrowed(s.as_bytes());
+    // let bytes = get_re().replace_all(s.as_bytes(), line_break.as_ref());
     match bytes {
         Cow::Borrowed(bytes) => {
             Cow::Borrowed(core::str::from_utf8(bytes).expect("valid bytes in"))

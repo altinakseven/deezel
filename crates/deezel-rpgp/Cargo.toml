@@ -28,7 +28,7 @@ base64 = ">=0.21.7, < 0.23"
 buffer-redux = { version = "1.0.0", default-features = false }
 bitfields = "0.12.3"
 bytes = "1.9.0"
-byteorder = "1.4"
+byteorder = { version = "1.4", default-features = false }
 chrono = { version = "0.4.39", default-features = false }
 derive_builder = "0.20.0"
 dyn-clone = "1.0"
@@ -148,7 +148,7 @@ wasm = ["chrono/wasmbind", "getrandom", "getrandom/js"]
 draft-pqc = ["dep:ml-kem", "dep:ml-dsa", "dep:slh-dsa"]
 
 # Enable std support (for tests)
-std = ["chrono/clock", "regex", "regex/std"]
+std = ["chrono/clock", "regex", "regex/std", "byteorder/std"]
 
 test-utils = ["std", "dep:proptest"]
 

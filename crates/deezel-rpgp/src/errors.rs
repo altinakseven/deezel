@@ -228,7 +228,6 @@ impl From<derive_builder::UninitializedFieldError> for Error {
     }
 }
 
-
 macro_rules! unimplemented_err {
     ($e:expr) => {
         return Err($crate::errors::UnimplementedSnafu { message: $e.to_string() }.build())

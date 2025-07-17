@@ -1,8 +1,7 @@
 use alloc::vec::Vec;
 use alloc::format;
 extern crate alloc;
-use crate::io::{self, BufRead, Read};
-use byteorder::WriteBytesExt;
+use crate::io::{self, BufRead, Read, WriteBytesExt};
 
 use bytes::Bytes;
 use rand::{CryptoRng, Rng};

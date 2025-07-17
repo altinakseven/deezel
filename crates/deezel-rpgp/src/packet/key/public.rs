@@ -13,8 +13,8 @@ use rsa::traits::PublicKeyParts;
 use sha1_checked::Sha1;
 use sha2::Sha256;
 
-use crate::io::{BufRead, Write};
-use byteorder::WriteBytesExt;
+use crate::io::{BufRead, Write, WriteBytesExt};
+use byteorder::BigEndian;
 
 use crate::{
     crypto::{
@@ -355,8 +355,8 @@ impl PubKeyInner {
     fn to_writer_v2_v3<W: Write>(&self, writer: &mut W) -> Result<()> {
         use crate::ser::Serialize;
 
-        writer.write_u32::<byteorder::BigEndian>(self.created_at)?;
-        writer.write_u16::<byteorder::BigEndian>(
+        writer.write_u32::<BigEndian>(self.created_at)?;
+        writer.write_u16::<BigEndian>(
             self.expiration
                 .expect("old key versions have an expiration"),
         )?;
@@ -375,11 +375,11 @@ impl PubKeyInner {
     fn to_writer_v4_v6<W: Write>(&self, writer: &mut W) -> Result<()> {
         use crate::ser::Serialize;
 
-        writer.write_u32::<byteorder::BigEndian>(self.created_at)?;
+        writer.write_u32::<BigEndian>(self.created_at)?;
         writer.write_u8(self.algorithm.into())?;
 
         if self.version == KeyVersion::V6 {
-            writer.write_u32::<byteorder::BigEndian>(self.public_params.write_len().try_into()?)?;
+            writer.write_u32::<BigEndian>(self.public_params.write_len().try_into()?)?;
         }
 
         self.public_params.to_writer(writer)?;
@@ -1037,7 +1037,7 @@ impl PublicKeyTrait for PublicSubkey {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use proptest::prelude::*;
 

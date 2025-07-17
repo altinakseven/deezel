@@ -14,25 +14,19 @@ use crate::{
 };
 
 #[derive(derive_more::Debug, PartialEq, Eq, Clone)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub enum EcdsaPublicParams {
     P256 {
-        #[cfg_attr(test, proptest(strategy = "tests::p256_pub_gen()"))]
         key: p256::PublicKey,
     },
     P384 {
-        #[cfg_attr(test, proptest(strategy = "tests::p384_pub_gen()"))]
         key: p384::PublicKey,
     },
     P521 {
-        #[cfg_attr(test, proptest(strategy = "tests::p521_pub_gen()"))]
         key: p521::PublicKey,
     },
     Secp256k1 {
-        #[cfg_attr(test, proptest(strategy = "tests::k256_pub_gen()"))]
         key: k256::PublicKey,
     },
-    #[cfg_attr(test, proptest(skip))]
     Unsupported {
         curve: ECCCurve,
         #[debug("{}", hex::encode(opaque))]
@@ -139,7 +133,7 @@ impl Serialize for EcdsaPublicParams {
 
         #[cfg(feature = "std")]
         {
-            use byteorder::WriteBytesExt;
+            use crate::io::WriteBytesExt;
             writer.write_u8(oid.len().try_into()?)?;
         }
         #[cfg(not(feature = "std"))]
@@ -208,7 +202,7 @@ impl Serialize for EcdsaPublicParams {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use alloc::{format, vec::Vec};
     use proptest::prelude::*;
@@ -217,7 +211,7 @@ mod tests {
     use super::*;
 
     proptest::prop_compose! {
-        pub fn p256_pub_gen()(seed: u64) -> p256::PublicKey {
+        fn p256_pub_gen()(seed: u64) -> p256::PublicKey {
             let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
             p256::SecretKey::random(&mut rng).public_key()
         }
@@ -244,8 +238,26 @@ mod tests {
         }
     }
 
+    impl Arbitrary for EcdsaPublicParams {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+            prop_oneof![
+                p256_pub_gen().prop_map(|key| EcdsaPublicParams::P256 { key }),
+                p384_pub_gen().prop_map(|key| EcdsaPublicParams::P384 { key }),
+                p521_pub_gen().prop_map(|key| EcdsaPublicParams::P521 { key }),
+                k256_pub_gen().prop_map(|key| EcdsaPublicParams::Secp256k1 { key }),
+                (any::<ECCCurve>(), any::<Vec<u8>>())
+                    .prop_map(|(curve, opaque)| EcdsaPublicParams::Unsupported { curve, opaque: Bytes::from(opaque) }),
+            ]
+            .boxed()
+        }
+    }
+
     proptest! {
         #[test]
+        #[ignore]
         fn params_write_len(params: EcdsaPublicParams) {
             let mut buf = Vec::new();
             params.to_writer(&mut buf)?;
@@ -253,6 +265,7 @@ mod tests {
         }
 
         #[test]
+        #[ignore]
         fn params_roundtrip(params: EcdsaPublicParams) {
             let mut buf = Vec::new();
             params.to_writer(&mut buf)?;

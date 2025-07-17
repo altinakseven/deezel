@@ -64,17 +64,7 @@ impl SimpleChecksum {
     }
 }
 
-impl io::Write for SimpleChecksum {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        Hasher::write(self, buf);
 
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
 
 impl Hasher for SimpleChecksum {
     #[inline]
@@ -86,6 +76,17 @@ impl Hasher for SimpleChecksum {
     #[inline]
     fn finish(&self) -> u64 {
         u64::from(self.0)
+    }
+}
+
+impl io::Write for SimpleChecksum {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        <Self as Hasher>::write(self, buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
     }
 }
 

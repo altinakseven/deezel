@@ -74,7 +74,7 @@ impl SecretParams {
             SecretParams::Plain(k) => {
                 #[cfg(feature = "std")]
                 {
-                    use byteorder::WriteBytesExt;
+                    use crate::io::WriteBytesExt;
                     writer.write_u8(k.string_to_key_id())?;
                 }
                 #[cfg(not(feature = "std"))]

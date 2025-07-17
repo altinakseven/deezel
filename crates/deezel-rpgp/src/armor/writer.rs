@@ -28,23 +28,20 @@ impl<'a, W: Write> Base64Encoder<'a, W> {
     }
 }
 
-impl<'a, W: Write> Write for Base64Encoder<'a, W> {
-    fn write(&mut self, buf: &[u8]) -> crate::io::Result<usize> {
+
+#[cfg(feature = "std")]
+impl<'a, W: Write> std::io::Write for Base64Encoder<'a, W> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         self.buffer.extend_from_slice(buf);
         Ok(buf.len())
     }
-    
-    fn write_all(&mut self, buf: &[u8]) -> crate::io::Result<()> {
-        self.buffer.extend_from_slice(buf);
-        Ok(())
-    }
 
-    fn flush(&mut self) -> crate::io::Result<()> {
+    fn flush(&mut self) -> std::io::Result<()> {
         let encoded = general_purpose::STANDARD.encode(&self.buffer);
         self.inner.write_all(encoded.as_bytes())
-            .map_err(|_e| crate::io::Error::new(crate::io::ErrorKind::Other, "write failed"))?;
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
         self.buffer.clear();
-        self.inner.flush()
+        self.inner.flush().map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
     }
 }
 

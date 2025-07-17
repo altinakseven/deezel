@@ -3,11 +3,18 @@ use alloc::{
     collections::BTreeMap,
     string::{String, ToString},
     vec::Vec,
+    format,
 };
 use core::{fmt, str};
 use crate::ser::Serialize;
 
-use crate::io::BufReader;
+#[cfg(feature = "std")]
+use std::io::{self, BufRead, Cursor, Read};
+
+#[cfg(not(feature = "std"))]
+use crate::io::{self, BufRead, Cursor, Read};
+
+use base64::Engine;
 use nom::{
     branch::alt,
     bytes::streaming::{tag, take_until1},
@@ -19,10 +26,12 @@ use nom::{
 };
 
 use crate::{
-    base64::Base64Reader,
+    base64::{Base64Decoder, Base64Reader},
     errors::Result,
-    io::{Cursor, Read},
 };
+
+use crate::errors::bail;
+use crate::io::BufReader;
 
 /// Armor block types.
 ///
@@ -75,7 +84,7 @@ impl fmt::Display for BlockType {
 }
 
 impl Serialize for BlockType {
-    fn to_writer<W: crate::io::Write>(&self, w: &mut W) -> Result<()> {
+    fn to_writer<W: io::Write>(&self, w: &mut W) -> Result<()> {
         w.write_all(self.to_string().as_bytes())?;
 
         Ok(())
@@ -295,66 +304,283 @@ fn hash_header_line(i: &[u8]) -> IResult<&[u8], Vec<String>> {
     Ok((i, values))
 }
 
-pub fn decode(i: &[u8]) -> Result<(BlockType, Headers, Vec<u8>)> {
-    let (remaining, (typ, headers)) = armor_header(i).map_err(|e: nom::Err<nom::error::Error<_>>| {
-        crate::errors::Error::from(e.to_string())
-    })?;
+use byteorder::{BigEndian, ByteOrder};
+use crc24::Crc24Hasher;
+#[cfg(feature = "std")]
+use std::hash::Hasher;
 
-    // Skip the blank line after headers
-    let remaining = if remaining.starts_with(b"\r\n") {
-        &remaining[2..]
-    } else if remaining.starts_with(b"\n") {
-        &remaining[1..]
-    } else {
-        remaining
-    };
+#[cfg(not(feature = "std"))]
+use core::hash::Hasher;
 
-    // Find the footer and extract the base64 content
-    let footer_start = if let Some(pos) = find_footer_start(remaining) {
-        pos
-    } else {
-        return Err(crate::errors::Error::from("armor footer not found".to_string()));
-    };
-
-    let base64_content = &remaining[..footer_start];
-    
-    // Clean up the base64 content by removing line endings and whitespace
-    let cleaned_base64: Vec<u8> = base64_content
-        .iter()
-        .filter(|&&b| !matches!(b, b'\r' | b'\n' | b' ' | b'\t'))
-        .copied()
-        .collect();
-
-    // Decode the base64 content
-    let mut reader = Base64Reader::new(BufReader::new(Cursor::new(&cleaned_base64)));
-    let mut decoded = Vec::new();
-    reader.read_to_end(&mut decoded)?;
-
-    Ok((typ, headers, decoded))
+/// Read the checksum from an base64 encoded buffer.
+fn read_checksum(input: &[u8]) -> io::Result<u64> {
+    let checksum = base64::engine::general_purpose::STANDARD
+        .decode(input)
+        .map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?;
+    let mut buf = [0; 4];
+    let mut i = checksum.len();
+    for a in checksum.iter().rev() {
+        buf[i] = *a;
+        i -= 1;
+    }
+    Ok(u64::from(BigEndian::read_u32(&buf)))
+}
+pub fn header_parser(i: &[u8]) -> IResult<&[u8], (BlockType, Headers, bool)> {
+    // https://www.rfc-editor.org/rfc/rfc9580.html#name-forming-ascii-armor
+    let (i, prefix) = nom::bytes::streaming::take_until("-----")(i)?;
+    let has_leading_data = !prefix.is_empty();
+    // "An Armor Header Line, appropriate for the type of data" (returned as 'typ')
+    // "Armor Headers" ('headers')
+    let (i, (typ, headers)) = armor_header(i)?;
+    // "A blank (zero length or containing only whitespace) line"
+    let (i, _) = pair(nom::character::streaming::space0, line_ending).parse(i)?;
+    Ok((i, (typ, headers, has_leading_data)))
+}
+fn footer_parser(i: &[u8]) -> IResult<&[u8], (Option<u64>, BlockType)> {
+    let (i, checksum) = opt(map_res(
+        preceded(tag("="), nom::bytes::streaming::take(4u8)),
+        |v: &[u8]| read_checksum(v).map_err(|_| nom::error::ErrorKind::Verify),
+    ))
+    .parse(i)?;
+    let (i, _) = opt(line_ending).parse(i)?; // consume optional newline after checksum or before footer
+    let (i, typ) = armor_footer_line(i)?;
+    Ok((i, (checksum, typ)))
 }
 
-// Helper function to find the start of the armor footer
-fn find_footer_start(data: &[u8]) -> Option<usize> {
-    // Look for patterns like "=XXXX\n-----END" or "\n-----END" or "-----END"
-    let mut i = 0;
-    while i < data.len() {
-        if data[i..].starts_with(b"-----END") {
-            return Some(i);
+/// Parses a single armor footer line
+fn armor_footer_line(i: &[u8]) -> IResult<&[u8], BlockType> {
+    delimited(
+        pair(armor_header_sep, tag(&b"END "[..])),
+        armor_header_type,
+        pair(armor_header_sep, opt(complete(line_ending))),
+    )
+    .parse(i)
+}
+/// Streaming based ascii armor parsing.
+#[derive(derive_more::Debug)]
+pub struct Dearmor<R: BufRead> {
+    /// The ascii armor parsed block type.
+    pub typ: Option<BlockType>,
+    /// The headers found in the armored file.
+    pub headers: Headers,
+    /// Optional crc checksum
+    pub checksum: Option<u64>,
+    /// Current state
+    current_part: Part<R>,
+    #[debug("Crc24Hasher")]
+    crc: Crc24Hasher,
+    /// Maximum buffer limit
+    max_buffer_limit: usize,
+}
+/// Internal indicator, where in the parsing phase we are
+#[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
+enum Part<R: BufRead> {
+    Header(R),
+    Body(Base64Decoder<Base64Reader<R>>),
+    Footer(crate::io::BufReader<R>),
+    Done(crate::io::BufReader<R>),
+    Temp,
+}
+impl<R: BufRead> Dearmor<R> {
+    /// Creates a new `Dearmor`, with the default limit of 1GiB.
+    pub fn new(input: R) -> Self {
+        Self::with_limit(input, 1024 * 1024 * 1024)
+    }
+    /// Creates a new `Dearmor` with the provided maximum buffer size.
+    pub fn with_limit(input: R, limit: usize) -> Self {
+        Dearmor {
+            typ: None,
+            headers: BTreeMap::new(),
+            checksum: None,
+            current_part: Part::Header(input),
+            crc: Default::default(),
+            max_buffer_limit: limit,
         }
-        if data[i] == b'=' {
-            // Look for checksum pattern like "=XXXX\n-----END"
-            let mut j = i + 1;
-            while j < data.len() && j < i + 10 {
-                if data[j] == b'\n' || data[j] == b'\r' {
-                    if data[j..].starts_with(b"\n-----END") || data[j..].starts_with(b"\r\n-----END") {
-                        return Some(i);
-                    }
-                    break;
-                }
-                j += 1;
+    }
+    pub fn into_parts(self) -> (Option<BlockType>, Headers, Option<u64>, BufReader<R>) {
+        let Self {
+            typ,
+            headers,
+            checksum,
+            current_part,
+            ..
+        } = self;
+        let Part::Done(b) = current_part else {
+            panic!("can only be called when done");
+        };
+        (typ, headers, checksum, b)
+    }
+    /// The current maximum buffer limit.
+    pub fn max_buffer_limit(&self) -> usize {
+        self.max_buffer_limit
+    }
+    pub fn read_only_header(mut self) -> Result<(BlockType, Headers, bool, R)> {
+        let header = core::mem::replace(&mut self.current_part, Part::Temp);
+        if let Part::Header(mut b) = header {
+            let (typ, headers, leading) =
+                Self::read_header_internal(&mut b, self.max_buffer_limit)?;
+            return Ok((typ, headers, leading, b));
+        }
+        bail!("invalid state, cannot read header");
+    }
+    pub fn after_header(typ: BlockType, headers: Headers, input: R, limit: usize) -> Self {
+        Self {
+            typ: Some(typ),
+            headers,
+            checksum: None,
+            current_part: Part::Body(Base64Decoder::new(Base64Reader::new(input))),
+            crc: Default::default(),
+            max_buffer_limit: limit,
+        }
+    }
+    pub fn read_header(&mut self) -> Result<()> {
+        let header = core::mem::replace(&mut self.current_part, Part::Temp);
+        if let Part::Header(mut b) = header {
+            let (typ, headers, _has_leading_data) =
+                Self::read_header_internal(&mut b, self.max_buffer_limit)?;
+            self.typ = Some(typ);
+            self.headers = headers;
+            self.current_part = Part::Body(Base64Decoder::new(Base64Reader::new(b)));
+            return Ok(());
+        }
+        bail!("invalid state, cannot read header");
+    }
+    fn read_header_internal(b: &mut R, limit: usize) -> Result<(BlockType, Headers, bool)> {
+        let (typ, headers, leading) = read_from_buf(b, "armor header", limit, header_parser)?;
+        Ok((typ, headers, leading))
+    }
+    fn read_footer(&mut self, mut b: crate::io::BufReader<R>) -> Result<()> {
+        let (checksum, footer_typ) =
+            read_from_buf(&mut b, "armor footer", self.max_buffer_limit, footer_parser)?;
+        if let Some(ref header_typ) = self.typ {
+            if header_typ != &footer_typ {
+                self.current_part = Part::Done(b);
+                bail!(
+                    "armor ascii footer does not match header: {:?} != {:?}",
+                    self.typ,
+                    footer_typ
+                );
             }
         }
-        i += 1;
+        self.checksum = checksum;
+        self.current_part = Part::Done(b);
+        // check checksum if there is one
+        if let Some(expected) = self.checksum {
+            let actual = self.crc.finish();
+            if expected != actual {
+                bail!("invalid crc24 checksum");
+            }
+        }
+        Ok(())
     }
-    None
+}
+impl<R: BufRead> Read for Dearmor<R> {
+    fn read(&mut self, into: &mut [u8]) -> io::Result<usize> {
+        let mut read = 0;
+        loop {
+            let current_part = core::mem::replace(&mut self.current_part, Part::Temp);
+            match current_part {
+                Part::Header(mut b) => {
+                    let (typ, headers, _leading) =
+                        Self::read_header_internal(&mut b, self.max_buffer_limit).map_err(|e| {
+                            io::Error::new(io::ErrorKind::Other, "failed to read header")
+                        })?;
+                    self.typ = Some(typ);
+                    self.headers = headers;
+                    self.current_part = Part::Body(Base64Decoder::new(Base64Reader::new(b)));
+                }
+                Part::Body(mut b) => {
+                    let last_read = b.read(&mut into[read..])?;
+                    if last_read > 0 {
+                        self.crc.write(&into[read..read + last_read]);
+                    }
+                    if last_read == 0 && read < into.len() {
+                        // we are done with the body
+                        let b = b.into_inner().into_inner();
+                        self.current_part = Part::Footer(BufReader::new(b));
+                    } else {
+                        self.current_part = Part::Body(b);
+                    }
+                    read += last_read;
+                    if read == into.len() {
+                        return Ok(read);
+                    }
+                }
+                Part::Footer(mut b) => {
+                    self.read_footer(b)
+                        .map_err(|e| io::Error::new(io::ErrorKind::Other, "failed to read footer"))?;
+                }
+                Part::Done(b) => {
+                    self.current_part = Part::Done(b);
+                    return Ok(read);
+                }
+                Part::Temp => panic!("invalid state"),
+            }
+        }
+    }
+}
+pub(crate) fn read_from_buf<B: BufRead, T, P>(
+    b: &mut B,
+    ctx: &str,
+    limit: usize,
+    parser: P,
+) -> Result<T>
+where
+    P: Fn(&[u8]) -> IResult<&[u8], T>,
+{
+    // Zero copy, single buffer
+    let buf = b.fill_buf()?;
+    if buf.is_empty() {
+        bail!("not enough bytes in buffer: {}", ctx);
+    }
+    match parser(buf) {
+        Ok((remaining, res)) => {
+            let consumed = buf.len() - remaining.len();
+            b.consume(consumed);
+            return Ok(res);
+        }
+        Err(nom::Err::Incomplete(_)) => {}
+        Err(err) => {
+            bail!("failed reading: {} {:?}", ctx, err);
+        }
+    };
+    // incomplete
+    let mut back_buffer = buf.to_vec();
+    let len = back_buffer.len();
+    b.consume(len);
+    let mut last_buffer_len;
+    loop {
+        // Safety check to not consume too much
+        if back_buffer.len() >= limit {
+            bail!("input too large");
+        }
+        let buf = b.fill_buf()?;
+        if buf.is_empty() {
+            bail!("not enough bytes in buffer: {}", ctx);
+        }
+        last_buffer_len = buf.len();
+        back_buffer.extend_from_slice(buf);
+        match parser(&back_buffer) {
+            Ok((remaining, res)) => {
+                let consumed = last_buffer_len - remaining.len();
+                b.consume(consumed);
+                return Ok(res);
+            }
+            Err(nom::Err::Incomplete(_)) => {
+                b.consume(last_buffer_len);
+                continue;
+            }
+            Err(err) => {
+                bail!("failed reading: {} {:?}", ctx, err);
+            }
+        };
+    }
+}
+
+pub fn decode(i: &[u8]) -> Result<(BlockType, Headers, Vec<u8>)> {
+    let mut dearmor = Dearmor::new(BufReader::new(i));
+    let mut bytes = Vec::new();
+    dearmor.read_to_end(&mut bytes)?;
+    Ok((dearmor.typ.unwrap(), dearmor.headers, bytes))
 }

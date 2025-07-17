@@ -81,6 +81,7 @@ impl crate::composed::Deserializable for SignedSecretKey {
     fn matches_block_type(typ: armor::BlockType) -> bool {
         matches!(typ, armor::BlockType::PrivateKey | armor::BlockType::File)
     }
+
 }
 
 impl SignedSecretKey {

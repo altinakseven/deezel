@@ -1,9 +1,10 @@
 extern crate alloc;
 use bytes::{Buf, BytesMut};
 
-use super::{fill_buffer, PacketBodyReader};
+use super::PacketBodyReader;
 use crate::{
     composed::DebugBufRead,
+    util::fill_buffer,
     packet::{Decompressor, PacketHeader},
     types::Tag,
 };
