@@ -1248,12 +1248,90 @@ impl WalletProvider for ConcreteProvider {
         Ok(internal_key)
     }
     
-    async fn sign_psbt(&self, _psbt: &bitcoin::psbt::Psbt) -> Result<bitcoin::psbt::Psbt> {
-        unimplemented!()
+    async fn sign_psbt(&mut self, psbt: &bitcoin::psbt::Psbt) -> Result<bitcoin::psbt::Psbt> {
+        let mut psbt = psbt.clone();
+        // 1. Deserialize the transaction
+        let mut tx = psbt.clone().extract_tx().map_err(|e| DeezelError::Other(e.to_string()))?;
+
+        // 2. Setup for signing - gather immutable info first to avoid borrow checker issues.
+        let network = self.get_network();
+        let secp: Secp256k1<All> = Secp256k1::new();
+
+        // 3. Fetch the previous transaction outputs (prevouts) for signing.
+        let mut prevouts = Vec::new();
+        for input in &tx.input {
+            let tx_info = self.get_tx(&input.previous_output.txid.to_string()).await?;
+            let vout_info = tx_info["vout"].get(input.previous_output.vout as usize)
+                .ok_or_else(|| DeezelError::Wallet(format!("Vout {} not found for tx {}", input.previous_output.vout, input.previous_output.txid)))?;
+            
+            let amount = vout_info["value"].as_u64()
+                .ok_or_else(|| DeezelError::Wallet("UTXO value not found".to_string()))?;
+            let script_pubkey_hex = vout_info["scriptpubkey"].as_str()
+                .ok_or_else(|| DeezelError::Wallet("UTXO script pubkey not found".to_string()))?;
+            
+            let script_pubkey = ScriptBuf::from(Vec::from_hex(script_pubkey_hex)?);
+            prevouts.push(TxOut { value: Amount::from_sat(amount), script_pubkey });
+        }
+
+        // 4. Get mutable access to the wallet state *after* all immutable borrows are done.
+        let (keystore, mnemonic) = match &mut self.wallet_state {
+            WalletState::Unlocked { keystore, mnemonic } => (keystore, mnemonic),
+            _ => return Err(DeezelError::Wallet("Wallet must be unlocked to sign transactions".to_string())),
+        };
+
+        // 5. Sign each input
+        let mut sighash_cache = SighashCache::new(&mut tx);
+        for i in 0..prevouts.len() {
+            let prev_txout = &prevouts[i];
+            
+            // Find the address and its derivation path from our keystore
+            let address = Address::from_script(&prev_txout.script_pubkey, network)
+                .map_err(|e| DeezelError::Wallet(format!("Failed to parse address from script: {}", e)))?;
+            
+            // This call now takes a mutable keystore and may cache the derived address info.
+            let addr_info = Self::find_address_info(keystore, &address, network)?;
+            let path = DerivationPath::from_str(&addr_info.path)?;
+
+            // Derive the private key for this input
+            let mnemonic_obj = Mnemonic::from_phrase(mnemonic, bip39::Language::English)?;
+            let seed = Seed::new(&mnemonic_obj, "");
+            let root_key = Xpriv::new_master(network, seed.as_bytes())?;
+            let derived_xpriv = root_key.derive_priv(&secp, &path)?;
+            let keypair = derived_xpriv.to_keypair(&secp);
+            let untweaked_keypair = UntweakedKeypair::from(keypair);
+            let tweaked_keypair = untweaked_keypair.tap_tweak(&secp, None);
+
+            // Create the sighash
+            let sighash = sighash_cache.taproot_key_spend_signature_hash(
+                i,
+                &Prevouts::All(&prevouts),
+                TapSighashType::Default,
+            )?;
+
+            // Sign the sighash
+            let msg = bitcoin::secp256k1::Message::from(sighash);
+            let signature = secp.sign_schnorr(&msg, &tweaked_keypair.to_keypair());
+            
+            let taproot_signature = taproot::Signature {
+                signature,
+                sighash_type: TapSighashType::Default,
+            };
+
+            psbt.inputs[i].tap_key_sig = Some(taproot_signature);
+        }
+
+        Ok(psbt)
     }
     
     async fn get_keypair(&self) -> Result<bitcoin::secp256k1::Keypair> {
-        unimplemented!()
+        let mnemonic = self.get_mnemonic().await?
+            .ok_or_else(|| DeezelError::Wallet("Wallet must be unlocked to get keypair".to_string()))?;
+        let mnemonic = bip39::Mnemonic::from_phrase(&mnemonic, bip39::Language::English)?;
+        let seed = bip39::Seed::new(&mnemonic, "");
+        let network = self.get_network();
+        let xpriv = bitcoin::bip32::Xpriv::new_master(network, seed.as_bytes())?;
+        let secp = bitcoin::secp256k1::Secp256k1::new();
+        Ok(xpriv.to_keypair(&secp))
     }
 
     fn set_passphrase(&mut self, passphrase: Option<String>) {
@@ -1784,8 +1862,8 @@ impl RunestoneProvider for ConcreteProvider {
 
 #[async_trait(?Send)]
 impl AlkanesProvider for ConcreteProvider {
-    async fn execute(&self, params: EnhancedExecuteParams) -> Result<EnhancedExecuteResult> {
-        let executor = EnhancedAlkanesExecutor::new(self);
+    async fn execute(&mut self, params: EnhancedExecuteParams) -> Result<EnhancedExecuteResult> {
+        let mut executor = EnhancedAlkanesExecutor::new(self);
         executor.execute(params).await
     }
 

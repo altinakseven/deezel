@@ -91,6 +91,9 @@ fn parse_single_protostone(spec_str: &str) -> Result<ProtostoneSpec> {
         } else if trimmed.starts_with("B:") {
             // This is a Bitcoin transfer
             bitcoin_transfer = Some(parse_bitcoin_transfer(trimmed)?);
+        } else if trimmed.starts_with('v') || trimmed.starts_with('p') || trimmed == "split" {
+            // This is a standalone pointer/refund target. The ordinals crate handles this, so we can ignore it here.
+            log::debug!("Ignoring standalone target: {}", trimmed);
         } else if !trimmed.is_empty() {
             // This might be a simple edict: block:tx:amount:target
             if let Ok(edict) = parse_edict(trimmed) {

@@ -268,7 +268,7 @@ pub trait WalletProvider {
     async fn get_internal_key(&self) -> Result<bitcoin::XOnlyPublicKey>;
     
     /// Sign PSBT
-    async fn sign_psbt(&self, psbt: &bitcoin::psbt::Psbt) -> Result<bitcoin::psbt::Psbt>;
+    async fn sign_psbt(&mut self, psbt: &bitcoin::psbt::Psbt) -> Result<bitcoin::psbt::Psbt>;
     
     /// Get keypair for wallet
     async fn get_keypair(&self) -> Result<bitcoin::secp256k1::Keypair>;
@@ -738,7 +738,7 @@ pub trait OrdProvider {
 #[async_trait(?Send)]
 pub trait AlkanesProvider {
     /// Execute alkanes smart contract
-    async fn execute(&self, params: EnhancedExecuteParams) -> Result<EnhancedExecuteResult>;
+    async fn execute(&mut self, params: EnhancedExecuteParams) -> Result<EnhancedExecuteResult>;
     async fn protorunes_by_address(&self, address: &str) -> Result<JsonValue>;
     async fn protorunes_by_outpoint(&self, txid: &str, vout: u32) -> Result<protorune_pb::OutpointResponse>;
     async fn simulate(&self, contract_id: &str, params: Option<&str>) -> Result<JsonValue>;
@@ -1021,7 +1021,7 @@ impl<T: DeezelProvider + ?Sized> WalletProvider for Box<T> {
    async fn get_internal_key(&self) -> Result<bitcoin::XOnlyPublicKey> {
        (**self).get_internal_key().await
    }
-   async fn sign_psbt(&self, psbt: &bitcoin::psbt::Psbt) -> Result<bitcoin::psbt::Psbt> {
+   async fn sign_psbt(&mut self, psbt: &bitcoin::psbt::Psbt) -> Result<bitcoin::psbt::Psbt> {
        (**self).sign_psbt(psbt).await
    }
    async fn get_keypair(&self) -> Result<bitcoin::secp256k1::Keypair> {
@@ -1270,7 +1270,7 @@ impl<T: DeezelProvider + ?Sized> OrdProvider for Box<T> {
 
 #[async_trait(?Send)]
 impl<T: DeezelProvider + ?Sized> AlkanesProvider for Box<T> {
-    async fn execute(&self, params: EnhancedExecuteParams) -> Result<EnhancedExecuteResult> {
+    async fn execute(&mut self, params: EnhancedExecuteParams) -> Result<EnhancedExecuteResult> {
         (**self).execute(params).await
     }
     async fn protorunes_by_address(&self, address: &str) -> Result<JsonValue> {

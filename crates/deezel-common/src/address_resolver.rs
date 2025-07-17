@@ -585,7 +585,7 @@ impl WalletProvider for StandaloneAddressResolver {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support wallet operations".to_string()))
     }
     
-    async fn sign_psbt(&self, _psbt: &bitcoin::psbt::Psbt) -> Result<bitcoin::psbt::Psbt> {
+    async fn sign_psbt(&mut self, _psbt: &bitcoin::psbt::Psbt) -> Result<bitcoin::psbt::Psbt> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support wallet operations".to_string()))
     }
     
@@ -873,7 +873,7 @@ impl KeystoreProvider for StandaloneAddressResolver {
 #[cfg(not(target_arch = "wasm32"))]
 #[async_trait(?Send)]
 impl AlkanesProvider for StandaloneAddressResolver {
-    async fn execute(&self, _params: crate::alkanes::types::EnhancedExecuteParams) -> Result<crate::alkanes::types::EnhancedExecuteResult> {
+    async fn execute(&mut self, _params: crate::alkanes::types::EnhancedExecuteParams) -> Result<crate::alkanes::types::EnhancedExecuteResult> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
     }
 

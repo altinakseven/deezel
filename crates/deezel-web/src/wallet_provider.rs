@@ -1118,7 +1118,7 @@ impl WalletProvider for BrowserWalletProvider {
         }
     }
     
-    async fn sign_psbt(&self, psbt: &Psbt) -> Result<Psbt> {
+    async fn sign_psbt(&mut self, psbt: &Psbt) -> Result<Psbt> {
         // Convert PSBT to hex and use wallet to sign
         let psbt_hex = hex::encode(psbt.serialize());
         let signed_psbt_hex = self.wallet.sign_psbt(&psbt_hex, None).await?;
@@ -1443,7 +1443,7 @@ impl OrdProvider for BrowserWalletProvider {
 
 #[async_trait(?Send)]
 impl AlkanesProvider for BrowserWalletProvider {
-    async fn execute(&self, params: deezel_common::alkanes::types::EnhancedExecuteParams) -> Result<deezel_common::alkanes::types::EnhancedExecuteResult> {
+    async fn execute(&mut self, params: deezel_common::alkanes::types::EnhancedExecuteParams) -> Result<deezel_common::alkanes::types::EnhancedExecuteResult> {
         self.web_provider.execute(params).await
     }
 

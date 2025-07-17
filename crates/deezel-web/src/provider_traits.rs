@@ -283,7 +283,7 @@ impl WalletProvider for WebProvider {
             .map_err(|e| DeezelError::Wallet(format!("Failed to create internal key: {}", e)))?)
     }
 
-    async fn sign_psbt(&self, psbt: &bitcoin::psbt::Psbt) -> Result<bitcoin::psbt::Psbt> {
+    async fn sign_psbt(&mut self, psbt: &bitcoin::psbt::Psbt) -> Result<bitcoin::psbt::Psbt> {
         // Mock PSBT signing
         Ok(psbt.clone())
     }

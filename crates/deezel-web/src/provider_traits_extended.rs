@@ -48,7 +48,7 @@ impl RunestoneProvider for WebProvider {
 // AlkanesProvider implementation
 #[async_trait(?Send)]
 impl AlkanesProvider for WebProvider {
-    async fn execute(&self, params: deezel_common::alkanes::types::EnhancedExecuteParams) -> Result<deezel_common::alkanes::types::EnhancedExecuteResult> {
+    async fn execute(&mut self, params: deezel_common::alkanes::types::EnhancedExecuteParams) -> Result<deezel_common::alkanes::types::EnhancedExecuteResult> {
         let result = self.call(self.sandshrew_rpc_url(), "alkanes_execute", serde_json::to_value(params)?, 1).await?;
         serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
     }

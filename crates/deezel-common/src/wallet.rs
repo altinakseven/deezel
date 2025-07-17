@@ -352,7 +352,7 @@ impl<P: DeezelProvider> WalletManager<P> {
     }
     
     /// Sign PSBT
-    pub async fn sign_psbt(&self, psbt: &bitcoin::psbt::Psbt) -> Result<bitcoin::psbt::Psbt> {
+    pub async fn sign_psbt(&mut self, psbt: &bitcoin::psbt::Psbt) -> Result<bitcoin::psbt::Psbt> {
         self.provider.sign_psbt(psbt).await
     }
     
