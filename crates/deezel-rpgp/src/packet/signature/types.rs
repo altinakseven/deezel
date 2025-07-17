@@ -7,7 +7,7 @@ use alloc::format;
 use core::{
     cmp::Ordering,
 };
-use crate::io::{BufRead, Read, Write, WriteBytesExt};
+use crate::io::{BufRead, Read, WriteBytesExt};
 use byteorder::BigEndian;
 
 use bitfields::bitfield;

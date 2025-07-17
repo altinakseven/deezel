@@ -8,7 +8,7 @@ use log::warn;
 use rand::{CryptoRng, Rng};
 
 use crate::{
-    armor,
+    armor_new,
     composed::{
         key::{PublicKey, PublicSubkey},
         signed_key::SignedKeyDetails,
@@ -89,8 +89,8 @@ impl crate::composed::Deserializable for SignedPublicKey {
         Box::new(SignedPublicKeyParser::from_packets(packets))
     }
 
-    fn matches_block_type(typ: armor::BlockType) -> bool {
-        matches!(typ, armor::BlockType::PublicKey | armor::BlockType::File)
+    fn matches_block_type(typ: armor_new::BlockType) -> bool {
+        matches!(typ, armor_new::BlockType::PublicKey | armor_new::BlockType::File)
     }
 }
 
@@ -137,30 +137,30 @@ impl SignedPublicKey {
         Ok(())
     }
 
-    pub fn to_armored_writer(
+    pub fn to_armor_newed_writer(
         &self,
         writer: &mut impl Write,
         opts: ArmorOptions<'_>,
     ) -> Result<()> {
-        armor::write(
+        armor_new::write(
             self,
-            armor::BlockType::PublicKey,
+            armor_new::BlockType::PublicKey,
             writer,
             opts.headers,
             opts.include_checksum,
         )
     }
 
-    pub fn to_armored_bytes(&self, opts: ArmorOptions<'_>) -> Result<Vec<u8>> {
+    pub fn to_armor_newed_bytes(&self, opts: ArmorOptions<'_>) -> Result<Vec<u8>> {
         let mut buf = Vec::new();
 
-        self.to_armored_writer(&mut buf, opts)?;
+        self.to_armor_newed_writer(&mut buf, opts)?;
 
         Ok(buf)
     }
 
-    pub fn to_armored_string(&self, opts: ArmorOptions<'_>) -> Result<String> {
-        let res = String::from_utf8(self.to_armored_bytes(opts)?).map_err(|e| e.utf8_error())?;
+    pub fn to_armor_newed_string(&self, opts: ArmorOptions<'_>) -> Result<String> {
+        let res = String::from_utf8(self.to_armor_newed_bytes(opts)?).map_err(|e| e.utf8_error())?;
         Ok(res)
     }
 

@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 use alloc::format;
 extern crate alloc;
 use crate::{
-    armor::BlockType,
+    armor_new::BlockType,
     composed::{
         message::Message, shared::is_binary, CompressedDataReader, Edata, Esk, LiteralDataReader,
         SignatureBodyReader, SignatureOnePassReader,
@@ -227,16 +227,16 @@ impl<'a> Message<'a> {
     //     }
     // }
 
-    /// From armored string
-    pub fn from_string(data: &'a str) -> Result<(Self, crate::armor::Headers)> {
-        Self::from_armor(data.as_bytes())
+    /// From armor_newed string
+    pub fn from_string(data: &'a str) -> Result<(Self, crate::armor_new::Headers)> {
+        Self::from_armor_new(data.as_bytes())
     }
 
     /// Armored ascii data.
-    pub fn from_armor(
+    pub fn from_armor_new(
         input: &'a [u8],
-    ) -> Result<(Self, crate::armor::Headers)> {
-        let (typ, headers, decoded) = crate::armor::decode(input)?;
+    ) -> Result<(Self, crate::armor_new::Headers)> {
+        let (typ, headers, decoded) = crate::armor_new::decode(input)?;
 
         match typ {
             // Standard PGP types
@@ -263,15 +263,15 @@ impl<'a> Message<'a> {
         }
     }
 
-    /// Parse from a reader which might contain ASCII armored data or binary data.
+    /// Parse from a reader which might contain ASCII armor_newed data or binary data.
     pub fn from_reader(
         mut source: &'a [u8],
-    ) -> Result<(Self, Option<crate::armor::Headers>)> {
+    ) -> Result<(Self, Option<crate::armor_new::Headers>)> {
         if is_binary(&mut source)? {
             let msg = Self::from_bytes(source)?;
             Ok((msg, None))
         } else {
-            let (msg, headers) = Self::from_armor(source)?;
+            let (msg, headers) = Self::from_armor_new(source)?;
             Ok((msg, Some(headers)))
         }
     }

@@ -9,6 +9,7 @@ use crate::{
     composed::{KeyDetails, SignedPublicKey, SignedPublicSubKey},
     crypto::{hash::HashAlgorithm, public_key::PublicKeyAlgorithm},
     errors::Result,
+    io::Read,
     packet,
     packet::{KeyFlags, Signature},
     ser::Serialize,

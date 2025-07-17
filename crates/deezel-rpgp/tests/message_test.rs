@@ -7,7 +7,6 @@ extern crate serde_json;
 extern crate serde;
 extern crate deezel_rpgp;
 extern crate pretty_env_logger;
-#[macro_use]
 extern crate log;
 
 use deezel_rpgp::{

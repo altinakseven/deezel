@@ -11,8 +11,6 @@ use bytes::{Buf, BufMut, Bytes, BytesMut};
 use chrono::{DateTime, TimeZone, Utc};
 use log::debug;
 use num_enum::{FromPrimitive, IntoPrimitive};
-#[cfg(test)]
-use proptest::prelude::*;
 
 use crate::{
     errors::{ensure, Result},

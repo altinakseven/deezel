@@ -15,7 +15,7 @@ use zeroize::Zeroizing;
 
 use super::ArmorOptions;
 use crate::{
-    armor,
+    armor_new,
     composed::Esk,
     crypto::{
         aead::{AeadAlgorithm, ChunkSize},
@@ -569,8 +569,8 @@ impl<'a, R: Read, E: Encryption> Builder<'a, R, E> {
         Ok(())
     }
 
-    /// Write the data not as binary, but ascii armor encoded.
-    pub fn to_armored_writer<RAND, W>(
+    /// Write the data not as binary, but ascii armor_new encoded.
+    pub fn to_armor_newed_writer<RAND, W>(
         self,
         rng: RAND,
         opts: ArmorOptions<'_>,
@@ -580,17 +580,17 @@ impl<'a, R: Read, E: Encryption> Builder<'a, R, E> {
         RAND: Rng + CryptoRng,
         W: Write,
     {
-        let typ = armor::BlockType::Message;
+        let typ = armor_new::BlockType::Message;
 
         // write header
-        armor::write_header(&mut out, typ, opts.headers)?;
+        armor_new::write_header(&mut out, typ, opts.headers)?;
 
         // write body
         let mut crc_hasher = opts.include_checksum.then(Crc24Hasher::new);
         {
             let crc_hasher = crc_hasher.as_mut();
             let mut line_wrapper = LineWriter::<_, U64>::new(&mut out, LineBreak::Lf);
-            let mut enc = armor::Base64Encoder::new(&mut line_wrapper);
+            let mut enc = armor_new::Base64Encoder::new(&mut line_wrapper);
 
             if let Some(crc_hasher) = crc_hasher {
                 let mut tee = TeeWriter::new(crc_hasher, &mut enc);
@@ -604,7 +604,7 @@ impl<'a, R: Read, E: Encryption> Builder<'a, R, E> {
         }
 
         // write footer
-        armor::write_footer(&mut out, typ, crc_hasher)?;
+        armor_new::write_footer(&mut out, typ, crc_hasher)?;
         out.flush()?;
 
         Ok(())
@@ -620,14 +620,14 @@ impl<'a, R: Read, E: Encryption> Builder<'a, R, E> {
         Ok(out)
     }
 
-    /// Write the data as ascii armored data, directly to a `String`.
-    pub fn to_armored_string<RAND>(self, rng: RAND, opts: ArmorOptions<'_>) -> Result<String>
+    /// Write the data as ascii armor_newed data, directly to a `String`.
+    pub fn to_armor_newed_string<RAND>(self, rng: RAND, opts: ArmorOptions<'_>) -> Result<String>
     where
         RAND: Rng + CryptoRng,
     {
         let mut out = Vec::new();
-        self.to_armored_writer(rng, opts, &mut out)?;
-        let out = String::from_utf8(out).expect("ascii armor is utf8");
+        self.to_armor_newed_writer(rng, opts, &mut out)?;
+        let out = String::from_utf8(out).expect("ascii armor_new is utf8");
         Ok(out)
     }
 }

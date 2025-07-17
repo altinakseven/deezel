@@ -5,7 +5,7 @@ extern crate alloc;
 use core::iter;
 
 use crate::{
-    armor::{self, BlockType},
+    armor_new::{self, BlockType},
     composed::signed_key::{
         PublicOrSecret, SignedPublicKey, SignedPublicKeyParser, SignedSecretKey,
         SignedSecretKeyParser,
@@ -16,16 +16,16 @@ use crate::{
 };
 
 impl PublicOrSecret {
-    /// Parses a list of secret and public keys, from either ASCII-armored or binary OpenPGP data.
+    /// Parses a list of secret and public keys, from either ASCII-armor_newed or binary OpenPGP data.
     ///
-    /// Returns an iterator of public or secret keys and a BTreeMap containing armor headers
-    /// (None, if the data was unarmored)
+    /// Returns an iterator of public or secret keys and a BTreeMap containing armor_new headers
+    /// (None, if the data was unarmor_newed)
     #[allow(clippy::type_complexity)]
     pub fn from_reader_many<'a>(
         input: &'a [u8],
     ) -> Result<(
         Box<dyn Iterator<Item = Result<PublicOrSecret>> + 'a>,
-        Option<armor::Headers>,
+        Option<armor_new::Headers>,
     )> {
         Self::from_reader_many_buf(input)
     }
@@ -35,25 +35,25 @@ impl PublicOrSecret {
         mut input: &'a [u8],
     ) -> Result<(
         Box<dyn Iterator<Item = Result<PublicOrSecret>> + 'a>,
-        Option<armor::Headers>,
+        Option<armor_new::Headers>,
     )> {
         if !crate::composed::shared::is_binary(&mut input)? {
-            let (keys, headers) = Self::from_armor_many(input)?;
+            let (keys, headers) = Self::from_armor_new_many(input)?;
             Ok((keys, Some(headers)))
         } else {
             Ok((Self::from_bytes_many(input)?, None))
         }
     }
 
-    /// Parses a list of secret and public keys from ascii armored text.
+    /// Parses a list of secret and public keys from ascii armor_newed text.
     #[allow(clippy::type_complexity)]
-    pub fn from_armor_many<'a>(
+    pub fn from_armor_new_many<'a>(
         input: &'a [u8],
     ) -> Result<(
         Box<dyn Iterator<Item = Result<PublicOrSecret>> + 'a>,
-        armor::Headers,
+        armor_new::Headers,
     )> {
-        let (typ, headers, decoded) = armor::decode(input)?;
+        let (typ, headers, decoded) = armor_new::decode(input)?;
 
         // TODO: add typ information to the key possibly?
         match typ {
@@ -89,15 +89,15 @@ impl PublicOrSecret {
     }
 
     // TODO: re-enable this
-    // /// Parses a list of secret and public keys from ascii armored text.
+    // /// Parses a list of secret and public keys from ascii armor_newed text.
     // #[allow(clippy::type_complexity)]
-    // pub fn from_armor_many_buf<'a>(
+    // pub fn from_armor_new_many_buf<'a>(
     //     input: &'a [u8],
     // ) -> Result<(
     //     Box<dyn Iterator<Item = Result<PublicOrSecret>> + 'a>,
-    //     armor::Headers,
+    //     armor_new::Headers,
     // )> {
-    //     let (typ, headers, decoded) = armor::parse(input)?;
+    //     let (typ, headers, decoded) = armor_new::parse(input)?;
 
     //     // TODO: add typ information to the key possibly?
     //     match typ {

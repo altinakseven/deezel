@@ -6,7 +6,7 @@ extern crate alloc;
 use core::iter::Peekable;
 
 use crate::{
-    armor,
+    armor_new,
     composed::{ArmorOptions, Deserializable},
     errors::{format_err, Result},
     packet::{Packet, PacketTrait, Signature},
@@ -28,30 +28,30 @@ impl StandaloneSignature {
         StandaloneSignature { signature }
     }
 
-    pub fn to_armored_writer(
+    pub fn to_armor_newed_writer(
         &self,
         writer: &mut impl Write,
         opts: ArmorOptions<'_>,
     ) -> Result<()> {
-        armor::write(
+        armor_new::write(
             self,
-            armor::BlockType::Signature,
+            armor_new::BlockType::Signature,
             writer,
             opts.headers,
             opts.include_checksum,
         )
     }
 
-    pub fn to_armored_bytes(&self, opts: ArmorOptions<'_>) -> Result<Vec<u8>> {
+    pub fn to_armor_newed_bytes(&self, opts: ArmorOptions<'_>) -> Result<Vec<u8>> {
         let mut buf = Vec::new();
 
-        self.to_armored_writer(&mut buf, opts)?;
+        self.to_armor_newed_writer(&mut buf, opts)?;
 
         Ok(buf)
     }
 
-    pub fn to_armored_string(&self, opts: ArmorOptions<'_>) -> Result<String> {
-        let res = String::from_utf8(self.to_armored_bytes(opts)?).map_err(|e| e.utf8_error())?;
+    pub fn to_armor_newed_string(&self, opts: ArmorOptions<'_>) -> Result<String> {
+        let res = String::from_utf8(self.to_armor_newed_bytes(opts)?).map_err(|e| e.utf8_error())?;
         Ok(res)
     }
 
@@ -80,8 +80,8 @@ impl Deserializable for StandaloneSignature {
         Box::new(SignatureParser { source: packets })
     }
 
-    fn matches_block_type(typ: armor::BlockType) -> bool {
-        matches!(typ, armor::BlockType::Signature)
+    fn matches_block_type(typ: armor_new::BlockType) -> bool {
+        matches!(typ, armor_new::BlockType::Signature)
     }
 }
 

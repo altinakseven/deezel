@@ -4,7 +4,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use alloc::format;
 extern crate alloc;
-use crate::io::Read;
+use crate::io::{self, Read};
 
 use byteorder::{BigEndian, ByteOrder};
 use chrono::{DateTime, Utc};
@@ -199,7 +199,7 @@ impl SignatureConfig {
         R: Read,
     {
         let mut hasher = self.into_hasher()?;
-        crate::io::copy(&mut data, &mut hasher)?;
+        io::copy(&mut data, &mut hasher)?;
 
         hasher.sign(key, key_pw)
     }
@@ -554,7 +554,7 @@ impl SignatureConfig {
             SignatureType::Text |
                 // assumes that the passed in text was already valid utf8 and normalized
             SignatureType::Binary => {
-                let written = crate::io::copy(&mut data, &mut WriteHasher(hasher))?;
+                let written = io::copy(&mut data, &mut WriteHasher(hasher))?;
                 Ok(written.try_into()?)
             }
             SignatureType::Timestamp |

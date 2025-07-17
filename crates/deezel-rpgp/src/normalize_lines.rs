@@ -1,22 +1,11 @@
 //! # Line ending normalization module
 extern crate alloc;
-use alloc::string::String;
-use alloc::format;
 
 use alloc::borrow::Cow;
 use bytes::{Buf, BytesMut};
-use spin::Once;
 
 use crate::util::fill_buffer;
 pub use crate::line_writer::LineBreak;
-
-#[cfg(feature = "std")]
-static RE: Once<regex::bytes::Regex> = Once::new();
-
-#[cfg(feature = "std")]
-fn get_re() -> &'static regex::bytes::Regex {
-    RE.call_once(|| regex::bytes::Regex::new(r"(\r\n?|\n)").expect("valid regex"))
-}
 
 use crate::io::{Error, Read};
 
@@ -26,7 +15,6 @@ pub struct NormalizedReader<R>
 where
     R: Read,
 {
-    line_break: LineBreak,
     source: R,
     in_buffer: [u8; BUF_SIZE / 2],
     replaced: BytesMut,
@@ -35,10 +23,9 @@ where
 
 const BUF_SIZE: usize = 1024;
 impl<R: Read> NormalizedReader<R> {
-    pub fn new(source: R, line_break: LineBreak) -> Self {
+    pub fn new(source: R, _line_break: LineBreak) -> Self {
         Self {
             source,
-            line_break,
             in_buffer: [0u8; BUF_SIZE / 2],
             replaced: BytesMut::with_capacity(BUF_SIZE),
             is_done: false,

@@ -1597,6 +1597,7 @@ dependencies = [
  "md-5",
  "ml-dsa",
  "ml-kem",
+ "no_std_io",
  "nom 8.0.0",
  "num-bigint-dig",
  "num-traits",
@@ -1675,6 +1676,7 @@ dependencies = [
  "console_error_panic_hook",
  "console_log",
  "deezel-common",
+ "deezel-rpgp",
  "futures",
  "getrandom 0.2.15",
  "gloo-timers",
@@ -3439,6 +3441,15 @@ dependencies = [
  "cfg-if 1.0.0",
  "cfg_aliases",
  "libc",
+]
+
+[[package]]
+name = "no_std_io"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7fa5f306a6f2c01b4fd172f29bb46195b1764061bf926c75e96ff55df3178208"
+dependencies = [
+ "memchr",
 ]
 
 [[package]]

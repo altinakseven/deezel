@@ -3,7 +3,6 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 use crate::errors::Result;
-
 use crate::io::Write;
 
 pub trait Serialize {

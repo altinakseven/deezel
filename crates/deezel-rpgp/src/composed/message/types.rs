@@ -11,7 +11,7 @@ use super::reader::{
     SignatureOnePassReader, SymEncryptedDataReader, SymEncryptedProtectedDataReader,
 };
 use crate::{
-    armor,
+    armor_new,
     composed::{message::decrypt::*, signed_key::SignedSecretKey, PlainSessionKey},
     crypto::sym::SymmetricKeyAlgorithm,
     errors::{bail, ensure, ensure_eq, format_err, Error, Result},
@@ -1322,11 +1322,11 @@ pub enum InnerRingResult {
     Ok,
 }
 
-/// Options for generating armored content.
+/// Options for generating armor_newed content.
 #[derive(Debug, Clone)]
 pub struct ArmorOptions<'a> {
     /// Armor headers
-    pub headers: Option<&'a armor::Headers>,
+    pub headers: Option<&'a armor_new::Headers>,
     /// Should a checksum be included? Default to `true`.
     pub include_checksum: bool,
 }
@@ -1340,8 +1340,8 @@ impl Default for ArmorOptions<'_> {
     }
 }
 
-impl<'a> From<Option<&'a armor::Headers>> for ArmorOptions<'a> {
-    fn from(headers: Option<&'a armor::Headers>) -> Self {
+impl<'a> From<Option<&'a armor_new::Headers>> for ArmorOptions<'a> {
+    fn from(headers: Option<&'a armor_new::Headers>) -> Self {
         Self {
             headers,
             include_checksum: true,

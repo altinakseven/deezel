@@ -23,8 +23,9 @@ pub use bytes;
 pub(crate) mod util;
 
 pub mod adapter;
-pub mod armor;
+pub mod armor_new;
 pub mod base64;
+pub mod bytes_reader;
 pub mod composed;
 pub mod crypto;
 pub mod errors;

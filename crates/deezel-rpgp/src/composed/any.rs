@@ -1,6 +1,6 @@
 use alloc::boxed::Box;
 use crate::{
-    armor::{self, BlockType},
+    armor_new::{self, BlockType},
     composed::{
         cleartext::CleartextSignedMessage, Deserializable, Message, SignedPublicKey,
         SignedSecretKey, StandaloneSignature,
@@ -13,7 +13,7 @@ use alloc::string::ToString;
 use core::fmt::Debug;
 
 
-/// A flexible representation of what can be represented in an armor file.
+/// A flexible representation of what can be represented in an armor_new file.
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum Any<'a> {
@@ -25,11 +25,11 @@ pub enum Any<'a> {
 }
 
 impl<'a> Any<'a> {
-    /// Parse armored ascii data.
-    pub fn from_armor(bytes: &'a [u8]) -> Result<(Self, armor::Headers)> {
-        let (typ, headers, decoded) = armor::decode(bytes)?;
+    /// Parse armor_newed ascii data.
+    pub fn from_armor_new(bytes: &'a [u8]) -> Result<(Self, armor_new::Headers)> {
+        let (typ, headers, decoded) = armor_new::decode(bytes)?;
         
-        log::debug!("Decoded armor data length: {}", decoded.len());
+        log::debug!("Decoded armor_new data length: {}", decoded.len());
         log::debug!("First 32 bytes: {:?}", &decoded[..decoded.len().min(32)]);
         
         let packets = crate::packet::PacketParser::new(Cursor::new(&decoded));
@@ -64,7 +64,7 @@ impl<'a> Any<'a> {
             }
             BlockType::CleartextMessage => {
                 let (sig, _headers) =
-                    CleartextSignedMessage::from_armor_after_header(&decoded, headers.clone(), 0)?;
+                    CleartextSignedMessage::from_armor_new_after_header(&decoded, headers.clone(), 0)?;
                 Self::Cleartext(sig)
             }
             _ => unimplemented!("unsupported block type: {}", typ),
@@ -73,9 +73,9 @@ impl<'a> Any<'a> {
         Ok((first, headers))
     }
 
-    /// Parse a single armor encoded composition.
-    pub fn from_string(input: &'a str) -> Result<(Self, armor::Headers)> {
-        Self::from_armor(input.as_bytes())
+    /// Parse a single armor_new encoded composition.
+    pub fn from_string(input: &'a str) -> Result<(Self, armor_new::Headers)> {
+        Self::from_armor_new(input.as_bytes())
     }
 
 }

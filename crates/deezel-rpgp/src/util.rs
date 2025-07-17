@@ -8,7 +8,7 @@ use digest::DynDigest;
 use nom::Input;
 use dyn_clone::DynClone;
 
-use crate::io::{Read, Write};
+use crate::io::Read;
 
 pub(crate) fn fill_buffer<R: Read>(
     source: &mut R,
@@ -93,11 +93,11 @@ impl<'a, A, B> TeeWriter<'a, A, B> {
 impl<A: hash::Hasher, B: Write> std::io::Write for TeeWriter<'_, A, B> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         self.a.write(buf);
-        self.b.write(buf).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, "tee write failed"))
+        self.b.write(buf).map_err(|_e| std::io::Error::new(std::io::ErrorKind::Other, "tee write failed"))
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
-        self.b.flush().map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, "tee flush failed"))
+        self.b.flush().map_err(|_e| std::io::Error::new(std::io::ErrorKind::Other, "tee flush failed"))
     }
 }
 
@@ -258,43 +258,5 @@ pub mod test {
 
     pub fn check_strings(a: &str, b: &str) {
         assert_eq!(a, b);
-    }
-}
-#[cfg(feature = "test-utils")]
-pub(crate) fn random_string(max_len: usize) -> String {
-    use rand::{distributions::Alphanumeric, Rng};
-
-    let mut rng = rand::thread_rng();
-    let len = rng.gen_range(0..max_len);
-
-    rand::thread_rng()
-        .sample_iter(&Alphanumeric)
-        .take(len)
-        .map(char::from)
-        .collect()
-}
-
-#[cfg(feature = "test-utils")]
-pub(crate) fn check_strings(a: &str, b: &str) {
-    if a != b {
-        let mut a_chars = a.chars();
-        let mut b_chars = b.chars();
-        let mut i = 0;
-        loop {
-            let a_c = a_chars.next();
-            let b_c = b_chars.next();
-            if a_c != b_c {
-                panic!(
-                    "string differ at index {}, a: {:?}, b: {:?}",
-                    i,
-                    a_c,
-                    b_c.clone()
-                );
-            }
-            if a_c.is_none() {
-                break;
-            }
-            i += 1;
-        }
     }
 }

@@ -24,11 +24,11 @@ bench = false
 [dependencies]
 
 # General
-base64 = ">=0.21.7, < 0.23"
+base64 = { version = ">=0.21.7, < 0.23", default-features = false, features = ["alloc"] }
 buffer-redux = { version = "1.0.0", default-features = false }
 bitfields = "0.12.3"
 bytes = "1.9.0"
-byteorder = { version = "1.4", default-features = false }
+byteorder = { version = "1.4", default-features = false, features = ["i128"] }
 chrono = { version = "0.4.39", default-features = false }
 derive_builder = "0.20.0"
 dyn-clone = "1.0"
@@ -39,6 +39,7 @@ smallvec = "1.10.0"
 derive_more = { version = "2.0.1", features = ["debug", "display"] }
 snafu = { version = "0.8.5", default-features = false, features = ["rust_1_81"] }
 spin = "0.9.8"
+no_std_io = { version = "0.6.0", optional = true }
 regex = { version = "1.10.5", default-features = false, features = ["perf"], optional = true }
  
 # Compression
@@ -140,7 +141,7 @@ bzip2 = ["dep:bzip2"]
 # Enables assembly based optimizations
 asm = ["dep:sha1-asm", "sha1/asm", "sha2/asm", "md-5/asm"]
 # Allows building for wasm
-wasm = ["chrono/wasmbind", "getrandom", "getrandom/js"]
+wasm = ["chrono/wasmbind", "getrandom", "getrandom/js", "dep:no_std_io", "byteorder/std", "base64/std"]
 
 # Enables implementation of draft-ietf-openpgp-pqc-10
 # This is unstable and can have breaking changes in patch releases.
@@ -148,7 +149,7 @@ wasm = ["chrono/wasmbind", "getrandom", "getrandom/js"]
 draft-pqc = ["dep:ml-kem", "dep:ml-dsa", "dep:slh-dsa"]
 
 # Enable std support (for tests)
-std = ["chrono/clock", "regex", "regex/std", "byteorder/std"]
+std = ["chrono/clock", "regex", "regex/std", "byteorder/std", "no_std_io/std"]
 
 test-utils = ["std", "dep:proptest"]
 
