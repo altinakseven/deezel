@@ -1084,7 +1084,9 @@ impl WalletProvider for ConcreteProvider {
             let path = DerivationPath::from_str(&addr_info.path)?;
 
             // Derive the private key for this input
-            let root_key = Xpriv::new_master(network, mnemonic.as_bytes())?;
+            let mnemonic_obj = Mnemonic::from_phrase(mnemonic, bip39::Language::English)?;
+            let seed = Seed::new(&mnemonic_obj, "");
+            let root_key = Xpriv::new_master(network, seed.as_bytes())?;
             let derived_xpriv = root_key.derive_priv(&secp, &path)?;
             let keypair = derived_xpriv.to_keypair(&secp);
 
