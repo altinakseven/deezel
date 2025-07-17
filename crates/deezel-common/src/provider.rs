@@ -293,30 +293,33 @@ impl ConcreteProvider {
             .map_err(|e| DeezelError::Wallet(format!("Invalid account xpub in keystore: {}", e)))?;
 
         // Standard gap limit is 20, but we'll search a bit more to be safe.
-        for i in 0..101 {
-            let address_path_str = format!("0/{}", i);
-            let address_path = DerivationPath::from_str(&address_path_str)?;
-            let derived_xpub = account_xpub.derive_pub(&secp, &address_path)?;
-            let (internal_key, _) = derived_xpub.public_key.x_only_public_key();
-            let derived_address = Address::p2tr(&secp, internal_key, None, network);
+        // We need to check both the receive (0) and change (1) branches.
+        for branch in 0..=1 {
+            for i in 0..101 {
+                let address_path_str = format!("{}/{}", branch, i);
+                let address_path = DerivationPath::from_str(&address_path_str)?;
+                let derived_xpub = account_xpub.derive_pub(&secp, &address_path)?;
+                let (internal_key, _) = derived_xpub.public_key.x_only_public_key();
+                let derived_address = Address::p2tr(&secp, internal_key, None, network);
 
-            if derived_address == *address {
-                // We found the address! Now we can construct its info and cache it.
-                let full_path = format!("m/86'/1'/0'/{}", address_path_str);
-                let new_info = crate::keystore::AddressInfo {
-                    path: full_path,
-                    address: address.to_string(),
-                    address_type: "p2tr".to_string(),
-                };
+                if derived_address == *address {
+                    // We found the address! Now we can construct its info and cache it.
+                    let full_path = format!("m/86'/1'/0'/{}", address_path_str);
+                    let new_info = crate::keystore::AddressInfo {
+                        path: full_path,
+                        address: address.to_string(),
+                        address_type: "p2tr".to_string(),
+                    };
 
-                // Add to cache for future lookups.
-                keystore
-                    .addresses
-                    .entry(network.to_string())
-                    .or_default()
-                    .push(new_info.clone());
+                    // Add to cache for future lookups.
+                    keystore
+                        .addresses
+                        .entry(network.to_string())
+                        .or_default()
+                        .push(new_info.clone());
 
-                return Ok(new_info);
+                    return Ok(new_info);
+                }
             }
         }
 

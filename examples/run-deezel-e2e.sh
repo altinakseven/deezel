@@ -21,16 +21,15 @@ $DEEZEL --wallet-file ~/.deezel/regtest.json.asc -p regtest --sandshrew-rpc-url 
 
 echo "⛏️  Generating 201 blocks to P2TR address..."
 echo "Deriving address for block generation..."
-GEN_ADDRESS=$($DEEZEL --wallet-file ~/.deezel/regtest.json.asc -p regtest --sandshrew-rpc-url http://localhost:18888 --passphrase testtesttest wallet addresses p2tr:100-100 | grep bcrt1 | head -n 1 | awk '{print $2}')
-echo "Generating blocks to address: $GEN_ADDRESS"
-$DEEZEL --wallet-file ~/.deezel/regtest.json.asc -p regtest --sandshrew-rpc-url http://localhost:18888 --passphrase testtesttest bitcoind generatetoaddress 201 $GEN_ADDRESS
+echo "Generating blocks to address [self:p2tr:0]..."
+$DEEZEL --wallet-file ~/.deezel/regtest.json.asc -p regtest --sandshrew-rpc-url http://localhost:18888 --passphrase testtesttest bitcoind generatetoaddress 201 [self:p2tr:0]
 
 echo "Syncing wallet with blockchain..."
 $DEEZEL --wallet-file ~/.deezel/regtest.json.asc -p regtest --sandshrew-rpc-url http://localhost:18888 --passphrase testtesttest wallet sync
 
 echo "Checking for matured UTXOs..."
 for i in {1..30}; do
-    UTXOS=$($DEEZel --wallet-file ~/.deezel/regtest.json.asc -p regtest --sandshrew-rpc-url http://localhost:18888 --passphrase testtesttest wallet utxos --addresses $GEN_ADDRESS | grep "No UTXOs found")
+    UTXOS=$($DEEZEL --wallet-file ~/.deezel/regtest.json.asc -p regtest --sandshrew-rpc-url http://localhost:18888 --passphrase testtesttest wallet utxos --addresses [self:p2tr:0] | grep "No UTXOs found")
     if [ -z "$UTXOS" ]; then
         echo "✅ UTXOs found!"
         break
@@ -45,7 +44,7 @@ if [ -n "$UTXOS" ]; then
 fi
 
 echo "Attempting to send transaction..."
-$DEEZEL --wallet-file ~/.deezel/regtest.json.asc -p regtest --sandshrew-rpc-url http://localhost:18888 --passphrase testtesttest wallet send -y --from $GEN_ADDRESS [self:p2tr:0] 10000 --fee-rate 1
+$DEEZEL --wallet-file ~/.deezel/regtest.json.asc -p regtest --sandshrew-rpc-url http://localhost:18888 --passphrase testtesttest wallet send -y --from "[self:p2tr:0]" "[self:p2tr:1]" 10000 --fee-rate 1
 
 
 bash /data/metashrew/deezel/examples/run-alkanes-execute.sh
