@@ -3,7 +3,7 @@
 # Enhanced alkanes execute script with commit/reveal pattern support
 # Usage: ./run-alkanes-execute.sh [--raw] [--trace] [additional-args...]
 
-export RUST_LOG=info
+export RUST_LOG=debug
 
 # Parse command line arguments
 RAW_FLAG=""

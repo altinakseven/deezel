@@ -22,6 +22,7 @@ use core::str::FromStr;
 use alloc::{vec, vec::Vec, string::{String, ToString}, format};
 #[cfg(feature = "std")]
 use std::{vec, vec::Vec, string::{String, ToString}, format};
+use tokio::time::{sleep, Duration};
 pub use super::types::{EnhancedExecuteParams, EnhancedExecuteResult, InputRequirement, ProtostoneSpec, OutputTarget};
 use super::envelope::AlkanesEnvelope;
 use anyhow::anyhow;
@@ -1019,7 +1020,7 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
         log::info!("Starting enhanced transaction tracing for reveal transaction: {}", txid);
         
         if params.mine_enabled {
-            self.mine_blocks_if_regtest().await?;
+            self.mine_blocks_if_regtest(params).await?;
         }
         
         self.wait_for_transaction_mined(txid, params).await?;
@@ -1067,11 +1068,17 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
     ///
     /// This is a utility function to ensure transactions are confirmed during
     /// testing or local development on a regtest network.
-    async fn mine_blocks_if_regtest(&self) -> Result<()> {
+    async fn mine_blocks_if_regtest(&self, params: &EnhancedExecuteParams) -> Result<()> {
         if self.provider.get_network() == bitcoin::Network::Regtest {
             log::info!("Mining blocks on regtest network...");
-            let address = WalletProvider::get_address(self.provider).await?;
-            self.provider.generate_to_address(101, &address).await?;
+            // Add a delay to allow the node to process transactions in the mempool
+            sleep(Duration::from_secs(2)).await;
+            let address = if let Some(change_address) = &params.change_address {
+                change_address.clone()
+            } else {
+                WalletProvider::get_address(self.provider).await?
+            };
+            self.provider.generate_to_address(1, &address).await?;
         }
         Ok(())
     }

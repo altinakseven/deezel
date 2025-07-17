@@ -175,13 +175,13 @@ impl EsploraJsonRpcMethods {
 
     // Transaction endpoints
     pub const TX: &'static str = "esplora_tx";
-    pub const TX_HEX: &'static str = "esplora_tx:hex";
-    pub const TX_RAW: &'static str = "esplora_tx:raw";
-    pub const TX_STATUS: &'static str = "esplora_tx:status";
-    pub const TX_MERKLE_PROOF: &'static str = "esplora_tx:merkle-proof";
-    pub const TX_MERKLEBLOCK_PROOF: &'static str = "esplora_tx:merkleblock-proof";
-    pub const TX_OUTSPEND: &'static str = "esplora_tx:outspend";
-    pub const TX_OUTSPENDS: &'static str = "esplora_tx:outspends";
+    pub const TX_HEX: &'static str = "esplora_tx::hex";
+    pub const TX_RAW: &'static str = "esplora_tx::raw";
+    pub const TX_STATUS: &'static str = "esplora_tx::status";
+    pub const TX_MERKLE_PROOF: &'static str = "esplora_tx::merkle-proof";
+    pub const TX_MERKLEBLOCK_PROOF: &'static str = "esplora_tx::merkleblock-proof";
+    pub const TX_OUTSPEND: &'static str = "esplora_tx::outspend";
+    pub const TX_OUTSPENDS: &'static str = "esplora_tx::outspends";
 
     // Mempool endpoints
     pub const MEMPOOL: &'static str = "esplora_mempool";
