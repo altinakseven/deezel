@@ -377,11 +377,26 @@ impl JsonRpcProvider for ConcreteProvider {
             let response_text = response.text().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             
             // First, try to parse as a standard RpcResponse
-            if let Ok(rpc_response) = serde_json::from_str::<RpcResponse>(&response_text) {
-                if let Some(error) = rpc_response.error {
-                    return Err(DeezelError::RpcError(format!("{}: {}", error.code, error.message)));
+            // A more robust parsing logic that handles different RPC response structures.
+            if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(&response_text) {
+                // Check for a standard JSON-RPC error object.
+                if let Some(error_obj) = json_value.get("error") {
+                    if !error_obj.is_null() {
+                        if let Ok(rpc_error) = serde_json::from_value::<crate::rpc::RpcError>(error_obj.clone()) {
+                            return Err(DeezelError::RpcError(format!("Code {}: {}", rpc_error.code, rpc_error.message)));
+                        } else {
+                            return Err(DeezelError::RpcError(format!("Non-standard error object received: {}", error_obj)));
+                        }
+                    }
                 }
-                return rpc_response.result.ok_or_else(|| DeezelError::RpcError("No result in RPC response".to_string()));
+
+                // Check for a standard JSON-RPC result.
+                if let Some(result) = json_value.get("result") {
+                    return Ok(result.clone());
+                }
+                
+                // Fallback for non-standard responses that are just the result value.
+                return Ok(json_value);
             }
 
             // If that fails, try to parse as a raw JsonValue (for non-compliant servers)
@@ -983,19 +998,40 @@ impl WalletProvider for ConcreteProvider {
         });
 
         // 5. Calculate fee and add change output if necessary
-        let estimated_vsize = self.estimate_tx_vsize(&tx, selected_utxos.len());
-        let fee = Amount::from_sat((estimated_vsize as f32 * fee_rate).ceil() as u64);
+        // 5. Iteratively calculate fee and change
+        // Start with an initial fee estimate without a change output
+        let mut estimated_vsize = self.estimate_tx_vsize(&tx, selected_utxos.len());
+        let mut fee = Amount::from_sat((estimated_vsize as f32 * fee_rate).ceil() as u64);
 
+        // Determine if a change output is needed
+        let change_address = Address::from_str(&all_addresses[0].address)?.require_network(network)?;
+        let change_script = change_address.script_pubkey();
+        let change_output = TxOut { value: Amount::ZERO, script_pubkey: change_script.clone() };
+
+        // Add a placeholder change output to get a more accurate size estimate
+        tx.output.push(change_output);
+        estimated_vsize = self.estimate_tx_vsize(&tx, selected_utxos.len());
+        fee = Amount::from_sat((estimated_vsize as f32 * fee_rate).ceil() as u64);
+
+        // Now calculate the final change amount with the more accurate fee
         let change_amount = total_input_amount.checked_sub(target_amount).and_then(|a| a.checked_sub(fee));
+        
+        // Remove the placeholder change output
+        tx.output.pop();
 
         if let Some(change) = change_amount {
             if change > bitcoin::Amount::from_sat(546) { // Dust limit
-                // Use the first address as the change address for simplicity
-                let change_address = Address::from_str(&all_addresses[0].address)?.require_network(network)?;
                 tx.output.push(TxOut {
                     value: change,
-                    script_pubkey: change_address.script_pubkey(),
+                    script_pubkey: change_script,
                 });
+            } else {
+                // If change is dust, it goes to the miners. We need to recalculate the fee
+                // without the change output.
+                estimated_vsize = self.estimate_tx_vsize(&tx, selected_utxos.len());
+                fee = Amount::from_sat((estimated_vsize as f32 * fee_rate).ceil() as u64);
+                // We need to ensure the main output is still funded correctly.
+                // This logic can get complex. For now, we'll proceed with the slightly higher fee.
             }
         }
 
@@ -1075,7 +1111,7 @@ impl WalletProvider for ConcreteProvider {
     }
     
     async fn broadcast_transaction(&self, tx_hex: String) -> Result<String> {
-        self.broadcast(&tx_hex).await
+        self.send_raw_transaction(&tx_hex).await
     }
     
     async fn estimate_fee(&self, target: u32) -> Result<FeeEstimate> {
@@ -1228,9 +1264,25 @@ impl BitcoinRpcProvider for ConcreteProvider {
     }
     
     async fn send_raw_transaction(&self, tx_hex: &str) -> Result<String> {
+        log::info!("Attempting to broadcast transaction hex: {}", tx_hex);
         let params = serde_json::json!([tx_hex]);
-        let result = self.call(&self.bitcoin_rpc_url, "sendrawtransaction", params, 1).await?;
-        result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid txid response from sendrawtransaction".to_string()))
+        let result = self.call(&self.bitcoin_rpc_url, "sendrawtransaction", params, 1).await;
+        
+        log::info!("sendrawtransaction result: {:?}", result);
+
+        match result {
+            Ok(value) => {
+                if let Some(txid) = value.as_str() {
+                    Ok(txid.to_string())
+                } else {
+                    Err(DeezelError::RpcError(format!("Invalid txid response from sendrawtransaction: response was not a string: {:?}", value)))
+                }
+            }
+            Err(e) => {
+                log::error!("sendrawtransaction RPC call failed: {}", e);
+                Err(e)
+            }
+        }
     }
     
     async fn get_mempool_info(&self) -> Result<serde_json::Value> {
