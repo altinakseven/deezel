@@ -73,6 +73,7 @@ mockall = "0.13.0"
 alkanes-support = { git = "https://github.com/kungfuflex/alkanes-rs" }
 metashrew-support = { git = "https://github.com/sandshrewmetaprotocols/metashrew" }
 protobuf = "=3.7.1"
+protobuf-json-mapping = "3.7.1"
 
 # WASM runtime for alkane inspection
 wasmi = "0.47.0"

@@ -70,6 +70,7 @@ leb128 = { version = "0.2.5", default-features = false }
 alkanes-support = { workspace = true }
 metashrew-support = { workspace = true }
 protobuf = { workspace = true }
+protobuf-json-mapping = { workspace = true }
 
 # WASM runtime for alkane inspection
 wasmi = { workspace = true, optional = true }

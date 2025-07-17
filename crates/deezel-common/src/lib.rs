@@ -178,6 +178,12 @@ impl From<protobuf::Error> for DeezelError {
     }
 }
 
+impl From<protobuf_json_mapping::PrintError> for DeezelError {
+    fn from(err: protobuf_json_mapping::PrintError) -> Self {
+        DeezelError::Serialization(format!("Protobuf JSON mapping error: {}", err))
+    }
+}
+
 impl From<bitcoin::address::ParseError> for DeezelError {
     fn from(err: bitcoin::address::ParseError) -> Self {
         DeezelError::AddressResolution(format!("{:?}", err))

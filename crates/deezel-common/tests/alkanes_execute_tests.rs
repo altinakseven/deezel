@@ -272,3 +272,48 @@ async fn test_alkanes_execute_with_mock_provider_and_protostone() {
     assert!(result.commit_txid.is_some());
     assert!(!result.reveal_txid.is_empty());
 }
+
+#[tokio::test]
+async fn test_execute_with_trace() {
+    let _ = env_logger::builder().is_test(true).try_init();
+    // Setup
+    let mut provider = MockProvider::new(Network::Regtest);
+    let mut executor = EnhancedAlkanesExecutor::new(&mut provider);
+    
+    let funding_outpoint = OutPoint::from_str("d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1:0").unwrap();
+    let address = WalletProvider::get_address(&provider).await.unwrap();
+    let funding_tx_out = TxOut {
+        value: Amount::from_sat(100_000),
+        script_pubkey: Address::from_str(&address).unwrap().require_network(Network::Regtest).unwrap().script_pubkey(),
+    };
+    provider.utxos.lock().unwrap().push((funding_outpoint, funding_tx_out));
+
+    let params = EnhancedExecuteParams {
+        fee_rate: Some(1.0),
+        to_addresses: vec![WalletProvider::get_address(&provider).await.unwrap()],
+        change_address: None,
+        input_requirements: vec![InputRequirement::Bitcoin { amount: 10_000 }],
+        protostones: vec![
+            ProtostoneSpec {
+                edicts: vec![],
+                cellpack: Some(Cellpack::try_from(vec![0,0,1,2,3]).unwrap()),
+                bitcoin_transfer: None,
+            }
+        ],
+        envelope_data: None,
+        raw_output: false,
+        trace_enabled: true,
+        mine_enabled: true,
+        auto_confirm: true,
+    };
+
+    // Execute
+    let result = executor.execute(params).await;
+
+    // Assert
+    assert!(result.is_ok(), "Execution failed: {:?}", result.err());
+    let result = result.unwrap();
+    assert!(result.traces.is_some());
+    let traces = result.traces.unwrap();
+    assert!(!traces.is_empty());
+}

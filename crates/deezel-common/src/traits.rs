@@ -1094,7 +1094,7 @@ impl<T: DeezelProvider + ?Sized> MetashrewRpcProvider for Box<T> {
    async fn get_contract_meta(&self, block: &str, tx: &str) -> Result<serde_json::Value> {
        (**self).get_contract_meta(block, tx).await
    }
-   async fn trace_outpoint(&self, txid: &str, vout: u32) -> Result<serde_json::Value> {
+   async fn trace_outpoint(&self, txid: &str, vout: u32) -> Result<JsonValue> {
        (**self).trace_outpoint(txid, vout).await
    }
    async fn get_spendables_by_address(&self, address: &str) -> Result<serde_json::Value> {

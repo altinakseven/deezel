@@ -1040,7 +1040,14 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
                 
                 match self.provider.trace_outpoint(txid, trace_vout).await {
                     Ok(trace_result) => {
-                        traces.push(trace_result);
+                        if params.raw_output {
+                            traces.push(trace_result);
+                        } else {
+                            let trace: crate::alkanes::trace::Trace = serde_json::from_value(trace_result.clone())?;
+                            println!("\n📊 Trace for protostone #{}:", protostone_count);
+                            println!("{}", trace);
+                            traces.push(trace_result);
+                        }
                     },
                     Err(e) => {
                         log::warn!("Failed to trace protostone #{}: {}", protostone_count, e);

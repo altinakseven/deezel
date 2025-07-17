@@ -1503,6 +1503,7 @@ dependencies = [
  "ordinals 0.2.3",
  "pbkdf2",
  "protobuf 3.7.1",
+ "protobuf-json-mapping",
  "protorune-support",
  "psbt-v2",
  "rand 0.8.5",
@@ -4231,6 +4232,17 @@ dependencies = [
  "protobuf-parse",
  "regex",
  "tempfile",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "protobuf-json-mapping"
+version = "3.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b445cf83c9303695e6c423d269759e139b6182d2f1171e18afda7078a764336"
+dependencies = [
+ "protobuf 3.7.1",
+ "protobuf-support",
  "thiserror 1.0.69",
 ]
 

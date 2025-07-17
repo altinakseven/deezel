@@ -1,3 +1,4 @@
+pub mod trace;
 // This file is part of the deezel project.
 // Copyright (c) 2023, Casey Rodarmor, all rights reserved.
 // Copyright (c) 2024, The Deezel Developers, all rights reserved.
