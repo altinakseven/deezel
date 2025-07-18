@@ -32,7 +32,7 @@ tokio = { version = "1.0", features = ["macros", "rt", "sync"] }
 clap = { version = "4.0", features = ["derive"] }
 anyhow = "1.0"
 serde_json = "1.0"
-bitcoin = "0.32"
+bitcoin = { workspace = true }
 async-trait = "0.1"
 reqwest = { workspace = true }
 dirs = "5.0"

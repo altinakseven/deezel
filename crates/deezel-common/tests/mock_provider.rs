@@ -5,8 +5,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use bitcoin::secp256k1::{Secp256k1, All, schnorr, SecretKey};
 use bitcoin::key::Keypair;
-use deezel_common::alkanes::{EnhancedExecuteParams, EnhancedExecuteResult};
+use deezel_common::alkanes::{EnhancedExecuteParams, EnhancedExecuteResult, execute::EnhancedAlkanesExecutor};
 use bitcoin::{Address, Network, OutPoint, Transaction, TxOut, XOnlyPublicKey};
+use deezel_common::trace::SerializableTrace;
 
 /// Mock provider for testing
 #[derive(Clone)]
@@ -304,10 +305,11 @@ impl WalletProvider for MockProvider {
     }
     
     async fn sign_psbt(&mut self, psbt: &mut bitcoin::psbt::Psbt) -> Result<bitcoin::psbt::Psbt> {
-        let keypair = self.get_keypair().await?;
         let secp = self.secp();
-        psbt.sign(&keypair, secp).map_err(|e| DeezelError::Other(e.to_string()))?;
-        Ok(psbt.clone())
+        let mut psbt = psbt.clone();
+        let keypair = self.get_keypair().await?;
+        psbt.sign(&keypair, secp).map_err(|e| DeezelError::Other(format!("{:?}", e)))?;
+        Ok(psbt)
     }
     
     async fn get_keypair(&self) -> Result<Keypair> {
@@ -395,8 +397,10 @@ impl MetashrewRpcProvider for MockProvider {
         Ok(serde_json::json!({"name": "test_contract"}))
     }
     
-    async fn trace_outpoint(&self, _txid: &str, _vout: u32) -> Result<JsonValue> {
-        Ok(serde_json::json!({"trace": "mock_trace"}))
+    async fn trace_outpoint(&self, _txid: &str, _vout: u32) -> Result<SerializableTrace> {
+        Ok(SerializableTrace {
+            calls: vec![],
+        })
     }
     
     async fn get_spendables_by_address(&self, _address: &str) -> Result<JsonValue> {

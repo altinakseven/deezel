@@ -25,6 +25,10 @@ bitcoin_hashes = "0.14.0"
 bech32 = "0.11.0"
 ordinals = { git = "https://github.com/kungfuflex/alkanes-rs", branch = "kungfuflex/serde" }
 protorune-support = { git = "https://github.com/kungfuflex/alkanes-rs", branch = "kungfuflex/serde" }
+psbt-v2 = "0.1.1"
+ord = "0.23.2"
+bitcoincore-rpc = "0.18.0"
+tabled = "0.15.0"
 
 # Cryptography and wallet functionality
 secp256k1 = { version = "0.29", features = ["rand", "recovery"] }
