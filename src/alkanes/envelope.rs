@@ -249,6 +249,7 @@ fn parse_alkanes_script(script: &bitcoin::Script) -> Option<AlkanesEnvelope> {
 mod tests {
     use super::*;
     use bitcoin::secp256k1::{rand, Secp256k1};
+    use bitcoin::XOnlyPublicKey;
 
     #[test]
     fn test_envelope_script_creation() {

@@ -8,8 +8,8 @@ authors = ["Deezel Team"]
 [dependencies]
 # Core Bitcoin functionality - using rust-bitcoin directly
 bitcoin = "0.32.6"
-ordinals = { git = "https://github.com/kungfuflex/alkanes-rs" }
-protorune-support = { git = "https://github.com/kungfuflex/alkanes-rs" }
+ordinals = { version = "0.5.2", path = "../alkanes-rs/crates/ordinals" }
+protorune-support = { version = "0.5.2", path = "../alkanes-rs/crates/protorune-support" }
 
 # Cryptography and wallet functionality
 secp256k1 = { version = "0.29", features = ["rand", "recovery"] }
@@ -55,7 +55,7 @@ tempfile = "3.8"
 chrono = { version = "0.4", features = ["serde"] }
 
 # Alkanes-rs crates
-alkanes-support = { git = "https://github.com/kungfuflex/alkanes-rs" }
+alkanes-support = { version = "0.5.2", path = "../alkanes-rs/crates/alkanes-support" }
 metashrew-support = { git = "https://github.com/sandshrewmetaprotocols/metashrew" }
 protobuf = "=3.7.1"
 

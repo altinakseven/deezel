@@ -217,12 +217,18 @@ mod tests {
     use crate::rpc::{RpcClient, RpcConfig};
     use crate::wallet::{WalletManager, WalletConfig};
     use bitcoin::Network;
+    use tempfile::tempdir;
     
     #[tokio::test]
     async fn test_transaction_constructor_creation() {
+        // Create a temporary directory and a dummy wallet file for this test.
+        let temp_dir = tempdir().unwrap();
+        let wallet_path = temp_dir.path().join("test_wallet.dat");
+        std::fs::File::create(&wallet_path).unwrap();
+
         // Create wallet manager
         let wallet_config = WalletConfig {
-            wallet_path: "test_wallet.dat".to_string(),
+            wallet_path: wallet_path.to_str().unwrap().to_string(),
             network: Network::Testnet,
             bitcoin_rpc_url: "http://localhost:8080".to_string(), // FIXED: Use Sandshrew endpoint
             metashrew_rpc_url: "http://localhost:8080".to_string(),
@@ -247,14 +253,14 @@ mod tests {
         );
         
         // Verify constructor was created successfully
-        assert_eq!(constructor.config.network, Network::Testnet);
+        assert_eq!(constructor._config.network, Network::Testnet);
     }
     
     #[test]
     fn test_reverse_txid_bytes() {
         // Test with a sample txid
         let original_txid = "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890";
-        let expected_reversed = "9067452312efcdab9067452312efcdab9067452312efcdab9067452312efcdab";
+        let expected_reversed = "9078563412efcdab9078563412efcdab9078563412efcdab9078563412efcdab";
         
         let reversed = reverse_txid_bytes(original_txid).unwrap();
         assert_eq!(reversed, expected_reversed);

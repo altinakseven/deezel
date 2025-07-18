@@ -239,7 +239,7 @@ mod tests {
         let monitor = BlockMonitor::new(rpc_client, config);
         
         // Verify initial state
-        let current_height = monitor.current_height.lock().await;
+        let current_height = monitor._current_height.lock().await;
         assert_eq!(*current_height, 0);
     }
 }

@@ -126,6 +126,10 @@ impl TokenManager {
 /// Parse token amounts from string format "block:tx:amount,block:tx:amount,..."
 pub fn parse_token_amounts(tokens_str: &str) -> Result<Vec<TokenAmount>> {
     let mut token_amounts = Vec::new();
+
+    if tokens_str.is_empty() {
+        return Ok(token_amounts);
+    }
     
     for token_part in tokens_str.split(',') {
         let parts: Vec<&str> = token_part.trim().split(':').collect();

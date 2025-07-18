@@ -3,6 +3,10 @@
 //! These tests demonstrate end-to-end functionality of the deezel CLI
 //! using the mock metashrew server implementation.
 
+use super::e2e_helpers::{E2ETestScenario, TestStep};
+use super::mock_metashrew::create_test_utxos;
+use crate::tests::TestConfig;
+use anyhow::Result;
 use tokio;
 
 

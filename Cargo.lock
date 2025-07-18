@@ -84,8 +84,7 @@ dependencies = [
 
 [[package]]
 name = "alkanes-support"
-version = "0.2.3"
-source = "git+https://github.com/kungfuflex/alkanes-rs#fb2bcb3041e7930f664792450146aa2dad5389a8"
+version = "0.5.2"
 dependencies = [
  "anyhow",
  "bitcoin",
@@ -1947,8 +1946,7 @@ checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
 name = "ordinals"
-version = "0.2.3"
-source = "git+https://github.com/kungfuflex/alkanes-rs#fb2bcb3041e7930f664792450146aa2dad5389a8"
+version = "0.5.2"
 dependencies = [
  "bitcoin",
  "derive_more",
@@ -2215,8 +2213,7 @@ dependencies = [
 
 [[package]]
 name = "protorune-support"
-version = "0.2.3"
-source = "git+https://github.com/kungfuflex/alkanes-rs#fb2bcb3041e7930f664792450146aa2dad5389a8"
+version = "0.5.2"
 dependencies = [
  "anyhow",
  "bech32",

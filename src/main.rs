@@ -112,6 +112,13 @@ enum Commands {
         #[command(subcommand)]
         command: EsploraCommands,
     },
+    /// Build contracts
+    BuildContracts,
+    /// Deploy contracts
+    Deploy {
+        #[command(subcommand)]
+        command: DeployCommands,
+    },
 }
 
 /// Wallet subcommands
@@ -597,6 +604,13 @@ enum EsploraCommands {
     MempoolRecent,
     /// Get fee estimates
     FeeEstimates,
+}
+
+/// Deploy subcommands
+#[derive(Subcommand)]
+enum DeployCommands {
+    /// Deploy an AMM contract
+    Amm,
 }
 
 /// Block tag for monitoring
@@ -2001,6 +2015,18 @@ async fn main() -> Result<()> {
                 }
             }
         },
+        Commands::BuildContracts => {
+            deezel::build::build_contracts()?;
+        },
+        Commands::Deploy { command } => {
+            match command {
+                DeployCommands::Amm => {
+                    let wm = wallet_manager.ok_or_else(|| anyhow!("Wallet required for deployment"))?;
+                    let deployer = deezel::deploy::AmmDeployer::new(rpc_client.clone(), wm);
+                    deployer.deploy().await?;
+                }
+            }
+        }
     }
 
     Ok(())

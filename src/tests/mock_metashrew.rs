@@ -454,3 +454,14 @@ pub fn set_mock_height(height: u32) -> Result<()> {
     state_guard.height = height;
     Ok(())
 }
+
+/// Create a vector of mock UTXOs for testing
+pub fn create_test_utxos(address: &str, count: u32) -> Vec<MockUtxo> {
+    (0..count).map(|i| MockUtxo {
+        txid: format!("f00d_txid_{}", i),
+        vout: i,
+        amount: 100000 + (i as u64 * 10000),
+        script_pubkey: address.to_string(), // Simplified for testing
+        confirmations: 1,
+    }).collect()
+}

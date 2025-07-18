@@ -12,9 +12,11 @@ pub mod rpc;
 pub mod runestone_enhanced;
 pub mod alkanes;
 pub mod address_resolver;
-
-// Test modules for e2e testing
-pub mod tests;
+pub mod build;
+pub mod deploy;
+ 
+ // Test modules for e2e testing
+ pub mod tests;
 
 // Re-export key types for convenience
 pub use wallet::WalletManager;
