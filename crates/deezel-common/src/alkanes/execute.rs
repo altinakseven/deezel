@@ -14,7 +14,7 @@
 //! - Address identifier resolution for outputs and change
 //! - Transaction tracing with metashrew synchronization
 
-use crate::{Result, DeezelError, DeezelProvider, JsonValue};
+use crate::{Result, DeezelError, DeezelProvider};
 use crate::traits::{WalletProvider, UtxoInfo};
 use bitcoin::{Transaction, ScriptBuf, OutPoint, TxOut, Address, XOnlyPublicKey};
 use core::str::FromStr;
@@ -1016,7 +1016,7 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
     /// This function handles the post-broadcast logic, including mining blocks
     /// on regtest, waiting for synchronization with various services, and then
     /// calling the `trace_outpoint` provider method for each protostone.
-    async fn trace_reveal_transaction(&self, txid: &str, params: &EnhancedExecuteParams) -> Result<Option<Vec<JsonValue>>> {
+    async fn trace_reveal_transaction(&self, txid: &str, params: &EnhancedExecuteParams) -> Result<Option<Vec<crate::trace::types::SerializableTrace>>> {
         log::info!("Starting enhanced transaction tracing for reveal transaction: {}", txid);
         
         if params.mine_enabled {
@@ -1041,14 +1041,7 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
                 
                 match self.provider.trace_outpoint(txid, trace_vout).await {
                     Ok(trace_result) => {
-                        if params.raw_output {
-                            traces.push(trace_result);
-                        } else {
-                            let trace: crate::alkanes::trace::Trace = serde_json::from_value(trace_result.clone())?;
-                            println!("\n📊 Trace for protostone #{}:", protostone_count);
-                            println!("{}", trace);
-                            traces.push(trace_result);
-                        }
+                        traces.push(trace_result);
                     },
                     Err(e) => {
                         log::warn!("Failed to trace protostone #{}: {}", protostone_count, e);

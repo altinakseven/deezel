@@ -5,6 +5,7 @@
 
 use deezel_common::ord::*;
 use tabled::{settings::Style, Table};
+use deezel_common::trace::types::{SerializableTrace, SerializableTraceEvent};
 
 pub fn print_inscription(inscription: &Inscription) {
     println!("Inscription {}", inscription.id);
@@ -101,6 +102,31 @@ pub fn print_runes(runes: &Runes) {
     let mut table = Table::new(rune_infos);
     table.with(Style::modern());
     println!("{}", table);
+}
+
+pub fn print_trace(trace: &SerializableTrace) {
+    for event in &trace.events {
+        match event {
+            SerializableTraceEvent::EnterCall(context) => {
+                println!("➡️  Enter Call: target={:?}, caller={:?}, fuel={}", context.target, context.inner.caller, context.fuel);
+            }
+            SerializableTraceEvent::EnterDelegatecall(context) => {
+                println!("➡️  Enter Delegatecall: target={:?}, caller={:?}, fuel={}", context.target, context.inner.caller, context.fuel);
+            }
+            SerializableTraceEvent::EnterStaticcall(context) => {
+                println!("➡️  Enter Staticcall: target={:?}, caller={:?}, fuel={}", context.target, context.inner.caller, context.fuel);
+            }
+            SerializableTraceEvent::ReturnContext(response) => {
+                println!("⬅️  Return: fuel_used={}, data=0x{}, alkanes={:?}", response.fuel_used, hex::encode(&response.inner.data), response.inner.alkanes);
+            }
+            SerializableTraceEvent::RevertContext(response) => {
+                println!("↩️  Revert: fuel_used={}, data=0x{}", response.fuel_used, hex::encode(&response.inner.data));
+            }
+            SerializableTraceEvent::CreateAlkane(id) => {
+                println!("✨ Create Alkane: {:?}", id);
+            }
+        }
+    }
 }
 
 pub fn print_tx_info(tx_info: &TxInfo) {

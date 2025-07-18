@@ -405,9 +405,8 @@ impl MetashrewRpcProvider for WebProvider {
         self.call(self.sandshrew_rpc_url(), "metashrew_view", params, 1).await
     }
 
-    async fn trace_outpoint(&self, txid: &str, vout: u32) -> Result<JsonValue> {
-        let params = serde_json::json!([txid, vout]);
-        self.call(self.sandshrew_rpc_url(), "trace_outpoint", params, 1).await
+    async fn trace_outpoint(&self, _txid: &str, _vout: u32) -> Result<deezel_common::trace::types::SerializableTrace> {
+        Err(DeezelError::NotImplemented("trace_outpoint is not available in the web provider".to_string()))
     }
 
     async fn get_spendables_by_address(&self, address: &str) -> Result<JsonValue> {

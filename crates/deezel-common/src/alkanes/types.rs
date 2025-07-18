@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use alkanes_support::cellpack::Cellpack;
+use crate::trace::types::SerializableTrace;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::{string::String, vec::Vec};
@@ -240,7 +241,7 @@ pub struct EnhancedExecuteResult {
     pub reveal_fee: u64,
     pub inputs_used: Vec<String>,
     pub outputs_created: Vec<String>,
-    pub traces: Option<Vec<serde_json::Value>>,
+    pub traces: Option<Vec<SerializableTrace>>,
 }
 
 /// Alkanes inspect configuration

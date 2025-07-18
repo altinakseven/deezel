@@ -1220,8 +1220,8 @@ impl MetashrewRpcProvider for BrowserWalletProvider {
         self.web_provider.get_contract_meta(block, tx).await
     }
     
-    async fn trace_outpoint(&self, txid: &str, vout: u32) -> Result<JsonValue> {
-        self.web_provider.trace_outpoint(txid, vout).await
+    async fn trace_outpoint(&self, _txid: &str, _vout: u32) -> Result<deezel_common::trace::types::SerializableTrace> {
+        Err(DeezelError::NotImplemented("trace_outpoint is not available in the browser wallet provider".to_string()))
     }
     
     async fn get_spendables_by_address(&self, address: &str) -> Result<JsonValue> {

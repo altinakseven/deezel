@@ -13,7 +13,7 @@ use serde_json::Value as JsonValue;
 #[cfg(not(feature = "std"))]
 use alloc::{vec::Vec, string::{String, ToString}, format};
 #[cfg(feature = "std")]
-use std::{vec::Vec, string::{String, ToString}, format};
+use std::{vec::Vec, string::{String, ToString}};
 use core::fmt;
 
 /// Represents a complete execution trace of a transaction, containing multiple calls.

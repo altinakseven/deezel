@@ -28,6 +28,7 @@ use crate::ord::{
 };
 use crate::alkanes::types::{EnhancedExecuteParams, EnhancedExecuteResult};
 use alkanes_support::proto::alkanes as alkanes_pb;
+use crate::trace::types::SerializableTrace;
 use protorune_support::proto::protorune as protorune_pb;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -578,7 +579,7 @@ pub trait MetashrewRpcProvider {
     async fn get_contract_meta(&self, block: &str, tx: &str) -> Result<JsonValue>;
     
     /// Trace transaction outpoint
-    async fn trace_outpoint(&self, txid: &str, vout: u32) -> Result<JsonValue>;
+    async fn trace_outpoint(&self, txid: &str, vout: u32) -> Result<SerializableTrace>;
     
     /// Get spendables by address
     async fn get_spendables_by_address(&self, address: &str) -> Result<JsonValue>;
@@ -1094,9 +1095,9 @@ impl<T: DeezelProvider + ?Sized> MetashrewRpcProvider for Box<T> {
    async fn get_contract_meta(&self, block: &str, tx: &str) -> Result<serde_json::Value> {
        (**self).get_contract_meta(block, tx).await
    }
-   async fn trace_outpoint(&self, txid: &str, vout: u32) -> Result<JsonValue> {
-       (**self).trace_outpoint(txid, vout).await
-   }
+   async fn trace_outpoint(&self, txid: &str, vout: u32) -> Result<SerializableTrace> {
+        (**self).trace_outpoint(txid, vout).await
+    }
    async fn get_spendables_by_address(&self, address: &str) -> Result<serde_json::Value> {
        (**self).get_spendables_by_address(address).await
    }

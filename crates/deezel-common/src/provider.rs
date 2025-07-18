@@ -17,7 +17,6 @@ use crate::utils::hex::reverse_txid_bytes;
 use alkanes_support::proto::alkanes as alkanes_pb;
 use protorune_support::proto::protorune as protorune_pb;
 use protobuf::Message;
-use protobuf_json_mapping;
 use async_trait::async_trait;
 use alloc::format;
 use alloc::string::{String, ToString};
@@ -371,7 +370,7 @@ impl JsonRpcProvider for ConcreteProvider {
         
         #[cfg(feature = "native-deps")]
         {
-            use crate::rpc::{RpcRequest, RpcResponse};
+            use crate::rpc::RpcRequest;
             let request = RpcRequest::new(method, params, id);
             let response = self.http_client
                 .post(url)
@@ -1435,16 +1434,16 @@ impl MetashrewRpcProvider for ConcreteProvider {
         self.call(&self.metashrew_rpc_url, "metashrew_view", params, 1).await
     }
     
-    async fn trace_outpoint(&self, txid: &str, vout: u32) -> Result<serde_json::Value> {
+    async fn trace_outpoint(&self, txid: &str, vout: u32) -> Result<crate::trace::types::SerializableTrace> {
         let mut request = alkanes_pb::Outpoint::new();
         let reversed_txid_hex = reverse_txid_bytes(txid)?;
         request.txid = hex::decode(reversed_txid_hex)?;
         request.vout = vout;
         let hex_input = format!("0x{}", hex::encode(request.write_to_bytes()?));
         let response_bytes = self.metashrew_view_call("trace", &hex_input).await?;
-        let trace = alkanes_pb::Trace::parse_from_bytes(&response_bytes)?;
-        let json_string = protobuf_json_mapping::print_to_string(&trace)?;
-        Ok(serde_json::from_str(&json_string)?)
+        let trace_pb = alkanes_pb::AlkanesTrace::parse_from_bytes(&response_bytes)?;
+        let trace: alkanes_support::trace::Trace = trace_pb.into();
+        Ok(trace.into())
     }
     
     async fn get_spendables_by_address(&self, address: &str) -> Result<serde_json::Value> {

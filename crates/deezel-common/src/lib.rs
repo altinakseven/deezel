@@ -25,7 +25,6 @@
 //! - `transaction`: Transaction construction and signing
 //! - `utils`: Common utilities
 pub mod provider;
-
 extern crate alloc;
 
 #[cfg(not(feature = "std"))]
@@ -61,6 +60,7 @@ pub mod runestone_enhanced;
 pub mod transaction;
 pub mod monitor;
 pub mod utils;
+pub mod trace;
 pub mod keystore;
 pub mod pgp_rpgp;
 pub mod esplora;

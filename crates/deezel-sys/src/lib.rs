@@ -1057,7 +1057,13 @@ impl SystemAlkanes for SystemDeezel {
                                 println!("💰 Commit Fee: {} sats", commit_fee);
                             }
                             println!("💰 Reveal Fee: {} sats", result.reveal_fee);
-                            // TODO: Add more human-readable output for traces, etc.
+                            if let Some(traces) = result.traces {
+                                for (i, trace) in traces.iter().enumerate() {
+                                    println!("\n📊 Trace for protostone #{}:", i + 1);
+                                    // TODO: Implement a proper pretty-printer for the Trace object
+                                    println!("{:#?}", trace);
+                                }
+                            }
                         }
                     }
                     Err(e) => {
@@ -1085,14 +1091,14 @@ impl SystemAlkanes for SystemDeezel {
             }
             AlkanesCommands::Trace { outpoint, raw } => {
                 let (txid, vout) = parse_outpoint(&outpoint)?;
-                let trace_result = provider.trace_transaction(&txid, vout, None, None).await?;
+                let trace_result = provider.trace_outpoint(&txid, vout).await?;
 
                 if raw {
                     println!("{}", serde_json::to_string_pretty(&trace_result)?);
                 } else {
                     println!("📊 Alkanes Transaction Trace");
                     println!("═══════════════════════════");
-                    println!("{}", serde_json::to_string_pretty(&trace_result)?);
+                    println!("{:#?}", trace_result);
                 }
                 Ok(())
             }
