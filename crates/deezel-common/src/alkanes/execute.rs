@@ -1034,17 +1034,19 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
         let mut traces = Vec::new();
         let mut protostone_count = 0;
         
-        for (_vout, output) in tx.output.iter().enumerate() {
+        for (vout, output) in tx.output.iter().enumerate() {
             if output.script_pubkey.is_op_return() {
                 protostone_count += 1;
-                let trace_vout = tx.output.len() as u32 + protostone_count - 1;
-                
+                let trace_vout = vout as u32;
+                log::info!("Found OP_RETURN at vout {}, tracing protostone #{}", trace_vout, protostone_count);
+
                 match self.provider.trace_outpoint(txid, trace_vout).await {
                     Ok(trace_result) => {
+                        log::debug!("Trace result for vout {}: {:?}", trace_vout, trace_result);
                         traces.push(trace_result);
                     },
                     Err(e) => {
-                        log::warn!("Failed to trace protostone #{}: {}", protostone_count, e);
+                        log::warn!("Failed to trace protostone #{} at vout {}: {}", protostone_count, trace_vout, e);
                     }
                 }
             }
