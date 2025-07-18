@@ -1,6 +1,4 @@
-use alloc::string::ToString;
-extern crate alloc;
-use crate::io::{BufRead, Write};
+use std::io::{self, BufRead};
 
 use cx448::x448;
 
@@ -30,7 +28,7 @@ impl X448PublicParams {
 }
 
 impl Serialize for X448PublicParams {
-    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
         writer.write_all(self.key.as_bytes())?;
         Ok(())
     }
@@ -42,7 +40,6 @@ impl Serialize for X448PublicParams {
 
 #[cfg(test)]
 mod tests {
-    use alloc::{format, vec::Vec};
     use proptest::prelude::*;
     use rand::SeedableRng;
 

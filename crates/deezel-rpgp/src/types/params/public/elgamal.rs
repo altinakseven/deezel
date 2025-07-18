@@ -1,14 +1,14 @@
-extern crate alloc;
-use crate::io::{BufRead, Write};
+use std::io::{self, BufRead};
 
 use crate::{errors::Result, ser::Serialize, types::Mpi};
 
-#[derive(Debug, PartialEq, Eq, Clone, Default)]
-#[cfg_attr(all(test, feature = "std"), derive(proptest_derive::Arbitrary))]
+#[derive(Debug, PartialEq, Eq, Clone)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct ElgamalPublicParams {
     p: Mpi,
     g: Mpi,
     y: Mpi,
+    #[cfg_attr(test, proptest(value = "false"))]
     encrypt_only: bool,
 }
 
@@ -17,13 +17,13 @@ impl ElgamalPublicParams {
         self.encrypt_only
     }
 
-    pub fn try_from_reader<B: BufRead>(i: &mut B, encrypt_only: bool) -> Result<Self> {
+    pub fn try_from_reader<B: BufRead>(mut i: B, encrypt_only: bool) -> Result<Self> {
         // MPI of Elgamal prime p
-        let p = Mpi::try_from_reader(i)?;
+        let p = Mpi::try_from_reader(&mut i)?;
         // MPI of Elgamal group generator g
-        let g = Mpi::try_from_reader(i)?;
+        let g = Mpi::try_from_reader(&mut i)?;
         // MPI of Elgamal public key value y (= g**x mod p where x is secret)
-        let y = Mpi::try_from_reader(i)?;
+        let y = Mpi::try_from_reader(&mut i)?;
 
         let params = ElgamalPublicParams {
             p,
@@ -37,7 +37,7 @@ impl ElgamalPublicParams {
 }
 
 impl Serialize for ElgamalPublicParams {
-    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
         self.p.to_writer(writer)?;
         self.g.to_writer(writer)?;
         self.y.to_writer(writer)?;
@@ -53,9 +53,8 @@ impl Serialize for ElgamalPublicParams {
     }
 }
 
-#[cfg(all(test, feature = "std"))]
+#[cfg(test)]
 mod tests {
-    use alloc::{format, vec::Vec};
     use proptest::prelude::*;
 
     use super::*;

@@ -31,7 +31,7 @@ bitcoin = { workspace = true }
 bitcoin_hashes = { workspace = true, package = "bitcoin-hashes" }
 ordinals = { workspace = true }
 protorune-support = { workspace = true }
-deezel-rpgp = { path = "../deezel-rpgp", default-features = false, features = ["std", "create"] }
+deezel-rpgp = { path = "../deezel-rpgp", default-features = false, features = ["std"] }
  
 # Cryptography and wallet functionality
 secp256k1 = { workspace = true }

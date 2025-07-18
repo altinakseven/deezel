@@ -1,16 +1,17 @@
-extern crate alloc;
+use std::io::{self, BufRead, Read};
+
 use bytes::{Buf, BytesMut};
 use log::debug;
 
-use super::{fill_buffer, LimitedReader};
+use super::LimitedReader;
 use crate::{
     packet::PacketHeader,
     parsing_reader::BufReadParsing,
     types::{PacketLength, Tag},
+    util::fill_buffer_bytes,
 };
 
-use crate::io::{BufRead, Error, Read};
-
+const BUFFER_SIZE: usize = 8 * 1024;
 
 #[derive(Debug)]
 pub struct PacketBodyReader<R: BufRead> {
@@ -32,32 +33,16 @@ enum State<R: BufRead> {
 }
 
 impl<R: BufRead> BufRead for PacketBodyReader<R> {
-    fn fill_buf(&mut self) -> Result<&[u8], Error> {
-        match self.fill_inner() {
-            Ok(()) => {},
-            Err(e) => {
-                debug!("PacketBodyReader::fill_inner failed: {:?}", e);
-                return Err(e);
-            }
-        }
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
+        self.fill_inner()?;
         match self.state {
-            State::Body { ref mut buffer, .. } => {
-                debug!("PacketBodyReader::fill_buf returning {} bytes", buffer.len());
-                Ok(&buffer[..])
-            },
-            State::Done { .. } => {
-                debug!("PacketBodyReader::fill_buf in Done state, returning empty");
-                Ok(&[][..])
-            },
-            State::Error => {
-                debug!("PacketBodyReader::fill_buf in Error state");
-                Err(crate::io::Error::new(crate::io::ErrorKind::Other, "packet body reader error"))
-            },
+            State::Body { ref mut buffer, .. } => Ok(&buffer[..]),
+            State::Done { .. } => Ok(&[][..]),
+            State::Error => Err(io::Error::other("PacketBodyReader errored")),
         }
     }
 
     fn consume(&mut self, amt: usize) {
-        debug!("PacketBodyReader::consume {} bytes", amt);
         match self.state {
             State::Body { ref mut buffer, .. } => {
                 buffer.advance(amt);
@@ -69,20 +54,25 @@ impl<R: BufRead> BufRead for PacketBodyReader<R> {
 }
 
 impl<R: BufRead> Read for PacketBodyReader<R> {
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
-        let internal_buf = self.fill_buf()?;
-        let len = internal_buf.len().min(buf.len());
-        buf[..len].copy_from_slice(&internal_buf[..len]);
-        self.consume(len);
-        Ok(len)
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.fill_inner()?;
+        match self.state {
+            State::Body { ref mut buffer, .. } => {
+                let to_write = buffer.remaining().min(buf.len());
+                buffer.copy_to_slice(&mut buf[..to_write]);
+                Ok(to_write)
+            }
+            State::Done { .. } => Ok(0),
+            State::Error => Err(io::Error::other("PacketBodyReader errored")),
+        }
     }
 }
 
 impl<R: BufRead> PacketBodyReader<R> {
-    pub fn new(packet_header: PacketHeader, source: R) -> Result<Self, Error> {
+    pub fn new(packet_header: PacketHeader, source: R) -> io::Result<Self> {
         let source = match packet_header.packet_length() {
             PacketLength::Fixed(len) => {
-                debug!("fixed packet {}", len);
+                debug!("fixed packet {len}");
                 LimitedReader::fixed(len as u64, source)
             }
             PacketLength::Indeterminate => {
@@ -90,7 +80,7 @@ impl<R: BufRead> PacketBodyReader<R> {
                 LimitedReader::Indeterminate(source)
             }
             PacketLength::Partial(len) => {
-                debug!("partial packet start {}", len);
+                debug!("partial packet start {len}");
                 // https://www.rfc-editor.org/rfc/rfc9580.html#name-partial-body-lengths
                 // "An implementation MAY use Partial Body Lengths for data packets, be
                 // they literal, compressed, or encrypted [...]
@@ -101,17 +91,27 @@ impl<R: BufRead> PacketBodyReader<R> {
                         | Tag::CompressedData
                         | Tag::SymEncryptedData
                         | Tag::SymEncryptedProtectedData
+                        | Tag::GnupgAead
                 ) {
-                    return Err(crate::io::Error::new(crate::io::ErrorKind::Other, "packet body reader error"));
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        format!(
+                            "Partial body length is not allowed for packet type {:?}",
+                            packet_header.tag()
+                        ),
+                    ));
                 }
 
                 // https://www.rfc-editor.org/rfc/rfc9580.html#section-4.2.1.4-5
                 // "The first partial length MUST be at least 512 octets long."
                 if len < 512 {
-                    return Err(crate::io::Error::new(crate::io::ErrorKind::Other, "packet body reader error"));
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        format!("Illegal first partial body length {len} (shorter than 512 bytes)"),
+                    ));
                 }
 
-                LimitedReader::Partial(super::limited::Take::new(source, len as u64))
+                LimitedReader::Partial(source.take(len as u64))
             }
         };
 
@@ -119,7 +119,7 @@ impl<R: BufRead> PacketBodyReader<R> {
             packet_header,
             state: State::Body {
                 source,
-                buffer: BytesMut::with_capacity(1024),
+                buffer: BytesMut::with_capacity(BUFFER_SIZE),
             },
         })
     }
@@ -155,37 +155,23 @@ impl<R: BufRead> PacketBodyReader<R> {
         self.packet_header
     }
 
-    fn fill_inner(&mut self) -> Result<(), Error> {
-        debug!("PacketBodyReader::fill_inner called, state: {:?}", matches!(self.state, State::Done { .. }));
+    fn fill_inner(&mut self) -> io::Result<()> {
         if matches!(self.state, State::Done { .. }) {
-            debug!("PacketBodyReader::fill_inner already done");
             return Ok(());
         }
 
         loop {
-            match core::mem::replace(&mut self.state, State::Error) {
+            match std::mem::replace(&mut self.state, State::Error) {
                 State::Body {
                     mut buffer,
                     mut source,
                 } => {
-                    debug!("PacketBodyReader::fill_inner in Body state, buffer remaining: {}", buffer.has_remaining());
                     if buffer.has_remaining() {
                         self.state = State::Body { source, buffer };
                         return Ok(());
                     }
 
-                    buffer.resize(1024, 0);
-                    let read = match fill_buffer(&mut source, &mut buffer, Some(1024)) {
-                        Ok(r) => {
-                            debug!("PacketBodyReader::fill_inner read {} bytes", r);
-                            r
-                        },
-                        Err(e) => {
-                            debug!("PacketBodyReader::fill_inner fill_buffer failed: {:?}", e);
-                            return Err(e);
-                        }
-                    };
-                    buffer.truncate(read);
+                    let read = fill_buffer_bytes(&mut source, &mut buffer, BUFFER_SIZE)?;
 
                     if read == 0 {
                         debug!("body source done: {:?}", self.packet_header);
@@ -195,70 +181,39 @@ impl<R: BufRead> PacketBodyReader<R> {
                                 debug_assert!(rest.is_empty(), "{}", hex::encode(&rest));
 
                                 if reader.limit() > 0 {
-                                    debug!("PacketBodyReader::fill_inner Fixed reader still has limit: {}", reader.limit());
-                                    // For reconstructed messages, we may have a mismatch between expected and actual data
-                                    // Try to consume the remaining limit by reading from the source
-                                    let mut remaining = reader.limit();
-                                    let mut source = reader.into_inner();
-                                    let mut consumed = 0;
-                                    
-                                    while remaining > 0 {
-                                        match source.fill_buf() {
-                                            Ok(buf) if buf.is_empty() => {
-                                                debug!("PacketBodyReader: source exhausted but {} bytes still expected", remaining);
-                                                // Source is exhausted but we still have limit remaining
-                                                // This can happen with reconstructed messages - be lenient
-                                                break;
-                                            }
-                                            Ok(buf) => {
-                                                let to_consume = buf.len().min(remaining as usize);
-                                                debug!("PacketBodyReader: consuming {} bytes to exhaust limit", to_consume);
-                                                source.consume(to_consume);
-                                                consumed += to_consume;
-                                                remaining = remaining.saturating_sub(to_consume as u64);
-                                            }
-                                            Err(e) => {
-                                                debug!("PacketBodyReader: error reading from source while exhausting limit: {:?}", e);
-                                                return Err(e);
-                                            }
-                                        }
-                                    }
-                                    
-                                    debug!("PacketBodyReader: consumed {} additional bytes to exhaust limit", consumed);
-                                    self.state = State::Done { source };
-                                } else {
-                                    self.state = State::Done {
-                                        source: reader.into_inner(),
-                                    };
+                                    return Err(io::Error::other(
+                                        "Fixed chunk was shorter than expected",
+                                    ));
                                 }
+
+                                self.state = State::Done {
+                                    source: reader.into_inner(),
+                                };
                             }
                             LimitedReader::Indeterminate(source) => {
-                                debug!("PacketBodyReader::fill_inner transitioning to Done from Indeterminate");
                                 self.state = State::Done { source };
                             }
                             LimitedReader::Partial(r) => {
                                 // new round
-                                debug!("PacketBodyReader::fill_inner handling partial packet continuation");
                                 let mut source = r.into_inner();
-                                let packet_length = PacketLength::try_from_reader(&mut source).map_err(|e| {
-                                    debug!("PacketBodyReader::fill_inner PacketLength::try_from_reader failed: {:?}", e);
-                                    crate::io::Error::new(crate::io::ErrorKind::Other, "packet body reader error: partial packet length parsing failed")
-                                })?;
+                                let packet_length = PacketLength::try_from_reader(&mut source)?;
 
                                 let source = match packet_length {
                                     PacketLength::Fixed(len) => {
                                         // the last one
-                                        debug!("fixed partial packet {}", len);
+                                        debug!("fixed partial packet {len}");
                                         LimitedReader::fixed(len as u64, source)
                                     }
                                     PacketLength::Partial(len) => {
                                         // another one
-                                        debug!("intermediary partial packet {}", len);
-                                        LimitedReader::Partial(super::limited::Take::new(source, len as u64))
+                                        debug!("intermediary partial packet {len}");
+                                        LimitedReader::Partial(source.take(len as u64))
                                     }
                                     PacketLength::Indeterminate => {
-                                        debug!("PacketBodyReader::fill_inner unexpected indeterminate in partial");
-                                        return Err(crate::io::Error::new(crate::io::ErrorKind::Other, "packet body reader error: indeterminate in partial"));
+                                        return Err(io::Error::new(
+                                            io::ErrorKind::InvalidInput,
+                                            "invalid indeterminate packet length",
+                                        ));
                                     }
                                 };
 
@@ -267,19 +222,16 @@ impl<R: BufRead> PacketBodyReader<R> {
                             }
                         };
                     } else {
-                        debug!("PacketBodyReader::fill_inner read {} bytes, staying in Body state", read);
                         self.state = State::Body { source, buffer };
                     }
                     return Ok(());
                 }
                 State::Done { source } => {
-                    debug!("PacketBodyReader::fill_inner already in Done state");
                     self.state = State::Done { source };
                     return Ok(());
                 }
                 State::Error => {
-                    debug!("PacketBodyReader::fill_inner in Error state");
-                    return Err(crate::io::Error::new(crate::io::ErrorKind::Other, "packet body reader error: in error state"));
+                    return Err(io::Error::other("PacketBodyReader errored"));
                 }
             }
         }

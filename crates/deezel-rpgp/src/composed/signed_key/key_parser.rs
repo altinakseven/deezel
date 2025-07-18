@@ -1,6 +1,3 @@
-use alloc::string::ToString;
-use alloc::format;
-extern crate alloc;
 use log::{debug, warn};
 
 use crate::{
@@ -10,11 +7,9 @@ use crate::{
     types::{KeyDetails, KeyVersion, SignedUser, SignedUserAttribute, Tag},
 };
 
-use alloc::vec::Vec;
-
 #[allow(clippy::complexity)]
 pub fn next<I, IKT>(
-    packets: &mut core::iter::Peekable<I>,
+    packets: &mut std::iter::Peekable<I>,
     key_tag: Tag,
     parse_secrect_subkeys: bool,
 ) -> Option<
@@ -84,7 +79,7 @@ where
                 } else {
                     if primary_key.version() != KeyVersion::V4 {
                         // no direct signatures on V2|V3 keys
-                        warn!("unexpected signature: {:?}", typ);
+                        warn!("unexpected signature: {typ:?}");
                     }
                     direct_signatures.push(sig);
                 }
@@ -111,7 +106,7 @@ where
         };
 
         let tag = packet.tag();
-        debug!("  user data: {:?}", tag);
+        debug!("  user data: {tag:?}");
         match tag {
             Tag::UserId => {
                 let id: UserId = err_opt!(packet.try_into());

@@ -44,7 +44,6 @@
 //!
 //! [Packet based signing and verifying]: super::super::packet
 //! [signing and verifying with external hashing]: super::signed_key
-extern crate alloc;
 
 mod builder;
 mod public;

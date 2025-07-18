@@ -1,14 +1,10 @@
-use alloc::vec;
-use alloc::vec::Vec;
-extern crate alloc;
 use aes_gcm::aead::rand_core::CryptoRng;
 use rand::Rng;
 
 use crate::{
     composed::{KeyDetails, PublicSubkey, SignedSecretKey, SignedSecretSubKey},
     errors::Result,
-    packet,
-    packet::{KeyFlags, Signature},
+    packet::{self, KeyFlags, Signature},
     ser::Serialize,
     types::{Password, PublicKeyTrait, SecretKeyTrait},
 };
@@ -97,7 +93,7 @@ impl SecretSubkey {
     ) -> Result<SignedSecretSubKey>
     where
         R: CryptoRng + Rng,
-        K: SecretKeyTrait + crate::types::PublicKeyTrait,
+        K: SecretKeyTrait,
         P: PublicKeyTrait + Serialize,
     {
         let key = self.key;
@@ -115,10 +111,8 @@ impl SecretSubkey {
     }
 }
 
-#[cfg(all(test, feature = "std"))]
+#[cfg(test)]
 mod tests {
-    use std::fs;
-
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 
@@ -128,10 +122,12 @@ mod tests {
     /// Based on the operations "split_public_key" in Deltachat
     #[test]
     fn test_split_key() {
-        let pub_bytes = fs::read("./tests/autocrypt/alice@autocrypt.example.pub.asc").unwrap();
-        let (public, _) = SignedPublicKey::from_armor_single(&pub_bytes).unwrap();
-        let sec_bytes = fs::read("./tests/autocrypt/alice@autocrypt.example.sec.asc").unwrap();
-        let (secret, _) = SignedSecretKey::from_armor_single(&sec_bytes).unwrap();
+        let (public, _) =
+            SignedPublicKey::from_armor_file("./tests/autocrypt/alice@autocrypt.example.pub.asc")
+                .unwrap();
+        let (secret, _) =
+            SignedSecretKey::from_armor_file("./tests/autocrypt/alice@autocrypt.example.sec.asc")
+                .unwrap();
 
         secret.verify().unwrap();
         public.verify().unwrap();

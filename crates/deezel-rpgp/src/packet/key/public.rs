@@ -1,19 +1,13 @@
-use alloc::boxed::Box;
-use alloc::string::ToString;
-use alloc::vec;
-use alloc::vec::Vec;
-use alloc::format;
-extern crate alloc;
+use std::io::BufRead;
 
-use chrono::{DateTime, SubsecRound, TimeZone, Utc};
+use byteorder::{BigEndian, ByteOrder, WriteBytesExt};
+use chrono::SubsecRound;
 use digest::generic_array::GenericArray;
 use md5::Md5;
 use rand::{CryptoRng, Rng};
 use rsa::traits::PublicKeyParts;
 use sha1_checked::Sha1;
 use sha2::Sha256;
-
-use crate::io::{BufRead, Write};
 
 use crate::{
     crypto::{
@@ -67,7 +61,7 @@ impl PublicKey {
         packet_header: PacketHeader,
         version: KeyVersion,
         algorithm: PublicKeyAlgorithm,
-        created_at: u32,
+        created_at: chrono::DateTime<chrono::Utc>,
         expiration: Option<u16>,
         public_params: PublicParams,
     ) -> Result<Self> {
@@ -133,7 +127,7 @@ impl PublicSubkey {
         packet_header: PacketHeader,
         version: KeyVersion,
         algorithm: PublicKeyAlgorithm,
-        created_at: u32,
+        created_at: chrono::DateTime<chrono::Utc>,
         expiration: Option<u16>,
         public_params: PublicParams,
     ) -> Result<Self> {
@@ -175,7 +169,7 @@ impl PublicSubkey {
         embedded: Option<Signature>,
     ) -> Result<Signature>
     where
-        K: SecretKeyTrait + PublicKeyTrait,
+        K: SecretKeyTrait,
         P: PublicKeyTrait + Serialize,
     {
         let mut config =
@@ -183,10 +177,7 @@ impl PublicSubkey {
 
         config.hashed_subpackets = vec![
             Subpacket::regular(SubpacketData::SignatureCreationTime(
-                chrono::Utc
-                    .timestamp_opt(primary_sec_key.created_at().timestamp(), 0)
-                    .single()
-                    .ok_or_else(|| crate::errors::format_err!("invalid creation time"))?,
+                chrono::Utc::now().trunc_subsecs(0),
             ))?,
             Subpacket::regular(SubpacketData::KeyFlags(keyflags))?,
             Subpacket::regular(SubpacketData::IssuerFingerprint(
@@ -228,7 +219,7 @@ impl PublicSubkey {
 pub struct PubKeyInner {
     version: KeyVersion,
     algorithm: PublicKeyAlgorithm,
-    created_at: u32,
+    created_at: chrono::DateTime<chrono::Utc>,
     expiration: Option<u16>,
     public_params: PublicParams,
 }
@@ -244,7 +235,7 @@ impl PubKeyInner {
     pub fn new(
         version: KeyVersion,
         algorithm: PublicKeyAlgorithm,
-        created_at: u32,
+        created_at: chrono::DateTime<chrono::Utc>,
         expiration: Option<u16>,
         public_params: PublicParams,
     ) -> Result<Self> {
@@ -351,17 +342,15 @@ impl PubKeyInner {
         })
     }
 
-    fn to_writer_v2_v3<W: Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer_v2_v3<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
         use crate::ser::Serialize;
 
-        writer.write_all(&self.created_at.to_be_bytes())?;
-        writer.write_all(
-            &self
-                .expiration
-                .expect("old key versions have an expiration")
-                .to_be_bytes(),
+        writer.write_u32::<BigEndian>(self.created_at.timestamp().try_into()?)?;
+        writer.write_u16::<BigEndian>(
+            self.expiration
+                .expect("old key versions have an expiration"),
         )?;
-        writer.write_all(&[self.algorithm.into()])?;
+        writer.write_u8(self.algorithm.into())?;
         self.public_params.to_writer(writer)?;
 
         Ok(())
@@ -373,14 +362,14 @@ impl PubKeyInner {
         sum
     }
 
-    fn to_writer_v4_v6<W: Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer_v4_v6<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
         use crate::ser::Serialize;
 
-        writer.write_all(&self.created_at.to_be_bytes())?;
-        writer.write_all(&[self.algorithm.into()])?;
+        writer.write_u32::<BigEndian>(self.created_at.timestamp().try_into()?)?;
+        writer.write_u8(self.algorithm.into())?;
 
         if self.version == KeyVersion::V6 {
-            writer.write_all(&(self.public_params.write_len() as u32).to_be_bytes())?;
+            writer.write_u32::<BigEndian>(self.public_params.write_len().try_into()?)?;
         }
 
         self.public_params.to_writer(writer)?;
@@ -412,19 +401,12 @@ impl PubKeyInner {
     where
         K: SecretKeyTrait + Serialize,
     {
-        
+        use chrono::SubsecRound;
 
         let mut config = SignatureConfig::from_key(&mut rng, key, sig_type)?;
-        #[cfg(feature = "std")]
-        {
-            let creation_time = chrono::Utc
-                .timestamp_opt(self.created_at as i64, 0)
-                .single()
-                .ok_or_else(|| crate::errors::format_err!("invalid creation time"))?
-                .trunc_subsecs(0);
-            config.hashed_subpackets =
-                vec![Subpacket::regular(SubpacketData::SignatureCreationTime(creation_time))?];
-        }
+        config.hashed_subpackets = vec![Subpacket::regular(SubpacketData::SignatureCreationTime(
+            chrono::Utc::now().trunc_subsecs(0),
+        ))?];
         if key.version() <= KeyVersion::V4 {
             config.unhashed_subpackets =
                 vec![Subpacket::regular(SubpacketData::Issuer(key.key_id()))?];
@@ -600,7 +582,7 @@ pub(crate) fn encrypt<R: rand::CryptoRng + rand::Rng, K: PublicKeyTrait>(
 }
 
 impl crate::ser::Serialize for PublicKey {
-    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
         self.inner.to_writer(writer)
     }
 
@@ -610,7 +592,7 @@ impl crate::ser::Serialize for PublicKey {
 }
 
 impl crate::ser::Serialize for PublicSubkey {
-    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
         self.inner.to_writer(writer)
     }
 
@@ -620,8 +602,8 @@ impl crate::ser::Serialize for PublicSubkey {
 }
 
 impl crate::ser::Serialize for PubKeyInner {
-    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
-        writer.write_all(&[self.version.into()])?;
+    fn to_writer<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
+        writer.write_u8(self.version.into())?;
 
         match self.version {
             KeyVersion::V2 | KeyVersion::V3 => self.to_writer_v2_v3(writer),
@@ -640,7 +622,7 @@ impl crate::ser::Serialize for PubKeyInner {
             KeyVersion::V4 | KeyVersion::V6 => self.writer_len_v4_v6(),
             KeyVersion::V5 => panic!("V5 keys"),
             KeyVersion::Other(v) => {
-                panic!("Unsupported key version {}", v)
+                panic!("Unsupported key version {v}")
             }
         };
         sum
@@ -681,8 +663,7 @@ impl PubKeyInner {
                 let mut packet = vec![4, 0, 0, 0, 0];
 
                 // A four-octet number denoting the time that the key was created.
-                let created_at_bytes = self.created_at.to_be_bytes();
-                packet[1..5].copy_from_slice(&created_at_bytes);
+                BigEndian::write_u32(&mut packet[1..5], self.created_at.timestamp() as u32);
 
                 // A one-octet number denoting the public-key algorithm of this key.
                 packet.push(self.algorithm.into());
@@ -710,7 +691,7 @@ impl PubKeyInner {
                 hasher.update([0x06]);
 
                 // c) timestamp of key creation (4 octets);
-                hasher.update(&self.created_at.to_be_bytes());
+                hasher.update((self.created_at.timestamp() as u32).to_be_bytes());
 
                 // d) algorithm (1 octet);
                 hasher.update([self.algorithm.into()]);
@@ -933,10 +914,8 @@ impl PublicKeyTrait for PubKeyInner {
         &self.public_params
     }
 
-    fn created_at(&self) -> DateTime<Utc> {
-        Utc.timestamp_opt(self.created_at as i64, 0)
-            .single()
-            .expect("invalid timestamp")
+    fn created_at(&self) -> &chrono::DateTime<chrono::Utc> {
+        &self.created_at
     }
 
     fn expiration(&self) -> Option<u16> {
@@ -982,8 +961,8 @@ impl PublicKeyTrait for PublicKey {
         PublicKeyTrait::public_params(&self.inner)
     }
 
-    fn created_at(&self) -> DateTime<Utc> {
-        self.inner.created_at()
+    fn created_at(&self) -> &chrono::DateTime<chrono::Utc> {
+        PublicKeyTrait::created_at(&self.inner)
     }
 
     fn expiration(&self) -> Option<u16> {
@@ -1029,8 +1008,8 @@ impl PublicKeyTrait for PublicSubkey {
         PublicKeyTrait::public_params(&self.inner)
     }
 
-    fn created_at(&self) -> DateTime<Utc> {
-        self.inner.created_at()
+    fn created_at(&self) -> &chrono::DateTime<chrono::Utc> {
+        PublicKeyTrait::created_at(&self.inner)
     }
 
     fn expiration(&self) -> Option<u16> {
@@ -1038,8 +1017,9 @@ impl PublicKeyTrait for PublicSubkey {
     }
 }
 
-#[cfg(all(test, feature = "std"))]
+#[cfg(test)]
 mod tests {
+    use chrono::TimeZone;
     use proptest::prelude::*;
 
     use super::*;
@@ -1082,6 +1062,10 @@ mod tests {
         fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
             any::<(KeyVersion, u32, u16)>()
                 .prop_flat_map(|(version, created_at, expiration)| {
+                    let created_at = chrono::Utc
+                        .timestamp_opt(created_at as i64, 0)
+                        .single()
+                        .expect("invalid time");
                     match version {
                         KeyVersion::V2 | KeyVersion::V3 => (
                             Just(version),

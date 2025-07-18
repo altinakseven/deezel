@@ -1,8 +1,3 @@
-use alloc::string::ToString;
-use alloc::vec::Vec;
-use alloc::format;
-use alloc::vec;
-extern crate alloc;
 use aes::{Aes128, Aes192, Aes256};
 use blowfish::Blowfish;
 use camellia::{Camellia128, Camellia192, Camellia256};
@@ -102,10 +97,12 @@ where
 /// Available symmetric key algorithms.
 /// Ref: <https://www.rfc-editor.org/rfc/rfc9580.html#name-symmetric-key-algorithms>
 #[derive(Debug, PartialEq, Eq, Copy, Clone, FromPrimitive, IntoPrimitive)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 #[repr(u8)]
 #[non_exhaustive]
 pub enum SymmetricKeyAlgorithm {
     /// Plaintext or unencrypted data
+    #[cfg_attr(test, proptest(skip))]
     Plaintext = 0,
     /// IDEA
     IDEA = 1,
@@ -133,7 +130,7 @@ pub enum SymmetricKeyAlgorithm {
     Private10 = 110,
 
     #[num_enum(catch_all)]
-    Other(u8),
+    Other(#[cfg_attr(test, proptest(strategy = "111u8.."))] u8),
 }
 
 impl Default for SymmetricKeyAlgorithm {
@@ -514,7 +511,7 @@ impl SymmetricKeyAlgorithm {
     ) -> Result<StreamEncryptor<I>>
     where
         R: Rng + CryptoRng,
-        I: crate::io::Read,
+        I: std::io::Read,
     {
         StreamEncryptor::new(rng, self, key, plaintext)
     }
@@ -526,7 +523,7 @@ impl SymmetricKeyAlgorithm {
         ciphertext: R,
     ) -> Result<StreamDecryptor<R>>
     where
-        R: crate::io::BufRead,
+        R: std::io::BufRead,
     {
         StreamDecryptor::new(self, true, key, ciphertext)
     }
@@ -538,7 +535,7 @@ impl SymmetricKeyAlgorithm {
         ciphertext: R,
     ) -> Result<StreamDecryptor<R>>
     where
-        R: crate::io::BufRead,
+        R: std::io::BufRead,
     {
         StreamDecryptor::new(self, false, key, ciphertext)
     }
@@ -731,35 +728,9 @@ where
     digest.finalize().into()
 }
 
-#[cfg(all(test, feature = "std"))]
-use proptest::{prelude::*, strategy::{BoxedStrategy, Strategy}};
-
-#[cfg(all(test, feature = "std"))]
-prop_compose! {
-    pub fn arbitrary_sym_alg()(
-        num in prop_oneof![
-            Just(1u8), Just(2), Just(3), Just(4), Just(7), Just(8), Just(9),
-            Just(10), Just(11), Just(12), Just(13), Just(110),
-        ]
-    ) -> SymmetricKeyAlgorithm {
-        SymmetricKeyAlgorithm::from(num)
-    }
-}
-
-#[cfg(all(test, feature = "std"))]
-impl Arbitrary for SymmetricKeyAlgorithm {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        arbitrary_sym_alg().boxed()
-    }
-}
-
-
-#[cfg(all(test, feature = "std"))]
+#[cfg(test)]
 mod tests {
-    use crate::io::Read;
+    use std::{io::Read, time::Instant};
 
     use log::info;
     use rand::{Rng, SeedableRng};
@@ -805,8 +776,8 @@ mod tests {
 
                     {
                         info!("unprotected decrypt streaming");
-                        // dbg!(ciphertext.len(), $alg.cfb_prefix_size());
-                        let mut input = crate::io::Cursor::new(&ciphertext);
+                        dbg!(ciphertext.len(), $alg.cfb_prefix_size());
+                        let mut input = std::io::Cursor::new(&ciphertext);
                         let mut decryptor =
                             $alg.stream_decryptor_unprotected(&key, &mut input).unwrap();
                         let mut plaintext = Vec::new();
@@ -847,7 +818,7 @@ mod tests {
 
                     {
                         info!("encrypt streaming");
-                        let mut input = crate::io::Cursor::new(&data);
+                        let mut input = std::io::Cursor::new(&data);
                         let len = $alg.encrypted_protected_len(data.len());
                         assert_eq!(len, ciphertext.len(), "failed to encrypt");
                         let mut output = Vec::new();
@@ -871,8 +842,8 @@ mod tests {
                     }
                     {
                         info!("decrypt streaming");
-                        // dbg!(ciphertext.len(), $alg.cfb_prefix_size());
-                        let mut input = crate::io::Cursor::new(&ciphertext);
+                        dbg!(ciphertext.len(), $alg.cfb_prefix_size());
+                        let mut input = std::io::Cursor::new(&ciphertext);
                         let mut decryptor =
                             $alg.stream_decryptor_protected(&key, &mut input).unwrap();
                         let mut plaintext = Vec::new();
@@ -955,11 +926,82 @@ mod tests {
             .is_err());
     }
 
-    proptest! {
-        #[test]
-        fn arbitrary(alg in arbitrary_sym_alg()) {
-            let num: u8 = alg.into();
-            assert_eq!(alg, SymmetricKeyAlgorithm::from(num));
-        }
+    use rand::RngCore;
+
+    #[ignore]
+    #[test]
+    fn bench_aes_256_protected() {
+        const SIZE: usize = 1024 * 1024 * 64;
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+        let mut data = vec![0u8; SIZE];
+        rng.fill_bytes(&mut data);
+
+        let mut key = vec![0u8; SymmetricKeyAlgorithm::AES256.key_size()];
+        rng.fill_bytes(&mut key);
+
+        let now = Instant::now();
+        let mut encryptor = SymmetricKeyAlgorithm::AES256
+            .stream_encryptor(&mut rng, &key, &data[..])
+            .unwrap();
+
+        let mut output = Vec::with_capacity(SIZE);
+        encryptor.read_to_end(&mut output).unwrap();
+
+        let elapsed = now.elapsed();
+        let elapsed_milli = elapsed.as_millis();
+        let mb_per_s = ((SIZE as f64) / 1000f64 / 1000f64 / elapsed_milli as f64) * 1000f64;
+        println!("Encryption: {elapsed_milli} ms, MByte/s: {mb_per_s:.2?}");
+
+        let now = Instant::now();
+
+        let mut decryptor = SymmetricKeyAlgorithm::AES256
+            .stream_decryptor_protected(&key, &output[..])
+            .unwrap();
+        let mut res = Vec::with_capacity(SIZE);
+        decryptor.read_to_end(&mut res).unwrap();
+        let elapsed = now.elapsed();
+
+        assert_eq!(res, data);
+
+        let elapsed_milli = elapsed.as_millis();
+        let mb_per_s = (SIZE as f64 / 1000f64 / 1000f64 / elapsed_milli as f64) * 1000f64;
+        println!("Decryption: {elapsed_milli} ms, MByte/s: {mb_per_s:.2?}");
+    }
+
+    #[ignore]
+    #[test]
+    fn bench_aes_256_unprotected() {
+        const SIZE: usize = 1024 * 1024 * 256;
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+        let mut data = vec![0u8; SIZE];
+        rng.fill_bytes(&mut data);
+
+        let mut key = vec![0u8; SymmetricKeyAlgorithm::AES256.key_size()];
+        rng.fill_bytes(&mut key);
+
+        let now = Instant::now();
+        let output = SymmetricKeyAlgorithm::AES256
+            .encrypt(&mut rng, &key, &data[..])
+            .unwrap();
+
+        let elapsed = now.elapsed();
+        let elapsed_milli = elapsed.as_millis();
+        let mb_per_s = ((SIZE as f64) / 1000f64 / 1000f64 / elapsed_milli as f64) * 1000f64;
+        println!("Encryption: {elapsed_milli} ms, MByte/s: {mb_per_s:.2?}");
+
+        let now = Instant::now();
+
+        let mut decryptor = SymmetricKeyAlgorithm::AES256
+            .stream_decryptor_unprotected(&key, &output[..])
+            .unwrap();
+        let mut res = Vec::with_capacity(SIZE);
+        decryptor.read_to_end(&mut res).unwrap();
+        let elapsed = now.elapsed();
+
+        assert_eq!(res, data);
+
+        let elapsed_milli = elapsed.as_millis();
+        let mb_per_s = (SIZE as f64 / 1000f64 / 1000f64 / elapsed_milli as f64) * 1000f64;
+        println!("Decryption: {elapsed_milli} ms, MByte/s: {mb_per_s:.2?}");
     }
 }

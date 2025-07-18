@@ -1,9 +1,3 @@
-extern crate alloc;
-use alloc::borrow::ToOwned;
-use alloc::string::ToString;
-use alloc::vec;
-use alloc::format;
-use alloc::vec::Vec;
 use ecdsa::SigningKey;
 use p521::NistP521;
 use rand::{CryptoRng, Rng};
@@ -18,29 +12,29 @@ use crate::{
 };
 
 #[derive(Clone, PartialEq, Eq, ZeroizeOnDrop, derive_more::Debug)]
-#[cfg_attr(all(test, feature = "std"), derive(proptest_derive::Arbitrary))]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub enum SecretKey {
     P256(
         #[debug("..")]
-        #[cfg_attr(all(test, feature = "std"), proptest(strategy = "tests::key_p256_gen()"))]
+        #[cfg_attr(test, proptest(strategy = "tests::key_p256_gen()"))]
         p256::SecretKey,
     ),
     P384(
         #[debug("..")]
-        #[cfg_attr(all(test, feature = "std"), proptest(strategy = "tests::key_p384_gen()"))]
+        #[cfg_attr(test, proptest(strategy = "tests::key_p384_gen()"))]
         p384::SecretKey,
     ),
     P521(
         #[debug("..")]
-        #[cfg_attr(all(test, feature = "std"), proptest(strategy = "tests::key_p521_gen()"))]
+        #[cfg_attr(test, proptest(strategy = "tests::key_p521_gen()"))]
         p521::SecretKey,
     ),
     Secp256k1(
         #[debug("..")]
-        #[cfg_attr(all(test, feature = "std"), proptest(strategy = "tests::key_k256_gen()"))]
+        #[cfg_attr(test, proptest(strategy = "tests::key_k256_gen()"))]
         k256::SecretKey,
     ),
-    #[cfg_attr(all(test, feature = "std"), proptest(skip))]
+    #[cfg_attr(test, proptest(skip))]
     Unsupported {
         /// The secret point.
         #[debug("..")]
@@ -53,7 +47,7 @@ pub enum SecretKey {
 impl TryFrom<&SecretKey> for EcdsaPublicParams {
     type Error = Error;
 
-    fn try_from(value: &SecretKey) -> core::result::Result<Self, Self::Error> {
+    fn try_from(value: &SecretKey) -> std::result::Result<Self, Self::Error> {
         match value {
             SecretKey::P256(ref p) => Ok(EcdsaPublicParams::P256 {
                 key: p.public_key(),
@@ -169,7 +163,7 @@ impl SecretKey {
 }
 
 impl Serialize for SecretKey {
-    fn to_writer<W: crate::io::Write>(&self, writer: &mut W) -> crate::errors::Result<()> {
+    fn to_writer<W: std::io::Write>(&self, writer: &mut W) -> crate::errors::Result<()> {
         let x = self.to_mpi();
         x.to_writer(writer)
     }
@@ -365,7 +359,6 @@ pub fn verify(
 }
 
 #[cfg(test)]
-#[cfg(all(test, feature = "std"))]
 mod tests {
     use proptest::prelude::*;
     use rand::SeedableRng;

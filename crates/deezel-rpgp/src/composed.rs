@@ -1,4 +1,3 @@
-extern crate alloc;
 mod any;
 mod cleartext;
 mod key;

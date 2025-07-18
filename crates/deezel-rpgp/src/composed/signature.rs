@@ -1,10 +1,4 @@
-use crate::alloc::string::ToString;
-use alloc::boxed::Box;
-use alloc::string::String;
-use alloc::vec::Vec;
-use alloc::format;
-extern crate alloc;
-use core::iter::Peekable;
+use std::iter::Peekable;
 
 use crate::{
     armor,
@@ -14,9 +8,6 @@ use crate::{
     ser::Serialize,
     types::{PublicKeyTrait, Tag},
 };
-
-use crate::io::Write;
-
 
 /// Standalone signature as defined by the cleartext framework.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,23 +22,16 @@ impl StandaloneSignature {
 
     pub fn to_armored_writer(
         &self,
-        writer: &mut impl Write,
+        writer: &mut impl std::io::Write,
         opts: ArmorOptions<'_>,
     ) -> Result<()> {
-        let headers = opts
-            .headers
-            .map(|h| {
-                h.iter()
-                    .map(|(k, v)| (k.to_string(), v.join(", ")))
-                    .collect()
-            })
-            .unwrap_or_default();
-        let armored = armor::Armored {
-            message_type: "SIGNATURE".to_string(),
-            headers,
-            data: self.to_bytes()?,
-        };
-        armored.to_writer(writer)
+        armor::write(
+            self,
+            armor::BlockType::Signature,
+            writer,
+            opts.headers,
+            opts.include_checksum,
+        )
     }
 
     pub fn to_armored_bytes(&self, opts: ArmorOptions<'_>) -> Result<Vec<u8>> {
@@ -70,7 +54,7 @@ impl StandaloneSignature {
 }
 
 impl Serialize for StandaloneSignature {
-    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
         self.signature.to_writer_with_header(writer)?;
         Ok(())
     }
@@ -83,7 +67,7 @@ impl Serialize for StandaloneSignature {
 impl Deserializable for StandaloneSignature {
     /// Parse a signature.
     fn from_packets<'a, I: Iterator<Item = Result<Packet>> + 'a>(
-        packets: Peekable<I>,
+        packets: std::iter::Peekable<I>,
     ) -> Box<dyn Iterator<Item = Result<Self>> + 'a> {
         Box::new(SignatureParser { source: packets })
     }

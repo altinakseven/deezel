@@ -1,7 +1,4 @@
-extern crate alloc;
-use alloc::boxed::Box;
-use alloc::vec::Vec;
-use core::str::FromStr;
+use std::str::FromStr;
 
 use digest::{Digest, DynDigest};
 use md5::Md5;
@@ -11,24 +8,18 @@ use sha1_checked::{CollisionResult, Sha1};
 use snafu::Snafu;
 
 use super::checksum::Sha1HashCollision;
-use crate::{crypto::checksum::Sha1HashCollisionSnafu, util::CloneableDigest};
+use crate::crypto::checksum::Sha1HashCollisionSnafu;
 
 /// Available hash algorithms.
 /// Ref: <https://www.rfc-editor.org/rfc/rfc9580.html#name-hash-algorithms>
 #[derive(
-    Debug,
-    PartialEq,
-    Eq,
-    Copy,
-    Clone,
-    FromPrimitive,
-    IntoPrimitive,
-    Hash,
-    derive_more::Display,
+    Debug, PartialEq, Eq, Copy, Clone, FromPrimitive, IntoPrimitive, Hash, derive_more::Display,
 )]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 #[repr(u8)]
 #[non_exhaustive]
 pub enum HashAlgorithm {
+    #[cfg_attr(test, proptest(skip))]
     #[display("NONE")]
     None = 0,
     #[display("MD5")]
@@ -55,7 +46,7 @@ pub enum HashAlgorithm {
     Private10 = 110,
 
     #[num_enum(catch_all)]
-    Other(u8),
+    Other(#[cfg_attr(test, proptest(strategy = "111u8.."))] u8),
 }
 
 /// Marker trait for supported hash algorithms
@@ -91,7 +82,7 @@ impl KnownDigest for sha3::Sha3_512 {
 impl FromStr for HashAlgorithm {
     type Err = ();
 
-    fn from_str(s: &str) -> core::result::Result<Self, Self::Err> {
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "none" => Ok(Self::None),
             "md5" => Ok(Self::Md5),
@@ -131,21 +122,20 @@ impl HashAlgorithm {
     }
 }
 
-/// Temporary wrapper around `Box<dyn CloneableDigest>` to implement `io::Write`.
-pub(crate) struct WriteHasher<'a>(pub(crate) &'a mut Box<dyn CloneableDigest>);
+/// Temporary wrapper around `Box<dyn DynDigest>` to implement `io::Write`.
+pub(crate) struct WriteHasher<'a>(pub(crate) &'a mut Box<dyn DynDigest + Send>);
 
-impl crate::io::Write for WriteHasher<'_> {
-    fn write(&mut self, buf: &[u8]) -> crate::io::Result<usize> {
+impl std::io::Write for WriteHasher<'_> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         let digest = &mut **self.0;
         DynDigest::update(digest, buf);
         Ok(buf.len())
     }
 
-    fn flush(&mut self) -> crate::io::Result<()> {
+    fn flush(&mut self) -> std::io::Result<()> {
         Ok(())
     }
 }
-
 
 #[derive(Debug, Snafu)]
 pub enum Error {
@@ -157,7 +147,7 @@ pub enum Error {
 
 impl HashAlgorithm {
     /// Create a new hasher.
-    pub fn new_hasher(self) -> Result<Box<dyn CloneableDigest>, Error> {
+    pub fn new_hasher(self) -> Result<Box<dyn DynDigest + Send>, Error> {
         match self {
             HashAlgorithm::Md5 => Ok(Box::<Md5>::default()),
             HashAlgorithm::Sha1 => Ok(Box::<Sha1>::default()),
@@ -216,32 +206,7 @@ impl HashAlgorithm {
     }
 }
 
-#[cfg(all(test, feature = "std"))]
-use proptest::{prelude::*, strategy::{BoxedStrategy, Strategy}};
-
-#[cfg(all(test, feature = "std"))]
-prop_compose! {
-    pub fn arbitrary_hash_alg()(
-        num in prop_oneof![
-            Just(0u8), Just(1), Just(2), Just(3), Just(8), Just(9), Just(10),
-            Just(11), Just(12), Just(14), Just(110),
-        ]
-    ) -> HashAlgorithm {
-        HashAlgorithm::from(num)
-    }
-}
-
-#[cfg(all(test, feature = "std"))]
-impl Arbitrary for HashAlgorithm {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        arbitrary_hash_alg().boxed()
-    }
-}
-
-#[cfg(all(test, feature = "std"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -252,13 +217,5 @@ mod tests {
         assert_eq!(HashAlgorithm::Sha256.to_string(), "SHA256".to_string());
 
         assert_eq!(HashAlgorithm::Sha3_512, "SHA3-512".parse().unwrap());
-    }
-
-    proptest! {
-        #[test]
-        fn arbitrary(alg in arbitrary_hash_alg()) {
-            let num: u8 = alg.into();
-            assert_eq!(alg, HashAlgorithm::from(num));
-        }
     }
 }

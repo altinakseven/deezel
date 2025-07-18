@@ -1,4 +1,3 @@
-extern crate alloc;
 /// Represents a Key ID.
 ///
 /// This ID is always 8 bytes long, but calculated differently, depending on the key version.
@@ -41,7 +40,6 @@ impl KeyId {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloc::format;
 
     #[test]
     fn test_display() {

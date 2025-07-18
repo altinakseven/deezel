@@ -1,12 +1,7 @@
 //! Parsing functions to parse data using [Buf].
-extern crate alloc;
-use alloc::string::{String, ToString};
-use alloc::vec::Vec;
-use bytes::{Buf, Bytes};
-use snafu::Snafu;
 
-#[cfg(feature = "std")]
-use snafu::Backtrace;
+use bytes::{Buf, Bytes};
+use snafu::{Backtrace, Snafu};
 
 /// Parsing errors
 #[derive(Debug, Snafu)]
@@ -15,7 +10,7 @@ pub enum Error {
     TooShort {
         typ: Typ,
         context: &'static str,
-        #[cfg_attr(feature = "std", snafu(backtrace))]
+        #[snafu(backtrace)]
         source: RemainingError,
     },
     #[snafu(display("expected {}, found {}", debug_bytes(expected), debug_bytes(&found[..])))]
@@ -23,16 +18,13 @@ pub enum Error {
         expected: Vec<u8>,
         found: Bytes,
         context: &'static str,
-        #[cfg(feature = "std")]
-        #[snafu(backtrace)]
-        backtrace: Backtrace,
+        backtrace: Option<Backtrace>,
     },
-    #[snafu(display("Unexpected EOF: {error}"))]
+    #[snafu(transparent)]
     UnexpectedEof {
-        error: crate::io::Error,
-        #[cfg(feature = "std")]
+        source: std::io::Error,
         #[snafu(backtrace)]
-        backtrace: Backtrace,
+        backtrace: Option<Backtrace>,
     },
 }
 
@@ -48,7 +40,7 @@ impl Error {
 }
 
 fn debug_bytes(b: &[u8]) -> String {
-    if let Ok(s) = core::str::from_utf8(b) {
+    if let Ok(s) = std::str::from_utf8(b) {
         return s.to_string();
     }
     hex::encode(b)
@@ -59,9 +51,7 @@ fn debug_bytes(b: &[u8]) -> String {
 pub struct RemainingError {
     pub needed: usize,
     pub remaining: usize,
-    #[cfg(feature = "std")]
-    #[snafu(backtrace)]
-    backtrace: Backtrace,
+    backtrace: Option<Backtrace>,
 }
 
 #[derive(Debug)]
@@ -101,11 +91,11 @@ pub trait BufParsing: Buf + Sized {
 
     fn ensure_remaining(&self, size: usize) -> Result<(), RemainingError> {
         if self.remaining() < size {
-            return Err(RemainingSnafu {
+            return Err(RemainingError {
                 needed: size,
                 remaining: self.remaining(),
-            }
-            .build());
+                backtrace: snafu::GenerateImplicitData::generate(),
+            });
         }
 
         Ok(())

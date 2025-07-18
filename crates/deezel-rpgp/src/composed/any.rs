@@ -1,21 +1,13 @@
-use alloc::boxed::Box;
-use alloc::collections::BTreeMap;
-use alloc::string::String;
-use alloc::vec::Vec;
+use std::io::{BufRead, BufReader, Read};
+
 use crate::{
-    armor::{self},
+    armor::{self, BlockType, Dearmor},
     composed::{
         cleartext::CleartextSignedMessage, Deserializable, Message, SignedPublicKey,
         SignedSecretKey, StandaloneSignature,
     },
-    errors::{format_err, Result},
-    io::Cursor,
+    errors::{ensure, unimplemented_err, Result},
 };
-use alloc::string::ToString;
-use alloc::vec;
-
-use core::fmt::Debug;
-
 
 /// A flexible representation of what can be represented in an armor file.
 #[derive(Debug)]
@@ -30,67 +22,56 @@ pub enum Any<'a> {
 
 impl<'a> Any<'a> {
     /// Parse armored ascii data.
-    pub fn from_armor(bytes: &'a [u8]) -> Result<(Self, armor::Headers)> {
-        let armored = armor::Armored::decode(bytes)?;
-        let (typ, headers, decoded) = (armored.message_type, armored.headers, armored.data);
-        
-        log::debug!("Decoded armor data length: {}", decoded.len());
-        log::debug!("First 32 bytes: {:?}", &decoded[..decoded.len().min(32)]);
-        
-        let packets = crate::packet::PacketParser::new(Cursor::new(&decoded));
-
-        let first = match typ.as_str() {
-            "PUBLIC KEY" => {
-                log::debug!("Parsing public key");
-                let mut parser = SignedPublicKey::from_packets(packets.peekable());
-                let key_result = parser.next();
-                log::debug!("Parser result: {:?}", key_result.is_some());
-                
-                let key = key_result
-                    .ok_or_else(|| format_err!("no matching packet found"))??;
-                Self::PublicKey(key)
-            }
-            "PRIVATE KEY" => {
-                let key = SignedSecretKey::from_packets(packets.peekable())
-                    .next()
-                    .ok_or_else(|| format_err!("unable to parse secret key"))??;
-                Self::SecretKey(key)
-            }
-            "MESSAGE" => {
-                let static_slice: &'static [u8] = Box::leak(decoded.into_boxed_slice());
-                let msg = Message::from_bytes(static_slice)?;
-                Self::Message(msg)
-            }
-            "SIGNATURE" => {
-                let sig = StandaloneSignature::from_packets(packets.peekable())
-                    .next()
-                    .ok_or_else(|| format_err!("unable to parse signature"))??;
-                Self::Signature(sig)
-            }
-            "SIGNED MESSAGE" => {
-                let headers_map: BTreeMap<String, Vec<String>> = headers
-                    .clone()
-                    .into_iter()
-                    .map(|(k, v)| (k, vec![v]))
-                    .collect();
-                let (sig, _headers) =
-                    CleartextSignedMessage::from_armor_after_header(&decoded, headers_map.clone(), 0)?;
-                Self::Cleartext(sig)
-            }
-            _ => unimplemented!("unsupported block type: {}", typ),
-        };
-
-        let headers_map: BTreeMap<String, Vec<String>> = headers
-            .into_iter()
-            .map(|(k, v)| (k, vec![v]))
-            .collect();
-
-        Ok((first, headers_map))
+    pub fn from_armor<R: std::fmt::Debug + Read + 'a + Send>(
+        bytes: R,
+    ) -> Result<(Self, armor::Headers)> {
+        Self::from_armor_buf(BufReader::new(bytes))
     }
 
     /// Parse a single armor encoded composition.
     pub fn from_string(input: &'a str) -> Result<(Self, armor::Headers)> {
-        Self::from_armor(input.as_bytes())
+        Self::from_armor_buf(input.as_bytes())
     }
 
+    /// Parse armored ascii data.
+    pub fn from_armor_buf<R: BufRead + std::fmt::Debug + 'a + Send>(
+        input: R,
+    ) -> Result<(Self, armor::Headers)> {
+        let dearmor = armor::Dearmor::new(input);
+        let limit = dearmor.max_buffer_limit();
+        let (typ, headers, has_leading_data, rest) = dearmor.read_only_header()?;
+        match typ {
+            // Standard PGP types
+            BlockType::PublicKey => {
+                let dearmor = Dearmor::after_header(typ, headers.clone(), rest, limit);
+                let key = SignedPublicKey::from_bytes(BufReader::new(dearmor))?;
+                Ok((Self::PublicKey(key), headers))
+            }
+            BlockType::PrivateKey => {
+                let dearmor = Dearmor::after_header(typ, headers.clone(), rest, limit);
+                let key = SignedSecretKey::from_bytes(BufReader::new(dearmor))?;
+                Ok((Self::SecretKey(key), headers))
+            }
+            BlockType::Message => {
+                let dearmor = Dearmor::after_header(typ, headers.clone(), rest, limit);
+                let msg = Message::from_bytes(BufReader::new(dearmor))?;
+                Ok((Self::Message(msg), headers))
+            }
+            BlockType::Signature => {
+                let dearmor = Dearmor::after_header(typ, headers.clone(), rest, limit);
+                let sig = StandaloneSignature::from_bytes(BufReader::new(dearmor))?;
+                Ok((Self::Signature(sig), headers))
+            }
+            BlockType::CleartextMessage => {
+                ensure!(
+                    !has_leading_data,
+                    "must not have leading data for a cleartext message"
+                );
+                let (sig, headers) =
+                    CleartextSignedMessage::from_armor_after_header(rest, headers, limit)?;
+                Ok((Self::Cleartext(sig), headers))
+            }
+            _ => unimplemented_err!("unsupported block type: {}", typ),
+        }
+    }
 }

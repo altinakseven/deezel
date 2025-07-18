@@ -1,10 +1,6 @@
-extern crate alloc;
-use alloc::vec;
-use crate::io::{BufRead, Write};
-use core::str;
+use std::{io, io::BufRead, str};
 
 use bytes::Bytes;
-#[cfg(feature = "std")]
 use chrono::{SubsecRound, Utc};
 use rand::{CryptoRng, Rng};
 
@@ -42,9 +38,11 @@ use crate::{
 /// # Ok(()) }
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, derive_more::Display)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 #[display("User ID: \"{:?}\"", id)]
 pub struct UserId {
     packet_header: PacketHeader,
+    #[cfg_attr(test, proptest(strategy = "tests::id_gen()"))]
     id: Bytes,
 }
 
@@ -75,10 +73,27 @@ impl UserId {
         &self.id
     }
 
-    /// Convert the id to a UTF-8 string, if possible.
+    #[inline]
+    /// Extracts the raw ID.
+    pub fn into_bytes(self) -> Bytes {
+        self.id
+    }
+
+    #[inline]
+    /// Tries to convert the ID as a UTF-8 string, returning raw bytes as Err if not
+    /// valid UTF-8 string.
+    pub fn try_into_string(self) -> Result<String, Bytes> {
+        let Self { id, .. } = self;
+        match std::string::String::from_utf8(Vec::from(id)) {
+            Ok(data) => Ok(data),
+            Err(error) => Err(error.into_bytes().into()),
+        }
+    }
+
+    /// Tries to convert the ID as a UTF-8 string.
     /// Returns `None` if the data is not valid UTF-8.
     pub fn as_str(&self) -> Option<&str> {
-        core::str::from_utf8(&self.id).ok()
+        std::str::from_utf8(&self.id).ok()
     }
 
     /// Create a self-signature.
@@ -110,12 +125,9 @@ impl UserId {
         P: SecretKeyTrait,
         K: PublicKeyTrait + Serialize,
     {
-        #[cfg(feature = "std")]
         let hashed_subpackets = vec![Subpacket::regular(SubpacketData::SignatureCreationTime(
             Utc::now().trunc_subsecs(0),
         ))?];
-        #[cfg(not(feature = "std"))]
-        let hashed_subpackets = vec![];
 
         let mut config = SignatureConfig::from_key(&mut rng, signer, SignatureType::CertGeneric)?;
 
@@ -137,7 +149,7 @@ impl UserId {
 }
 
 impl Serialize for UserId {
-    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
         writer.write_all(&self.id)?;
 
         Ok(())
@@ -154,95 +166,94 @@ impl PacketTrait for UserId {
     }
 }
 
-// #[cfg(all(test, feature = "std"))]
-// mod tests {
-//     use alloc::format;
-//     use proptest::prelude::*;
-//     use rand::SeedableRng;
-//     use rand_chacha::ChaCha8Rng;
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha8Rng;
 
-//     use super::*;
-//     use crate::{
-//         composed::KeyType,
-//         packet,
-//         types::{KeyVersion, PacketHeaderVersion},
-//     };
+    use super::*;
+    use crate::{
+        composed::KeyType,
+        packet,
+        types::{KeyVersion, PacketHeaderVersion},
+    };
 
-//     prop_compose! {
-//         pub fn id_gen()(id in "[a-zA-Z]+") -> Bytes {
-//             Bytes::from(id)
-//         }
-//     }
+    prop_compose! {
+        pub fn id_gen()(id in "[a-zA-Z]+") -> Bytes {
+            Bytes::from(id)
+        }
+    }
 
-//     #[test]
-//     fn test_user_id_certification() {
-//         let key_type = KeyType::Ed25519Legacy;
-//         let mut rng = ChaCha8Rng::seed_from_u64(0);
+    #[test]
+    fn test_user_id_certification() {
+        let key_type = KeyType::Ed25519Legacy;
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
 
-//         let (public_params, secret_params) = key_type.generate(&mut rng).unwrap();
+        let (public_params, secret_params) = key_type.generate(&mut rng).unwrap();
 
-//         let pub_key = packet::PubKeyInner::new(
-//             KeyVersion::V4,
-//             key_type.to_alg(),
-//             0,
-//             None,
-//             public_params,
-//         )
-//         .unwrap();
-//         let pub_key = packet::PublicKey::from_inner(pub_key).unwrap();
-//         let alice_sec = packet::SecretKey::new(pub_key, secret_params).unwrap();
+        let pub_key = packet::PubKeyInner::new(
+            KeyVersion::V4,
+            key_type.to_alg(),
+            Utc::now().trunc_subsecs(0),
+            None,
+            public_params,
+        )
+        .unwrap();
+        let pub_key = packet::PublicKey::from_inner(pub_key).unwrap();
+        let alice_sec = packet::SecretKey::new(pub_key, secret_params).unwrap();
 
-//         let alice_pub = alice_sec.public_key();
+        let alice_pub = alice_sec.public_key();
 
-//         let alice_uid = UserId::from_str(PacketHeaderVersion::New, "<alice@example.org>").unwrap();
+        let alice_uid = UserId::from_str(PacketHeaderVersion::New, "<alice@example.org>").unwrap();
 
-//         // test self-signature
-//         let self_signed = alice_uid
-//             .sign(&mut rng, &alice_sec, &alice_pub, &"".into())
-//             .unwrap();
-//         self_signed
-//             .verify(&alice_pub)
-//             .expect("self signature verification failed");
+        // test self-signature
+        let self_signed = alice_uid
+            .sign(&mut rng, &alice_sec, &alice_pub, &"".into())
+            .unwrap();
+        self_signed
+            .verify(&alice_pub)
+            .expect("self signature verification failed");
 
-//         // test third-party signature
-//         let (public_params, secret_params) = key_type.generate(&mut rng).unwrap();
+        // test third-party signature
+        let (public_params, secret_params) = key_type.generate(&mut rng).unwrap();
 
-//         let pub_key = packet::PubKeyInner::new(
-//             KeyVersion::V4,
-//             key_type.to_alg(),
-//             0,
-//             None,
-//             public_params,
-//         )
-//         .unwrap();
-//         let pub_key = packet::PublicKey::from_inner(pub_key).unwrap();
-//         let signer_sec = packet::SecretKey::new(pub_key, secret_params).unwrap();
+        let pub_key = packet::PubKeyInner::new(
+            KeyVersion::V4,
+            key_type.to_alg(),
+            Utc::now().trunc_subsecs(0),
+            None,
+            public_params,
+        )
+        .unwrap();
+        let pub_key = packet::PublicKey::from_inner(pub_key).unwrap();
+        let signer_sec = packet::SecretKey::new(pub_key, secret_params).unwrap();
 
-//         let signer_pub = signer_sec.public_key();
+        let signer_pub = signer_sec.public_key();
 
-//         let third_signed = alice_uid
-//             .sign_third_party(&mut rng, &signer_sec, &"".into(), &alice_pub)
-//             .unwrap();
-//         third_signed
-//             .verify_third_party(&alice_pub, &signer_pub)
-//             .expect("self signature verification failed");
-//     }
+        let third_signed = alice_uid
+            .sign_third_party(&mut rng, &signer_sec, &"".into(), &alice_pub)
+            .unwrap();
+        third_signed
+            .verify_third_party(&alice_pub, &signer_pub)
+            .expect("self signature verification failed");
+    }
 
-//     proptest! {
-//         #[test]
-//         fn write_len(user_id: UserId) {
-//             let mut buf = Vec::new();
-//             user_id.to_writer(&mut buf).unwrap();
-//             prop_assert_eq!(buf.len(), user_id.write_len());
-//         }
+    proptest! {
+        #[test]
+        fn write_len(user_id: UserId) {
+            let mut buf = Vec::new();
+            user_id.to_writer(&mut buf).unwrap();
+            prop_assert_eq!(buf.len(), user_id.write_len());
+        }
 
 
-//         #[test]
-//         fn packet_roundtrip(user_id: UserId) {
-//             let mut buf = Vec::new();
-//             user_id.to_writer(&mut buf).unwrap();
-//             let new_user_id = UserId::try_from_reader(user_id.packet_header, &mut &buf[..]).unwrap();
-//             prop_assert_eq!(user_id, new_user_id);
-//         }
-//     }
-// }
+        #[test]
+        fn packet_roundtrip(user_id: UserId) {
+            let mut buf = Vec::new();
+            user_id.to_writer(&mut buf).unwrap();
+            let new_user_id = UserId::try_from_reader(user_id.packet_header, &mut &buf[..]).unwrap();
+            prop_assert_eq!(user_id, new_user_id);
+        }
+    }
+}

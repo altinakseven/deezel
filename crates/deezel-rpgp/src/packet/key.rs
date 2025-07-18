@@ -1,4 +1,3 @@
-extern crate alloc;
 mod public;
 mod secret;
 

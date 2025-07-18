@@ -1,16 +1,16 @@
-extern crate alloc;
+use std::io::{self, BufRead, Read};
+
 use bytes::{Buf, BytesMut};
 
 use super::PacketBodyReader;
 use crate::{
     composed::DebugBufRead,
-    util::fill_buffer,
     packet::{Decompressor, PacketHeader},
     types::Tag,
+    util::fill_buffer_bytes,
 };
 
-use crate::io::{BufRead, Error, Read};
-
+const BUFFER_SIZE: usize = 8 * 1024;
 
 #[derive(Debug)]
 pub enum CompressedDataReader<R: DebugBufRead> {
@@ -25,7 +25,7 @@ pub enum CompressedDataReader<R: DebugBufRead> {
 }
 
 impl<R: DebugBufRead> CompressedDataReader<R> {
-    pub fn new(source: PacketBodyReader<R>, decompress: bool) -> Result<Self, Error> {
+    pub fn new(source: PacketBodyReader<R>, decompress: bool) -> io::Result<Self> {
         debug_assert_eq!(source.packet_header().tag(), Tag::CompressedData);
 
         let source = if decompress {
@@ -37,7 +37,7 @@ impl<R: DebugBufRead> CompressedDataReader<R> {
 
         Ok(Self::Body {
             source,
-            buffer: BytesMut::with_capacity(1024),
+            buffer: BytesMut::with_capacity(BUFFER_SIZE),
         })
     }
 
@@ -83,25 +83,28 @@ impl<R: DebugBufRead> CompressedDataReader<R> {
     }
 
     /// Enables decompression
-    pub fn decompress(self) -> Result<Self, Error> {
+    pub fn decompress(self) -> io::Result<Self> {
         match self {
             Self::Body { source, buffer } => Ok(Self::Body {
                 source: source.decompress()?,
                 buffer,
             }),
-            Self::Done { .. } => Err(crate::io::Error::new(crate::io::ErrorKind::Other, "compressed reader already done")),
-            Self::Error => Err(crate::io::Error::new(crate::io::ErrorKind::Other, "compressed reader error")),
+            Self::Done { .. } => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "already finished",
+            )),
+            Self::Error => Err(io::Error::other("CompressedDataReader errored")),
         }
     }
 }
 
 impl<R: DebugBufRead> BufRead for CompressedDataReader<R> {
-    fn fill_buf(&mut self) -> Result<&[u8], Error> {
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
         self.fill_inner()?;
         match self {
             Self::Body { ref mut buffer, .. } => Ok(&buffer[..]),
             Self::Done { .. } => Ok(&[][..]),
-            Self::Error => Err(crate::io::Error::new(crate::io::ErrorKind::Other, "compressed reader error")),
+            Self::Error => Err(io::Error::other("CompressedDataReader errored")),
         }
     }
 
@@ -119,22 +122,27 @@ impl<R: DebugBufRead> BufRead for CompressedDataReader<R> {
 }
 
 impl<R: DebugBufRead> Read for CompressedDataReader<R> {
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
-        let internal_buf = self.fill_buf()?;
-        let len = internal_buf.len().min(buf.len());
-        buf[..len].copy_from_slice(&internal_buf[..len]);
-        self.consume(len);
-        Ok(len)
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.fill_inner()?;
+        match self {
+            Self::Body { ref mut buffer, .. } => {
+                let to_write = buffer.remaining().min(buf.len());
+                buffer.copy_to_slice(&mut buf[..to_write]);
+                Ok(to_write)
+            }
+            Self::Done { .. } => Ok(0),
+            Self::Error => Err(io::Error::other("CompressedDataReader errored")),
+        }
     }
 }
 
 impl<R: DebugBufRead> CompressedDataReader<R> {
-    fn fill_inner(&mut self) -> Result<(), Error> {
+    fn fill_inner(&mut self) -> io::Result<()> {
         if matches!(self, Self::Done { .. }) {
             return Ok(());
         }
 
-        match core::mem::replace(self, Self::Error) {
+        match std::mem::replace(self, Self::Error) {
             Self::Body {
                 mut source,
                 mut buffer,
@@ -144,10 +152,7 @@ impl<R: DebugBufRead> CompressedDataReader<R> {
                     return Ok(());
                 }
 
-                buffer.resize(1024, 0);
-                let read = fill_buffer(&mut source, &mut buffer, None)?;
-                buffer.truncate(read);
-
+                let read = fill_buffer_bytes(&mut source, &mut buffer, BUFFER_SIZE)?;
                 if read == 0 {
                     let source = source.into_inner();
 
@@ -161,7 +166,7 @@ impl<R: DebugBufRead> CompressedDataReader<R> {
                 *self = Self::Done { source };
                 Ok(())
             }
-            Self::Error => Err(crate::io::Error::new(crate::io::ErrorKind::Other, "compressed reader error")),
+            Self::Error => Err(io::Error::other("CompressedDataReader errored")),
         }
     }
 }
@@ -173,7 +178,7 @@ pub enum MaybeDecompress<R: DebugBufRead> {
 }
 
 impl<R: DebugBufRead> MaybeDecompress<R> {
-    fn decompress(self) -> Result<Self, Error> {
+    fn decompress(self) -> io::Result<Self> {
         match self {
             Self::Raw(r) => Ok(Self::Decompress(Decompressor::from_reader(r)?)),
             Self::Decompress(_) => {
@@ -200,7 +205,7 @@ impl<R: DebugBufRead> MaybeDecompress<R> {
 }
 
 impl<R: DebugBufRead> BufRead for MaybeDecompress<R> {
-    fn fill_buf(&mut self) -> Result<&[u8], Error> {
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
         match self {
             Self::Raw(ref mut r) => r.fill_buf(),
             Self::Decompress(ref mut r) => r.fill_buf(),
@@ -215,11 +220,10 @@ impl<R: DebugBufRead> BufRead for MaybeDecompress<R> {
 }
 
 impl<R: DebugBufRead> Read for MaybeDecompress<R> {
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
-        let internal_buf = self.fill_buf()?;
-        let len = internal_buf.len().min(buf.len());
-        buf[..len].copy_from_slice(&internal_buf[..len]);
-        self.consume(len);
-        Ok(len)
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self {
+            Self::Raw(ref mut r) => r.read(buf),
+            Self::Decompress(ref mut r) => r.read(buf),
+        }
     }
 }

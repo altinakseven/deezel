@@ -1,6 +1,3 @@
-extern crate alloc;
-use crate::util::fill_buffer;
-
 mod compressed;
 mod limited;
 mod literal;
@@ -19,9 +16,7 @@ pub use self::{
 
 #[cfg(test)]
 mod tests {
-    use alloc::string::String;
-    use alloc::vec::Vec;
-    use crate::io::{BufReader, Read};
+    use std::io::{BufReader, Read};
 
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
@@ -41,7 +36,7 @@ mod tests {
 
         for file_size in (1..1024 * 10).step_by(100) {
             for is_partial in [true, false] {
-                // println!("--- size: {file_size}, is_partial: {is_partial}");
+                println!("--- size: {file_size}, is_partial: {is_partial}");
 
                 let buf = random_string(&mut rng, file_size);
                 let message = if is_partial {
@@ -54,13 +49,11 @@ mod tests {
 
                 let reader = ChaosReader::new(rng.clone(), message.clone());
                 let mut reader = BufReader::new(reader);
-                let mut data = Vec::new();
-                reader.read_to_end(&mut data).unwrap();
-                let mut msg = Message::from_bytes(&data).unwrap();
+                let mut msg = Message::from_bytes(&mut reader).unwrap();
 
                 let mut out = String::new();
                 msg.read_to_string(&mut out)?;
-                check_strings(&out, &buf);
+                check_strings(out, buf);
 
                 let header = msg.literal_data_header().unwrap();
                 assert_eq!(header.file_name(), &b""[..]);
@@ -78,9 +71,9 @@ mod tests {
         for file_size in (1..1024 * 10).step_by(100) {
             for is_partial in [true, false] {
                 for is_armor in [true, false] {
-                    // println!(
-                    //     "--- size: {file_size}, is_partial: {is_partial}, is_armor: {is_armor}"
-                    // );
+                    println!(
+                        "--- size: {file_size}, is_partial: {is_partial}, is_armor: {is_armor}"
+                    );
                     let buf = random_string(&mut rng, file_size);
 
                     if is_armor {
@@ -96,17 +89,15 @@ mod tests {
                             builder.compression(CompressionAlgorithm::ZIP);
                             builder.to_armored_string(&mut rng, Default::default())?
                         };
-                        let reader = ChaosReader::new(rng.clone(), message.clone().into());
+                        let reader = ChaosReader::new(rng.clone(), message.clone());
                         let mut reader = BufReader::new(reader);
-                        let mut data = Vec::new();
-                        reader.read_to_end(&mut data).unwrap();
-                        let (message, _) = Message::from_armor(&data)?;
+                        let (message, _) = Message::from_armor(&mut reader)?;
 
                         let mut decompressed_message = message.decompress()?;
                         let mut out = String::new();
                         decompressed_message.read_to_string(&mut out)?;
 
-                        check_strings(&out, &buf);
+                        check_strings(out, buf);
 
                         let header = decompressed_message.literal_data_header().unwrap();
                         assert_eq!(header.file_name(), &b""[..]);
@@ -121,15 +112,13 @@ mod tests {
 
                         let reader = ChaosReader::new(rng.clone(), message.clone());
                         let mut reader = BufReader::new(reader);
-                        let mut data = Vec::new();
-                        reader.read_to_end(&mut data).unwrap();
-                        let message = Message::from_bytes(&data)?;
+                        let message = Message::from_bytes(&mut reader)?;
 
                         let mut decompressed_message = message.decompress()?;
                         let mut out = String::new();
                         decompressed_message.read_to_string(&mut out)?;
 
-                        check_strings(&out, &buf);
+                        check_strings(out, buf);
 
                         let header = decompressed_message.literal_data_header().unwrap();
                         assert_eq!(header.file_name(), &b""[..]);

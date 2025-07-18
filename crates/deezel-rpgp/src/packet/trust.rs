@@ -1,5 +1,4 @@
-extern crate alloc;
-use crate::io::{BufRead, Write};
+use std::io::{self, BufRead};
 
 use log::warn;
 
@@ -17,7 +16,7 @@ use crate::{
 /// transferred to other users, and they SHOULD be ignored on any input
 /// other than local keyring files.
 #[derive(Debug, PartialEq, Eq, Clone)]
-#[cfg_attr(all(test, feature = "std"), derive(proptest_derive::Arbitrary))]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct Trust {
     packet_header: PacketHeader,
 }
@@ -33,7 +32,7 @@ impl Trust {
 }
 
 impl Serialize for Trust {
-    fn to_writer<W: Write>(&self, _writer: &mut W) -> Result<()> {
+    fn to_writer<W: io::Write>(&self, _writer: &mut W) -> Result<()> {
         Ok(())
     }
 
@@ -48,9 +47,8 @@ impl PacketTrait for Trust {
     }
 }
 
-#[cfg(all(test, feature = "std"))]
+#[cfg(test)]
 mod tests {
-    use alloc::{format, vec::Vec};
     use proptest::prelude::*;
 
     use super::*;

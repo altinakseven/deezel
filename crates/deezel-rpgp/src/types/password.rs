@@ -1,13 +1,9 @@
-use alloc::string::String;
-use alloc::sync::Arc;
-use alloc::vec::Vec;
-extern crate alloc;
 use zeroize::Zeroizing;
 
 /// Wraps around a callback to unlock keys.
-#[derive(derive_more::Debug, Clone)]
+#[derive(derive_more::Debug)]
 pub enum Password {
-    Dynamic(#[debug("Arc<Fn>")] Arc<dyn Fn() -> Zeroizing<Vec<u8>> + 'static + Send + Sync>),
+    Dynamic(#[debug("Box<Fn>")] Box<dyn Fn() -> Zeroizing<Vec<u8>> + 'static + Send + Sync>),
     Static(#[debug("***")] Zeroizing<Vec<u8>>),
 }
 
@@ -52,6 +48,6 @@ impl Password {
 
 impl<F: Fn() -> Zeroizing<Vec<u8>> + 'static + Send + Sync> From<F> for Password {
     fn from(value: F) -> Self {
-        Self::Dynamic(Arc::new(value))
+        Self::Dynamic(Box::new(value))
     }
 }

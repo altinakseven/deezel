@@ -1,17 +1,13 @@
-extern crate alloc;
-use alloc::boxed::Box;
-use alloc::string::ToString;
-use alloc::vec;
-use alloc::vec::Vec;
-use alloc::format;
-use core::{
+use std::{
     cmp::Ordering,
+    io::{BufRead, Read},
 };
-use crate::io::{BufRead, Read, Write};
 
 use bitfields::bitfield;
+use byteorder::{BigEndian, ByteOrder, WriteBytesExt};
 use bytes::Bytes;
 use chrono::{DateTime, Duration, Utc};
+use digest::DynDigest;
 use log::debug;
 use num_enum::{FromPrimitive, IntoPrimitive};
 
@@ -23,6 +19,8 @@ use crate::{
         sym::SymmetricKeyAlgorithm,
     },
     errors::{bail, ensure, ensure_eq, unimplemented_err, unsupported_err, Result},
+    line_writer::LineBreak,
+    normalize_lines::NormalizedReader,
     packet::{
         signature::SignatureConfig, PacketHeader, PacketTrait, SignatureVersionSpecific, Subpacket,
         SubpacketData,
@@ -34,11 +32,7 @@ use crate::{
         self, CompressionAlgorithm, Fingerprint, KeyDetails, KeyId, KeyVersion, PacketLength,
         PublicKeyTrait, SignatureBytes, Tag,
     },
-    util::CloneableDigest,
 };
-
-#[cfg(feature = "std")]
-use crate::{line_writer::LineBreak, normalize_lines::NormalizedReader};
 
 /// Signature Packet
 ///
@@ -471,15 +465,9 @@ impl Signature {
         }
 
         if matches!(self.typ(), Some(SignatureType::Text)) {
-            #[cfg(feature = "std")]
-            {
-                let normalized = NormalizedReader::new(data, LineBreak::Crlf);
-                config.hash_data_to_sign(&mut hasher, normalized)?;
-            }
-            #[cfg(not(feature = "std"))]
-            {
-                config.hash_data_to_sign(&mut hasher, data)?;
-            }
+            let normalized = NormalizedReader::new(data, LineBreak::Crlf);
+
+            config.hash_data_to_sign(&mut hasher, normalized)?;
         } else {
             config.hash_data_to_sign(&mut hasher, data)?;
         }
@@ -536,7 +524,7 @@ impl Signature {
             unsupported_err!("signature version {:?}", self.version());
         };
         let key_id = signee.key_id();
-        debug!("verifying certification {:?} {:#?}", key_id, self);
+        debug!("verifying certification {key_id:?} {self:#?}");
 
         Self::check_signature_key_version_alignment(&signer, config)?;
         Self::check_signature_hash_strength(config)?;
@@ -575,8 +563,7 @@ impl Signature {
                     };
 
                     let mut prefix_buf = [prefix, 0u8, 0u8, 0u8, 0u8];
-                    let len_bytes: [u8; 4] = (packet_len as u32).to_be_bytes();
-                    prefix_buf[1..5].copy_from_slice(&len_bytes);
+                    BigEndian::write_u32(&mut prefix_buf[1..], packet_len.try_into()?);
 
                     // prefixes
                     hasher.update(&prefix_buf);
@@ -615,10 +602,7 @@ impl Signature {
         P: PublicKeyTrait + Serialize,
         K: PublicKeyTrait + Serialize,
     {
-        debug!(
-            "verifying subkey binding: {:#?} - {:#?} - {:#?}",
-            self, signer, signee,
-        );
+        debug!("verifying subkey binding: {self:#?} - {signer:#?} - {signee:#?}",);
 
         let InnerSignature::Known {
             ref config,
@@ -664,10 +648,7 @@ impl Signature {
         P: PublicKeyTrait + Serialize,
         K: PublicKeyTrait + Serialize,
     {
-        debug!(
-            "verifying primary key binding: {:#?} - {:#?} - {:#?}",
-            self, signer, signee
-        );
+        debug!("verifying primary key binding: {self:#?} - {signer:#?} - {signee:#?}");
 
         let InnerSignature::Known {
             ref config,
@@ -708,7 +689,7 @@ impl Signature {
     where
         P: PublicKeyTrait + Serialize,
     {
-        debug!("verifying key (revocation): {:#?} - {:#?}", self, key);
+        debug!("verifying key (revocation): {self:#?} - {key:#?}");
 
         let InnerSignature::Known {
             ref config,
@@ -1032,6 +1013,7 @@ impl Default for SignatureVersion {
 }
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone, FromPrimitive, IntoPrimitive)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 #[repr(u8)]
 pub enum SignatureType {
     /// Signature of a binary document.
@@ -1128,7 +1110,7 @@ pub enum SignatureType {
     ThirdParty = 0x50,
 
     #[num_enum(catch_all)]
-    Other(u8),
+    Other(#[cfg_attr(test, proptest(strategy = "0x51u8.."))] u8),
 }
 
 /// Key flags by default are only 1 byte large, but there are reserved
@@ -1263,16 +1245,16 @@ impl KeyFlags {
 }
 
 impl Serialize for KeyFlags {
-    fn to_writer<W: crate::io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
         if self.original_len == 0 {
             return Ok(());
         }
 
         let [a, b] = self.known.into_bits().to_le_bytes();
-        writer.write_all(&[a])?;
+        writer.write_u8(a)?;
 
         if self.original_len > 1 || b != 0 {
-            writer.write_all(&[b])?;
+            writer.write_u8(b)?;
         }
 
         if let Some(ref rest) = self.rest {
@@ -1430,9 +1412,9 @@ impl Features {
 }
 
 impl Serialize for Features {
-    fn to_writer<W: crate::io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
         if let Some(k) = self.first {
-            writer.write_all(&[k.0])?;
+            writer.write_u8(k.0)?;
             writer.write_all(&self.rest)?;
         }
 
@@ -1524,7 +1506,7 @@ impl PacketTrait for Signature {
 
 pub(super) fn serialize_for_hashing<K: KeyDetails + Serialize>(
     key: &K,
-    hasher: &mut Box<dyn CloneableDigest>,
+    hasher: &mut Box<dyn DynDigest + Send>,
 ) -> Result<()> {
     let key_len = key.write_len();
 
@@ -1535,8 +1517,8 @@ pub(super) fn serialize_for_hashing<K: KeyDetails + Serialize>(
         KeyVersion::V2 | KeyVersion::V3 | KeyVersion::V4 => {
             // When a v4 signature is made over a key, the hash data starts with the octet 0x99,
             // followed by a two-octet length of the key, and then the body of the key packet.
-            writer.write_all(&[0x99])?;
-            writer.write_all(&(key_len as u16).to_be_bytes())?;
+            writer.write_u8(0x99)?;
+            writer.write_u16::<BigEndian>(key_len.try_into()?)?;
         }
 
         KeyVersion::V6 => {
@@ -1545,8 +1527,8 @@ pub(super) fn serialize_for_hashing<K: KeyDetails + Serialize>(
 
             // then octet 0x9B, followed by a four-octet length of the key,
             // and then the body of the key packet.
-            writer.write_all(&[0x9b])?;
-            writer.write_all(&(key_len as u32).to_be_bytes())?;
+            writer.write_u8(0x9b)?;
+            writer.write_u32::<BigEndian>(key_len.try_into()?)?;
         }
 
         v => unimplemented_err!("key version {:?}", v),
@@ -1557,40 +1539,319 @@ pub(super) fn serialize_for_hashing<K: KeyDetails + Serialize>(
     Ok(())
 }
 
-#[cfg(all(test, feature = "std"))]
+#[cfg(test)]
 mod tests {
-    use proptest::prelude::*;
-    use proptest::strategy::{BoxedStrategy, Strategy};
+    use std::io::Cursor;
+
+    use bytes::BytesMut;
 
     use super::*;
+    use crate::packet::SubpacketType;
 
-    prop_compose! {
-        pub fn arbitrary_signature_type()(
-            num in prop_oneof![
-                Just(0x00u8), Just(0x01), Just(0x02), Just(0x10), Just(0x11), Just(0x12),
-                Just(0x13), Just(0x18), Just(0x19), Just(0x1F), Just(0x20), Just(0x28),
-                Just(0x30), Just(0x40), Just(0x50),
-            ]
-        ) -> SignatureType {
-            SignatureType::from(num)
+    /// keyflags being all zeros..are special
+    #[test]
+    fn test_keyflags_crazy_versions() {
+        for i in 0..1024 {
+            println!("size {i}");
+            // I write this with pain...
+            let source = BytesMut::zeroed(i).freeze();
+            let flags = KeyFlags::try_from_reader(&source[..]).unwrap();
+            assert_eq!(&flags.to_bytes().unwrap(), &source);
         }
+    }
+
+    #[test]
+    fn test_keyflags_1_byte() {
+        let flags: KeyFlags = Default::default();
+        assert_eq!(flags.to_bytes().unwrap(), vec![0x00]);
+
+        let mut flags = KeyFlags::default();
+        flags.set_certify(true);
+        assert!(flags.certify());
+        assert_eq!(flags.to_bytes().unwrap(), vec![0x01]);
+
+        let mut flags = KeyFlags::default();
+        flags.set_sign(true);
+        assert_eq!(flags.to_bytes().unwrap(), vec![0x02]);
+
+        let mut flags = KeyFlags::default();
+        flags.set_encrypt_comms(true);
+        assert_eq!(flags.to_bytes().unwrap(), vec![0x04]);
+
+        let mut flags = KeyFlags::default();
+        flags.set_encrypt_storage(true);
+        assert_eq!(flags.to_bytes().unwrap(), vec![0x08]);
+
+        let mut flags = KeyFlags::default();
+        flags.set_shared(true);
+        assert_eq!(flags.to_bytes().unwrap(), vec![0x10]);
+
+        let mut flags = KeyFlags::default();
+        flags.set_authentication(true);
+        assert_eq!(flags.to_bytes().unwrap(), vec![0x20]);
+
+        let mut flags = KeyFlags::default();
+        flags.set_group(true);
+        assert_eq!(flags.to_bytes().unwrap(), vec![0x80]);
+
+        let mut flags = KeyFlags::default();
+        flags.set_certify(true);
+        flags.set_sign(true);
+        assert_eq!(flags.to_bytes().unwrap(), vec![0x03]);
+    }
+
+    #[test]
+    fn test_keyflags_2_bytes() {
+        let mut flags: KeyFlags = Default::default();
+        flags.set_adsk(true);
+        assert_eq!(flags.to_bytes().unwrap(), vec![0x00, 0x04]);
+
+        let mut flags: KeyFlags = Default::default();
+        flags.set_timestamping(true);
+        assert_eq!(flags.to_bytes().unwrap(), vec![0x00, 0x08]);
+
+        let mut flags: KeyFlags = Default::default();
+        flags.set_timestamping(true);
+        flags.set_certify(true);
+        flags.set_sign(true);
+
+        assert_eq!(flags.to_bytes().unwrap(), vec![0x03, 0x08]);
+    }
+
+    #[test]
+    fn test_features() {
+        use crate::packet::Features;
+
+        // deserialize/serialize, getters
+        {
+            let empty: Features = (&[][..]).into();
+            assert_eq!(empty.seipd_v1(), false);
+            assert_eq!(empty.seipd_v2(), false);
+
+            assert_eq!(empty.write_len(), 0);
+            let mut out = vec![];
+            empty.to_writer(&mut out).expect("write");
+            assert!(out.is_empty());
+        }
+        {
+            let seipdv1: Features = (&[0x01][..]).into();
+            assert_eq!(seipdv1.seipd_v1(), true);
+            assert_eq!(seipdv1.seipd_v2(), false);
+
+            assert_eq!(seipdv1.write_len(), 1);
+            let mut out = vec![];
+            seipdv1.to_writer(&mut out).expect("write");
+            assert_eq!(out, vec![0x01]);
+        }
+        {
+            let allbits: Features = (&[0xff][..]).into();
+            assert_eq!(allbits.seipd_v1(), true);
+            assert_eq!(allbits.seipd_v2(), true);
+
+            assert_eq!(allbits.write_len(), 1);
+            let mut out = vec![];
+            allbits.to_writer(&mut out).expect("write");
+            assert_eq!(out, vec![0xff]);
+        }
+        {
+            let three_bytes: Features = (&[0x09, 0xaa, 0xbb][..]).into();
+            assert_eq!(three_bytes.seipd_v1(), true);
+            assert_eq!(three_bytes.seipd_v2(), true);
+
+            assert_eq!(three_bytes.write_len(), 3);
+            let mut out = vec![];
+            three_bytes.to_writer(&mut out).expect("write");
+            assert_eq!(out, vec![0x09, 0xaa, 0xbb]);
+        }
+
+        // setters
+        {
+            let mut empty: Features = (&[][..]).into();
+            assert!(Vec::<u8>::from(&empty).is_empty());
+
+            empty.set_seipd_v1(true);
+            assert_eq!(Vec::<u8>::from(&empty), vec![0x01]);
+        }
+        {
+            let mut default = Features::default();
+            assert_eq!(Vec::<u8>::from(&default), vec![0x00]);
+
+            default.set_seipd_v1(true);
+            assert_eq!(Vec::<u8>::from(&default), vec![0x01]);
+
+            default.set_seipd_v2(true);
+            assert_eq!(Vec::<u8>::from(&default), vec![0x09]);
+        }
+        {
+            let mut allbits: Features = (&[0xff][..]).into();
+
+            allbits.set_seipd_v1(false);
+            assert_eq!(Vec::<u8>::from(&allbits), vec![0xfe]);
+
+            allbits.set_seipd_v2(false);
+            assert_eq!(Vec::<u8>::from(&allbits), vec![0xf6]);
+        }
+        {
+            let mut three_bytes: Features = (&[0x00, 0xaa, 0xbb][..]).into();
+            three_bytes.set_seipd_v2(true);
+            assert_eq!(Vec::<u8>::from(&three_bytes), vec![0x08, 0xaa, 0xbb]);
+        }
+    }
+
+    #[test]
+    fn test_critical() {
+        use SubpacketType::*;
+        let cases = [
+            SignatureCreationTime,
+            SignatureExpirationTime,
+            ExportableCertification,
+            TrustSignature,
+            RegularExpression,
+            Revocable,
+            KeyExpirationTime,
+            PreferredSymmetricAlgorithms,
+            RevocationKey,
+            Issuer,
+            Notation,
+            PreferredHashAlgorithms,
+            PreferredCompressionAlgorithms,
+            KeyServerPreferences,
+            PreferredKeyServer,
+            PrimaryUserId,
+            PolicyURI,
+            KeyFlags,
+            SignersUserID,
+            RevocationReason,
+            Features,
+            SignatureTarget,
+            EmbeddedSignature,
+            IssuerFingerprint,
+            PreferredAead,
+            Experimental(101),
+            Other(95),
+        ];
+        for case in cases {
+            assert_eq!(SubpacketType::from_u8(case.as_u8(false)), (case, false));
+            assert_eq!(SubpacketType::from_u8(case.as_u8(true)), (case, true));
+        }
+    }
+
+    use proptest::prelude::*;
+
+    use crate::composed::StandaloneSignature;
+
+    impl Arbitrary for KeyFlags {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+            proptest::collection::vec(0u8..255, 1..500)
+                .prop_map(|v| KeyFlags::try_from_reader(&mut &v[..]).unwrap())
+                .boxed()
+        }
+    }
+
+    #[test]
+    fn unhashed_area_modification() {
+        fn subpacket_type_list(sig: &Signature) -> Vec<SubpacketType> {
+            sig.config()
+                .unwrap()
+                .unhashed_subpackets
+                .iter()
+                .map(Subpacket::typ)
+                .collect()
+        }
+
+        use crate::composed::Deserializable;
+
+        let mut sig = StandaloneSignature::from_armor_single(Cursor::new(
+            "-----BEGIN PGP SIGNATURE-----
+
+wpoEEBYIAEIFAmheZZEWIQT8Y2QNsPXIvVyHlK1LkdWvyoDDywIbAwIeAQQLCQgH
+BhUOCgkMCAEWDScJAggCBwIJAQgBBwECGQEACgkQS5HVr8qAw8swhAD/RFBBueDN
+ClWUWHgCj+FmHElqrUO4YVePdt2KRkniPJ4A/jtOCzD7vZJZs0yP4xQ78PEsUST0
+pwsJtT3sJB2q5NoA
+=XphF
+-----END PGP SIGNATURE-----",
+        ))
+        .unwrap()
+        .0
+        .signature;
+
+        assert_eq!(sig.packet_header.packet_length(), PacketLength::Fixed(154));
+
+        sig.unhashed_subpacket_push(
+            Subpacket::regular(SubpacketData::Notation(Notation {
+                readable: true,
+                name: "foo".into(),
+                value: "bar".into(),
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(sig.packet_header.packet_length(), PacketLength::Fixed(170));
+        assert_eq!(
+            &subpacket_type_list(&sig),
+            &[SubpacketType::Issuer, SubpacketType::Notation]
+        );
+
+        sig.unhashed_subpacket_insert(
+            0,
+            Subpacket::regular(SubpacketData::Notation(Notation {
+                readable: true,
+                name: "hello".into(),
+                value: "world".into(),
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(sig.packet_header.packet_length(), PacketLength::Fixed(190));
+        assert_eq!(
+            &subpacket_type_list(&sig),
+            &[
+                SubpacketType::Notation,
+                SubpacketType::Issuer,
+                SubpacketType::Notation
+            ]
+        );
+
+        sig.unhashed_subpackets_sort_by(|a, b| {
+            a.typ()
+                .as_u8(a.is_critical)
+                .cmp(&b.typ().as_u8(b.is_critical))
+        });
+        assert_eq!(sig.packet_header.packet_length(), PacketLength::Fixed(190));
+        assert_eq!(
+            &subpacket_type_list(&sig),
+            &[
+                SubpacketType::Issuer,
+                SubpacketType::Notation,
+                SubpacketType::Notation
+            ]
+        );
+
+        sig.unhashed_subpacket_remove(0).unwrap();
+        assert_eq!(sig.packet_header.packet_length(), PacketLength::Fixed(180));
+        assert_eq!(
+            &subpacket_type_list(&sig),
+            &[SubpacketType::Notation, SubpacketType::Notation]
+        );
     }
 
     proptest! {
         #[test]
-        fn arbitrary(sig_type in arbitrary_signature_type()) {
-            let num: u8 = sig_type.into();
-            assert_eq!(sig_type, SignatureType::from(num));
+        fn keyflags_write_len(flags: KeyFlags) {
+            let mut buf = Vec::new();
+            flags.to_writer(&mut buf).unwrap();
+            prop_assert_eq!(buf.len(), flags.write_len());
         }
-    }
 
-    impl Arbitrary for SignatureType {
-        type Parameters = ();
-        type Strategy = BoxedStrategy<Self>;
-
-        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-            arbitrary_signature_type().boxed()
+        #[test]
+        fn keyflags_packet_roundtrip(flags: KeyFlags) {
+            let mut buf = Vec::new();
+            flags.to_writer(&mut buf).unwrap();
+            let new_flags = KeyFlags::try_from_reader(&mut &buf[..]).unwrap();
+            prop_assert_eq!(flags, new_flags);
         }
     }
 }
-

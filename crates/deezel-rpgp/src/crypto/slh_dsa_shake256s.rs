@@ -1,8 +1,3 @@
-use alloc::boxed::Box;
-use alloc::string::{String, ToString};
-use alloc::vec;
-use alloc::format;
-extern crate alloc;
 use rand::{CryptoRng, Rng};
 use signature::{Signer as _, Verifier};
 use slh_dsa::Shake256s;
@@ -85,7 +80,7 @@ impl Signer for SecretKey {
 }
 
 impl Serialize for SecretKey {
-    fn to_writer<W: crate::io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
         let key = self.to_bytes();
         writer.write_all(&key)?;
         Ok(())

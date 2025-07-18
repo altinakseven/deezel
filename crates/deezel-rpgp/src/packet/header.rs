@@ -1,10 +1,7 @@
-use alloc::string::ToString;
-use alloc::format;
-extern crate alloc;
-use crate::io::{BufRead, Write};
-use core::fmt;
+use std::io::BufRead;
 
 use bitfields::bitfield;
+use byteorder::{BigEndian, WriteBytesExt};
 use log::debug;
 
 use crate::{
@@ -34,8 +31,8 @@ const MAX_PARTIAL_LEN: u32 = 2u32.pow(30);
 
 impl PacketHeader {
     /// Parse a single packet header from the given reader.
-    pub fn try_from_reader<R: BufRead>(mut r: R) -> Result<Self, crate::io::Error> {
-        let header = BufReadParsing::read_u8(&mut r)?;
+    pub fn try_from_reader<R: BufRead>(mut r: R) -> std::io::Result<Self> {
+        let header = r.read_u8()?;
 
         let first_two_bits = header & 0b1100_0000;
         match first_two_bits {
@@ -51,7 +48,7 @@ impl PacketHeader {
                 let header = OldPacketHeader::from_bits(header);
                 let length = match header.length_type() {
                     // One-Octet Lengths
-                    0 => PacketLength::Fixed(BufReadParsing::read_u8(&mut r)?.into()),
+                    0 => PacketLength::Fixed(r.read_u8()?.into()),
                     // Two-Octet Lengths
                     1 => PacketLength::Fixed(r.read_be_u16()?.into()),
                     // Four-Octet Lengths
@@ -61,9 +58,9 @@ impl PacketHeader {
                 };
                 Ok(PacketHeader::Old { header, length })
             }
-            _ => Err(crate::io::Error::new(
-                crate::io::ErrorKind::InvalidInput,
-                "unknown packet header version",
+            _ => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("unknown packet header version {header:b}"),
             )),
         }
     }
@@ -162,30 +159,30 @@ impl PacketHeader {
 }
 
 impl Serialize for PacketHeader {
-    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
-        debug!("writing packet header {:?}", self);
+    fn to_writer<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
+        debug!("writing packet header {self:?}");
 
         match self {
             Self::New { header, length } => {
-                writer.write_all(&[header.into_bits()])?;
+                writer.write_u8(header.into_bits())?;
                 length.to_writer_new(writer)?;
             }
             Self::Old { header, length } => match length {
                 PacketLength::Fixed(len) => {
-                    writer.write_all(&[header.into_bits()])?;
+                    writer.write_u8(header.into_bits())?;
                     if *len < 256 {
                         // one octet
-                        writer.write_all(&[*len as u8])?;
+                        writer.write_u8(*len as u8)?;
                     } else if *len < 65536 {
                         // two octets
-                        writer.write_all(&u16::to_be_bytes(*len as u16))?;
+                        writer.write_u16::<BigEndian>(*len as u16)?;
                     } else {
                         // four octets
-                        writer.write_all(&u32::to_be_bytes(*len))?;
+                        writer.write_u32::<BigEndian>(*len)?;
                     }
                 }
                 PacketLength::Indeterminate => {
-                    writer.write_all(&[header.into_bits()])?;
+                    writer.write_u8(header.into_bits())?;
                 }
                 PacketLength::Partial(_) => {
                     unreachable!("invalid state: partial lengths for old style packet header");
@@ -259,8 +256,8 @@ pub struct OldPacketHeader {
     length_type: u8,
 }
 
-impl fmt::Debug for OldPacketHeader {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl std::fmt::Debug for OldPacketHeader {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("OldPacketHeader")
             .field("padding", &(self.padding() as u8))
             .field("version", &(self.version() as u8))
@@ -287,8 +284,8 @@ pub struct NewPacketHeader {
     tag: u8,
 }
 
-impl fmt::Debug for NewPacketHeader {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl std::fmt::Debug for NewPacketHeader {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NewPacketHeader")
             .field("padding", &(self.padding() as u8))
             .field("version", &(self.version() as u8))
@@ -309,7 +306,7 @@ fn old_fixed_type(len: u32) -> u8 {
     }
 }
 
-#[cfg(all(test, feature = "std"))]
+#[cfg(test)]
 mod tests {
     use proptest::prelude::*;
 
@@ -321,7 +318,7 @@ mod tests {
         // :attribute packet: [jpeg image of size 4951]
         let packet_header_raw = hex::decode(b"d1ff0000136d").unwrap();
         let header = PacketHeader::try_from_reader(&packet_header_raw[..]).unwrap();
-        // dbg!(&header);
+        dbg!(&header);
 
         assert_eq!(header.version(), PacketHeaderVersion::New);
         assert_eq!(header.tag(), Tag::UserAttribute);

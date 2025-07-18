@@ -1,16 +1,9 @@
-extern crate alloc;
-use alloc::boxed::Box;
-use alloc::string::{String, ToString};
-use alloc::format;
-use core::fmt;
-use core::num::TryFromIntError;
+use std::num::TryFromIntError;
 
 use ed25519_dalek::SignatureError;
-use snafu::Snafu;
-#[cfg(feature = "std")]
-use snafu::Backtrace;
+use snafu::{Backtrace, Snafu};
 
-pub type Result<T, E = Error> = core::result::Result<T, E>;
+pub type Result<T, E = Error> = ::std::result::Result<T, E>;
 
 // custom nom error types
 pub const MPI_TOO_LONG: u32 = 1000;
@@ -23,30 +16,20 @@ pub use crate::parsing::{Error as ParsingError, RemainingError};
 #[non_exhaustive]
 pub enum Error {
     #[snafu(display("invalid input"))]
-    InvalidInput {
-        #[cfg(feature = "std")]
-        #[snafu(backtrace)]
-        backtrace: Backtrace,
-    },
+    InvalidInput { backtrace: Option<Backtrace> },
     #[snafu(display("invalid armor wrappers"))]
     InvalidArmorWrappers,
     #[snafu(display("invalid crc24 checksum"))]
     InvalidChecksum,
-    #[snafu(display("base64 decode error: {}", source))]
+    #[snafu(transparent)]
     Base64Decode {
-        source: Base64Error,
-        #[cfg(feature = "std")]
-        #[snafu(backtrace)]
-        backtrace: Backtrace,
+        source: base64::DecodeError,
+        backtrace: Option<Backtrace>,
     },
     #[snafu(display("requested data size is larger than the packet body"))]
     RequestedSizeTooLarge,
     #[snafu(display("no matching packet found"))]
-    NoMatchingPacket {
-        #[cfg(feature = "std")]
-        #[snafu(backtrace)]
-        backtrace: Backtrace,
-    },
+    NoMatchingPacket { backtrace: Option<Backtrace> },
     #[snafu(display("more than one matching packet was found"))]
     TooManyPackets,
     #[snafu(display("packet contained more data than was parsable (trailing bytes {size})"))]
@@ -55,23 +38,17 @@ pub enum Error {
     RSAError {
         #[snafu(source(from(rsa::errors::Error, Box::new)))]
         source: Box<rsa::errors::Error>,
-        #[cfg(feature = "std")]
-        #[snafu(backtrace)]
-        backtrace: Backtrace,
+        backtrace: Option<Backtrace>,
     },
     #[snafu(transparent)]
     EllipticCurve {
         source: elliptic_curve::Error,
-        #[cfg(feature = "std")]
-        #[snafu(backtrace)]
-        backtrace: Backtrace,
+        backtrace: Option<Backtrace>,
     },
-    #[snafu(display("IO error: {}", source))]
+    #[snafu(display("IO error: {}", source), context(false))]
     IO {
-        source: SnafuIoError,
-        #[cfg(feature = "std")]
-        #[snafu(backtrace)]
-        backtrace: Backtrace,
+        source: std::io::Error,
+        backtrace: Option<Backtrace>,
     },
     #[snafu(display("invalid key length"))]
     InvalidKeyLength,
@@ -84,24 +61,18 @@ pub enum Error {
     #[snafu(display("Not yet implemented: {message}"))]
     Unimplemented {
         message: String,
-        #[cfg(feature = "std")]
-        #[snafu(backtrace)]
-        backtrace: Backtrace,
+        backtrace: Option<Backtrace>,
     },
     /// Signals packet versions and parameters we don't support, but can safely ignore
     #[snafu(display("Unsupported: {message}"))]
     Unsupported {
         message: String,
-        #[cfg(feature = "std")]
-        #[snafu(backtrace)]
-        backtrace: Backtrace,
+        backtrace: Option<Backtrace>,
     },
     #[snafu(display("{message}"))]
     Message {
         message: String,
-        #[cfg(feature = "std")]
-        #[snafu(backtrace)]
-        backtrace: Backtrace,
+        backtrace: Option<Backtrace>,
     },
     #[snafu(display("Invalid Packet {kind:?}"))]
     PacketError { kind: nom::error::ErrorKind },
@@ -111,17 +82,13 @@ pub enum Error {
     PadError,
     #[snafu(transparent)]
     Utf8Error {
-        source: core::str::Utf8Error,
-        #[cfg(feature = "std")]
-        #[snafu(backtrace)]
-        backtrace: Backtrace,
+        source: std::str::Utf8Error,
+        backtrace: Option<Backtrace>,
     },
     #[snafu(transparent)]
     ParseIntError {
-        source: core::num::ParseIntError,
-        #[cfg(feature = "std")]
-        #[snafu(backtrace)]
-        backtrace: Backtrace,
+        source: std::num::ParseIntError,
+        backtrace: Option<Backtrace>,
     },
     #[snafu(display("Invalid Packet Content {source:?}"))]
     InvalidPacketContent { source: Box<Error> },
@@ -132,9 +99,7 @@ pub enum Error {
     #[snafu(transparent)]
     TryFromInt {
         source: TryFromIntError,
-        #[cfg(feature = "std")]
-        #[snafu(backtrace)]
-        backtrace: Backtrace,
+        backtrace: Option<Backtrace>,
     },
     #[snafu(display("AEAD {:?}", source), context(false))]
     Aead { source: crate::crypto::aead::Error },
@@ -150,46 +115,32 @@ pub enum Error {
     Sha1HashCollision {
         source: crate::crypto::checksum::Sha1HashCollision,
     },
-    #[snafu(display("AES KEK error: {}", msg))]
-    AesKek {
-        msg: String,
-    },
+    #[snafu(transparent)]
+    AesKek { source: aes_kw::Error },
     #[snafu(transparent)]
     PacketParsing {
-        source: ParsingError,
-        #[cfg(feature = "std")]
-        #[snafu(backtrace)]
-        backtrace: Backtrace,
+        #[snafu(backtrace, source(from(ParsingError, Box::new)))]
+        source: Box<ParsingError>,
     },
     #[snafu(display("packet is incomplete"))]
     PacketIncomplete {
-        source: ParsingError,
-        #[cfg(feature = "std")]
         #[snafu(backtrace)]
-        backtrace: Backtrace,
+        source: Box<ParsingError>,
     },
-    #[snafu(display("Argon2 error: {}", msg))]
-        Argon2 {
-            msg: String,
-            #[cfg(feature = "std")]
-            #[snafu(backtrace)]
-            backtrace: Backtrace,
-        },
-        #[snafu(transparent)]
-        SigningError { source: cx448::SigningError },
-    }
-    
-    impl Error {
-        pub fn is_incomplete(&self) -> bool {
-            matches!(self, Error::PacketIncomplete { .. })
-        }
-    }
+    #[snafu(transparent)]
+    Argon2 {
+        source: argon2::Error,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(transparent)]
+    SigningError { source: cx448::SigningError },
+}
 
 impl From<crate::crypto::hash::Error> for Error {
     fn from(err: crate::crypto::hash::Error) -> Self {
         match err {
             crate::crypto::hash::Error::Unsupported { alg } => UnsupportedSnafu {
-                message: format!("hash algorithm: {:?}", alg),
+                message: format!("hash algorithm: {alg:?}"),
             }
             .build(),
             crate::crypto::hash::Error::Sha1HashCollision { source } => source.into(),
@@ -219,50 +170,7 @@ impl From<String> for Error {
     fn from(err: String) -> Error {
         Error::Message {
             message: err,
-            #[cfg(feature = "std")]
-            backtrace: snafu::GenerateImplicitData::generate(),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct SnafuIoError(pub crate::io::Error);
-
-impl fmt::Display for SnafuIoError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl snafu::Error for SnafuIoError {}
-
-impl From<crate::io::Error> for Error {
-    fn from(e: crate::io::Error) -> Self {
-        Error::IO {
-            source: SnafuIoError(e),
-            #[cfg(feature = "std")]
-            backtrace: snafu::GenerateImplicitData::generate(),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct Base64Error(pub base64ct::Error);
-
-impl fmt::Display for Base64Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl snafu::Error for Base64Error {}
-
-impl From<base64ct::Error> for Error {
-    fn from(e: base64ct::Error) -> Self {
-        Error::Base64Decode {
-            source: Base64Error(e),
-            #[cfg(feature = "std")]
-            backtrace: snafu::GenerateImplicitData::generate(),
+            backtrace: Some(snafu::GenerateImplicitData::generate()),
         }
     }
 }
@@ -271,8 +179,7 @@ impl From<derive_builder::UninitializedFieldError> for Error {
     fn from(err: derive_builder::UninitializedFieldError) -> Error {
         Error::Message {
             message: err.to_string(),
-            #[cfg(feature = "std")]
-            backtrace: snafu::GenerateImplicitData::generate(),
+            backtrace: Some(snafu::GenerateImplicitData::generate()),
         }
     }
 }
@@ -303,14 +210,12 @@ macro_rules! bail {
     ($e:expr) => {
         return Err($crate::errors::Error::Message {
             message: $e.to_string(),
-            #[cfg(feature = "std")]
             backtrace: ::snafu::GenerateImplicitData::generate(),
         })
     };
     ($fmt:expr, $($arg:tt)+) => {
         return Err($crate::errors::Error::Message {
             message: format!($fmt, $($arg)+),
-            #[cfg(feature = "std")]
             backtrace: ::snafu::GenerateImplicitData::generate(),
         })
     };
@@ -320,14 +225,12 @@ macro_rules! format_err {
     ($e:expr) => {
         $crate::errors::Error::Message {
             message: $e.to_string(),
-            #[cfg(feature = "std")]
             backtrace: ::snafu::GenerateImplicitData::generate(),
         }
     };
     ($fmt:expr, $($arg:tt)+) => {
         $crate::errors::Error::Message {
             message: format!($fmt, $($arg)+),
-            #[cfg(feature = "std")]
             backtrace: ::snafu::GenerateImplicitData::generate(),
         }
     };

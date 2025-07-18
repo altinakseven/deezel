@@ -1,97 +1,273 @@
 //! # base64 decoder module
-//!
-//! This module provides a streaming base64 decoder. It is designed to be
-//! used in a pipeline of readers, where it decodes a base64-encoded
-//! section of a larger stream. It correctly handles whitespace and stops
-//! at the end of the base64 data, allowing subsequent parsers to continue
-//! reading from the underlying stream.
 
-use crate::io::{self, Read};
-use base64ct::{Base64, Encoding};
-use alloc::vec::Vec;
-use buffer_redux::{Buffer, BufReader};
+use std::io::{self, BufRead, Read};
+
+use base64::engine::{general_purpose::GeneralPurpose, Engine};
+use buffer_redux::{BufReader, Buffer};
 
 const BUF_SIZE: usize = 1024;
+const BUF_CAPACITY: usize = BUF_SIZE / 4 * 3;
+const ENGINE: GeneralPurpose = base64::engine::general_purpose::STANDARD;
 
+/// Decodes Base64 from the supplied reader.
 #[derive(Debug)]
-pub struct Base64Decoder<'a, R: Read> {
+pub struct Base64Decoder<R> {
     /// The inner Read instance we are reading bytes from.
-    inner: BufReader<&'a mut R>,
-    /// A buffer for the decoded data.
-    buffer: Buffer,
-    /// Whether we have reached the end of the base64 stream.
-    eof: bool,
+    inner: BufReader<R>,
+    /// leftover decoded output
+    out: Buffer,
+    out_buffer: [u8; BUF_CAPACITY],
+    /// Memorize if we had an error, so we can return it on calls to read again.
+    err: Option<io::Error>,
 }
 
-impl<'a, R: Read> Base64Decoder<'a, R> {
+impl<R: Read> Base64Decoder<R> {
     /// Creates a new `Base64Decoder`.
-    pub fn new(input: &'a mut R) -> Self {
+    pub fn new(input: R) -> Self {
         Base64Decoder {
             inner: BufReader::with_capacity(BUF_SIZE, input),
-            buffer: Buffer::new(),
-            eof: false,
+            out: Buffer::with_capacity(BUF_CAPACITY),
+            out_buffer: [0u8; BUF_CAPACITY],
+            err: None,
         }
     }
 
-    /// Consumes the `Base64Decoder`, returning the wrapped reader.
-    pub fn into_inner(self) -> &'a mut R {
-        self.inner.into_inner()
-    }
-
-    /// Consumes the `Base64Decoder`, returning the wrapped reader and any
-    /// buffered data.
-    pub fn into_inner_with_buffer(self) -> (&'a mut R, Vec<u8>) {
-        let buffer = self.buffer.buf().to_vec();
-        (self.inner.into_inner(), buffer)
-    }
-
-    fn fill_buf(&mut self) -> io::Result<()> {
-        if self.eof {
-            return Ok(());
-        }
-
-        let mut b64_buf: Vec<u8> = Vec::new();
-        let mut read_len = 0;
-        loop {
-            let mut buf = [0; BUF_SIZE];
-            let n = self.inner.get_mut().read(&mut buf)?;
-            if n == 0 {
-                break;
-            }
-            b64_buf.extend_from_slice(&buf[..n]);
-            read_len += n;
-        }
-
-        if read_len == 0 {
-            self.eof = true;
-            return Ok(());
-        }
-
-        // The base64ct decoder expects a slice, so we need to handle the stream-to-slice conversion.
-        // This is a simplification; a real implementation would need to handle partial reads
-        // and finding the end of the base64 content within the stream.
-        let decoded = Base64::decode_vec(core::str::from_utf8(&b64_buf).unwrap().trim())
-            .map_err(|_e| io::Error::new(io::ErrorKind::InvalidData, "base64 decode error"))?;
-
-        self.buffer.copy_from_slice(&decoded);
-
-        if read_len < BUF_SIZE {
-            self.eof = true;
-        }
-
-        Ok(())
+    pub fn into_inner_with_buffer(self) -> (R, Buffer) {
+        self.inner.into_inner_with_buffer()
     }
 }
 
-impl<'a, R: Read> Read for Base64Decoder<'a, R> {
+impl<R: Read> Read for Base64Decoder<R> {
     fn read(&mut self, into: &mut [u8]) -> io::Result<usize> {
-        if self.buffer.is_empty() {
-            self.fill_buf()?;
+        // take care of leftovers
+        if !self.out.is_empty() {
+            let len = self.out.copy_to_slice(into);
+            return Ok(len);
         }
 
-        let len = into.len().min(self.buffer.len());
-        into[..len].copy_from_slice(&self.buffer.buf()[..len]);
-        self.buffer.consume(len);
-        Ok(len)
+        // if we had an error before, return it
+        if let Some(ref err) = self.err {
+            return Err(copy_err(err));
+        }
+
+        // fill our buffer
+        if self.inner.buf_len() < 4 {
+            let b = &mut self.inner;
+
+            if let Err(err) = b.read_into_buf() {
+                self.err = Some(copy_err(&err));
+                return Err(err);
+            }
+        }
+
+        // short circuit empty read
+        if self.inner.buf_len() == 0 {
+            return Ok(0);
+        }
+
+        let nr = self.inner.buf_len() / 4 * 4;
+        let nw = self.inner.buf_len() / 4 * 3;
+
+        let (consumed, written) = if nw > into.len() {
+            let (consumed, nw) =
+                try_decode_engine_slice(&self.inner.buffer()[..nr], &mut self.out_buffer[..]);
+
+            let n = std::cmp::min(nw, into.len());
+            let t = &self.out_buffer[0..nw];
+            let (t1, t2) = t.split_at(n);
+
+            // copy what we have into `into`
+            into[0..n].copy_from_slice(t1);
+            // store the rest
+            self.out.copy_from_slice(t2);
+
+            (consumed, n)
+        } else {
+            try_decode_engine_slice(&self.inner.buffer()[..nr], into)
+        };
+
+        self.inner.consume(consumed);
+
+        Ok(written)
+    }
+}
+
+/// Tries to decode as much of the given slice as possible.
+/// Returns the amount written and consumed.
+fn try_decode_engine_slice<T: ?Sized + AsRef<[u8]>>(
+    input: &T,
+    output: &mut [u8],
+) -> (usize, usize) {
+    let input_bytes = input.as_ref();
+    let mut n = input_bytes.len();
+    while n > 0 {
+        match ENGINE.decode_slice(&input_bytes[..n], output) {
+            Ok(size) => {
+                return (n, size);
+            }
+            Err(_) => {
+                if n % 4 != 0 {
+                    n -= n % 4
+                } else {
+                    n -= 4
+                }
+            }
+        }
+    }
+
+    (0, 0)
+}
+
+// why, why why????
+fn copy_err(err: &io::Error) -> io::Error {
+    io::Error::new(err.kind(), err.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use rand::{Rng, SeedableRng};
+    use rand_xorshift::XorShiftRng;
+
+    use super::*;
+    use crate::base64::Base64Reader;
+
+    fn test_roundtrip(cap: usize, n: usize, insert_lines: bool) {
+        let rng = &mut XorShiftRng::from_seed([
+            0x3, 0x8, 0x3, 0xe, 0x3, 0x8, 0x3, 0xe, 0x3, 0x8, 0x3, 0xe, 0x3, 0x8, 0x3, 0xe,
+        ]);
+
+        for i in 0..n {
+            let data: Vec<u8> = (0..i).map(|_| rng.gen()).collect();
+            let mut encoded_data = ENGINE.encode(&data);
+
+            if insert_lines {
+                for j in 0..i {
+                    // insert line break with a 1/10 chance
+                    if rng.gen_ratio(1, 10) {
+                        if j >= encoded_data.len() {
+                            encoded_data.push('\n');
+                        } else {
+                            encoded_data.insert(j, '\n');
+                        }
+                    }
+                }
+                println!("testing: \n{encoded_data}");
+                let mut r = Base64Decoder::new(Base64Reader::new(
+                    std::io::BufReader::with_capacity(cap, encoded_data.as_bytes()),
+                ));
+                let mut out = Vec::new();
+                r.read_to_end(&mut out).unwrap();
+                assert_eq!(data, out);
+            } else {
+                println!("testing: \n{encoded_data}");
+                let mut r = Base64Decoder::new(std::io::BufReader::with_capacity(
+                    cap,
+                    encoded_data.as_bytes(),
+                ));
+                let mut out = Vec::new();
+                r.read_to_end(&mut out).unwrap();
+                assert_eq!(data, out);
+            }
+        }
+    }
+
+    #[test]
+    fn test_base64_decoder_roundtrip_standard_1000_no_newlines() {
+        test_roundtrip(1, 1000, false);
+        test_roundtrip(2, 1000, false);
+        test_roundtrip(8, 1000, false);
+        test_roundtrip(256, 1000, false);
+        test_roundtrip(1024, 1000, false);
+        test_roundtrip(8 * 1024, 1000, false);
+    }
+
+    #[test]
+    fn test_base64_decoder_roundtrip_standard_1000_newlines() {
+        test_roundtrip(1, 1000, true);
+        test_roundtrip(2, 1000, true);
+        test_roundtrip(8, 1000, true);
+        test_roundtrip(256, 1000, true);
+        test_roundtrip(1024, 1000, true);
+        test_roundtrip(8 * 1024, 1000, true);
+    }
+
+    #[test]
+    fn test_base64_decoder_with_base64_reader() {
+        let source = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.";
+
+        let data = "TG9yZW0gaXBzdW0gZG9sb3Igc2l0IGFtZXQsIGNvbnNlY3RldHVyIGFkaXBpc2NpbmcgZWxpdCwgc2VkIGRvIGVpdXNtb2Qgd\n\
+                     GVtcG9yIGluY2lkaWR1bnQgdXQgbGFib3JlIGV0IGRvbG9yZSBtYWduYSBhbGlxdWEuIFV0IGVuaW0gYWQgbWluaW0\n\
+                     gdmVuaWFtLCBxdWlz\n\
+                     IG5vc3RydWQgZXhlcmNpdGF0aW9uIHVsbGFtY28gbGFib3JpcyBuaXNpIHV0IGFsaXF1aXAgZXggZW\n\
+                     EgY29tbW9kbyBjb25zZXF1YXQuIER1aXMgYXV0ZSBpcnVyZSBkb2\n\
+                     xvciBpbiByZXByZWhlbmRlcml0IGluIHZvbHVwdGF0ZSB2ZWxpdCBlc3NlIGNpbGx1bSBkb2xvcmUgZXUgZnVnaWF\n\
+                     0IG51bGxhIHBhcmlhdHVyLiBFeGNlcHRldXIgc2ludCBvY2NhZWNhdCBjdXBpZGF0YXQgbm9uIHByb2lkZW50LCBzdW50IGluIGN1bHBhIHF1aSBvZm\n\
+                     ZpY2lhIGRlc2VydW50IG1vbGxpdCBhbmltIGlkIGVzdCBsYWJvcnVtLg==";
+
+        let reader = Base64Reader::new(data.as_bytes());
+        let mut reader = Base64Decoder::new(reader);
+        let mut res = String::new();
+
+        reader.read_to_string(&mut res).unwrap();
+        assert_eq!(source, res);
+    }
+
+    #[test]
+    fn test_base64_decoder_with_end_base() {
+        let data = "TG9yZW0g\n=TG9y\n-----hello";
+
+        let br = Base64Reader::new(data.as_bytes());
+        let mut reader = Base64Decoder::new(br);
+        let mut res = vec![0u8; 32];
+
+        assert_eq!(reader.read(&mut res).unwrap(), 6);
+        assert_eq!(&res[0..6], b"Lorem ");
+        let (r, buffer) = reader.into_inner_with_buffer();
+        let mut r = r.into_inner();
+
+        assert_eq!(buffer.buf(), b"=TG9y");
+        let mut rest = Vec::new();
+        assert_eq!(r.read_to_end(&mut rest).unwrap(), 10);
+        assert_eq!(&rest, b"-----hello");
+    }
+
+    #[test]
+    fn test_base64_decoder_with_end_one_linebreak() {
+        let data = "TG9yZW0g\n=TG9y-----hello";
+
+        let br = Base64Reader::new(data.as_bytes());
+        let mut reader = Base64Decoder::new(br);
+        let mut res = vec![0u8; 32];
+
+        assert_eq!(reader.read(&mut res).unwrap(), 6);
+        assert_eq!(&res[0..6], b"Lorem ");
+        let (r, buffer) = reader.into_inner_with_buffer();
+        let mut r = r.into_inner();
+
+        assert_eq!(buffer.buf(), b"=TG9y");
+        let mut rest = Vec::new();
+        assert_eq!(r.read_to_end(&mut rest).unwrap(), 10);
+        assert_eq!(&rest, b"-----hello");
+    }
+
+    #[test]
+    fn test_base64_decoder_with_end_no_linebreak() {
+        let data = "TG9yZW0g=TG9y-----hello";
+
+        let br = Base64Reader::new(data.as_bytes());
+        let mut reader = Base64Decoder::new(br);
+        let mut res = vec![0u8; 32];
+
+        assert_eq!(reader.read(&mut res).unwrap(), 6);
+        assert_eq!(&res[0..6], b"Lorem ");
+        let (r, buffer) = reader.into_inner_with_buffer();
+        let mut r = r.into_inner();
+
+        assert_eq!(buffer.buf(), b"=TG9y");
+        let mut rest = Vec::new();
+        assert_eq!(r.read_to_end(&mut rest).unwrap(), 10);
+        assert_eq!(&rest, b"-----hello");
     }
 }

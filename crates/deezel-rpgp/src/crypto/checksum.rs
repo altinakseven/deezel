@@ -1,8 +1,6 @@
-extern crate alloc;
-use crate::io;
-use core::hash::Hasher;
+use std::{hash::Hasher, io};
 
-use byteorder::{BigEndian, ByteOrder};
+use byteorder::{BigEndian, ByteOrder, WriteBytesExt};
 use snafu::Snafu;
 
 #[derive(Debug, Snafu)]
@@ -50,9 +48,7 @@ pub struct SimpleChecksum(u16);
 impl SimpleChecksum {
     #[inline]
     pub fn to_writer<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
-        let mut buf = [0u8; 2];
-        BigEndian::write_u16(&mut buf, self.0);
-        writer.write_all(&buf)
+        writer.write_u16::<BigEndian>(self.0)
     }
 
     #[inline]
@@ -64,7 +60,17 @@ impl SimpleChecksum {
     }
 }
 
+impl io::Write for SimpleChecksum {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        Hasher::write(self, buf);
 
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
 
 impl Hasher for SimpleChecksum {
     #[inline]
@@ -76,17 +82,6 @@ impl Hasher for SimpleChecksum {
     #[inline]
     fn finish(&self) -> u64 {
         u64::from(self.0)
-    }
-}
-
-impl io::Write for SimpleChecksum {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        <Self as Hasher>::write(self, buf);
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
     }
 }
 

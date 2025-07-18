@@ -1,8 +1,3 @@
-use alloc::string::{String, ToString};
-use alloc::vec;
-use alloc::vec::Vec;
-use alloc::format;
-extern crate alloc;
 use const_oid::ObjectIdentifier;
 
 use crate::{
@@ -11,7 +6,7 @@ use crate::{
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-#[cfg_attr(all(test, feature = "std"), derive(proptest_derive::Arbitrary))]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub enum ECCCurve {
     Curve25519,
     Ed25519,
@@ -22,7 +17,7 @@ pub enum ECCCurve {
     BrainpoolP384r1,
     BrainpoolP512r1,
     Secp256k1,
-    #[cfg_attr(all(test, feature = "std"), proptest(skip))]
+    #[cfg_attr(test, proptest(skip))]
     Unknown(ObjectIdentifier),
 }
 
@@ -230,8 +225,8 @@ fn asn1_der_object_id_val_enc(val: u32) -> Vec<u8> {
     acc
 }
 
-impl core::fmt::Display for ECCCurve {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+impl std::fmt::Display for ECCCurve {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.name())
     }
 }

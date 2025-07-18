@@ -180,16 +180,19 @@ impl ConcreteProvider {
             .map_err(|e| DeezelError::Pgp(format!("Failed to armor secret key: {:?}", e)))?
             .into_bytes();
 
+        // Get the public part of the key to access details
+        let public_key = key.signed_public_key();
+
         // Extract key information
-        let fingerprint = hex::encode(key.fingerprint().as_bytes());
-        let key_id = hex::encode(key.key_id().as_ref());
-        let user_ids = key.details.users.iter()
+        let fingerprint = hex::encode(public_key.fingerprint().as_bytes());
+        let key_id = hex::encode(public_key.key_id().as_ref());
+        let user_ids = public_key.details.users.iter()
             .map(|user| String::from_utf8_lossy(user.id.id()).to_string())
             .collect();
-        let creation_time = key.created_at().timestamp() as u64;
+        let creation_time = public_key.created_at().timestamp() as u64;
 
         let algorithm = PgpAlgorithm {
-            public_key_algorithm: format!("{:?}", key.algorithm()),
+            public_key_algorithm: format!("{:?}", public_key.algorithm()),
             symmetric_algorithm: Some("AES256".to_string()),
             hash_algorithm: Some("SHA256".to_string()),
             compression_algorithm: Some("ZLIB".to_string()),
@@ -202,7 +205,7 @@ impl ConcreteProvider {
             key_id,
             user_ids,
             creation_time,
-            expiration_time: key.expires_at().map(|t| t.timestamp() as u64),
+            expiration_time: public_key.expires_at().map(|t| t.timestamp() as u64),
             algorithm,
         })
     }

@@ -1,4 +1,3 @@
-extern crate alloc;
 use num_enum::TryFromPrimitive;
 use smallvec::SmallVec;
 

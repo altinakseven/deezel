@@ -1,5 +1,4 @@
-extern crate alloc;
-use crate::io::{BufRead, Write};
+use std::io::{self, BufRead};
 
 use bytes::Bytes;
 
@@ -125,37 +124,37 @@ impl PublicParams {
     pub fn try_from_reader<B: BufRead>(
         typ: PublicKeyAlgorithm,
         len: Option<usize>,
-        mut i: B,
+        i: B,
     ) -> Result<PublicParams> {
         match typ {
             PublicKeyAlgorithm::RSA
             | PublicKeyAlgorithm::RSAEncrypt
             | PublicKeyAlgorithm::RSASign => {
-                let params = RsaPublicParams::try_from_reader(&mut i)?;
+                let params = RsaPublicParams::try_from_reader(i)?;
                 Ok(PublicParams::RSA(params))
             }
             PublicKeyAlgorithm::DSA => {
-                let params = DsaPublicParams::try_from_reader(&mut i)?;
+                let params = DsaPublicParams::try_from_reader(i)?;
                 Ok(PublicParams::DSA(params))
             }
             PublicKeyAlgorithm::ECDSA => {
-                let params = EcdsaPublicParams::try_from_reader(&mut i, len)?;
+                let params = EcdsaPublicParams::try_from_reader(i, len)?;
                 Ok(PublicParams::ECDSA(params))
             }
             PublicKeyAlgorithm::ECDH => {
-                let params = EcdhPublicParams::try_from_reader(&mut i, len)?;
+                let params = EcdhPublicParams::try_from_reader(i, len)?;
                 Ok(PublicParams::ECDH(params))
             }
             PublicKeyAlgorithm::Elgamal => {
-                let params = ElgamalPublicParams::try_from_reader(&mut i, false)?;
+                let params = ElgamalPublicParams::try_from_reader(i, false)?;
                 Ok(PublicParams::Elgamal(params))
             }
             PublicKeyAlgorithm::ElgamalEncrypt => {
-                let params = ElgamalPublicParams::try_from_reader(&mut i, true)?;
+                let params = ElgamalPublicParams::try_from_reader(i, true)?;
                 Ok(PublicParams::Elgamal(params))
             }
             PublicKeyAlgorithm::EdDSALegacy => {
-                let params = EddsaLegacyPublicParams::try_from_reader(&mut i, len)?;
+                let params = EddsaLegacyPublicParams::try_from_reader(i, len)?;
                 Ok(PublicParams::EdDSALegacy(params))
             }
             PublicKeyAlgorithm::Ed25519 => {
@@ -282,7 +281,7 @@ fn unknown<B: BufRead>(mut i: B, len: Option<usize>) -> Result<PublicParams> {
 }
 
 impl Serialize for PublicParams {
-    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
         match self {
             PublicParams::RSA(params) => {
                 params.to_writer(writer)?;
@@ -419,9 +418,8 @@ impl Serialize for PublicParams {
     }
 }
 
-#[cfg(all(test, feature = "std"))]
+#[cfg(test)]
 mod tests {
-    use alloc::{format, vec::Vec};
     use proptest::prelude::*;
 
     use super::*;
@@ -447,6 +445,12 @@ mod tests {
             params.to_writer(&mut buf)?;
             let new_params = PublicParams::try_from_reader(alg, None, &mut &buf[..])?;
             prop_assert_eq!(params, new_params);
+        }
+    }
+
+    impl Default for PublicKeyAlgorithm {
+        fn default() -> Self {
+            unreachable!("must not be used, only here for testing");
         }
     }
 
@@ -476,11 +480,10 @@ mod tests {
                 PublicKeyAlgorithm::ECDH => any::<EcdhPublicParams>()
                     .prop_map(PublicParams::ECDH)
                     .boxed(),
-                PublicKeyAlgorithm::Elgamal | PublicKeyAlgorithm::ElgamalEncrypt => {
-                    any::<ElgamalPublicParams>()
-                        .prop_map(PublicParams::Elgamal)
-                        .boxed()
-                }
+                PublicKeyAlgorithm::Elgamal => any::<ElgamalPublicParams>()
+                    .boxed()
+                    .prop_map(PublicParams::Elgamal)
+                    .boxed(),
                 PublicKeyAlgorithm::EdDSALegacy => any::<EddsaLegacyPublicParams>()
                     .prop_map(PublicParams::EdDSALegacy)
                     .boxed(),

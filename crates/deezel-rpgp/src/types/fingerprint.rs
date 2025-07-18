@@ -1,6 +1,3 @@
-use alloc::boxed::Box;
-use alloc::format;
-extern crate alloc;
 use crate::{
     errors::{bail, format_err, Result},
     types::KeyVersion,
@@ -11,6 +8,7 @@ use crate::{
 /// OpenPGP fingerprints consist of two pieces of information:
 /// The key version, and binary data that represents the fingerprint itself.
 #[derive(Clone, Eq, Hash, PartialEq, derive_more::Debug, derive_more::Display)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub enum Fingerprint {
     #[debug("{}", hex::encode(_0))]
     #[display("{}", hex::encode(_0))]
@@ -30,6 +28,7 @@ pub enum Fingerprint {
 
     #[debug("{}", hex::encode(_0))]
     #[display("{}", hex::encode(_0))]
+    #[cfg_attr(test, proptest(skip))]
     /// Fingerprint with unknown key version
     Unknown(Box<[u8]>),
 }
@@ -104,5 +103,56 @@ impl Fingerprint {
             Self::V5(fp) | Self::V6(fp) => &fp[..],
             Self::Unknown(fp) => fp,
         }
+    }
+}
+
+impl AsRef<[u8]> for Fingerprint {
+    fn as_ref(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
+
+impl std::fmt::UpperHex for Fingerprint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", hex::encode_upper(self))
+    }
+}
+
+impl std::fmt::LowerHex for Fingerprint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", hex::encode(self))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fingerprint_as_ref() {
+        let fingerprint = Fingerprint::V4([0; 20]);
+        // hex::encode accepts AsRef<[u8]>s
+        assert_eq!(
+            "0000000000000000000000000000000000000000",
+            hex::encode(fingerprint)
+        );
+    }
+
+    #[test]
+    fn fingerprint_upper_hex() {
+        let fingerprint = Fingerprint::V4([10; 20]);
+        assert_eq!(
+            "0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A",
+            format!("{fingerprint:X}")
+        );
+    }
+
+    #[test]
+    fn fingerprint_lower_hex() {
+        let fingerprint = Fingerprint::V4([10; 20]);
+        assert_eq!(
+            "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+            format!("{fingerprint:x}")
+        );
     }
 }

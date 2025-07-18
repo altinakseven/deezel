@@ -1,15 +1,14 @@
-extern crate alloc;
-use alloc::vec::Vec;
+use std::io;
+
 use bytes::{Buf, BytesMut};
 use zeroize::Zeroizing;
 
-use super::{ChunkSize, InvalidSessionKeySnafu};
+use super::{aead_setup_rfc9580, ChunkSize, InvalidSessionKeySnafu};
 use crate::{
     crypto::{
-        aead::{aead_setup, AeadAlgorithm, Error},
+        aead::{AeadAlgorithm, Error},
         sym::SymmetricKeyAlgorithm,
     },
-    io::{self, Read},
     util::fill_buffer,
 };
 
@@ -29,7 +28,7 @@ pub struct StreamEncryptor<R> {
     sym_alg: SymmetricKeyAlgorithm,
 }
 
-impl<R: Read> StreamEncryptor<R> {
+impl<R: io::Read> StreamEncryptor<R> {
     /// Encrypts the data using the given symmetric key.
     pub(crate) fn new(
         sym_alg: SymmetricKeyAlgorithm,
@@ -48,7 +47,7 @@ impl<R: Read> StreamEncryptor<R> {
         }
 
         let (info, message_key, nonce) =
-            aead_setup(sym_alg, aead, chunk_size, &salt[..], session_key);
+            aead_setup_rfc9580(sym_alg, aead, chunk_size, &salt[..], session_key);
         let chunk_size_expanded: usize = chunk_size
             .as_byte_size()
             .try_into()
@@ -72,7 +71,7 @@ impl<R: Read> StreamEncryptor<R> {
     }
 
     /// Constructs the final auth tag
-    fn create_final_auth_tag(&mut self) -> Result<(), Error> {
+    fn create_final_auth_tag(&mut self) -> io::Result<()> {
         // Associated data is extended with number of plaintext octets.
         let mut final_info = self.info.to_vec();
         // length: 8 octets as big endian
@@ -87,7 +86,8 @@ impl<R: Read> StreamEncryptor<R> {
                 &self.nonce,
                 &final_info,
                 &mut self.buffer,
-            )?;
+            )
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
         Ok(())
     }
@@ -102,7 +102,7 @@ impl<R: Read> StreamEncryptor<R> {
         let read_u64 = read.try_into().map_err(|_| {
             io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "too much data read",
+                "too much data read".to_string(),
             )
         })?;
         self.bytes_read = match self.bytes_read.checked_add(read_u64) {
@@ -110,15 +110,14 @@ impl<R: Read> StreamEncryptor<R> {
             None => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
-                    "can not read more than u64::MAX data",
+                    "can not read more than u64::MAX data".to_string(),
                 ));
             }
         };
         if read == 0 {
             self.is_source_done = true;
             // time to write the final chunk
-            self.create_final_auth_tag()
-                .map_err(|_e| io::Error::new(io::ErrorKind::InvalidData, "aead error"))?;
+            self.create_final_auth_tag()?;
 
             return Ok(());
         }
@@ -132,7 +131,7 @@ impl<R: Read> StreamEncryptor<R> {
                 &self.info,
                 &mut self.buffer,
             )
-            .map_err(|_e| io::Error::new(io::ErrorKind::InvalidData, "aead error"))?;
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
         // Update nonce to include the next chunk index
         self.chunk_index += 1;
@@ -143,7 +142,7 @@ impl<R: Read> StreamEncryptor<R> {
     }
 }
 
-impl<R: Read> Read for StreamEncryptor<R> {
+impl<R: io::Read> io::Read for StreamEncryptor<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if !self.buffer.has_remaining() {
             if !self.is_source_done {

@@ -1,11 +1,11 @@
-extern crate alloc;
-use crate::io::{BufRead, Read, Result};
-use alloc::vec::Vec;
-use core::cmp;
+use std::{
+    cmp,
+    io::{BufRead, Read, Result},
+};
 
 use bytes::{Bytes, BytesMut};
 
-pub trait BufReadParsing: BufRead + Read + Sized {
+pub trait BufReadParsing: BufRead + Sized {
     fn read_u8(&mut self) -> Result<u8> {
         let arr = self.read_array::<1>()?;
         Ok(arr[0])
@@ -51,8 +51,8 @@ pub trait BufReadParsing: BufRead + Read + Sized {
             self.consume(available);
         }
         if read != arr.len() {
-            return Err(crate::io::Error::new(
-                crate::io::ErrorKind::UnexpectedEof,
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
                 "no more data available",
             ));
         }
@@ -77,8 +77,8 @@ pub trait BufReadParsing: BufRead + Read + Sized {
             self.consume(available);
         }
         if read != arr.len() {
-            return Err(crate::io::Error::new(
-                crate::io::ErrorKind::UnexpectedEof,
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
                 "no more data available",
             ));
         }
@@ -103,8 +103,8 @@ pub trait BufReadParsing: BufRead + Read + Sized {
         }
 
         if arr.len() != size {
-            return Err(crate::io::Error::new(
-                crate::io::ErrorKind::UnexpectedEof,
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
                 "no more data available",
             ));
         }
@@ -118,15 +118,7 @@ pub trait BufReadParsing: BufRead + Read + Sized {
 
     fn rest(&mut self) -> Result<BytesMut> {
         let mut buffer = Vec::new();
-        loop {
-            let mut buf = [0u8; 4096];
-            match self.read(&mut buf) {
-                Ok(0) => break,
-                Ok(n) => buffer.extend_from_slice(&buf[..n]),
-                Err(ref e) if e.kind() == crate::io::ErrorKind::Interrupted => continue,
-                Err(e) => return Err(e),
-            }
-        }
+        self.read_to_end(&mut buffer)?;
         Ok(Bytes::from(buffer).into())
     }
 
@@ -148,9 +140,13 @@ pub trait BufReadParsing: BufRead + Read + Sized {
     fn read_tag<const C: usize>(&mut self, tag: &[u8; C]) -> Result<()> {
         let found_tag = self.read_array::<C>()?;
         if tag != &found_tag {
-            return Err(crate::io::Error::new(
-                crate::io::ErrorKind::InvalidInput,
-                "invalid tag",
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!(
+                    "expected {}, found {}",
+                    hex::encode(tag),
+                    hex::encode(found_tag)
+                ),
             ));
         }
         Ok(())

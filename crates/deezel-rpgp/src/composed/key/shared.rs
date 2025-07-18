@@ -1,8 +1,5 @@
-use alloc::vec::Vec;
-use alloc::vec;
-extern crate alloc;
 use aes_gcm::aead::rand_core::CryptoRng;
-use chrono::TimeZone;
+use chrono::SubsecRound;
 use rand::Rng;
 use smallvec::SmallVec;
 
@@ -74,7 +71,7 @@ impl KeyDetails {
         let subpackets_with_metadata = || -> Result<Vec<Subpacket>> {
             Ok(vec![
                 Subpacket::regular(SubpacketData::SignatureCreationTime(
-                    chrono::Utc.timestamp_opt(0, 0).single().expect("invalid time"),
+                    chrono::Utc::now().trunc_subsecs(0),
                 ))?,
                 Subpacket::regular(SubpacketData::IssuerFingerprint(key.fingerprint()))?,
                 Subpacket::regular(SubpacketData::KeyFlags(self.keyflags.clone()))?,
@@ -97,7 +94,7 @@ impl KeyDetails {
         let basic_subpackets = || -> Result<Vec<Subpacket>> {
             Ok(vec![
                 Subpacket::regular(SubpacketData::SignatureCreationTime(
-                    chrono::Utc.timestamp_opt(0, 0).single().expect("invalid time"),
+                    chrono::Utc::now().trunc_subsecs(0),
                 ))?,
                 Subpacket::regular(SubpacketData::IssuerFingerprint(key.fingerprint()))?,
             ])

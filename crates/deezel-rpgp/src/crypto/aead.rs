@@ -1,6 +1,3 @@
-use alloc::vec;
-use alloc::vec::Vec;
-extern crate alloc;
 use aes::{Aes128, Aes192, Aes256};
 use aes_gcm::{
     aead::{consts::U12, AeadInPlace, KeyInit},
@@ -19,7 +16,7 @@ use snafu::Snafu;
 use zeroize::Zeroizing;
 
 use super::sym::SymmetricKeyAlgorithm;
-use crate::{errors::SnafuIoError, types::Tag};
+use crate::types::Tag;
 
 type Aes128Ocb3 = Ocb3<Aes128, U15, U16>;
 type Aes192Ocb3 = Ocb3<Aes192, U15, U16>;
@@ -47,20 +44,11 @@ pub enum Error {
     Decrypt { alg: AeadAlgorithm },
     #[snafu(display("encryption failed: {:?}", alg))]
     Encrypt { alg: AeadAlgorithm },
-    #[snafu(display("IO error: {}", source))]
-    Io { source: SnafuIoError },
-}
-
-impl From<crate::io::Error> for Error {
-    fn from(e: crate::io::Error) -> Self {
-        Error::Io {
-            source: SnafuIoError(e),
-        }
-    }
 }
 
 /// Available AEAD algorithms.
 #[derive(Debug, PartialEq, Eq, Copy, Clone, FromPrimitive, IntoPrimitive)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 #[repr(u8)]
 #[non_exhaustive]
 pub enum AeadAlgorithm {
@@ -83,7 +71,7 @@ pub enum AeadAlgorithm {
     Private110 = 110,
 
     #[num_enum(catch_all)]
-    Other(u8),
+    Other(#[cfg_attr(test, proptest(strategy = "110u8.."))] u8),
 }
 
 impl AeadAlgorithm {
@@ -263,7 +251,7 @@ impl AeadAlgorithm {
 
 /// Get (info, message_key, nonce) for the given parameters
 #[allow(clippy::type_complexity)]
-pub(crate) fn aead_setup(
+pub(crate) fn aead_setup_rfc9580(
     sym_alg: SymmetricKeyAlgorithm,
     aead: AeadAlgorithm,
     chunk_size: ChunkSize,
@@ -301,6 +289,7 @@ pub(crate) fn aead_setup(
     Default, IntoPrimitive, Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, TryFromPrimitive,
 )]
 #[repr(u8)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub enum ChunkSize {
     C64B = 0,
     C128B = 1,
@@ -331,7 +320,7 @@ impl ChunkSize {
 
 #[cfg(test)]
 mod tests {
-    use crate::io::Read;
+    use std::io::Read;
 
     use log::info;
     use rand::{Rng, SeedableRng};
@@ -371,7 +360,7 @@ mod tests {
 
                     {
                         info!("encrypt streaming");
-                        let mut input = crate::io::Cursor::new(&data);
+                        let mut input = std::io::Cursor::new(&data);
 
                         let mut encryptor = StreamEncryptor::new(
                             $sym_alg,
@@ -387,7 +376,7 @@ mod tests {
 
                     {
                         info!("decrypt streaming");
-                        let mut decryptor = StreamDecryptor::new(
+                        let mut decryptor = StreamDecryptor::new_rfc9580(
                             $sym_alg,
                             $aead,
                             ChunkSize::default(),

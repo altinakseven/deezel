@@ -1,8 +1,5 @@
-use alloc::boxed::Box;
-use alloc::string::{String, ToString};
-use alloc::vec::Vec;
-extern crate alloc;
-use core::iter::Peekable;
+use std::io;
+
 use chrono::{DateTime, Utc};
 use log::warn;
 use rand::{CryptoRng, Rng};
@@ -19,7 +16,6 @@ use crate::{
         public_key::PublicKeyAlgorithm,
     },
     errors::{bail, ensure, Result},
-    io::Write,
     packet::{self, Packet, PacketTrait, SignatureType, SubpacketData},
     ser::Serialize,
     types::{
@@ -27,7 +23,6 @@ use crate::{
         PublicKeyTrait, PublicParams, SignatureBytes, Tag,
     },
 };
-
 
 /// A Public OpenPGP key ("Transferable Public Key"), complete with self-signatures (and optionally
 /// third party signatures). This format can be used to transfer a public key to other OpenPGP users.
@@ -45,17 +40,17 @@ pub struct SignedPublicKey {
 pub struct SignedPublicKeyParser<
     I: Sized + Iterator<Item = crate::errors::Result<crate::packet::Packet>>,
 > {
-    inner: Peekable<I>,
+    inner: std::iter::Peekable<I>,
 }
 
 impl<I: Sized + Iterator<Item = crate::errors::Result<crate::packet::Packet>>>
     SignedPublicKeyParser<I>
 {
-    pub fn into_inner(self) -> Peekable<I> {
+    pub fn into_inner(self) -> std::iter::Peekable<I> {
         self.inner
     }
 
-    pub fn from_packets(packets: Peekable<I>) -> Self {
+    pub fn from_packets(packets: std::iter::Peekable<I>) -> Self {
         SignedPublicKeyParser { inner: packets }
     }
 }
@@ -84,7 +79,7 @@ impl crate::composed::Deserializable for SignedPublicKey {
     /// Parse a transferable key from packets.
     /// Ref: <https://www.rfc-editor.org/rfc/rfc9580.html#name-transferable-public-keys>
     fn from_packets<'a, I: Iterator<Item = Result<Packet>> + 'a>(
-        packets: Peekable<I>,
+        packets: std::iter::Peekable<I>,
     ) -> Box<dyn Iterator<Item = Result<Self>> + 'a> {
         Box::new(SignedPublicKeyParser::from_packets(packets))
     }
@@ -119,7 +114,7 @@ impl SignedPublicKey {
     /// Get the public key expiration as a date.
     pub fn expires_at(&self) -> Option<DateTime<Utc>> {
         let expiration = self.details.key_expiration_time()?;
-        Some(self.primary_key.created_at() + expiration)
+        Some(*self.primary_key.created_at() + expiration)
     }
 
     fn verify_public_subkeys(&self) -> Result<()> {
@@ -139,23 +134,16 @@ impl SignedPublicKey {
 
     pub fn to_armored_writer(
         &self,
-        writer: &mut impl Write,
+        writer: &mut impl io::Write,
         opts: ArmorOptions<'_>,
     ) -> Result<()> {
-        let headers = opts
-            .headers
-            .map(|h| {
-                h.iter()
-                    .map(|(k, v)| (k.to_string(), v.join(", ")))
-                    .collect()
-            })
-            .unwrap_or_default();
-        let armored = armor::Armored {
-            message_type: "PUBLIC KEY".to_string(),
-            headers,
-            data: self.to_bytes()?,
-        };
-        armored.to_writer(writer)
+        armor::write(
+            self,
+            armor::BlockType::PublicKey,
+            writer,
+            opts.headers,
+            opts.include_checksum,
+        )
     }
 
     pub fn to_armored_bytes(&self, opts: ArmorOptions<'_>) -> Result<Vec<u8>> {
@@ -230,7 +218,7 @@ impl PublicKeyTrait for SignedPublicKey {
         self.primary_key.public_params()
     }
 
-    fn created_at(&self) -> chrono::DateTime<chrono::Utc> {
+    fn created_at(&self) -> &chrono::DateTime<chrono::Utc> {
         self.primary_key.created_at()
     }
 
@@ -240,7 +228,7 @@ impl PublicKeyTrait for SignedPublicKey {
 }
 
 impl Serialize for SignedPublicKey {
-    fn to_writer<W: crate::io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
         self.primary_key.to_writer_with_header(writer)?;
         self.details.to_writer(writer)?;
         for ps in &self.public_subkeys {
@@ -371,7 +359,7 @@ impl PublicKeyTrait for SignedPublicSubKey {
         self.key.public_params()
     }
 
-    fn created_at(&self) -> chrono::DateTime<chrono::Utc> {
+    fn created_at(&self) -> &chrono::DateTime<chrono::Utc> {
         self.key.created_at()
     }
 
@@ -381,7 +369,7 @@ impl PublicKeyTrait for SignedPublicSubKey {
 }
 
 impl Serialize for SignedPublicSubKey {
-    fn to_writer<W: crate::io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
         self.key.to_writer_with_header(writer)?;
         for sig in &self.signatures {
             sig.to_writer_with_header(writer)?;
@@ -400,5 +388,41 @@ impl Serialize for SignedPublicSubKey {
             sum += sig_len as usize;
         }
         sum
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use super::*;
+    use crate::composed::shared::Deserializable;
+
+    #[test]
+    fn test_v6_annex_a_3() -> Result<()> {
+        let _ = pretty_env_logger::try_init();
+
+        // A.3. Sample v6 Certificate (Transferable Public Key)
+
+        let c = "-----BEGIN PGP PUBLIC KEY BLOCK-----
+
+xioGY4d/4xsAAAAg+U2nu0jWCmHlZ3BqZYfQMxmZu52JGggkLq2EVD34laPCsQYf
+GwoAAABCBYJjh3/jAwsJBwUVCg4IDAIWAAKbAwIeCSIhBssYbE8GCaaX5NUt+mxy
+KwwfHifBilZwj2Ul7Ce62azJBScJAgcCAAAAAK0oIBA+LX0ifsDm185Ecds2v8lw
+gyU2kCcUmKfvBXbAf6rhRYWzuQOwEn7E/aLwIwRaLsdry0+VcallHhSu4RN6HWaE
+QsiPlR4zxP/TP7mhfVEe7XWPxtnMUMtf15OyA51YBM4qBmOHf+MZAAAAIIaTJINn
++eUBXbki+PSAld2nhJh/LVmFsS+60WyvXkQ1wpsGGBsKAAAALAWCY4d/4wKbDCIh
+BssYbE8GCaaX5NUt+mxyKwwfHifBilZwj2Ul7Ce62azJAAAAAAQBIKbpGG2dWTX8
+j+VjFM21J0hqWlEg+bdiojWnKfA5AQpWUWtnNwDEM0g12vYxoWM8Y81W+bHBw805
+I8kWVkXU6vFOi+HWvv/ira7ofJu16NnoUkhclkUrk0mXubZvyl4GBg==
+-----END PGP PUBLIC KEY BLOCK-----";
+
+        let (spk, _) = SignedPublicKey::from_armor_single(io::Cursor::new(c))?;
+
+        eprintln!("spk: {spk:#02x?}");
+
+        spk.verify()?;
+
+        Ok(())
     }
 }

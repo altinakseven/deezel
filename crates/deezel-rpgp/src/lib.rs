@@ -1,19 +1,17 @@
-#![cfg_attr(not(feature = "std"), no_std)]
 #![doc = include_str!("../README.md")]
+
+//! Usage examples are available under the respective modules:
+//! [Key generation], [signing and verifying with external hashing], [packet based signing and verifying].
+//!
+//! [Key generation]: crate::composed::key
+//! [signing and verifying with external hashing]: crate::composed::signed_key
+//! [packet based signing and verifying]: crate::packet
+
 #![cfg_attr(not(test), deny(clippy::unwrap_used))]
 #![allow(clippy::missing_const_for_fn, clippy::type_complexity)]
 #![deny(unsafe_code)]
 
-extern crate alloc;
-
-/// Usage examples are available under the respective modules:
-/// [Key generation], [signing and verifying with external hashing], [packet based signing and verifying].
-///
-/// [Key generation]: crate::composed::key
-/// [signing and verifying with external hashing]: crate::composed::signed_key
-/// [packet based signing and verifying]: crate::packet
-
-#[cfg(all(test, feature = "std"))]
+#[cfg(test)]
 #[macro_use]
 extern crate pretty_assertions;
 
@@ -25,12 +23,9 @@ pub(crate) mod util;
 pub mod adapter;
 pub mod armor;
 pub mod base64;
-pub mod buf_reader;
-pub mod bytes_reader;
 pub mod composed;
 pub mod crypto;
 pub mod errors;
-pub mod io;
 pub mod line_writer;
 pub mod normalize_lines;
 pub mod packet;

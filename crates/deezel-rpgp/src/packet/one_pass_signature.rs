@@ -1,9 +1,8 @@
-use alloc::string::ToString;
-use alloc::vec::Vec;
-extern crate alloc;
-use crate::io::{BufRead, Write};
+use std::io::{self, BufRead};
+
+use byteorder::WriteBytesExt;
 use bytes::Bytes;
-#[cfg(all(test, feature = "std"))]
+#[cfg(test)]
 use proptest::prelude::*;
 
 use crate::{
@@ -27,7 +26,7 @@ use crate::{
 /// and validating the cryptographic signature in the Signature Packet (which occurs after the
 /// message payload) after hashing is completed.
 #[derive(derive_more::Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(all(test, feature = "std"), derive(proptest_derive::Arbitrary))]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct OnePassSignature {
     packet_header: PacketHeader,
     typ: SignatureType,
@@ -43,19 +42,19 @@ pub struct OnePassSignature {
 /// - A v6 OPS contains the v6 `fingerprint` of the signer, and the `salt` used in the corresponding
 ///   signature packet.
 #[derive(derive_more::Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(all(test, feature = "std"), derive(proptest_derive::Arbitrary))]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub enum OpsVersionSpecific {
     V3 {
         key_id: KeyId,
     },
     V6 {
-        #[cfg_attr(all(test, feature = "std"), proptest(strategy = "any::<Vec<u8>>().prop_map(Into::into)"))]
+        #[cfg_attr(test, proptest(strategy = "any::<Vec<u8>>().prop_map(Into::into)"))]
         #[debug("{}", hex::encode(salt))]
         salt: Bytes,
         #[debug("{}", hex::encode(fingerprint))]
         fingerprint: [u8; 32],
     },
-    #[cfg_attr(all(test, feature = "std"), proptest(skip))]
+    #[cfg_attr(test, proptest(skip))]
     Unknown {
         #[debug("{:X}", version)]
         version: u8,
@@ -65,10 +64,10 @@ pub enum OpsVersionSpecific {
 }
 
 impl Serialize for OpsVersionSpecific {
-    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
         // salt, if v6
         if let OpsVersionSpecific::V6 { salt, .. } = self {
-            writer.write_all(&[salt.len().try_into()?])?;
+            writer.write_u8(salt.len().try_into()?)?;
             writer.write_all(salt)?;
         }
 
@@ -261,14 +260,14 @@ impl OnePassSignature {
 const WRITE_LEN_OVERHEAD: usize = 5;
 
 impl Serialize for OnePassSignature {
-    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
-        writer.write_all(&[self.version()])?;
-        writer.write_all(&[self.typ.into()])?;
-        writer.write_all(&[self.hash_algorithm.into()])?;
-        writer.write_all(&[self.pub_algorithm.into()])?;
+    fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
+        writer.write_u8(self.version())?;
+        writer.write_u8(self.typ.into())?;
+        writer.write_u8(self.hash_algorithm.into())?;
+        writer.write_u8(self.pub_algorithm.into())?;
 
         self.version_specific.to_writer(writer)?;
-        writer.write_all(&[self.last])?;
+        writer.write_u8(self.last)?;
 
         Ok(())
     }
@@ -286,11 +285,9 @@ impl PacketTrait for OnePassSignature {
     }
 }
 
-#[cfg(all(test, feature = "std"))]
+#[cfg(test)]
 mod tests {
     use super::*;
-    use alloc::format;
-    use alloc::vec::Vec;
 
     proptest! {
         #[test]

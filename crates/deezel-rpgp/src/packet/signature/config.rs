@@ -1,13 +1,8 @@
-use alloc::boxed::Box;
-use alloc::string::ToString;
-use alloc::vec;
-use alloc::vec::Vec;
-use alloc::format;
-extern crate alloc;
-use crate::io::{self, Read};
+use std::io::Read;
 
 use byteorder::{BigEndian, ByteOrder};
 use chrono::{DateTime, Utc};
+use digest::DynDigest;
 use log::debug;
 use rand::{CryptoRng, Rng};
 
@@ -23,7 +18,7 @@ use crate::{
     },
     ser::Serialize,
     types::{Fingerprint, KeyId, KeyVersion, Password, PublicKeyTrait, SecretKeyTrait, Tag},
-    util::{CloneableDigest, NormalizingHasher},
+    util::NormalizingHasher,
 };
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -199,7 +194,7 @@ impl SignatureConfig {
         R: Read,
     {
         let mut hasher = self.into_hasher()?;
-        io::copy(&mut data, &mut hasher)?;
+        std::io::copy(&mut data, &mut hasher)?;
 
         hasher.sign(key, key_pw)
     }
@@ -336,10 +331,7 @@ impl SignatureConfig {
             self.version(),
             signer.version()
         );
-        debug!(
-            "signing subkey binding: {:#?} - {:#?} - {:#?}",
-            self, signer, signee
-        );
+        debug!("signing subkey binding: {self:#?} - {signer:#?} - {signee:#?}");
 
         let mut hasher = self.hash_alg.new_hasher()?;
 
@@ -385,10 +377,7 @@ impl SignatureConfig {
             self.version(),
             signer.version()
         );
-        debug!(
-            "signing primary key binding: {:#?} - {:#?} - {:#?}",
-            self, signer, signee
-        );
+        debug!("signing primary key binding: {self:#?} - {signer:#?} - {signee:#?}");
 
         let mut hasher = self.hash_alg.new_hasher()?;
 
@@ -423,7 +412,7 @@ impl SignatureConfig {
             self.version(),
             signing_key.version()
         );
-        debug!("signing key (revocation): {:#?} - {:#?}", self, key);
+        debug!("signing key (revocation): {self:#?} - {key:#?}");
 
         let mut hasher = self.hash_alg.new_hasher()?;
 
@@ -449,7 +438,7 @@ impl SignatureConfig {
     }
 
     /// Calculate the serialized version of this packet, but only the part relevant for hashing.
-    pub fn hash_signature_data(&self, hasher: &mut Box<dyn CloneableDigest>) -> Result<usize> {
+    pub fn hash_signature_data(&self, hasher: &mut Box<dyn DynDigest + Send>) -> Result<usize> {
         match self.version() {
             SignatureVersion::V2 | SignatureVersion::V3 => {
                 let created = {
@@ -488,7 +477,7 @@ impl SignatureConfig {
                 // hashed subpackets
                 let mut hashed_subpackets = Vec::new();
                 for packet in &self.hashed_subpackets {
-                    debug!("hashing {:#?}", packet);
+                    debug!("hashing {packet:#?}");
 
                     // If a subpacket is encountered that is marked critical but is unknown to the
                     // evaluating implementation, the evaluator SHOULD consider the signature to be
@@ -544,7 +533,7 @@ impl SignatureConfig {
 
     pub fn hash_data_to_sign<R>(
         &self,
-        hasher: &mut Box<dyn CloneableDigest>,
+        hasher: &mut Box<dyn DynDigest + Send>,
         mut data: R,
     ) -> Result<usize>
     where
@@ -554,7 +543,7 @@ impl SignatureConfig {
             SignatureType::Text |
                 // assumes that the passed in text was already valid utf8 and normalized
             SignatureType::Binary => {
-                let written = io::copy(&mut data, &mut WriteHasher(hasher))?;
+                let written = std::io::copy(&mut data, &mut WriteHasher(hasher))?;
                 Ok(written.try_into()?)
             }
             SignatureType::Timestamp |
@@ -704,7 +693,6 @@ impl SignatureConfig {
     }
 }
 
-#[derive(Clone)]
 pub struct SignatureHasher {
     norm_hasher: NormalizingHasher,
     config: SignatureConfig,
@@ -758,13 +746,13 @@ impl SignatureHasher {
     }
 }
 
-impl crate::io::Write for SignatureHasher {
-    fn write(&mut self, buf: &[u8]) -> crate::io::Result<usize> {
+impl std::io::Write for SignatureHasher {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         self.norm_hasher.hash_buf(buf); // FIXME: when is this used?
         Ok(buf.len())
     }
 
-    fn flush(&mut self) -> crate::io::Result<()> {
+    fn flush(&mut self) -> std::io::Result<()> {
         Ok(())
     }
 }

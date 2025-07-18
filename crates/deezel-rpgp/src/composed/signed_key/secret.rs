@@ -1,10 +1,4 @@
-use alloc::boxed::Box;
-use alloc::string::{String, ToString};
-use alloc::vec::Vec;
-extern crate alloc;
-
-use crate::io;
-use core::{iter::Peekable, ops::Deref};
+use std::{io, ops::Deref};
 
 use chrono::{DateTime, Utc};
 use generic_array::GenericArray;
@@ -39,17 +33,17 @@ pub struct SignedSecretKey {
 pub struct SignedSecretKeyParser<
     I: Sized + Iterator<Item = crate::errors::Result<crate::packet::Packet>>,
 > {
-    inner: Peekable<I>,
+    inner: std::iter::Peekable<I>,
 }
 
 impl<I: Sized + Iterator<Item = crate::errors::Result<crate::packet::Packet>>>
     SignedSecretKeyParser<I>
 {
-    pub fn into_inner(self) -> Peekable<I> {
+    pub fn into_inner(self) -> std::iter::Peekable<I> {
         self.inner
     }
 
-    pub fn from_packets(packets: Peekable<I>) -> Self {
+    pub fn from_packets(packets: std::iter::Peekable<I>) -> Self {
         SignedSecretKeyParser { inner: packets }
     }
 }
@@ -73,22 +67,14 @@ impl crate::composed::Deserializable for SignedSecretKey {
     /// Parse a transferable key from packets.
     /// Ref: <https://www.rfc-editor.org/rfc/rfc9580.html#name-transferable-secret-keys>
     fn from_packets<'a, I: Iterator<Item = Result<Packet>> + 'a>(
-        packets: Peekable<I>,
+        packets: std::iter::Peekable<I>,
     ) -> Box<dyn Iterator<Item = Result<Self>> + 'a> {
         Box::new(SignedSecretKeyParser::from_packets(packets))
     }
 
     fn matches_block_type(typ: armor::BlockType) -> bool {
-        matches!(
-            typ,
-            armor::BlockType::PrivateKey
-                | armor::BlockType::File
-                | armor::BlockType::PrivateKeyPKCS1(_)
-                | armor::BlockType::PrivateKeyPKCS8
-                | armor::BlockType::PrivateKeyOpenssh
-        )
+        matches!(typ, armor::BlockType::PrivateKey | armor::BlockType::File)
     }
-
 }
 
 impl SignedSecretKey {
@@ -127,7 +113,7 @@ impl SignedSecretKey {
     /// Get the secret key expiration as a date.
     pub fn expires_at(&self) -> Option<DateTime<Utc>> {
         let expiration = self.details.key_expiration_time()?;
-        Some(self.primary_key.public_key().created_at() + expiration)
+        Some(*self.primary_key.public_key().created_at() + expiration)
     }
 
     fn verify_public_subkeys(&self) -> Result<()> {
@@ -159,20 +145,13 @@ impl SignedSecretKey {
         writer: &mut impl io::Write,
         opts: ArmorOptions<'_>,
     ) -> Result<()> {
-        let headers = opts
-            .headers
-            .map(|h| {
-                h.iter()
-                    .map(|(k, v)| (k.to_string(), v.join(", ")))
-                    .collect()
-            })
-            .unwrap_or_default();
-        let armored = armor::Armored {
-            message_type: "PRIVATE KEY".to_string(),
-            headers,
-            data: self.to_bytes()?,
-        };
-        armored.to_writer(writer)
+        armor::write(
+            self,
+            armor::BlockType::PrivateKey,
+            writer,
+            opts.headers,
+            opts.include_checksum,
+        )
     }
 
     pub fn to_armored_bytes(&self, opts: ArmorOptions<'_>) -> Result<Vec<u8>> {
@@ -423,7 +402,7 @@ impl From<SignedSecretSubKey> for SignedPublicSubKey {
     }
 }
 
-#[cfg(all(test, feature = "std"))]
+#[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
 
@@ -458,7 +437,7 @@ M0g12vYxoWM8Y81W+bHBw805I8kWVkXU6vFOi+HWvv/ira7ofJu16NnoUkhclkUr
 k0mXubZvyl4GBg==
 -----END PGP PRIVATE KEY BLOCK-----";
 
-        let (ssk, _) = SignedSecretKey::from_armor_single(tsk.as_bytes())?;
+        let (ssk, _) = SignedSecretKey::from_armor_single(io::Cursor::new(tsk))?;
 
         // eprintln!("ssk: {:#02x?}", ssk);
 
@@ -471,7 +450,7 @@ k0mXubZvyl4GBg==
         builder.sign(pri, Password::empty(), HashAlgorithm::Sha256);
         let signed = builder.to_armored_string(&mut rng, ArmorOptions::default())?;
 
-        eprintln!("{}", signed);
+        eprintln!("{signed}");
 
         let (mut message, _) = Message::from_armor(signed.as_bytes())?;
         message.verify_read(&pri.public_key())?;
@@ -504,7 +483,7 @@ ruh8m7Xo2ehSSFyWRSuTSZe5tm/KXgYG
     fn test_v6_annex_a_5() -> Result<()> {
         let _ = pretty_env_logger::try_init();
 
-        let (ssk, _) = SignedSecretKey::from_armor_single(ANNEX_A_5.as_bytes())?;
+        let (ssk, _) = SignedSecretKey::from_armor_single(io::Cursor::new(ANNEX_A_5))?;
         ssk.verify()?;
 
         let mut rng = ChaCha8Rng::seed_from_u64(0);
@@ -529,7 +508,7 @@ ruh8m7Xo2ehSSFyWRSuTSZe5tm/KXgYG
         let text = b"Hello world";
         let mut rng = ChaCha8Rng::seed_from_u64(0);
 
-        let (ssk, _) = SignedSecretKey::from_armor_single(ANNEX_A_5.as_bytes())?;
+        let (ssk, _) = SignedSecretKey::from_armor_single(io::Cursor::new(ANNEX_A_5))?;
         ssk.verify()?;
 
         // we will test unlock/lock on the primary key

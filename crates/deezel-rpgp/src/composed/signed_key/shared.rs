@@ -1,8 +1,4 @@
-use alloc::string::String;
-use alloc::vec::Vec;
-use alloc::vec;
-extern crate alloc;
-use crate::io;
+use std::io;
 
 use chrono::Duration;
 use log::warn;
@@ -353,8 +349,10 @@ impl PublicOrSecret {
     }
 
     pub fn to_armored_string(&self, opts: ArmorOptions<'_>) -> Result<String> {
-        let res = String::from_utf8(self.to_armored_bytes(opts)?).map_err(|e| e.utf8_error())?;
-        Ok(res)
+        match self {
+            PublicOrSecret::Public(k) => k.to_armored_string(opts),
+            PublicOrSecret::Secret(k) => k.to_armored_string(opts),
+        }
     }
 
     /// Returns secret key.

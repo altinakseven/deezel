@@ -1,10 +1,6 @@
-use alloc::string::ToString;
-use alloc::vec;
-use alloc::format;
-extern crate alloc;
-use crate::io::{BufRead, Write};
+use std::io::BufRead;
 
-use chrono::{TimeZone, Utc};
+use chrono::SubsecRound;
 use generic_array::GenericArray;
 use log::debug;
 use rand::{CryptoRng, Rng};
@@ -15,7 +11,7 @@ use crate::{
         hash::{HashAlgorithm, KnownDigest},
         public_key::PublicKeyAlgorithm,
     },
-    errors::{bail, ensure_eq, format_err, unsupported_err, Result},
+    errors::{bail, ensure_eq, unsupported_err, Result},
     packet::{
         KeyFlags, PacketHeader, PacketTrait, Signature, SignatureConfig, SignatureType, Subpacket,
         SubpacketData,
@@ -66,13 +62,7 @@ impl SecretKey {
         let details = crate::packet::secret_key_parser::parse(input)?;
         let (version, algorithm, created_at, expiration, public_params, secret_params) = details;
 
-        let inner = PubKeyInner::new(
-            version,
-            algorithm,
-            created_at.timestamp() as u32,
-            expiration,
-            public_params,
-        )?;
+        let inner = PubKeyInner::new(version, algorithm, created_at, expiration, public_params)?;
         let len = inner.write_len();
 
         let pub_packet_header = PacketHeader::from_parts(
@@ -137,13 +127,7 @@ impl SecretSubkey {
 
         let details = crate::packet::secret_key_parser::parse(input)?;
         let (version, algorithm, created_at, expiration, public_params, secret_params) = details;
-        let inner = PubKeyInner::new(
-            version,
-            algorithm,
-            created_at.timestamp() as u32,
-            expiration,
-            public_params,
-        )?;
+        let inner = PubKeyInner::new(version, algorithm, created_at, expiration, public_params)?;
         let len = inner.write_len();
 
         let pub_packet_header = PacketHeader::from_parts(
@@ -185,12 +169,10 @@ impl SecretSubkey {
     {
         let mut config = SignatureConfig::from_key(rng, self, SignatureType::KeyBinding)?;
 
-        let creation_time = Utc
-            .timestamp_opt(self.public_key().created_at().timestamp(), 0)
-            .single()
-            .ok_or_else(|| format_err!("invalid creation time"))?;
         config.hashed_subpackets = vec![
-            Subpacket::regular(SubpacketData::SignatureCreationTime(creation_time))?,
+            Subpacket::regular(SubpacketData::SignatureCreationTime(
+                chrono::Utc::now().trunc_subsecs(0),
+            ))?,
             Subpacket::regular(SubpacketData::IssuerFingerprint(self.fingerprint()))?,
         ];
 
@@ -261,29 +243,6 @@ impl KeyDetails for SecretKey {
     }
 }
 
-impl PublicKeyTrait for SecretKey {
-    fn verify_signature(
-        &self,
-        hash: HashAlgorithm,
-        data: &[u8],
-        sig: &SignatureBytes,
-    ) -> Result<()> {
-        self.details.verify_signature(hash, data, sig)
-    }
-
-    fn created_at(&self) -> chrono::DateTime<chrono::Utc> {
-        self.details.created_at()
-    }
-
-    fn expiration(&self) -> Option<u16> {
-        self.details.expiration()
-    }
-
-    fn public_params(&self) -> &PublicParams {
-        self.details.public_params()
-    }
-}
-
 impl Imprint for SecretKey {
     fn imprint<D: KnownDigest>(&self) -> Result<GenericArray<u8, D::OutputSize>> {
         self.details.imprint::<D>()
@@ -303,29 +262,6 @@ impl KeyDetails for SecretSubkey {
     }
     fn algorithm(&self) -> PublicKeyAlgorithm {
         self.details.algorithm()
-    }
-}
-
-impl PublicKeyTrait for SecretSubkey {
-    fn verify_signature(
-        &self,
-        hash: HashAlgorithm,
-        data: &[u8],
-        sig: &SignatureBytes,
-    ) -> Result<()> {
-        self.details.verify_signature(hash, data, sig)
-    }
-
-    fn created_at(&self) -> chrono::DateTime<chrono::Utc> {
-        self.details.created_at()
-    }
-
-    fn expiration(&self) -> Option<u16> {
-        self.details.expiration()
-    }
-
-    fn public_params(&self) -> &PublicParams {
-        self.details.public_params()
     }
 }
 
@@ -357,7 +293,7 @@ impl SecretKeyTrait for SecretSubkey {
 }
 
 impl crate::ser::Serialize for SecretKey {
-    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
         // writes version and public part
         crate::ser::Serialize::to_writer(&self.details, writer)?;
         self.secret_params.to_writer(writer, self.version())?;
@@ -373,7 +309,7 @@ impl crate::ser::Serialize for SecretKey {
 }
 
 impl crate::ser::Serialize for SecretSubkey {
-    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
         // writes version and public part
         crate::ser::Serialize::to_writer(&self.details, writer)?;
         self.secret_params.to_writer(writer, self.version())?;
@@ -539,7 +475,7 @@ impl SecretSubkey {
         embedded: Option<Signature>,
     ) -> Result<Signature>
     where
-        K: SecretKeyTrait + PublicKeyTrait,
+        K: SecretKeyTrait,
         P: PublicKeyTrait + Serialize,
     {
         self.details.sign(
@@ -688,16 +624,15 @@ fn sign<R: CryptoRng + Rng, K, P>(
     pub_key: &P,
 ) -> Result<Signature>
 where
-    K: SecretKeyTrait + PublicKeyTrait,
+    K: SecretKeyTrait,
     P: PublicKeyTrait + Serialize,
 {
+    use chrono::SubsecRound;
+
     let mut config = SignatureConfig::from_key(&mut rng, key, sig_typ)?;
-    let creation_time = Utc
-        .timestamp_opt(key.created_at().timestamp(), 0)
-        .single()
-        .ok_or_else(|| format_err!("invalid creation time"))?;
-    config.hashed_subpackets =
-        vec![Subpacket::regular(SubpacketData::SignatureCreationTime(creation_time))?];
+    config.hashed_subpackets = vec![Subpacket::regular(SubpacketData::SignatureCreationTime(
+        chrono::Utc::now().trunc_subsecs(0),
+    ))?];
     if key.version() <= KeyVersion::V4 {
         config.unhashed_subpackets = vec![Subpacket::regular(SubpacketData::Issuer(key.key_id()))?];
     }
@@ -707,6 +642,7 @@ where
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
+    use chrono::{SubsecRound, Utc};
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 
@@ -732,7 +668,7 @@ mod tests {
         let pub_key = PubKeyInner::new(
             KeyVersion::V4,
             key_type.to_alg(),
-            0u32,
+            Utc::now().trunc_subsecs(0),
             None,
             public_params,
         )

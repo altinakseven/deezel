@@ -1,4 +1,3 @@
-extern crate alloc;
 mod compression;
 mod fingerprint;
 mod key_id;

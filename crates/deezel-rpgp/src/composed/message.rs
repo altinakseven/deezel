@@ -1,4 +1,3 @@
-extern crate alloc;
 mod builder;
 mod decrypt;
 mod parser;

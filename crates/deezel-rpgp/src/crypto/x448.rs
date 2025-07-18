@@ -1,8 +1,3 @@
-use alloc::string::ToString;
-use alloc::vec;
-use alloc::vec::Vec;
-use alloc::format;
-extern crate alloc;
 use cx448::x448;
 use hkdf::Hkdf;
 use log::debug;
@@ -62,7 +57,7 @@ impl SecretKey {
 }
 
 impl Serialize for SecretKey {
-    fn to_writer<W: crate::io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
         let x = self.as_bytes();
         writer.write_all(x)?;
         Ok(())
@@ -220,7 +215,7 @@ pub fn encrypt<R: CryptoRng + Rng>(
 mod tests {
     #![allow(clippy::unwrap_used)]
 
-    use core::ops::Deref;
+    use std::ops::Deref;
 
     use proptest::prelude::*;
     use rand::{RngCore, SeedableRng};

@@ -1,7 +1,4 @@
-use alloc::string::ToString;
-extern crate alloc;
-use crate::io::Write;
-use alloc::vec::Vec;
+use std::io;
 
 use log::{debug, warn};
 
@@ -43,7 +40,7 @@ impl SignedUser {
     where
         P: PublicKeyTrait + Serialize,
     {
-        debug!("verify signed user {:#?}", self);
+        debug!("verify signed user {self:#?}");
         ensure!(!self.signatures.is_empty(), "no signatures found");
 
         for signature in &self.signatures {
@@ -59,7 +56,7 @@ impl SignedUser {
         P: PublicKeyTrait + Serialize,
         K: PublicKeyTrait + Serialize,
     {
-        debug!("verify signed user {:#?} with signer {:#?}", self, signer);
+        debug!("verify signed user {self:#?} with signer {signer:#?}");
         ensure!(!self.signatures.is_empty(), "no signatures found");
 
         for signature in &self.signatures {
@@ -75,7 +72,7 @@ impl SignedUser {
 }
 
 impl Serialize for SignedUser {
-    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
         self.id.to_writer_with_header(writer)?;
         for sig in &self.signatures {
             sig.to_writer_with_header(writer)?;
@@ -123,7 +120,7 @@ impl SignedUserAttribute {
     where
         P: PublicKeyTrait + Serialize,
     {
-        debug!("verify signed attribute {:?}", self);
+        debug!("verify signed attribute {self:?}");
         ensure!(!self.signatures.is_empty(), "no signatures found");
 
         for signature in &self.signatures {
@@ -139,10 +136,7 @@ impl SignedUserAttribute {
         P: PublicKeyTrait + Serialize,
         K: PublicKeyTrait + Serialize,
     {
-        debug!(
-            "verify signed attribute {:#?} with signer {:#?}",
-            self, signer
-        );
+        debug!("verify signed attribute {self:#?} with signer {signer:#?}");
         ensure!(!self.signatures.is_empty(), "no signatures found");
 
         for signature in &self.signatures {
@@ -159,7 +153,7 @@ impl SignedUserAttribute {
 }
 
 impl Serialize for SignedUserAttribute {
-    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
         self.attr.to_writer_with_header(writer)?;
         for sig in &self.signatures {
             sig.to_writer_with_header(writer)?;

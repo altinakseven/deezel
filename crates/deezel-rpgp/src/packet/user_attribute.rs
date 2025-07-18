@@ -1,13 +1,7 @@
-#[cfg(test)]
-extern crate std;
-use alloc::string::ToString;
-use alloc::vec;
-use alloc::format;
-extern crate alloc;
-use crate::io::{BufRead, Write};
+use std::io::{self, BufRead};
 
+use byteorder::{LittleEndian, WriteBytesExt};
 use bytes::Bytes;
-#[cfg(feature = "std")]
 use chrono::{SubsecRound, Utc};
 use log::debug;
 use num_enum::{FromPrimitive, IntoPrimitive};
@@ -26,13 +20,14 @@ use crate::{
 
 /// The type of a user attribute. Only `Image` is a known type currently
 #[derive(Debug, PartialEq, Eq, Clone, Copy, FromPrimitive, IntoPrimitive, derive_more::Display)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 #[repr(u8)]
 pub enum UserAttributeType {
     #[display("Image")]
     Image = 0x01,
     #[num_enum(catch_all)]
     #[display("Unknown({:x})", 0)]
-    Unknown(u8),
+    Unknown(#[cfg_attr(test, proptest(filter = "|i| *i != 1"))] u8),
 }
 
 /// The header for a JPEG image.
@@ -129,7 +124,7 @@ impl ImageHeader {
 }
 
 impl Serialize for ImageHeader {
-    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
         match self {
             Self::V1(header) => match header {
                 ImageHeaderV1::Jpeg { data } => {
@@ -137,19 +132,19 @@ impl Serialize for ImageHeader {
                     writer.write_all(data)?;
                 }
                 ImageHeaderV1::Unknown { format, data } => {
-                    let len: u16 = (4 + data.len()).try_into()?;
-                    writer.write_all(&len.to_le_bytes())?;
+                    let len = (4 + data.len()).try_into()?;
+                    writer.write_u16::<LittleEndian>(len)?;
 
-                    writer.write_all(&[0x01])?; // Version
-                    writer.write_all(&[*format])?;
+                    writer.write_u8(0x01)?; // Version
+                    writer.write_u8(*format)?;
                     writer.write_all(data)?;
                 }
             },
             Self::Unknown { version, data } => {
-                let len: u16 = (1 + data.len()).try_into()?;
-                writer.write_all(&len.to_le_bytes())?;
+                let len = (1 + data.len()).try_into()?;
+                writer.write_u16::<LittleEndian>(len)?;
 
-                writer.write_all(&[*version])?;
+                writer.write_u8(*version)?;
                 writer.write_all(data)?;
             }
         }
@@ -253,12 +248,9 @@ impl UserAttribute {
         P: SecretKeyTrait,
         K: PublicKeyTrait + Serialize,
     {
-        #[cfg(feature = "std")]
         let hashed_subpackets = vec![Subpacket::regular(SubpacketData::SignatureCreationTime(
             Utc::now().trunc_subsecs(0),
         ))?];
-        #[cfg(not(feature = "std"))]
-        let hashed_subpackets = vec![];
 
         let mut config = SignatureConfig::from_key(&mut rng, signer, SignatureType::CertGeneric)?;
 
@@ -308,7 +300,7 @@ impl UserAttribute {
 }
 
 impl Serialize for UserAttribute {
-    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
         match self {
             UserAttribute::Image {
                 ref data,
@@ -318,7 +310,7 @@ impl Serialize for UserAttribute {
             } => {
                 subpacket_len.to_writer(writer)?;
                 // Type Image Attribute Subpacket
-                writer.write_all(&[0x01])?;
+                writer.write_u8(0x01)?;
                 header.to_writer(writer)?;
 
                 // actual data
@@ -333,7 +325,7 @@ impl Serialize for UserAttribute {
                 subpacket_len.to_writer(writer)?;
 
                 // Type Attribute Subpacket
-                writer.write_all(&[(*typ).into()])?;
+                writer.write_u8((*typ).into())?;
                 writer.write_all(data)?;
             }
         }
@@ -357,78 +349,77 @@ impl PacketTrait for UserAttribute {
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use proptest::collection::vec;
-//     use alloc::vec::Vec;
-//     use proptest::prelude::*;
+#[cfg(test)]
+mod tests {
+    use prop::collection::vec;
+    use proptest::prelude::*;
 
-//     use super::*;
+    use super::*;
 
-//     #[test]
-//     fn test_jpeg_header() {
-//         let mut jpeg = [0u8; 16];
-//         jpeg[..4].copy_from_slice(JPEG_HEADER_PREFIX);
-//         let parsed = ImageHeader::try_from_reader(&mut &jpeg[..]).unwrap();
-//         assert_eq!(
-//             parsed,
-//             ImageHeader::V1(ImageHeaderV1::Jpeg { data: [0u8; 12] })
-//         );
-//     }
+    #[test]
+    fn test_jpeg_header() {
+        let mut jpeg = [0u8; 16];
+        jpeg[..4].copy_from_slice(JPEG_HEADER_PREFIX);
+        let parsed = ImageHeader::try_from_reader(&mut &jpeg[..]).unwrap();
+        assert_eq!(
+            parsed,
+            ImageHeader::V1(ImageHeaderV1::Jpeg { data: [0u8; 12] })
+        );
+    }
 
-//     prop_compose! {
-//         fn gen_image()(
-//             data in vec(0u8..=255, 1..100)
-//         ) -> UserAttribute {
-//             UserAttribute::new_image(data.into()).unwrap()
-//         }
-//     }
+    prop_compose! {
+        fn gen_image()(
+            data in vec(0u8..=255, 1..100)
+        ) -> UserAttribute {
+            UserAttribute::new_image(data.into()).unwrap()
+        }
+    }
 
-//     prop_compose! {
-//         fn gen_unknown()(
-//             typ in 2u8..,
-//             data in vec(0u8..=255, 1..100)
-//         ) -> UserAttribute {
-//             let packet_len = 1 + data.len();
-//             let subpacket_len = SubpacketLength::encode(packet_len.try_into().unwrap());
-//             let len = packet_len + subpacket_len.write_len();
+    prop_compose! {
+        fn gen_unknown()(
+            typ in 2u8..,
+            data in vec(0u8..=255, 1..100)
+        ) -> UserAttribute {
+            let packet_len = 1 + data.len();
+            let subpacket_len = SubpacketLength::encode(packet_len.try_into().unwrap());
+            let len = packet_len + subpacket_len.write_len();
 
-//             let packet_header = PacketHeader::new_fixed(Tag::UserAttribute, len as u32);
+            let packet_header = PacketHeader::new_fixed(Tag::UserAttribute, len as u32);
 
-//             UserAttribute::Unknown {
-//                 packet_header,
-//                 subpacket_len,
-//                 typ: UserAttributeType::Unknown(typ),
-//                 data: data.into(),
-//             }
-//         }
-//     }
+            UserAttribute::Unknown {
+                packet_header,
+                subpacket_len,
+                typ: UserAttributeType::Unknown(typ),
+                data: data.into(),
+            }
+        }
+    }
 
-//     impl Arbitrary for UserAttribute {
-//         type Parameters = ();
-//         type Strategy = BoxedStrategy<Self>;
+    impl Arbitrary for UserAttribute {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
 
-//         fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-//             prop_oneof![gen_image(), gen_unknown()].boxed()
-//         }
-//     }
+        fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+            prop_oneof![gen_image(), gen_unknown()].boxed()
+        }
+    }
 
-//     proptest! {
-//         #[test]
-//         fn write_len(attr: UserAttribute) {
-//             let mut buf = Vec::new();
-//             attr.to_writer(&mut buf).unwrap();
-//             prop_assert_eq!(buf.len(), attr.write_len());
-//         }
+    proptest! {
+        #[test]
+        fn write_len(attr: UserAttribute) {
+            let mut buf = Vec::new();
+            attr.to_writer(&mut buf).unwrap();
+            prop_assert_eq!(buf.len(), attr.write_len());
+        }
 
 
-//         #[test]
-//         fn packet_roundtrip(attr: UserAttribute) {
-//             prop_assert_eq!(attr.packet_header().tag(), Tag::UserAttribute);
-//             let mut buf = Vec::new();
-//             attr.to_writer(&mut buf).unwrap();
-//             let new_attr = UserAttribute::try_from_reader(*attr.packet_header(), &mut &buf[..]).unwrap();
-//             prop_assert_eq!(attr, new_attr);
-//         }
-//     }
-// }
+        #[test]
+        fn packet_roundtrip(attr: UserAttribute) {
+            prop_assert_eq!(attr.packet_header().tag(), Tag::UserAttribute);
+            let mut buf = Vec::new();
+            attr.to_writer(&mut buf).unwrap();
+            let new_attr = UserAttribute::try_from_reader(*attr.packet_header(), &mut &buf[..]).unwrap();
+            prop_assert_eq!(attr, new_attr);
+        }
+    }
+}

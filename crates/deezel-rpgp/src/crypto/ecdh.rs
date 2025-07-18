@@ -1,8 +1,3 @@
-extern crate alloc;
-use alloc::string::ToString;
-use alloc::vec;
-use alloc::format;
-use alloc::vec::Vec;
 use log::debug;
 use rand::{CryptoRng, Rng};
 use x25519_dalek::{PublicKey, StaticSecret};
@@ -80,7 +75,7 @@ impl Curve25519 {
 
 /// Secret key for ECDH
 #[derive(Clone, PartialEq, Eq, ZeroizeOnDrop, derive_more::Debug)]
-#[cfg_attr(all(test, feature = "std"), derive(proptest_derive::Arbitrary))]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub enum SecretKey {
     /// ECDH with Curve25519
     Curve25519(Curve25519),
@@ -88,7 +83,7 @@ pub enum SecretKey {
     P256 {
         /// The secret point.
         #[debug("..")]
-        #[cfg_attr(all(test, feature = "std"), proptest(strategy = "tests::key_p256_gen()"))]
+        #[cfg_attr(test, proptest(strategy = "tests::key_p256_gen()"))]
         secret: p256::SecretKey,
     },
 
@@ -96,7 +91,7 @@ pub enum SecretKey {
     P384 {
         /// The secret point.
         #[debug("..")]
-        #[cfg_attr(all(test, feature = "std"), proptest(strategy = "tests::key_p384_gen()"))]
+        #[cfg_attr(test, proptest(strategy = "tests::key_p384_gen()"))]
         secret: p384::SecretKey,
     },
 
@@ -104,7 +99,7 @@ pub enum SecretKey {
     P521 {
         /// The secret point.
         #[debug("..")]
-        #[cfg_attr(all(test, feature = "std"), proptest(strategy = "tests::key_p521_gen()"))]
+        #[cfg_attr(test, proptest(strategy = "tests::key_p521_gen()"))]
         secret: p521::SecretKey,
     },
 }
@@ -241,7 +236,7 @@ impl SecretKey {
 }
 
 impl Serialize for SecretKey {
-    fn to_writer<W: crate::io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
         let x = self.to_mpi();
         x.to_writer(writer)
     }
@@ -469,14 +464,13 @@ fn pad(plain: &[u8]) -> Vec<u8> {
     // We produce "short padding" (between 1 and 8 bytes)
     let remainder = len % 8; // (e.g. 3 for len==19)
     let padded_len = len + 8 - remainder; // (e.g. "8 + 8 - 0 => 16", or "19 + 8 - 3 => 24")
-    debug_assert!(padded_len % 8 == 0, "Unexpected padded_len {}", padded_len);
+    debug_assert!(padded_len % 8 == 0, "Unexpected padded_len {padded_len}");
 
     // The value we'll use for padding (must not be zero, and fit into a u8)
     let padding = padded_len - len;
     debug_assert!(
         padding > 0 && u8::try_from(padding).is_ok(),
-        "Unexpected padding value {}",
-        padding
+        "Unexpected padding value {padding}"
     );
     let padding = padding as u8;
 
@@ -599,9 +593,10 @@ where
     ))
 }
 
-#[cfg(all(test, feature = "std"))]
+#[cfg(test)]
 mod tests {
     use std::fs;
+
     use proptest::prelude::*;
     use rand::{RngCore, SeedableRng};
     use rand_chacha::ChaChaRng;
@@ -663,17 +658,17 @@ mod tests {
     fn test_decrypt_padding() {
         let _ = pretty_env_logger::try_init();
 
-        let key_bytes = fs::read("./tests/unit-tests/padding/alice.key").unwrap();
-        let (decrypt_key, _headers) = SignedSecretKey::from_armor_single(&key_bytes)
-            .expect("failed to read decryption key");
+        let (decrypt_key, _headers) = SignedSecretKey::from_armor_single(
+            fs::File::open("./tests/unit-tests/padding/alice.key").unwrap(),
+        )
+        .expect("failed to read decryption key");
 
         for msg_file in [
             "./tests/unit-tests/padding/msg-short-padding.pgp",
             "./tests/unit-tests/padding/msg-long-padding.pgp",
         ] {
-            let msg = fs::read_to_string(msg_file).expect("failed to read message");
             let (message, _headers) =
-                Message::from_armor(msg.as_bytes()).expect("failed to parse message");
+                Message::from_armor_file(msg_file).expect("failed to parse message");
 
             let mut msg = message
                 .decrypt(&Password::empty(), &decrypt_key)
@@ -713,21 +708,17 @@ mod tests {
         }
     }
 
-}
+    impl Arbitrary for Curve25519 {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
 
-#[cfg(all(test, feature = "std"))]
-impl proptest::prelude::Arbitrary for Curve25519 {
-    type Parameters = ();
-    type Strategy = proptest::strategy::BoxedStrategy<Self>;
-
-    fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-        use proptest::prelude::*;
-        use rand::SeedableRng;
-        any::<u64>()
-            .prop_map(|seed| {
-                let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
-                Curve25519::generate(&mut rng)
-            })
-            .boxed()
+        fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+            any::<u64>()
+                .prop_map(|seed| {
+                    let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
+                    Curve25519::generate(&mut rng)
+                })
+                .boxed()
+        }
     }
 }

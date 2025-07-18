@@ -1,46 +1,7 @@
-extern crate alloc;
 use num_enum::{FromPrimitive, IntoPrimitive};
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use alloc::vec;
-    use proptest::prelude::*;
-    use proptest::strategy::{BoxedStrategy, Strategy};
-
-    prop_compose! {
-        pub fn arbitrary_pk_alg()(
-            num in prop_oneof![
-                Just(1u8), Just(2), Just(3), Just(16), Just(17), Just(18), Just(19),
-                Just(20), Just(21), Just(22), Just(25), Just(26), Just(27), Just(28),
-                Just(30), Just(31), Just(32), Just(33), Just(34), Just(35), Just(36),
-                Just(100), Just(101), Just(102), Just(103), Just(104), Just(105),
-                Just(106), Just(107), Just(108), Just(109), Just(110),
-            ]
-        ) -> PublicKeyAlgorithm {
-            PublicKeyAlgorithm::from(num)
-        }
-    }
-
-    proptest! {
-        #[test]
-        fn arbitrary(alg in arbitrary_pk_alg()) {
-            let num: u8 = alg.into();
-            assert_eq!(alg, PublicKeyAlgorithm::from(num));
-        }
-    }
-
-    impl Arbitrary for PublicKeyAlgorithm {
-        type Parameters = ();
-        type Strategy = BoxedStrategy<Self>;
-
-        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-            arbitrary_pk_alg().boxed()
-        }
-    }
-}
-
 #[derive(Debug, PartialEq, Eq, Clone, Copy, FromPrimitive, IntoPrimitive)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 #[repr(u8)]
 #[non_exhaustive]
 pub enum PublicKeyAlgorithm {
@@ -51,6 +12,7 @@ pub enum PublicKeyAlgorithm {
     /// DEPRECATED: RSA (Sign-Only)
     RSASign = 3,
     /// Elgamal (Encrypt-Only)
+    #[cfg_attr(test, proptest(skip))]
     ElgamalEncrypt = 16,
     /// DSA (Digital Signature Algorithm)
     DSA = 17,
@@ -59,8 +21,10 @@ pub enum PublicKeyAlgorithm {
     /// ECDSA: RFC 9580 [formerly in RFC 6637]
     ECDSA = 19,
     /// DEPRECATED: Elgamal (Encrypt and Sign)
+    #[cfg_attr(test, proptest(skip))]
     Elgamal = 20,
     /// Reserved for Diffie-Hellman (X9.42, as defined for IETF-S/MIME)
+    #[cfg_attr(test, proptest(skip))]
     DiffieHellman = 21,
     /// EdDSA legacy format [deprecated in RFC 9580, superseded by Ed25519 (27)]
     EdDSALegacy = 22,
@@ -98,26 +62,32 @@ pub enum PublicKeyAlgorithm {
     MlKem1024X448 = 36,
 
     /// Private experimental range (from OpenPGP)
+    #[cfg_attr(test, proptest(skip))]
     Private100 = 100,
+    #[cfg_attr(test, proptest(skip))]
     Private101 = 101,
+    #[cfg_attr(test, proptest(skip))]
     Private102 = 102,
+    #[cfg_attr(test, proptest(skip))]
     Private103 = 103,
+    #[cfg_attr(test, proptest(skip))]
     Private104 = 104,
+    #[cfg_attr(test, proptest(skip))]
     Private105 = 105,
+    #[cfg_attr(test, proptest(skip))]
     Private106 = 106,
+    #[cfg_attr(test, proptest(skip))]
     Private107 = 107,
+    #[cfg_attr(test, proptest(skip))]
     Private108 = 108,
+    #[cfg_attr(test, proptest(skip))]
     Private109 = 109,
+    #[cfg_attr(test, proptest(skip))]
     Private110 = 110,
 
     #[num_enum(catch_all)]
+    #[cfg_attr(test, proptest(skip))]
     Unknown(u8),
-}
-
-impl Default for PublicKeyAlgorithm {
-    fn default() -> Self {
-        Self::RSA
-    }
 }
 
 impl PublicKeyAlgorithm {

@@ -437,7 +437,7 @@ impl PgpProvider for RpgpPgpProvider {
         // 4. Extract literal data immediately after decryption, before readers get into Done state
         // This is a workaround for the deezel-rpgp SignatureBodyReader bug
         let literal_data = {
-            use deezel_rpgp::io::Read;
+            use std::io::Read;
             let mut buffer = Vec::new();
             match decrypted_message.read_to_end(&mut buffer) {
                 Ok(_) => {

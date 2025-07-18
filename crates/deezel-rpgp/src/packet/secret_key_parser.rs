@@ -1,28 +1,23 @@
-use alloc::string::ToString;
-use alloc::format;
-extern crate alloc;
+use std::io::BufRead;
+
 use chrono::{DateTime, TimeZone, Utc};
 use log::debug;
 
 use crate::{
     crypto::public_key::PublicKeyAlgorithm,
     errors::{ensure, format_err, unsupported_err, Result},
-    io::BufRead,
     parsing_reader::BufReadParsing,
     types::{KeyVersion, PublicParams, SecretParams},
 };
 
 /// Parse the whole private key, both public and private fields.
-fn parse_pub_priv_fields<B: BufRead + BufReadParsing>(
+fn parse_pub_priv_fields<B: BufRead>(
     key_ver: KeyVersion,
     typ: PublicKeyAlgorithm,
     pub_len: Option<usize>,
     mut i: B,
 ) -> Result<(PublicParams, SecretParams)> {
-    debug!(
-        "KeyVersion: {:?}, alg: {:?}, len {:?}",
-        key_ver, typ, pub_len
-    );
+    debug!("KeyVersion: {key_ver:?}, alg: {typ:?}, len {pub_len:?}");
     let pub_params = match pub_len {
         Some(pub_len) => {
             // Use the pub_len hint to make sure we consume no more or less
@@ -45,7 +40,7 @@ fn parse_pub_priv_fields<B: BufRead + BufReadParsing>(
     Ok((pub_params, secret_params))
 }
 
-fn private_key_parser_v4_v6<B: BufRead + BufReadParsing>(
+fn private_key_parser_v4_v6<B: BufRead>(
     key_ver: &KeyVersion,
     mut i: B,
 ) -> Result<(
@@ -76,7 +71,7 @@ fn private_key_parser_v4_v6<B: BufRead + BufReadParsing>(
     Ok((*key_ver, alg, created_at, None, params.0, params.1))
 }
 
-fn private_key_parser_v2_v3<B: BufRead + BufReadParsing>(
+fn private_key_parser_v2_v3<B: BufRead>(
     key_ver: &KeyVersion,
     mut i: B,
 ) -> Result<(
@@ -102,7 +97,7 @@ fn private_key_parser_v2_v3<B: BufRead + BufReadParsing>(
 /// Parse a secret key packet (Tag 5)
 /// Ref: https://www.rfc-editor.org/rfc/rfc9580.html#name-secret-key-packet-formats
 #[allow(clippy::type_complexity)]
-pub(crate) fn parse<B: BufRead + BufReadParsing>(
+pub(crate) fn parse<B: BufRead>(
     mut i: B,
 ) -> Result<(
     KeyVersion,

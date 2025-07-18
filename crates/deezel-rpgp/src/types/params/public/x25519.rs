@@ -1,12 +1,11 @@
-extern crate alloc;
-use crate::io::{BufRead, Write};
+use std::io::{self, BufRead};
 
 use crate::{errors::Result, parsing_reader::BufReadParsing, ser::Serialize};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-#[cfg_attr(all(test, feature = "std"), derive(proptest_derive::Arbitrary))]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct X25519PublicParams {
-    #[cfg_attr(all(test, feature = "std"), proptest(strategy = "crate::types::params::public::ecdh::tests::ecdh_curve25519_gen()"))]
+    #[cfg_attr(test, proptest(strategy = "super::ecdh::tests::ecdh_curve25519_gen()"))]
     pub key: x25519_dalek::PublicKey,
 }
 
@@ -23,7 +22,7 @@ impl X25519PublicParams {
 }
 
 impl Serialize for X25519PublicParams {
-    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
         writer.write_all(self.key.as_bytes())?;
         Ok(())
     }
@@ -35,7 +34,6 @@ impl Serialize for X25519PublicParams {
 
 #[cfg(test)]
 mod tests {
-    use alloc::{format, vec::Vec};
     use proptest::prelude::*;
 
     use super::*;

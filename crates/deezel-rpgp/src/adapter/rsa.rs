@@ -1,7 +1,4 @@
-use alloc::vec::Vec;
-extern crate alloc;
-use alloc::{format, vec};
-use core::marker::PhantomData;
+use std::marker::PhantomData;
 
 use chrono::{DateTime, Utc};
 use digest::{typenum::Unsigned, OutputSizeUser};
@@ -54,7 +51,7 @@ where
         let public_key = PubKeyInner::new(
             version,
             RsaPublicKey::PGP_ALGORITHM,
-            created_at.timestamp() as u32,
+            created_at,
             None,
             inner.verifying_key().as_ref().pgp_parameters(),
         )?;
@@ -163,7 +160,7 @@ impl<D, T> PublicKeyTrait for RsaSigner<T, D> {
         self.public_key.verify_signature(hash, data, sig)
     }
 
-    fn created_at(&self) -> chrono::DateTime<chrono::Utc> {
+    fn created_at(&self) -> &chrono::DateTime<chrono::Utc> {
         self.public_key.created_at()
     }
 

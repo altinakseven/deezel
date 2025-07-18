@@ -1,9 +1,6 @@
-use alloc::string::String;
-use alloc::vec::Vec;
-use alloc::format;
-extern crate alloc;
-use alloc::vec;
-use chrono::{Duration, TimeZone};
+use std::time::Duration;
+
+use chrono::SubsecRound;
 use derive_builder::Builder;
 use rand::{CryptoRng, Rng};
 use smallvec::SmallVec;
@@ -21,13 +18,12 @@ use crate::{
         x25519, x448,
     },
     errors::Result,
-    packet::{self, PubKeyInner, UserAttribute, UserId},
-    packet::KeyFlags,
+    packet::{self, KeyFlags, PubKeyInner, UserAttribute, UserId},
     types::{self, CompressionAlgorithm, PlainSecretParams, PublicParams, S2kParams},
 };
 
 #[derive(Debug, PartialEq, Eq, Builder)]
-#[builder(build_fn(validate = "Self::validate"), no_std)]
+#[builder(build_fn(validate = "Self::validate"))]
 pub struct SecretKeyParams {
     /// OpenPGP key version of primary
     #[builder(default)]
@@ -47,7 +43,7 @@ pub struct SecretKeyParams {
     can_authenticate: bool,
 
     // -- Metadata for the primary key
-    #[builder(default = "chrono::Utc.timestamp_opt(0, 0).single().expect(\"invalid time\")")]
+    #[builder(default = "chrono::Utc::now().trunc_subsecs(0)")]
     created_at: chrono::DateTime<chrono::Utc>,
     #[builder(default)]
     expiration: Option<Duration>,
@@ -93,7 +89,6 @@ pub struct SecretKeyParams {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Builder)]
-#[builder(no_std)]
 pub struct SubkeyParams {
     // -- OpenPGP key version of this subkey
     #[builder(default)]
@@ -111,7 +106,7 @@ pub struct SubkeyParams {
     can_authenticate: bool,
 
     // -- Metadata for the primary key
-    #[builder(default = "chrono::Utc.timestamp_opt(0, 0).single().expect(\"invalid time\")")]
+    #[builder(default = "chrono::Utc::now().trunc_subsecs(0)")]
     created_at: chrono::DateTime<chrono::Utc>,
     #[builder(default)]
     expiration: Option<Duration>,
@@ -133,24 +128,21 @@ impl SecretKeyParamsBuilder {
         can_sign: Option<bool>,
         can_encrypt: Option<bool>,
         can_authenticate: Option<bool>,
-    ) -> core::result::Result<(), String> {
+    ) -> std::result::Result<(), String> {
         if let Some(key_type) = &key_type {
             if can_sign == Some(true) && !key_type.can_sign() {
                 return Err(format!(
-                    "KeyType {:?} can not be used for signing keys",
-                    key_type
+                    "KeyType {key_type:?} can not be used for signing keys"
                 ));
             }
             if can_encrypt == Some(true) && !key_type.can_encrypt() {
                 return Err(format!(
-                    "KeyType {:?} can not be used for encryption keys",
-                    key_type
+                    "KeyType {key_type:?} can not be used for encryption keys"
                 ));
             }
             if can_authenticate == Some(true) && !key_type.can_sign() {
                 return Err(format!(
-                    "KeyType {:?} can not be used for authentication keys",
-                    key_type
+                    "KeyType {key_type:?} can not be used for authentication keys"
                 ));
             }
 
@@ -171,7 +163,7 @@ impl SecretKeyParamsBuilder {
         Ok(())
     }
 
-    fn validate(&self) -> core::result::Result<(), String> {
+    fn validate(&self) -> std::result::Result<(), String> {
         // Don't allow mixing of v4/v6 primary and subkeys
         match self.version {
             // V6 primary
@@ -260,8 +252,8 @@ impl SecretKeyParams {
         let pub_key = PubKeyInner::new(
             self.version,
             self.key_type.to_alg(),
-            self.created_at.timestamp() as u32,
-            self.expiration.map(|v| v.num_seconds() as u16),
+            self.created_at,
+            self.expiration.map(|v| v.as_secs() as u16),
             public_params,
         )?;
         let primary_pub_key = crate::packet::PublicKey::from_inner(pub_key)?;
@@ -324,8 +316,8 @@ impl SecretKeyParams {
                     let pub_key = PubKeyInner::new(
                         subkey.version,
                         subkey.key_type.to_alg(),
-                        subkey.created_at.timestamp() as u32,
-                        subkey.expiration.map(|v| v.num_seconds() as u16),
+                        subkey.created_at,
+                        subkey.expiration.map(|v| v.as_secs() as u16),
                         public_params,
                     )?;
                     let pub_key = packet::PublicSubkey::from_inner(pub_key)?;
@@ -605,5 +597,1381 @@ impl KeyType {
         };
 
         Ok((pub_params, types::SecretParams::Plain(plain)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha8Rng;
+    use smallvec::smallvec;
+
+    use super::*;
+    use crate::{
+        composed::{Deserializable, SignedPublicKey, SignedSecretKey},
+        packet::Features,
+        types::KeyVersion,
+    };
+
+    #[test]
+    #[ignore] // slow in debug mode
+    fn test_key_gen_rsa_2048_v4() {
+        let _ = pretty_env_logger::try_init();
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+
+        for i in 0..5 {
+            println!("round {i}");
+            gen_rsa_2048(&mut rng, KeyVersion::V4);
+        }
+    }
+
+    #[test]
+    #[ignore] // slow in debug mode
+    fn test_key_gen_rsa_2048_v6() {
+        let _ = pretty_env_logger::try_init();
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+
+        for i in 0..5 {
+            println!("round {i}");
+            gen_rsa_2048(&mut rng, KeyVersion::V6);
+        }
+    }
+
+    fn gen_rsa_2048<R: Rng + CryptoRng>(mut rng: R, version: KeyVersion) {
+        let mut key_params = SecretKeyParamsBuilder::default();
+        key_params
+            .version(version)
+            .key_type(KeyType::Rsa(2048))
+            .can_certify(true)
+            .can_sign(true)
+            .primary_user_id("Me <me@mail.com>".into())
+            .preferred_symmetric_algorithms(smallvec![
+                SymmetricKeyAlgorithm::AES256,
+                SymmetricKeyAlgorithm::AES192,
+                SymmetricKeyAlgorithm::AES128,
+            ])
+            .preferred_hash_algorithms(smallvec![
+                HashAlgorithm::Sha256,
+                HashAlgorithm::Sha384,
+                HashAlgorithm::Sha512,
+                HashAlgorithm::Sha224,
+                HashAlgorithm::Sha1,
+            ])
+            .preferred_compression_algorithms(smallvec![
+                CompressionAlgorithm::ZLIB,
+                CompressionAlgorithm::ZIP,
+            ]);
+
+        let key_params_enc = key_params
+            .clone()
+            .passphrase(Some("hello".into()))
+            .subkey(
+                SubkeyParamsBuilder::default()
+                    .version(version)
+                    .key_type(KeyType::Rsa(2048))
+                    .passphrase(Some("hello".into()))
+                    .can_encrypt(true)
+                    .build()
+                    .unwrap(),
+            )
+            .build()
+            .unwrap();
+        let key_enc = key_params_enc
+            .generate(&mut rng)
+            .expect("failed to generate secret key, encrypted");
+
+        let key_params_plain = key_params
+            .passphrase(None)
+            .subkey(
+                SubkeyParamsBuilder::default()
+                    .version(version)
+                    .key_type(KeyType::Rsa(2048))
+                    .can_encrypt(true)
+                    .build()
+                    .unwrap(),
+            )
+            .build()
+            .unwrap();
+        let key_plain = key_params_plain
+            .generate(&mut rng)
+            .expect("failed to generate secret key");
+
+        let signed_key_enc = key_enc
+            .sign(&mut rng, &"hello".into())
+            .expect("failed to sign key");
+        let signed_key_plain = key_plain
+            .sign(&mut rng, &"".into())
+            .expect("failed to sign key");
+
+        let armor_enc = signed_key_enc
+            .to_armored_string(None.into())
+            .expect("failed to serialize key");
+        let armor_plain = signed_key_plain
+            .to_armored_string(None.into())
+            .expect("failed to serialize key");
+
+        // std::fs::write("sample-rsa-enc.sec.asc", &armor_enc).unwrap();
+        // std::fs::write("sample-rsa.sec.asc", &armor_plain).unwrap();
+
+        let (signed_key2_enc, _headers) =
+            SignedSecretKey::from_string(&armor_enc).expect("failed to parse key (enc)");
+        signed_key2_enc.verify().expect("invalid key (enc)");
+
+        let (signed_key2_plain, _headers) =
+            SignedSecretKey::from_string(&armor_plain).expect("failed to parse key (plain)");
+        signed_key2_plain.verify().expect("invalid key (plain)");
+
+        signed_key2_enc
+            .unlock(&"hello".into(), |_, _| Ok(()))
+            .expect("failed to unlock parsed key (enc)")
+            .unwrap();
+        signed_key2_plain
+            .unlock(&"".into(), |_, _| Ok(()))
+            .expect("failed to unlock parsed key (plain)")
+            .unwrap();
+
+        assert_eq!(signed_key_plain, signed_key2_plain);
+
+        let public_key = signed_key_plain.public_key();
+
+        let public_signed_key = public_key
+            .sign(
+                &mut rng,
+                &*signed_key_plain,
+                &*signed_key_plain.public_key(),
+                &"".into(),
+            )
+            .expect("failed to sign public key");
+
+        public_signed_key.verify().expect("invalid public key");
+
+        let armor = public_signed_key
+            .to_armored_string(None.into())
+            .expect("failed to serialize public key");
+
+        // std::fs::write("sample-rsa.pub.asc", &armor).unwrap();
+
+        let (signed_key2, _headers) =
+            SignedPublicKey::from_string(&armor).expect("failed to parse public key");
+        signed_key2.verify().expect("invalid public key");
+    }
+
+    #[ignore]
+    #[test]
+    fn key_gen_25519_legacy_long() {
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+        for i in 0..10_000 {
+            println!("round {i}");
+            gen_25519_legacy(&mut rng);
+        }
+    }
+
+    #[test]
+    fn key_gen_25519_legacy_short() {
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+        for _ in 0..10 {
+            gen_25519_legacy(&mut rng);
+        }
+    }
+
+    fn gen_25519_legacy<R: Rng + CryptoRng>(mut rng: R) {
+        // The v4-only key format variants based on Curve 25519 (EdDSALegacy/ECDH over 25519)
+
+        let _ = pretty_env_logger::try_init();
+
+        let key_params = SecretKeyParamsBuilder::default()
+            .key_type(KeyType::Ed25519Legacy)
+            .can_certify(true)
+            .can_sign(true)
+            .primary_user_id("Me-X <me-25519-legacy@mail.com>".into())
+            .passphrase(None)
+            .preferred_symmetric_algorithms(smallvec![
+                SymmetricKeyAlgorithm::AES256,
+                SymmetricKeyAlgorithm::AES192,
+                SymmetricKeyAlgorithm::AES128,
+            ])
+            .preferred_hash_algorithms(smallvec![
+                HashAlgorithm::Sha256,
+                HashAlgorithm::Sha384,
+                HashAlgorithm::Sha512,
+                HashAlgorithm::Sha224,
+            ])
+            .preferred_compression_algorithms(smallvec![
+                CompressionAlgorithm::ZLIB,
+                CompressionAlgorithm::ZIP,
+            ])
+            .subkey(
+                SubkeyParamsBuilder::default()
+                    .key_type(KeyType::ECDH(ECCCurve::Curve25519))
+                    .can_encrypt(true)
+                    .passphrase(None)
+                    .build()
+                    .unwrap(),
+            )
+            .build()
+            .unwrap();
+
+        let key = key_params
+            .generate(&mut rng)
+            .expect("failed to generate secret key");
+
+        let signed_key = key.sign(&mut rng, &"".into()).expect("failed to sign key");
+
+        let armor = signed_key
+            .to_armored_string(None.into())
+            .expect("failed to serialize key");
+
+        // std::fs::write("sample-25519-legacy.sec.asc", &armor).unwrap();
+
+        let (signed_key2, _headers) =
+            SignedSecretKey::from_string(&armor).expect("failed to parse key");
+        signed_key2.verify().expect("invalid key");
+
+        assert_eq!(signed_key, signed_key2);
+
+        let public_key = signed_key.public_key();
+
+        let public_signed_key = public_key
+            .sign(
+                &mut rng,
+                &*signed_key,
+                &*signed_key.public_key(),
+                &"".into(),
+            )
+            .expect("failed to sign public key");
+
+        public_signed_key.verify().expect("invalid public key");
+
+        let armor = public_signed_key
+            .to_armored_string(None.into())
+            .expect("failed to serialize public key");
+
+        // std::fs::write("sample-25519-legacy.pub.asc", &armor).unwrap();
+
+        let (signed_key2, _headers) =
+            SignedPublicKey::from_string(&armor).expect("failed to parse public key");
+        signed_key2.verify().expect("invalid public key");
+    }
+
+    #[ignore]
+    #[test]
+    fn key_gen_25519_rfc9580_long() {
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+
+        for key_version in [KeyVersion::V4, KeyVersion::V6] {
+            println!("key version {key_version:?}");
+
+            for i in 0..10_000 {
+                println!("round {i}");
+                gen_25519_rfc9580(&mut rng, key_version);
+            }
+        }
+    }
+
+    #[test]
+    fn key_gen_25519_rfc9580_short() {
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+
+        for key_version in [KeyVersion::V4, KeyVersion::V6] {
+            println!("key version {key_version:?}");
+
+            for _ in 0..10 {
+                gen_25519_rfc9580(&mut rng, key_version);
+            }
+        }
+    }
+
+    fn gen_25519_rfc9580<R: Rng + CryptoRng>(mut rng: R, version: KeyVersion) {
+        // The RFC 9580 key format variants based on Curve 25519 (X25519/Ed25519)
+
+        let _ = pretty_env_logger::try_init();
+
+        let key_params = SecretKeyParamsBuilder::default()
+            .version(version)
+            .key_type(KeyType::Ed25519)
+            .can_certify(true)
+            .can_sign(true)
+            .primary_user_id("Me-X <me-25519-rfc9580@mail.com>".into())
+            .passphrase(None)
+            .preferred_symmetric_algorithms(smallvec![
+                SymmetricKeyAlgorithm::AES256,
+                SymmetricKeyAlgorithm::AES192,
+                SymmetricKeyAlgorithm::AES128,
+            ])
+            .preferred_hash_algorithms(smallvec![
+                HashAlgorithm::Sha256,
+                HashAlgorithm::Sha384,
+                HashAlgorithm::Sha512,
+                HashAlgorithm::Sha224,
+            ])
+            .preferred_compression_algorithms(smallvec![
+                CompressionAlgorithm::ZLIB,
+                CompressionAlgorithm::ZIP,
+            ])
+            .subkey(
+                SubkeyParamsBuilder::default()
+                    .version(version)
+                    .key_type(KeyType::X25519)
+                    .can_encrypt(true)
+                    .passphrase(None)
+                    .build()
+                    .unwrap(),
+            )
+            .build()
+            .unwrap();
+
+        let key = key_params
+            .generate(&mut rng)
+            .expect("failed to generate secret key");
+
+        let signed_key = key.sign(&mut rng, &"".into()).expect("failed to sign key");
+
+        let armor = signed_key
+            .to_armored_string(None.into())
+            .expect("failed to serialize key");
+
+        // std::fs::write("sample-25519-rfc9580.sec.asc", &armor).unwrap();
+
+        let (signed_key2, _headers) =
+            SignedSecretKey::from_string(&armor).expect("failed to parse key");
+        signed_key2.verify().expect("invalid key");
+
+        assert_eq!(signed_key, signed_key2);
+
+        let public_key = signed_key.public_key();
+
+        let public_signed_key = public_key
+            .sign(
+                &mut rng,
+                &*signed_key,
+                &*signed_key.public_key(),
+                &"".into(),
+            )
+            .expect("failed to sign public key");
+
+        public_signed_key.verify().expect("invalid public key");
+
+        let armor = public_signed_key
+            .to_armored_string(None.into())
+            .expect("failed to serialize public key");
+
+        // std::fs::write("sample-25519-rfc9580.pub.asc", &armor).unwrap();
+
+        let (signed_key2, _headers) =
+            SignedPublicKey::from_string(&armor).expect("failed to parse public key");
+        signed_key2.verify().expect("invalid public key");
+    }
+
+    fn gen_ecdsa_ecdh<R: Rng + CryptoRng>(
+        mut rng: R,
+        ecdsa: ECCCurve,
+        ecdh: ECCCurve,
+        version: KeyVersion,
+    ) {
+        let _ = pretty_env_logger::try_init();
+
+        let key_params = SecretKeyParamsBuilder::default()
+            .version(version)
+            .key_type(KeyType::ECDSA(ecdsa.clone()))
+            .can_certify(true)
+            .can_sign(true)
+            .primary_user_id("Me-X <me-ecdsa@mail.com>".into())
+            .passphrase(None)
+            .preferred_symmetric_algorithms(smallvec![
+                SymmetricKeyAlgorithm::AES256,
+                SymmetricKeyAlgorithm::AES192,
+                SymmetricKeyAlgorithm::AES128,
+            ])
+            .preferred_hash_algorithms(smallvec![
+                HashAlgorithm::Sha256,
+                HashAlgorithm::Sha384,
+                HashAlgorithm::Sha512,
+                HashAlgorithm::Sha224,
+            ])
+            .preferred_compression_algorithms(smallvec![
+                CompressionAlgorithm::ZLIB,
+                CompressionAlgorithm::ZIP,
+            ])
+            .subkey(
+                SubkeyParamsBuilder::default()
+                    .version(version)
+                    .key_type(KeyType::ECDH(ecdh.clone()))
+                    .can_encrypt(true)
+                    .passphrase(None)
+                    .build()
+                    .unwrap(),
+            )
+            .build()
+            .unwrap();
+
+        let key = key_params
+            .generate(&mut rng)
+            .expect("failed to generate secret key");
+
+        let signed_key = key.sign(&mut rng, &"".into()).expect("failed to sign key");
+
+        let armor = signed_key
+            .to_armored_string(None.into())
+            .expect("failed to serialize key");
+
+        // std::fs::write(
+        //     format!("sample-ecdsa-{ecdsa:?}-ecdh-{ecdh:?}.pub.asc"),
+        //     &armor,
+        // )
+        // .unwrap();
+
+        let (signed_key2, _headers) =
+            SignedSecretKey::from_string(&armor).expect("failed to parse key");
+        signed_key2.verify().expect("invalid key");
+
+        assert_eq!(signed_key, signed_key2);
+
+        let public_key = signed_key.public_key();
+
+        let public_signed_key = public_key
+            .sign(
+                &mut rng,
+                &*signed_key,
+                &*signed_key.public_key(),
+                &"".into(),
+            )
+            .expect("failed to sign public key");
+
+        public_signed_key.verify().expect("invalid public key");
+
+        let armor = public_signed_key
+            .to_armored_string(None.into())
+            .expect("failed to serialize public key");
+
+        // std::fs::write(
+        //     format!("sample-ecdsa-{ecdsa:?}-ecdh-{ecdh:?}.pub.asc"),
+        //     &armor,
+        // )
+        // .unwrap();
+
+        let (signed_key2, _headers) =
+            SignedPublicKey::from_string(&armor).expect("failed to parse public key");
+        signed_key2.verify().expect("invalid public key");
+    }
+
+    #[test]
+    fn key_gen_ecdsa_p256_v4() {
+        let mut rng = &mut ChaCha8Rng::seed_from_u64(0);
+
+        for _ in 0..=175 {
+            gen_ecdsa_ecdh(&mut rng, ECCCurve::P256, ECCCurve::P256, KeyVersion::V4);
+        }
+    }
+    #[test]
+    fn key_gen_ecdsa_p256_v6() {
+        let mut rng = &mut ChaCha8Rng::seed_from_u64(0);
+
+        for _ in 0..=175 {
+            gen_ecdsa_ecdh(&mut rng, ECCCurve::P256, ECCCurve::P256, KeyVersion::V6);
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn key_gen_ecdsa_p384_v4() {
+        let mut rng = &mut ChaCha8Rng::seed_from_u64(0);
+        for _ in 0..100 {
+            gen_ecdsa_ecdh(&mut rng, ECCCurve::P384, ECCCurve::P384, KeyVersion::V4);
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn key_gen_ecdsa_p384_v6() {
+        let mut rng = &mut ChaCha8Rng::seed_from_u64(0);
+        for _ in 0..100 {
+            gen_ecdsa_ecdh(&mut rng, ECCCurve::P384, ECCCurve::P384, KeyVersion::V6);
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn key_gen_ecdsa_p521_v4() {
+        let mut rng = &mut ChaCha8Rng::seed_from_u64(0);
+
+        for _ in 0..100 {
+            gen_ecdsa_ecdh(&mut rng, ECCCurve::P521, ECCCurve::P521, KeyVersion::V4);
+        }
+    }
+    #[test]
+    #[ignore]
+    fn key_gen_ecdsa_p521_v6() {
+        let mut rng = &mut ChaCha8Rng::seed_from_u64(0);
+
+        for _ in 0..100 {
+            gen_ecdsa_ecdh(&mut rng, ECCCurve::P521, ECCCurve::P521, KeyVersion::V6);
+        }
+    }
+
+    #[test]
+    fn key_gen_ecdsa_secp256k1() {
+        let mut rng = &mut ChaCha8Rng::seed_from_u64(0);
+
+        for _ in 0..100 {
+            gen_ecdsa_ecdh(
+                &mut rng,
+                ECCCurve::Secp256k1,
+                ECCCurve::Curve25519, // we don't currently support ECDH over Secp256k1
+                KeyVersion::V4,       // use of secp256k1 isn't specified in RFC 9580
+            );
+        }
+    }
+
+    fn gen_dsa<R: Rng + CryptoRng>(mut rng: R, key_size: DsaKeySize) {
+        let _ = pretty_env_logger::try_init();
+
+        let key_params = SecretKeyParamsBuilder::default()
+            .key_type(KeyType::Dsa(key_size))
+            .can_certify(true)
+            .can_sign(true)
+            .primary_user_id("Me-X <me-dsa@mail.com>".into())
+            .passphrase(None)
+            .preferred_symmetric_algorithms(smallvec![
+                SymmetricKeyAlgorithm::AES256,
+                SymmetricKeyAlgorithm::AES192,
+                SymmetricKeyAlgorithm::AES128,
+            ])
+            .preferred_hash_algorithms(smallvec![
+                HashAlgorithm::Sha256,
+                HashAlgorithm::Sha384,
+                HashAlgorithm::Sha512,
+                HashAlgorithm::Sha224,
+            ])
+            .preferred_compression_algorithms(smallvec![
+                CompressionAlgorithm::ZLIB,
+                CompressionAlgorithm::ZIP,
+            ])
+            .subkey(
+                SubkeyParamsBuilder::default()
+                    .key_type(KeyType::ECDH(ECCCurve::Curve25519))
+                    .can_encrypt(true)
+                    .passphrase(None)
+                    .build()
+                    .unwrap(),
+            )
+            .build()
+            .unwrap();
+
+        let key = key_params
+            .generate(&mut rng)
+            .expect("failed to generate secret key");
+
+        let signed_key = key.sign(&mut rng, &"".into()).expect("failed to sign key");
+
+        let armor = signed_key
+            .to_armored_string(None.into())
+            .expect("failed to serialize key");
+
+        // std::fs::write("sample-dsa.sec.asc", &armor).unwrap();
+
+        let (signed_key2, _headers) =
+            SignedSecretKey::from_string(&armor).expect("failed to parse key");
+        signed_key2.verify().expect("invalid key");
+
+        assert_eq!(signed_key, signed_key2);
+
+        let public_key = signed_key.public_key();
+
+        let public_signed_key = public_key
+            .sign(
+                &mut rng,
+                &*signed_key,
+                &*signed_key.public_key(),
+                &"".into(),
+            )
+            .expect("failed to sign public key");
+
+        public_signed_key.verify().expect("invalid public key");
+
+        let armor = public_signed_key
+            .to_armored_string(None.into())
+            .expect("failed to serialize public key");
+
+        // std::fs::write(format!("sample-dsa-{key_size:?}.pub.asc"), &armor).unwrap();
+
+        let (signed_key2, _headers) =
+            SignedPublicKey::from_string(&armor).expect("failed to parse public key");
+        signed_key2.verify().expect("invalid public key");
+    }
+
+    // Test is slow in debug mode
+    #[test]
+    #[ignore]
+    fn key_gen_dsa_1024() {
+        let mut rng = &mut ChaCha8Rng::seed_from_u64(0);
+
+        for _ in 0..5 {
+            gen_dsa(&mut rng, DsaKeySize::B1024);
+        }
+    }
+
+    // Test is slow in debug mode
+    #[test]
+    #[ignore]
+    fn key_gen_dsa_2048() {
+        let mut rng = &mut ChaCha8Rng::seed_from_u64(0);
+
+        for _ in 0..5 {
+            gen_dsa(&mut rng, DsaKeySize::B2048);
+        }
+    }
+    // Test is slow in debug mode
+    #[test]
+    #[ignore]
+    fn key_gen_dsa_3072() {
+        let mut rng = &mut ChaCha8Rng::seed_from_u64(0);
+
+        gen_dsa(&mut rng, DsaKeySize::B3072);
+    }
+
+    #[ignore]
+    #[test]
+    fn key_gen_448_rfc9580_long() {
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+
+        for key_version in [KeyVersion::V4, KeyVersion::V6] {
+            println!("key version {key_version:?}");
+
+            for i in 0..100 {
+                println!("round {i}");
+                gen_448_rfc9580(&mut rng, key_version);
+            }
+        }
+    }
+
+    #[test]
+    fn key_gen_448_rfc9580_short() {
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+
+        for key_version in [KeyVersion::V4, KeyVersion::V6] {
+            println!("key version {key_version:?}");
+
+            for _ in 0..10 {
+                gen_448_rfc9580(&mut rng, key_version);
+            }
+        }
+    }
+
+    fn gen_448_rfc9580<R: Rng + CryptoRng>(mut rng: R, version: KeyVersion) {
+        // The RFC 9580 key format variants based on Curve 448 (X448/Ed448)
+
+        let _ = pretty_env_logger::try_init();
+
+        let key_params = SecretKeyParamsBuilder::default()
+            .version(version)
+            .key_type(KeyType::Ed448)
+            .can_certify(true)
+            .can_sign(true)
+            .primary_user_id("Me-X <me-448-rfc9580@mail.com>".into())
+            .passphrase(None)
+            .preferred_symmetric_algorithms(smallvec![
+                SymmetricKeyAlgorithm::AES256,
+                SymmetricKeyAlgorithm::AES192,
+                SymmetricKeyAlgorithm::AES128,
+            ])
+            .preferred_hash_algorithms(smallvec![HashAlgorithm::Sha3_512, HashAlgorithm::Sha512,])
+            .preferred_compression_algorithms(smallvec![
+                CompressionAlgorithm::ZLIB,
+                CompressionAlgorithm::ZIP,
+            ])
+            .subkey(
+                SubkeyParamsBuilder::default()
+                    .version(version)
+                    .key_type(KeyType::X448)
+                    .can_encrypt(true)
+                    .passphrase(None)
+                    .build()
+                    .unwrap(),
+            )
+            .build()
+            .unwrap();
+
+        let key = key_params
+            .generate(&mut rng)
+            .expect("failed to generate secret key");
+
+        let signed_key = key.sign(&mut rng, &"".into()).expect("failed to sign key");
+
+        let armor = signed_key
+            .to_armored_string(None.into())
+            .expect("failed to serialize key");
+
+        // std::fs::write("sample-448-rfc9580.sec.asc", &armor).unwrap();
+
+        let (signed_key2, _headers) =
+            SignedSecretKey::from_string(&armor).expect("failed to parse key");
+        signed_key2.verify().expect("invalid key");
+
+        assert_eq!(signed_key, signed_key2);
+
+        let public_key = signed_key.public_key();
+
+        let public_signed_key = public_key
+            .sign(
+                &mut rng,
+                &*signed_key,
+                &*signed_key.public_key(),
+                &"".into(),
+            )
+            .expect("failed to sign public key");
+
+        public_signed_key.verify().expect("invalid public key");
+
+        let armor = public_signed_key
+            .to_armored_string(None.into())
+            .expect("failed to serialize public key");
+
+        // std::fs::write("sample-448-rfc9580.pub.asc", &armor).unwrap();
+
+        let (signed_key2, _headers) =
+            SignedPublicKey::from_string(&armor).expect("failed to parse public key");
+        signed_key2.verify().expect("invalid public key");
+    }
+
+    #[test]
+    fn signing_capable_subkey() {
+        let _ = pretty_env_logger::try_init();
+
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+
+        let key_params = SecretKeyParamsBuilder::default()
+            .version(KeyVersion::V6)
+            .key_type(KeyType::Ed25519)
+            .can_certify(true)
+            .subkey(
+                SubkeyParamsBuilder::default()
+                    .version(KeyVersion::V6)
+                    .key_type(KeyType::Ed25519)
+                    .can_sign(true)
+                    .build()
+                    .unwrap(),
+            )
+            .build()
+            .unwrap();
+
+        let secret_key = key_params
+            .generate(&mut rng)
+            .expect("failed to generate secret key");
+
+        let signed_secret_key = secret_key
+            .sign(&mut rng, &"".into())
+            .expect("failed to sign key");
+
+        // The signing capable subkey should have an embedded signature
+        let subkey = signed_secret_key
+            .secret_subkeys
+            .first()
+            .expect("signing subkey");
+        let embedded = subkey
+            .signatures
+            .first()
+            .expect("binding signature")
+            .embedded_signature();
+        assert!(embedded.is_some());
+
+        embedded
+            .unwrap()
+            .verify_primary_key_binding(
+                &subkey.key.public_key(),
+                &signed_secret_key.primary_key.public_key(),
+            )
+            .expect("verify ok");
+
+        let public_key = signed_secret_key.public_key();
+
+        let signed_public_key = public_key
+            .sign(
+                &mut rng,
+                &*signed_secret_key,
+                &*signed_secret_key.public_key(),
+                &"".into(),
+            )
+            .expect("failed to sign public key");
+
+        // The signing capable subkey should have an embedded signature
+        assert!(signed_public_key
+            .public_subkeys
+            .first()
+            .expect("signing subkey")
+            .signatures
+            .first()
+            .expect("binding signature")
+            .embedded_signature()
+            .is_some());
+
+        signed_public_key.verify().expect("invalid public key");
+    }
+
+    #[test]
+    fn test_cert_metadata_gen_v4_v4() {
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+
+        // legal v4 key, with user id
+        let key_params = SecretKeyParamsBuilder::default()
+            .version(KeyVersion::V4)
+            .key_type(KeyType::Ed25519)
+            .can_certify(true)
+            .can_sign(true)
+            .primary_user_id("alice".into())
+            .preferred_symmetric_algorithms(smallvec![SymmetricKeyAlgorithm::AES256])
+            .preferred_hash_algorithms(smallvec![HashAlgorithm::Sha512])
+            .preferred_compression_algorithms(smallvec![CompressionAlgorithm::ZLIB])
+            .subkey(
+                SubkeyParamsBuilder::default()
+                    .version(KeyVersion::V4)
+                    .key_type(KeyType::X25519)
+                    .can_encrypt(true)
+                    .build()
+                    .unwrap(),
+            )
+            .build()
+            .unwrap();
+
+        let key = key_params
+            .generate(&mut rng)
+            .expect("failed to generate secret key");
+
+        let signed_key = key.sign(&mut rng, &"".into()).expect("failed to sign key");
+
+        // We should have made no dks
+        assert!(signed_key.details.direct_signatures.is_empty());
+
+        // We made one user id
+        assert_eq!(signed_key.details.users.len(), 1);
+        let user = signed_key.details.users.first().unwrap();
+        // .. it has one binding signature
+        assert_eq!(user.signatures.len(), 1);
+        let sig = user.signatures.first().unwrap();
+        // ... key metadata is on that (primary user id binding) signature
+        assert_eq!(sig.preferred_hash_algs(), &[HashAlgorithm::Sha512]);
+        assert!(sig.key_flags().certify());
+        assert!(sig.key_flags().sign());
+        assert!(!sig.key_flags().encrypt_comms());
+        assert!(!sig.key_flags().encrypt_storage());
+        assert_eq!(sig.features(), Some(&Features::from(&[0x01][..])));
+
+        // try making (signed) public key representations
+        let _ = signed_key.public_key();
+        let _ = signed_key.signed_public_key();
+    }
+
+    #[test]
+    fn test_cert_metadata_gen_v4_v4_no_uid() {
+        // v4 key without primary user id - not legal
+        let _ = SecretKeyParamsBuilder::default()
+            .version(KeyVersion::V4)
+            .key_type(KeyType::Ed25519)
+            .can_certify(true)
+            .can_sign(true)
+            .preferred_symmetric_algorithms(smallvec![SymmetricKeyAlgorithm::AES256])
+            .preferred_hash_algorithms(smallvec![HashAlgorithm::Sha512])
+            .preferred_compression_algorithms(smallvec![CompressionAlgorithm::ZLIB])
+            .subkey(
+                SubkeyParamsBuilder::default()
+                    .version(KeyVersion::V4)
+                    .key_type(KeyType::X25519)
+                    .can_encrypt(true)
+                    .build()
+                    .unwrap(),
+            )
+            .build()
+            .expect_err("should not build because of missing primary user id");
+    }
+
+    #[test]
+    fn test_cert_metadata_gen_v6_v4_illegal() {
+        // illegal v6/v4 mix
+        SecretKeyParamsBuilder::default()
+            .version(KeyVersion::V6)
+            .key_type(KeyType::Ed25519)
+            .can_certify(true)
+            .can_sign(true)
+            .primary_user_id("alice".into())
+            .preferred_symmetric_algorithms(smallvec![SymmetricKeyAlgorithm::AES256])
+            .preferred_hash_algorithms(smallvec![HashAlgorithm::Sha512])
+            .preferred_compression_algorithms(smallvec![CompressionAlgorithm::ZLIB])
+            .subkey(
+                SubkeyParamsBuilder::default()
+                    .version(KeyVersion::V4)
+                    .key_type(KeyType::X25519)
+                    .can_encrypt(true)
+                    .build()
+                    .unwrap(),
+            )
+            .build()
+            .expect_err("should not be able to build");
+    }
+
+    #[test]
+    fn test_cert_metadata_gen_v4_v6_illegal() {
+        // illegal v4/v6 mix
+        SecretKeyParamsBuilder::default()
+            .version(KeyVersion::V4)
+            .key_type(KeyType::Ed25519)
+            .can_certify(true)
+            .can_sign(true)
+            .primary_user_id("alice".into())
+            .preferred_symmetric_algorithms(smallvec![SymmetricKeyAlgorithm::AES256])
+            .preferred_hash_algorithms(smallvec![HashAlgorithm::Sha512])
+            .preferred_compression_algorithms(smallvec![CompressionAlgorithm::ZLIB])
+            .subkey(
+                SubkeyParamsBuilder::default()
+                    .version(KeyVersion::V6)
+                    .key_type(KeyType::X25519)
+                    .can_encrypt(true)
+                    .build()
+                    .unwrap(),
+            )
+            .build()
+            .expect_err("should not be able to build");
+    }
+
+    #[test]
+    fn test_cert_metadata_gen_v6_v6() {
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+
+        // v6/v6 with user id
+        let key_params = SecretKeyParamsBuilder::default()
+            .version(KeyVersion::V6)
+            .key_type(KeyType::Ed25519)
+            .can_certify(true)
+            .can_sign(true)
+            .feature_seipd_v2(true)
+            .primary_user_id("alice".into())
+            .preferred_symmetric_algorithms(smallvec![SymmetricKeyAlgorithm::AES256])
+            .preferred_hash_algorithms(smallvec![HashAlgorithm::Sha512])
+            .preferred_compression_algorithms(smallvec![CompressionAlgorithm::ZLIB])
+            .subkey(
+                SubkeyParamsBuilder::default()
+                    .version(KeyVersion::V6)
+                    .key_type(KeyType::X25519)
+                    .can_encrypt(true)
+                    .build()
+                    .unwrap(),
+            )
+            .build()
+            .unwrap();
+
+        let key = key_params
+            .generate(&mut rng)
+            .expect("failed to generate secret key");
+
+        let signed_key = key.sign(&mut rng, &"".into()).expect("failed to sign key");
+
+        // --- key metadata should be on dks
+        // We made one dks
+        assert_eq!(signed_key.details.direct_signatures.len(), 1);
+        let sig = signed_key.details.direct_signatures.first().unwrap();
+        // ... key metadata is on that dks signature
+        assert_eq!(sig.preferred_hash_algs(), &[HashAlgorithm::Sha512]);
+        assert!(sig.key_flags().certify());
+        assert!(sig.key_flags().sign());
+        assert!(!sig.key_flags().encrypt_comms());
+        assert!(!sig.key_flags().encrypt_storage());
+        assert_eq!(sig.features(), Some(&Features::from(&[0x09][..])));
+
+        // - no key metadata should be on user id binding
+        // We made one user id
+        assert_eq!(signed_key.details.users.len(), 1);
+        let user = signed_key.details.users.first().unwrap();
+        // .. it has one binding signature
+        assert_eq!(user.signatures.len(), 1);
+        let sig = user.signatures.first().unwrap();
+        // NO key metadata is on that (primary user id binding) signature
+        assert_eq!(sig.preferred_hash_algs(), &[]);
+        assert!(!sig.key_flags().certify());
+        assert!(!sig.key_flags().sign());
+        assert!(!sig.key_flags().encrypt_comms());
+        assert!(!sig.key_flags().encrypt_storage());
+        assert!(sig.features().is_none());
+
+        // try making (signed) public key representations
+        let _ = signed_key.public_key();
+        let _ = signed_key.signed_public_key();
+    }
+
+    #[test]
+    fn test_cert_metadata_gen_v6_v6_id_less() {
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+
+        // v6/v6 without user id
+        // variation: this key doesn't want to do seipdv1 (in "features")
+        let key_params = SecretKeyParamsBuilder::default()
+            .version(KeyVersion::V6)
+            .key_type(KeyType::Ed25519)
+            .can_certify(true)
+            .can_sign(true)
+            .feature_seipd_v1(false) // signal that we don't like seipdv1
+            .feature_seipd_v2(true)
+            .preferred_symmetric_algorithms(smallvec![SymmetricKeyAlgorithm::AES256])
+            .preferred_hash_algorithms(smallvec![HashAlgorithm::Sha512])
+            .preferred_compression_algorithms(smallvec![CompressionAlgorithm::ZLIB])
+            .subkey(
+                SubkeyParamsBuilder::default()
+                    .version(KeyVersion::V6)
+                    .key_type(KeyType::X25519)
+                    .can_encrypt(true)
+                    .passphrase(None)
+                    .build()
+                    .unwrap(),
+            )
+            .build()
+            .unwrap();
+
+        let key = key_params
+            .generate(&mut rng)
+            .expect("failed to generate secret key");
+
+        let signed_key = key.sign(&mut rng, &"".into()).expect("failed to sign key");
+
+        // --- key metadata should be on dks
+        // We made one dks
+        assert_eq!(signed_key.details.direct_signatures.len(), 1);
+        let sig = signed_key.details.direct_signatures.first().unwrap();
+        // ... key metadata is on that dks signature
+        assert_eq!(sig.preferred_hash_algs(), &[HashAlgorithm::Sha512]);
+        assert!(sig.key_flags().certify());
+        assert!(sig.key_flags().sign());
+        assert!(!sig.key_flags().encrypt_comms());
+        assert!(!sig.key_flags().encrypt_storage());
+        assert_eq!(sig.features(), Some(&Features::from(&[0x08][..])));
+
+        // We made no user id
+        assert!(signed_key.details.users.is_empty());
+
+        // try making (signed) public key representations
+        let _ = signed_key.public_key();
+        let _ = signed_key.signed_public_key();
+    }
+
+    #[test]
+    #[cfg(feature = "draft-pqc")]
+    fn key_gen_ed25519_ml_kem_x25519() {
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+
+        for key_version in [KeyVersion::V4, KeyVersion::V6] {
+            println!("key version {key_version:?}");
+
+            for _ in 0..10 {
+                gen_ed25519_ml_kem_x25519(&mut rng, key_version);
+            }
+        }
+    }
+    #[cfg(feature = "draft-pqc")]
+    fn gen_ed25519_ml_kem_x25519<R: Rng + CryptoRng>(mut rng: R, version: KeyVersion) {
+        let _ = pretty_env_logger::try_init();
+
+        let key_params = SecretKeyParamsBuilder::default()
+            .version(version)
+            .key_type(KeyType::Ed25519)
+            .can_certify(true)
+            .can_sign(true)
+            .primary_user_id("Me-X <me-ml-kem-x25519-rfc9580@mail.com>".into())
+            .passphrase(None)
+            .preferred_symmetric_algorithms(smallvec![SymmetricKeyAlgorithm::AES256,])
+            .preferred_hash_algorithms(smallvec![
+                HashAlgorithm::Sha256,
+                HashAlgorithm::Sha3_512,
+                HashAlgorithm::Sha512,
+            ])
+            .preferred_compression_algorithms(smallvec![
+                CompressionAlgorithm::ZLIB,
+                CompressionAlgorithm::ZIP,
+            ])
+            .subkey(
+                SubkeyParamsBuilder::default()
+                    .version(version)
+                    .key_type(KeyType::MlKem768X25519)
+                    .can_encrypt(true)
+                    .passphrase(None)
+                    .build()
+                    .unwrap(),
+            )
+            .build()
+            .unwrap();
+
+        let key = key_params
+            .generate(&mut rng)
+            .expect("failed to generate secret key");
+
+        let signed_key = key.sign(&mut rng, &"".into()).expect("failed to sign key");
+
+        let armor = signed_key
+            .to_armored_string(None.into())
+            .expect("failed to serialize key");
+
+        // std::fs::write("sample-448-rfc9580.sec.asc", &armor).unwrap();
+
+        let (signed_key2, _headers) =
+            SignedSecretKey::from_string(&armor).expect("failed to parse key");
+        signed_key2.verify().expect("invalid key");
+
+        assert_eq!(signed_key, signed_key2);
+
+        let public_key = signed_key.public_key();
+
+        let public_signed_key = public_key
+            .sign(
+                &mut rng,
+                &*signed_key,
+                &*signed_key.public_key(),
+                &"".into(),
+            )
+            .expect("failed to sign public key");
+
+        public_signed_key.verify().expect("invalid public key");
+
+        let armor = public_signed_key
+            .to_armored_string(None.into())
+            .expect("failed to serialize public key");
+
+        // std::fs::write("sample-448-rfc9580.pub.asc", &armor).unwrap();
+
+        let (signed_key2, _headers) =
+            SignedPublicKey::from_string(&armor).expect("failed to parse public key");
+        signed_key2.verify().expect("invalid public key");
+    }
+
+    #[test]
+    #[cfg(feature = "draft-pqc")]
+    fn key_gen_ed448_ml_kem_x448() {
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+
+        for key_version in [KeyVersion::V6] {
+            println!("key version {key_version:?}");
+
+            for _ in 0..10 {
+                gen_ed448_ml_kem_x448(&mut rng, key_version);
+            }
+        }
+    }
+    #[cfg(feature = "draft-pqc")]
+    fn gen_ed448_ml_kem_x448<R: Rng + CryptoRng>(mut rng: R, version: KeyVersion) {
+        let _ = pretty_env_logger::try_init();
+
+        let key_params = SecretKeyParamsBuilder::default()
+            .version(version)
+            .key_type(KeyType::Ed448)
+            .can_certify(true)
+            .can_sign(true)
+            .primary_user_id("Me-X <me-ml-kem-x448-rfc9580@mail.com>".into())
+            .passphrase(None)
+            .preferred_symmetric_algorithms(smallvec![SymmetricKeyAlgorithm::AES256,])
+            .preferred_hash_algorithms(smallvec![
+                HashAlgorithm::Sha256,
+                HashAlgorithm::Sha3_512,
+                HashAlgorithm::Sha512,
+            ])
+            .preferred_compression_algorithms(smallvec![
+                CompressionAlgorithm::ZLIB,
+                CompressionAlgorithm::ZIP,
+            ])
+            .subkey(
+                SubkeyParamsBuilder::default()
+                    .version(version)
+                    .key_type(KeyType::MlKem1024X448)
+                    .can_encrypt(true)
+                    .passphrase(None)
+                    .build()
+                    .unwrap(),
+            )
+            .build()
+            .unwrap();
+
+        let key = key_params
+            .generate(&mut rng)
+            .expect("failed to generate secret key");
+
+        let signed_key = key.sign(&mut rng, &"".into()).expect("failed to sign key");
+
+        let armor = signed_key
+            .to_armored_string(None.into())
+            .expect("failed to serialize key");
+
+        // std::fs::write("sample-448-rfc9580.sec.asc", &armor).unwrap();
+
+        let (signed_key2, _headers) =
+            SignedSecretKey::from_string(&armor).expect("failed to parse key");
+        signed_key2.verify().expect("invalid key");
+
+        assert_eq!(signed_key, signed_key2);
+
+        let public_key = signed_key.public_key();
+
+        let public_signed_key = public_key
+            .sign(
+                &mut rng,
+                &*signed_key,
+                &*signed_key.public_key(),
+                &"".into(),
+            )
+            .expect("failed to sign public key");
+
+        public_signed_key.verify().expect("invalid public key");
+
+        let armor = public_signed_key
+            .to_armored_string(None.into())
+            .expect("failed to serialize public key");
+
+        // std::fs::write("sample-448-rfc9580.pub.asc", &armor).unwrap();
+
+        let (signed_key2, _headers) =
+            SignedPublicKey::from_string(&armor).expect("failed to parse public key");
+        signed_key2.verify().expect("invalid public key");
+    }
+
+    #[test]
+    #[cfg(feature = "draft-pqc")]
+    fn key_gen_ml_dsa_65_ed25519_ml_kem_x25519() {
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+
+        for _ in 0..10 {
+            gen_key(
+                &mut rng,
+                KeyVersion::V6,
+                KeyType::MlDsa65Ed25519,
+                HashAlgorithm::Sha3_256,
+                KeyType::MlKem768X25519,
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "draft-pqc")]
+    fn key_ml_dsa_87_ed448_gen_ed448_ml_kem_x448() {
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+
+        for _ in 0..10 {
+            gen_key(
+                &mut rng,
+                KeyVersion::V6,
+                KeyType::MlDsa87Ed448,
+                HashAlgorithm::Sha3_512,
+                KeyType::MlKem1024X448,
+            );
+        }
+    }
+
+    #[test]
+    #[ignore]
+    #[cfg(feature = "draft-pqc")]
+    fn key_slh_dsa_128s_ml_kem_x25519() {
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+
+        gen_key(
+            &mut rng,
+            KeyVersion::V6,
+            KeyType::SlhDsaShake128s,
+            HashAlgorithm::Sha3_256,
+            KeyType::MlKem768X25519,
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "draft-pqc")]
+    fn key_slh_dsa_128f_ml_kem_x25519() {
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+
+        gen_key(
+            &mut rng,
+            KeyVersion::V6,
+            KeyType::SlhDsaShake128f,
+            HashAlgorithm::Sha3_256,
+            KeyType::MlKem768X25519,
+        );
+    }
+    #[test]
+    #[ignore]
+    #[cfg(feature = "draft-pqc")]
+    fn key_slh_dsa_256s_ml_kem_x448() {
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+
+        gen_key(
+            &mut rng,
+            KeyVersion::V6,
+            KeyType::SlhDsaShake256s,
+            HashAlgorithm::Sha3_512,
+            KeyType::MlKem1024X448,
+        );
+    }
+
+    #[cfg(feature = "draft-pqc")]
+    fn gen_key<R: Rng + CryptoRng>(
+        mut rng: R,
+        version: KeyVersion,
+        sign: KeyType,
+        sign_hash: HashAlgorithm,
+        encrypt: KeyType,
+    ) {
+        let _ = pretty_env_logger::try_init();
+
+        let key_params = SecretKeyParamsBuilder::default()
+            .version(version)
+            .key_type(sign)
+            .can_certify(true)
+            .can_sign(true)
+            .primary_user_id("Me-X me@mail.com>".into())
+            .passphrase(None)
+            .preferred_symmetric_algorithms(smallvec![SymmetricKeyAlgorithm::AES256])
+            .preferred_hash_algorithms(smallvec![sign_hash])
+            .preferred_compression_algorithms(smallvec![
+                CompressionAlgorithm::ZLIB,
+                CompressionAlgorithm::ZIP,
+            ])
+            .subkey(
+                SubkeyParamsBuilder::default()
+                    .version(version)
+                    .key_type(encrypt)
+                    .can_encrypt(true)
+                    .passphrase(None)
+                    .build()
+                    .unwrap(),
+            )
+            .build()
+            .unwrap();
+
+        let key = key_params
+            .generate(&mut rng)
+            .expect("failed to generate secret key");
+
+        let signed_key = key.sign(&mut rng, &"".into()).expect("failed to sign key");
+
+        let armor = signed_key
+            .to_armored_string(None.into())
+            .expect("failed to serialize key");
+
+        let (signed_key2, _headers) =
+            SignedSecretKey::from_string(&armor).expect("failed to parse key");
+        signed_key2.verify().expect("invalid key");
+
+        assert_eq!(signed_key, signed_key2);
+
+        let public_key = signed_key.public_key();
+
+        let public_signed_key = public_key
+            .sign(
+                &mut rng,
+                &*signed_key,
+                &*signed_key.public_key(),
+                &"".into(),
+            )
+            .expect("failed to sign public key");
+
+        public_signed_key.verify().expect("invalid public key");
+
+        let armor = public_signed_key
+            .to_armored_string(None.into())
+            .expect("failed to serialize public key");
+
+        let (signed_key2, _headers) =
+            SignedPublicKey::from_string(&armor).expect("failed to parse public key");
+        signed_key2.verify().expect("invalid public key");
     }
 }

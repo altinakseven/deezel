@@ -1,26 +1,29 @@
-use alloc::string::ToString;
-use alloc::format;
-extern crate alloc;
+use std::io::BufRead;
+
+use chrono::{DateTime, TimeZone, Utc};
 use log::debug;
 
 use crate::{
     crypto::public_key::PublicKeyAlgorithm,
-    errors::{ensure, unsupported_err, Result},
+    errors::{ensure, format_err, unsupported_err, Result},
     parsing_reader::BufReadParsing,
     types::{KeyVersion, PublicParams},
 };
 
-fn public_key_parser_v4_v6<B: BufReadParsing>(
+fn public_key_parser_v4_v6<B: BufRead>(
     key_ver: &KeyVersion,
     mut i: B,
 ) -> Result<(
     KeyVersion,
     PublicKeyAlgorithm,
-    u32,
+    DateTime<Utc>,
     Option<u16>,
     PublicParams,
 )> {
-    let created_at = i.read_be_u32()?;
+    let created_at = i
+        .read_be_u32()
+        .map(|v| Utc.timestamp_opt(i64::from(v), 0).single())?
+        .ok_or_else(|| format_err!("invalid created at timestamp"))?;
     let alg = i.read_u8().map(PublicKeyAlgorithm::from)?;
 
     let pub_len = if *key_ver == KeyVersion::V6 {
@@ -41,17 +44,20 @@ fn public_key_parser_v4_v6<B: BufReadParsing>(
     Ok((*key_ver, alg, created_at, None, params))
 }
 
-fn public_key_parser_v2_v3<B: BufReadParsing>(
+fn public_key_parser_v2_v3<B: BufRead>(
     key_ver: &KeyVersion,
     mut i: B,
 ) -> Result<(
     KeyVersion,
     PublicKeyAlgorithm,
-    u32,
+    DateTime<Utc>,
     Option<u16>,
     PublicParams,
 )> {
-    let created_at = i.read_be_u32()?;
+    let created_at = i
+        .read_be_u32()
+        .map(|v| Utc.timestamp_opt(i64::from(v), 0).single())?
+        .ok_or_else(|| format_err!("invalid created at timestamp"))?;
     let exp = i.read_be_u16()?;
     let alg = i.read_u8().map(PublicKeyAlgorithm::from)?;
     let params = PublicParams::try_from_reader(alg, None, &mut i)?;
@@ -62,17 +68,17 @@ fn public_key_parser_v2_v3<B: BufReadParsing>(
 /// Parse a public key packet (Tag 6)
 /// Ref: https://www.rfc-editor.org/rfc/rfc9580.html#name-public-key-packet-type-id-6
 #[allow(clippy::type_complexity)]
-pub(crate) fn parse<B: BufReadParsing>(
+pub(crate) fn parse<B: BufRead>(
     mut i: B,
 ) -> Result<(
     KeyVersion,
     PublicKeyAlgorithm,
-    u32,
+    DateTime<Utc>,
     Option<u16>,
     PublicParams,
 )> {
     let key_ver = i.read_u8().map(KeyVersion::from)?;
-    debug!("public params for key version {:?}", key_ver);
+    debug!("public params for key version {key_ver:?}");
 
     let key = match key_ver {
         KeyVersion::V2 | KeyVersion::V3 => public_key_parser_v2_v3(&key_ver, i)?,

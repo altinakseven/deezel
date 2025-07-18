@@ -1,20 +1,3 @@
-# Chadson's Journal - 2025-07-18
-#
-# Objective: Resolve build errors in the deezel-common crate.
-#
-# Initial Error: Compilation failed due to unresolved imports for `rand` and `no_std_io`
-# when `deezel-common` depended on `deezel-rpgp` with `default-features = false`.
-#
-# Path to Resolution:
-# 1. Incorrectly attempted to modify this file (`deezel-rpgp/Cargo.toml`) to fix the
-#    `deezel-common` build. This left the file in a broken state. The primary error
-#    was removing `no_std_io` as a dependency while features still referenced it.
-# 2. The correct fix was applied to `crates/deezel-common/Cargo.toml` to enable the `std`
-#    feature for `deezel-rpgp`.
-# 3. This file is now being corrected to restore the `no_std_io` dependency, which is
-#    required by the `alloc` and `wasm` features within this crate. This will fix the
-#    manifest parsing error and allow the overall build to proceed.
-
 [package]
 name = "deezel-rpgp"
 version = "0.1.0"
@@ -35,38 +18,37 @@ edition = "2021"
 rust-version = "1.85"
 
 [lib]
-crate-type = ["cdylib", "rlib"]
 bench = false
 
 [dependencies]
 
 # General
-base64ct = { version = "1.6.0", features = ["alloc"] }
+base64 = ">=0.21.7, < 0.23"
 buffer-redux = { version = "1.0.0", default-features = false }
-bitfields = "0.12.3"
+bitfields = "1.0.0"
 bytes = "1.9.0"
-byteorder = { version = "1.4", default-features = false, features = ["i128"] }
-chrono = { version = "0.4.39", default-features = false }
+byteorder = "1.4"
+chrono = { version = "0.4.39", default-features = false, features = [
+    "clock",
+    "std",
+] }
 derive_builder = "0.20.0"
-dyn-clone = "1.0"
 hex = "0.4"
 nom = "8.0"
 log = "0.4.22"
 smallvec = "1.10.0"
 derive_more = { version = "2.0.1", features = ["debug", "display"] }
-snafu = { version = "0.8.5", default-features = false, features = ["rust_1_81"] }
-spin = "0.9.8"
-regex = { version = "1.10.5", default-features = false, features = ["perf"], optional = true }
-no_std_io = { version = "0.6.0", default-features = false, optional = true }
+regex = { version = "1.7", optional = true }
+snafu = { version = "0.8.5", features = ["rust_1_81"] }
 
 # Compression
-flate2 = { version = "1.1.1", default-features = false, features = ["rust_backend"] }
+flate2 = { version = "1.1.1", default-features = false, features = ["zlib-rs"] }
 bzip2 = { version = "0.6.0", optional = true }
 
 # Crypto
 aes = "0.8.4"
 aead = { version = "0.5", features = ["bytes"] }
-argon2 = { version = "0.5", features = ["zeroize"] }
+argon2 = { version = "0.5", features = ["zeroize", "std"] }
 block-padding = "0.3"
 blowfish = "0.9"
 camellia = "0.1"
@@ -84,7 +66,7 @@ des = "0.8"
 digest = "0.10.7"
 dsa = "0.6.3"
 ecdsa = "0.16.9"
-ed25519-dalek = { version = "2.1.1", default-features = false, features = ["zeroize", "fast", "rand_core"] }
+ed25519-dalek = { version = "2.1.1", default-features = false, features = ["std", "zeroize", "fast", "rand_core"] }
 elliptic-curve = "0.13"
 generic-array = "0.14.6"
 idea = "0.5"
@@ -95,8 +77,7 @@ p256 = { version = "0.13", features = ["ecdsa", "ecdh"] }
 p384 = { version = "0.13", features = ["ecdsa"] }
 p521 = { version = "0.13", features = ["ecdsa", "ecdh"] }
 k256 = { version = "0.13", features = ["ecdsa"] }
-getrandom = { workspace = true, optional = true }
-rand = { workspace = true, optional = true }
+rand = { version = "0.8.5", optional = true }
 ripemd = { version = "0.1.3", features = ["oid"] }
 rsa = { version = "0.9.7" }
 sha1 = { version = "0.10.6", features = ["oid"] }
@@ -107,11 +88,12 @@ sha3 = { version = "0.10.8", features = ["oid"] }
 signature = "2.2"
 twofish = "0.7"
 zeroize = { version = "1.8", features = ["zeroize_derive"] }
+getrandom = { version = "0.2", optional = true }
 hkdf = "0.12.4"
 aes-gcm = "0.10.3"
 eax = "0.5.0"
 ocb3 = "0.1"
-aes-kw = { version = "0.2.1" }
+aes-kw = { version = "0.2.1", features = ["std"] }
 cx448 = { version = "0.1.1", features = ["zeroize"] }
 num-bigint = { version = "0.8.4", features = [
     "rand",
@@ -131,10 +113,10 @@ x25519-dalek = { version = "2.0.1", default-features = false, features = [
 ml-kem = { version = "0.2.1", features = ["zeroize", "deterministic"], optional = true }
 ml-dsa = { version = "0.0.4", features = ["zeroize"], optional = true }
 slh-dsa = { version = "0.0.3", optional = true }
-proptest = { version = "1.0.0", default-features = false, features = ["alloc", "proptest-macro", "std"], optional = true }
+replace_with = "0.1.8"
 
 
-[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+[dev-dependencies]
 glob = "0.3"
 hex-literal = "0.4"
 pretty_assertions = "1"
@@ -144,37 +126,30 @@ rand_xorshift = "0.3"
 serde = { version = "1.0.217", features = ["derive"] }
 serde_json = "1.0.47"
 criterion = { version = "0.5", features = ["html_reports"] }
-tempfile = "3.8.0"
-proptest-derive = "0.3.0"
+tempfile = "3.14.0"
+proptest = { version = "1.6.0", features = ["proptest-macro"] }
+proptest-derive = "0.5.1"
 escape_string = "0.1.2"
 testresult = "0.4.1"
-proptest = "1.0.0"
 
 [features]
 default = ["bzip2", "std"]
-
-# Enables heap allocations
-alloc = ["dep:no_std_io", "no_std_io/alloc"]
 
 # Enables bzip2 support
 bzip2 = ["dep:bzip2"]
 # Enables assembly based optimizations
 asm = ["dep:sha1-asm", "sha1/asm", "sha2/asm", "md-5/asm"]
+# Allows building for wasm
+wasm = ["chrono/wasmbind", "dep:getrandom", "getrandom/js"]
 
 # Enables implementation of draft-ietf-openpgp-pqc-10
 # This is unstable and can have breaking changes in patch releases.
 # DO NOT USE IN PRODUCTION!
 draft-pqc = ["dep:ml-kem", "dep:ml-dsa", "dep:slh-dsa"]
 
-# Enable message creation
-create = ["std"]
-
 # Enable std support (for tests)
-std = ["alloc", "chrono/clock", "regex", "regex/std", "byteorder/std", "no_std_io/std", "dep:rand", "dep:getrandom"]
+std = ["chrono/clock", "regex", "byteorder/std", "dep:rand", "dep:getrandom"]
 
-test-utils = ["std", "dep:proptest"]
-
-wasm = ["getrandom/js", "dep:rand", "dep:no_std_io", "byteorder/std", "alloc"]
 
 [profile.bench]
 debug = 2

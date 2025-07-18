@@ -1,7 +1,6 @@
-extern crate alloc;
-use crate::io::BufRead;
+use std::io::{self, BufRead};
 
-use crate::io::Write;
+use byteorder::{BigEndian, WriteBytesExt};
 use log::debug;
 use num_enum::{FromPrimitive, IntoPrimitive, TryFromPrimitive};
 
@@ -27,7 +26,7 @@ impl PacketLength {
         }
     }
 
-    pub fn try_from_reader<R: BufRead>(mut r: R) -> crate::io::Result<Self> {
+    pub fn try_from_reader<R: BufRead>(mut r: R) -> std::io::Result<Self> {
         let olen = r.read_u8()?;
         let len = match olen {
             // One-Octet Lengths
@@ -58,17 +57,17 @@ impl PacketLength {
         }
     }
 
-    pub fn to_writer_new<W: Write>(&self, writer: &mut W) -> Result<()> {
+    pub fn to_writer_new<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
         match self {
             PacketLength::Fixed(len) => {
                 if *len < 192 {
-                    writer.write_all(&[*len as u8])?;
+                    writer.write_u8(*len as u8)?;
                 } else if *len < 8384 {
-                    writer.write_all(&[(((len - 192) >> 8) + 192) as u8])?;
-                    writer.write_all(&[((len - 192) & 0xFF) as u8])?;
+                    writer.write_u8((((len - 192) >> 8) + 192) as u8)?;
+                    writer.write_u8(((len - 192) & 0xFF) as u8)?;
                 } else {
-                    writer.write_all(&[255])?;
-                    writer.write_all(&len.to_be_bytes())?;
+                    writer.write_u8(255)?;
+                    writer.write_u32::<BigEndian>(*len)?;
                 }
             }
             PacketLength::Indeterminate => {
@@ -80,7 +79,7 @@ impl PacketLength {
                 // y & 0x1F
                 let n = len.trailing_zeros();
                 let n = (224 + n) as u8;
-                writer.write_all(&[n])?;
+                writer.write_u8(n)?;
             }
         }
         Ok(())
@@ -94,6 +93,7 @@ impl PacketLength {
 ///
 /// However, rPGP will continue to use the term "(Packet) Tag" for the time being.
 #[derive(Debug, PartialEq, Eq, Clone, Copy, FromPrimitive, IntoPrimitive)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 #[repr(u8)]
 #[non_exhaustive]
 pub enum Tag {
@@ -131,10 +131,19 @@ pub enum Tag {
     SymEncryptedProtectedData = 18,
     /// Modification Detection Code Packet
     ModDetectionCode = 19,
+    /// "OCB Encrypted Data Packet", a GnuPG proprietary AEAD encryption container format
+    /// (not standardized in OpenPGP).
+    ///
+    /// rPGP only supports decryption, for users who have inadvertently ended up with such data.
+    ///
+    /// This format was initially outlined in RFC 4880-bis, but superseded by SEIPDv2 in RFC 9580.
+    /// See <https://www.ietf.org/archive/id/draft-koch-librepgp-03.html#name-ocb-encrypted-data-packet-t>
+    GnupgAead = 20,
     /// Padding Packet
     Padding = 21,
 
     #[num_enum(catch_all)]
+    #[cfg_attr(test, proptest(skip))]
     Other(u8),
 }
 
@@ -160,6 +169,7 @@ impl Tag {
             Self::UserAttribute => 17,
             Self::SymEncryptedProtectedData => 18,
             Self::ModDetectionCode => 19,
+            Self::GnupgAead => 20,
             Self::Padding => 21,
             Self::Other(i) => i,
         };
@@ -203,6 +213,7 @@ impl Tag {
 #[derive(Debug, PartialEq, Eq, Clone, Copy, TryFromPrimitive)]
 #[repr(u8)]
 #[derive(Default)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub enum PacketHeaderVersion {
     /// Old Packet Format ("Legacy packet format")
     Old = 0,
@@ -212,35 +223,35 @@ pub enum PacketHeaderVersion {
 }
 
 impl PacketHeaderVersion {
-    pub fn write_header(self, writer: &mut impl Write, tag: Tag, len: usize) -> Result<()> {
-        debug!("write_header {:?} {:?} {}", self, tag, len);
+    pub fn write_header(self, writer: &mut impl io::Write, tag: Tag, len: usize) -> Result<()> {
+        debug!("write_header {self:?} {tag:?} {len}");
         let tag: u8 = tag.into();
         match self {
             PacketHeaderVersion::Old => {
                 if len < 256 {
                     // one octet
-                    writer.write_all(&[0b1000_0000 | (tag << 2)])?;
-                    writer.write_all(&[len.try_into()?])?;
+                    writer.write_u8(0b1000_0000 | (tag << 2))?;
+                    writer.write_u8(len.try_into()?)?;
                 } else if len < 65536 {
                     // two octets
-                    writer.write_all(&[0b1000_0001 | (tag << 2)])?;
-                    writer.write_all(&(len as u16).to_be_bytes())?;
+                    writer.write_u8(0b1000_0001 | (tag << 2))?;
+                    writer.write_u16::<BigEndian>(len as u16)?;
                 } else {
                     // four octets
-                    writer.write_all(&[0b1000_0010 | (tag << 2)])?;
-                    writer.write_all(&(len as u32).to_be_bytes())?;
+                    writer.write_u8(0b1000_0010 | (tag << 2))?;
+                    writer.write_u32::<BigEndian>(len as u32)?;
                 }
             }
             PacketHeaderVersion::New => {
-                writer.write_all(&[0b1100_0000 | tag])?;
+                writer.write_u8(0b1100_0000 | tag)?;
                 if len < 192 {
-                    writer.write_all(&[len.try_into()?])?;
+                    writer.write_u8(len.try_into()?)?;
                 } else if len < 8384 {
-                    writer.write_all(&[(((len - 192) >> 8) + 192) as u8])?;
-                    writer.write_all(&[((len - 192) & 0xFF) as u8])?;
+                    writer.write_u8((((len - 192) >> 8) + 192) as u8)?;
+                    writer.write_u8(((len - 192) & 0xFF) as u8)?;
                 } else {
-                    writer.write_all(&[255])?;
-                    writer.write_all(&(len as u32).to_be_bytes())?;
+                    writer.write_u8(255)?;
+                    writer.write_u32::<BigEndian>(len as u32)?;
                 }
             }
         }
@@ -278,15 +289,18 @@ impl PacketHeaderVersion {
 
 // TODO: find a better place for this
 #[derive(Debug, PartialEq, Eq, Clone, Copy, PartialOrd, FromPrimitive, IntoPrimitive)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 #[repr(u8)]
 pub enum KeyVersion {
     V2 = 2,
     V3 = 3,
     V4 = 4,
+    #[cfg_attr(test, proptest(skip))] // mostly not implemented
     V5 = 5,
     V6 = 6,
 
     #[num_enum(catch_all)]
+    #[cfg_attr(test, proptest(skip))]
     Other(u8),
 }
 
@@ -322,60 +336,54 @@ pub enum PkeskVersion {
 #[derive(Debug, PartialEq, Eq, Clone, Copy, FromPrimitive, IntoPrimitive)]
 #[repr(u8)]
 pub enum SkeskVersion {
+    /// SKESK v4 is the default mechanism for symmetric-key encryption of a session key in
+    /// OpenPGP RFC 4880:
+    /// <https://www.rfc-editor.org/rfc/rfc4880#section-5.3>
     V4 = 4,
+
+    /// CAUTION: SKESK v5 is a GnuPG-specific format! (It is not standardized as part of OpenPGP)
+    ///
+    /// See <https://www.ietf.org/archive/id/draft-koch-librepgp-03.html#name-symmetric-key-encrypted-ses>
+    V5 = 5,
+
+    /// SKESK v6 is an AEAD-based format for symmetric-key encryption of a session key.
+    ///
+    /// It was introduced in OpenPGP RFC 9580:
+    /// <https://www.rfc-editor.org/rfc/rfc9580.html#name-version-6-symmetric-key-enc>
     V6 = 6,
 
     #[num_enum(catch_all)]
     Other(u8),
 }
 
-#[cfg(all(test, feature = "std"))]
+#[cfg(test)]
 mod tests {
     use proptest::prelude::*;
-    use proptest::strategy::{BoxedStrategy, Strategy};
 
     use super::*;
 
-    impl Arbitrary for PacketHeaderVersion {
-        type Parameters = ();
-        type Strategy = BoxedStrategy<Self>;
+    #[test]
+    fn test_write_header() {
+        let mut buf = Vec::new();
+        PacketHeaderVersion::New
+            .write_header(&mut buf, Tag::UserAttribute, 12875)
+            .unwrap();
 
-        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-            prop_oneof![
-                Just(PacketHeaderVersion::Old),
-                Just(PacketHeaderVersion::New),
-            ]
-            .boxed()
-        }
-    }
+        assert_eq!(hex::encode(buf), "d1ff0000324b");
 
-    impl Arbitrary for Tag {
-        type Parameters = ();
-        type Strategy = BoxedStrategy<Self>;
+        let mut buf = Vec::new();
+        PacketHeaderVersion::New
+            .write_header(&mut buf, Tag::Signature, 302)
+            .unwrap();
 
-        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-            prop_oneof![
-                Just(Tag::PublicKeyEncryptedSessionKey),
-                Just(Tag::Signature),
-                Just(Tag::SymKeyEncryptedSessionKey),
-                Just(Tag::OnePassSignature),
-                Just(Tag::SecretKey),
-                Just(Tag::PublicKey),
-                Just(Tag::SecretSubkey),
-                Just(Tag::CompressedData),
-                Just(Tag::SymEncryptedData),
-                Just(Tag::Marker),
-                Just(Tag::LiteralData),
-                Just(Tag::Trust),
-                Just(Tag::UserId),
-                Just(Tag::PublicSubkey),
-                Just(Tag::UserAttribute),
-                Just(Tag::SymEncryptedProtectedData),
-                Just(Tag::ModDetectionCode),
-                Just(Tag::Padding),
-            ]
-            .boxed()
-        }
+        assert_eq!(hex::encode(buf), "c2c06e");
+
+        let mut buf = Vec::new();
+        PacketHeaderVersion::New
+            .write_header(&mut buf, Tag::Signature, 303)
+            .unwrap();
+
+        assert_eq!(hex::encode(buf), "c2c06f");
     }
 
     impl Arbitrary for PacketLength {
@@ -398,22 +406,6 @@ mod tests {
             let mut buf = Vec::new();
             version.write_header(&mut buf, Tag::Signature, len).unwrap();
             assert_eq!(buf.len(), version.header_len(len));
-        }
-    }
-
-    impl Arbitrary for KeyVersion {
-        type Parameters = ();
-        type Strategy = BoxedStrategy<Self>;
-
-        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-            prop_oneof![
-                Just(KeyVersion::V2),
-                Just(KeyVersion::V3),
-                Just(KeyVersion::V4),
-                Just(KeyVersion::V5),
-                Just(KeyVersion::V6),
-            ]
-            .boxed()
         }
     }
 }

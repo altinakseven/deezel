@@ -1,6 +1,6 @@
-extern crate alloc;
-use crate::io::{self, BufRead};
+use std::io::{self, BufRead};
 
+use byteorder::{BigEndian, WriteBytesExt};
 use bytes::{Buf, Bytes};
 use num_bigint::BigUint;
 
@@ -41,7 +41,7 @@ impl Mpi {
     /// Parses the given reader as an MPI.
     ///
     /// The buffer is expected to be length-prefixed.
-    pub fn try_from_reader<B: BufRead + BufReadParsing>(i: &mut B) -> Result<Self> {
+    pub fn try_from_reader<B: BufRead>(mut i: B) -> Result<Self> {
         let len_bits = i.read_be_u16()?;
 
         if len_bits > MAX_EXTERN_MPI_BITS {
@@ -104,7 +104,7 @@ impl Serialize for Mpi {
     fn to_writer<W: io::Write>(&self, w: &mut W) -> Result<()> {
         let bytes = &self.0;
         let size = bit_size(bytes);
-        w.write_all(&(size as u16).to_be_bytes())?;
+        w.write_u16::<BigEndian>(size as u16)?;
         w.write_all(bytes)?;
 
         Ok(())
@@ -133,9 +133,8 @@ impl From<Mpi> for BigUint {
     }
 }
 
-#[cfg(all(test, feature = "std"))]
+#[cfg(test)]
 mod tests {
-    use alloc::format;
     use proptest::prelude::*;
 
     use super::*;
@@ -184,8 +183,8 @@ mod tests {
             ("00e57192fa7bd6abd7d01331f0411eebff4651290af1329369cc3bb3b8ccbd7ba6e352400c3f64f637967e24524921ee04f1e0a79168781f0bec9029e34c8a1fb1c328a4b8d74c31429616a6ff4707bb56b71ab66643243087c8ff0d0c4883b3473c56deece9a83dbd06eef09fac3558003ae45f8898b8a9490aa79672eebdd7d985d051d62698f2da7eee33ba740e30fc5a93c3f16ca1490dfd62b84ba016c9da7c087a28a4e97d8af79c6b638bc22f20a8b5953bb83caa3dddaaf1d0dc15a3f7ed47870174af74e5308b856138771a10019fe4374389eb89d2280776e33fa2dd3526cec35cd86a9cf6c94253fe00c4b8a87a36451745116456833bb1a237", "07f0e57192fa7bd6abd7d01331f0411eebff4651290af1329369cc3bb3b8ccbd7ba6e352400c3f64f637967e24524921ee04f1e0a79168781f0bec9029e34c8a1fb1c328a4b8d74c31429616a6ff4707bb56b71ab66643243087c8ff0d0c4883b3473c56deece9a83dbd06eef09fac3558003ae45f8898b8a9490aa79672eebdd7d985d051d62698f2da7eee33ba740e30fc5a93c3f16ca1490dfd62b84ba016c9da7c087a28a4e97d8af79c6b638bc22f20a8b5953bb83caa3dddaaf1d0dc15a3f7ed47870174af74e5308b856138771a10019fe4374389eb89d2280776e33fa2dd3526cec35cd86a9cf6c94253fe00c4b8a87a36451745116456833bb1a237"),
         ];
 
-        for (_i, (raw, encoded)) in fixtures.iter().enumerate() {
-            // println!("fixture {i}");
+        for (i, (raw, encoded)) in fixtures.iter().enumerate() {
+            println!("fixture {i}");
             let n = hex::decode(raw).unwrap();
 
             let n_big = BigUint::from_bytes_be(&n);

@@ -1,89 +1,73 @@
-use alloc::string::{String, ToString};
-use alloc::vec;
-use alloc::vec::Vec;
-use alloc::format;
-extern crate alloc;
 use generic_array::{
     typenum::{U16, U24, U32},
     GenericArray,
 };
-use snafu::Snafu;
+use snafu::{ResultExt, Snafu};
 
 /// AES key wrap possible errors.
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[snafu(display("invalid key size: {}", size))]
     InvalidKeySize { size: usize },
-    #[snafu(display("wrap failed: {}", msg))]
-    Wrap { msg: String },
-    #[snafu(display("unwrap failed: {}", msg))]
-    Unwrap { msg: String },
+    #[snafu(display("wrap failed"))]
+    Wrap { source: aes_kw::Error },
+    #[snafu(display("unwrap failed"))]
+    Unwrap { source: aes_kw::Error },
 }
 
 /// AES Key Wrap
 /// As defined in RFC 3394.
 pub fn wrap(key: &[u8], data: &[u8]) -> Result<Vec<u8>, Error> {
     let aes_size = key.len() * 8;
-    // AES-KW output is always input length + 8 bytes
-    let mut output = vec![0u8; data.len() + 8];
-    
     let res = match aes_size {
         128 => {
             let key = GenericArray::<u8, U16>::from_slice(key);
             let kek = aes_kw::KekAes128::new(key);
-            kek.wrap(data, &mut output)
+            kek.wrap_vec(data)
         }
         192 => {
             let key = GenericArray::<u8, U24>::from_slice(key);
             let kek = aes_kw::KekAes192::new(key);
-            kek.wrap(data, &mut output)
+            kek.wrap_vec(data)
         }
         256 => {
             let key = GenericArray::<u8, U32>::from_slice(key);
             let kek = aes_kw::KekAes256::new(key);
-            kek.wrap(data, &mut output)
+            kek.wrap_vec(data)
         }
         _ => {
             return Err(InvalidKeySizeSnafu { size: aes_size }.build());
         }
     };
-    res.map_err(|e| WrapSnafu { msg: format!("{:?}", e) }.build())?;
-    Ok(output)
+    res.context(WrapSnafu)
 }
 
 /// AES Key Unwrap
 /// As defined in RFC 3394.
 pub fn unwrap(key: &[u8], data: &[u8]) -> Result<Vec<u8>, Error> {
     let aes_size = key.len() * 8;
-    // AES-KW unwrap output is always input length - 8 bytes
-    if data.len() < 8 {
-        return Err(UnwrapSnafu { msg: "invalid data size".to_string() }.build());
-    }
-    let mut output = vec![0u8; data.len() - 8];
-    
     let res = match aes_size {
         128 => {
             let key = GenericArray::<u8, U16>::from_slice(key);
             let kek = aes_kw::KekAes128::new(key);
-            kek.unwrap(data, &mut output)
+            kek.unwrap_vec(data)
         }
         192 => {
             let key = GenericArray::<u8, U24>::from_slice(key);
             let kek = aes_kw::KekAes192::new(key);
-            kek.unwrap(data, &mut output)
+            kek.unwrap_vec(data)
         }
         256 => {
             let key = GenericArray::<u8, U32>::from_slice(key);
             let kek = aes_kw::KekAes256::new(key);
-            kek.unwrap(data, &mut output)
+            kek.unwrap_vec(data)
         }
         _ => {
             return Err(InvalidKeySizeSnafu { size: aes_size }.build());
         }
     };
 
-    res.map_err(|e| UnwrapSnafu { msg: format!("{:?}", e) }.build())?;
-    Ok(output)
+    res.context(WrapSnafu)
 }
 
 #[cfg(test)]

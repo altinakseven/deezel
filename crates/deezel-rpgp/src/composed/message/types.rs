@@ -1,9 +1,5 @@
-use alloc::boxed::Box;
-use alloc::string::{String, ToString};
-use alloc::vec;
-use alloc::format;
-extern crate alloc;
-use alloc::vec::Vec;
+use std::io::{self, BufRead, Read};
+
 use log::{debug, warn};
 
 use super::reader::{
@@ -12,24 +8,25 @@ use super::reader::{
 };
 use crate::{
     armor,
-    composed::{message::decrypt::*, signed_key::SignedSecretKey, PlainSessionKey},
+    composed::{message::decrypt::*, signed_key::SignedSecretKey},
     crypto::sym::SymmetricKeyAlgorithm,
     errors::{bail, ensure, ensure_eq, format_err, Error, Result},
-    io::{BufRead, Read},
     packet::{
         InnerSignature, LiteralDataHeader, OnePassSignature, Packet, PacketHeader, PacketTrait,
-        PublicKeyEncryptedSessionKey, Signature, SymEncryptedProtectedDataConfig,
-        SymKeyEncryptedSessionKey,
+        ProtectedDataConfig, PublicKeyEncryptedSessionKey, Signature, SymKeyEncryptedSessionKey,
     },
     parsing_reader::BufReadParsing,
     ser::Serialize,
-    types::{EskType, KeyDetails, Password, PkeskVersion, PublicKeyTrait, SecretParams, Tag},
+    types::{
+        EskType, KeyDetails, Password, PkeskVersion, PublicKeyTrait, SecretParams, SkeskVersion,
+        Tag,
+    },
     util::impl_try_from_into,
 };
 
-pub trait DebugBufRead: crate::io::BufRead + core::fmt::Debug + Send {}
+pub trait DebugBufRead: BufRead + std::fmt::Debug + Send {}
 
-impl<T: crate::io::BufRead + core::fmt::Debug + Send> DebugBufRead for T {}
+impl<T: BufRead + std::fmt::Debug + Send> DebugBufRead for T {}
 
 /// The inner reader type in a nested message
 #[derive(Debug)]
@@ -48,25 +45,34 @@ impl MessageReader<'_> {
         }
     }
 
-    fn check_trailing_data(&mut self) -> crate::io::Result<()> {
+    fn check_trailing_data(&mut self) -> io::Result<()> {
         fn check_next_packet<R: DebugBufRead>(
             mut parser: crate::packet::PacketParser<R>,
-        ) -> crate::io::Result<()> {
+        ) -> io::Result<()> {
             match parser.next_ref() {
                 Some(Ok(packet)) => {
                     let tag = packet.packet_header().tag();
                     match tag {
                         Tag::Padding | Tag::Marker => {
-                            debug!("ignoring trailing packet: {:?}", tag);
+                            debug!("ignoring trailing packet: {tag:?}");
                         }
                         _ => {
-                            return Err(crate::io::Error::new(crate::io::ErrorKind::InvalidData, "unexpected trailing packet"));
+                            return Err(io::Error::new(
+                                io::ErrorKind::InvalidInput,
+                                format!(
+                                    "unexpected trailing packet found: {:?}",
+                                    packet.packet_header()
+                                ),
+                            ));
                         }
                     }
                 }
                 Some(Err(err)) => {
-                    warn!("failed to parse trailing data: {:?}", err);
-                    return Err(crate::io::Error::new(crate::io::ErrorKind::InvalidData, "failed to parse trailing data"));
+                    warn!("failed to parse trailing data: {err:?}");
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "unexpected trailing bytes found",
+                    ));
                 }
                 None => {
                     // all good
@@ -80,7 +86,7 @@ impl MessageReader<'_> {
                 let compressed_body_reader = r.get_mut();
 
                 // discard excess data in the compressed packet
-                let excess = compressed_body_reader.drain().map_err(|_| crate::io::Error::new(crate::io::ErrorKind::Other, "failed to drain compressed data"))?;
+                let excess = compressed_body_reader.drain()?;
                 if excess > 0 {
                     debug!("discarded excess data in compressed packet: {excess}");
                 }
@@ -89,14 +95,15 @@ impl MessageReader<'_> {
                 message_reader.check_trailing_data()?;
             }
             MessageReader::Edata(e) => {
-                let parser = crate::packet::PacketParser::new(&mut **e);
+                let mut inner_reader = e;
+                let parser = crate::packet::PacketParser::new(&mut inner_reader);
                 check_next_packet(parser)?;
 
-                let message_reader = e.get_mut().get_mut();
+                let message_reader = inner_reader.get_mut().get_mut();
                 message_reader.check_trailing_data()?;
             }
             MessageReader::Reader(r) => {
-                let parser = crate::packet::PacketParser::new(&mut **r);
+                let parser = crate::packet::PacketParser::new(r);
                 check_next_packet(parser)?;
             }
         }
@@ -106,7 +113,7 @@ impl MessageReader<'_> {
 }
 
 impl Read for MessageReader<'_> {
-    fn read(&mut self, buf: &mut [u8]) -> crate::io::Result<usize> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
             Self::Compressed(r) => r.read(buf),
             Self::Edata(r) => r.read(buf),
@@ -116,7 +123,7 @@ impl Read for MessageReader<'_> {
 }
 
 impl BufRead for MessageReader<'_> {
-    fn fill_buf(&mut self) -> crate::io::Result<&[u8]> {
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
         match self {
             Self::Compressed(r) => r.fill_buf(),
             Self::Edata(r) => r.fill_buf(),
@@ -200,7 +207,7 @@ pub(crate) enum MessageParts {
     Encrypted {
         packet_header: PacketHeader,
         esk: Vec<Esk>,
-        config: Option<SymEncryptedProtectedDataConfig>,
+        config: Option<ProtectedDataConfig>,
         is_nested: bool,
     },
 }
@@ -297,6 +304,20 @@ impl<'a> Message<'a> {
                     )
                 }
                 Edata::SymEncryptedProtectedData { reader } => {
+                    assert!(reader.is_done());
+                    let packet_header = reader.packet_header();
+                    let config = Some(reader.config().clone());
+                    (
+                        reader.into_inner().into_inner(),
+                        MessageParts::Encrypted {
+                            packet_header,
+                            esk,
+                            config,
+                            is_nested,
+                        },
+                    )
+                }
+                Edata::GnupgAeadData { reader } => {
                     assert!(reader.is_done());
                     let packet_header = reader.packet_header();
                     let config = Some(reader.config().clone());
@@ -408,7 +429,7 @@ pub enum Esk {
 }
 
 impl Esk {
-    pub fn try_from_reader<R: crate::io::BufRead>(packet: &mut PacketBodyReader<R>) -> Result<Self> {
+    pub fn try_from_reader(packet: &mut PacketBodyReader<MessageReader<'_>>) -> Result<Self> {
         let packet_header = packet.packet_header();
         match packet_header.tag() {
             Tag::PublicKeyEncryptedSessionKey => {
@@ -461,7 +482,7 @@ impl From<Esk> for Packet {
 }
 
 impl Serialize for Esk {
-    fn to_writer<W: crate::io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
         match self {
             Esk::PublicKeyEncryptedSessionKey(k) => k.to_writer_with_header(writer),
             Esk::SymKeyEncryptedSessionKey(k) => k.to_writer_with_header(writer),
@@ -488,6 +509,49 @@ pub enum Edata<'a> {
     SymEncryptedProtectedData {
         reader: SymEncryptedProtectedDataReader<MessageReader<'a>>,
     },
+    GnupgAeadData {
+        reader: SymEncryptedProtectedDataReader<MessageReader<'a>>,
+    },
+}
+
+/// Configure which encryption container types to decrypt, besides the standard "SEIPD" (v1 or v2).
+///
+/// Used to configure allowed packet types in `Edata::decrypt_permissive`.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct DecryptionOptions {
+    legacy: bool,
+    gnupg_aead: bool,
+}
+
+impl DecryptionOptions {
+    pub fn new() -> Self {
+        Default::default()
+    }
+
+    /// Enable handling of legacy Symmetrically Encrypted Data (SED) packets (packet type 9).
+    ///
+    /// These are malleable and present a potential security hazard,
+    /// also see <https://www.rfc-editor.org/rfc/rfc9580.html#name-avoiding-ciphertext-malleab>
+    ///
+    /// This packet type is historical! (RFC 4880 from 11/2007 discourages emitting this format).
+    /// Decrypting it should not be necessary in most contexts, except for historical data.
+    pub fn enable_legacy(mut self) -> Self {
+        self.legacy = true;
+        self
+    }
+
+    /// Enable handling GnuPG's proprietary AEAD format
+    /// (packet type 20, aka "OCB encrypted data" or "OCBED").
+    ///
+    /// This also enables support for GnuPG's proprietary v5 SKESK (which as an AEAD-based
+    /// mechanism for password-protected session keys, and will typically occur in combination with
+    /// "OCB encrypted data").
+    ///
+    /// This format is not part of the IETF-specified OpenPGP standard!
+    pub fn enable_gnupg_aead(mut self) -> Self {
+        self.gnupg_aead = true;
+        self
+    }
 }
 
 impl<'a> Edata<'a> {
@@ -496,6 +560,10 @@ impl<'a> Edata<'a> {
             Tag::SymEncryptedData => {
                 let reader = SymEncryptedDataReader::new(reader)?;
                 Ok(Self::SymEncryptedData { reader })
+            }
+            Tag::GnupgAead => {
+                let reader = SymEncryptedProtectedDataReader::new_gnupg_aead(reader)?;
+                Ok(Self::GnupgAeadData { reader })
             }
             Tag::SymEncryptedProtectedData => {
                 let reader = SymEncryptedProtectedDataReader::new(reader)?;
@@ -507,10 +575,11 @@ impl<'a> Edata<'a> {
 }
 
 impl BufRead for Edata<'_> {
-    fn fill_buf(&mut self) -> crate::io::Result<&[u8]> {
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
         match self {
             Self::SymEncryptedData { reader } => reader.fill_buf(),
             Self::SymEncryptedProtectedData { reader } => reader.fill_buf(),
+            Self::GnupgAeadData { reader } => reader.fill_buf(),
         }
     }
 
@@ -518,15 +587,25 @@ impl BufRead for Edata<'_> {
         match self {
             Self::SymEncryptedData { reader } => reader.consume(amt),
             Self::SymEncryptedProtectedData { reader } => reader.consume(amt),
+            Self::GnupgAeadData { reader } => reader.consume(amt),
         }
     }
 }
 
 impl Read for Edata<'_> {
-    fn read(&mut self, buf: &mut [u8]) -> crate::io::Result<usize> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
             Self::SymEncryptedData { reader } => reader.read(buf),
             Self::SymEncryptedProtectedData { reader } => reader.read(buf),
+            Self::GnupgAeadData { reader } => reader.read(buf),
+        }
+    }
+
+    fn read_to_end(&mut self, buf: &mut Vec<u8>) -> io::Result<usize> {
+        match self {
+            Self::SymEncryptedData { reader } => reader.read_to_end(buf),
+            Self::SymEncryptedProtectedData { reader } => reader.read_to_end(buf),
+            Self::GnupgAeadData { reader } => reader.read_to_end(buf),
         }
     }
 }
@@ -536,6 +615,7 @@ impl<'a> Edata<'a> {
         match self {
             Self::SymEncryptedData { reader } => reader.packet_header(),
             Self::SymEncryptedProtectedData { reader } => reader.packet_header(),
+            Self::GnupgAeadData { reader } => reader.packet_header(),
         }
     }
 
@@ -547,42 +627,52 @@ impl<'a> Edata<'a> {
         match self {
             Self::SymEncryptedData { reader } => reader.get_mut(),
             Self::SymEncryptedProtectedData { reader } => reader.get_mut(),
+            Self::GnupgAeadData { reader } => reader.get_mut(),
         }
     }
 
-    /// Decrypts only SEIPD (v1 or v2), errors for SED packets
-    /// (this avoids decrypting malleable ciphertext)
-    pub fn decrypt(&mut self, key: &PlainSessionKey) -> Result<()> {
-        let protected = self.tag() == Tag::SymEncryptedProtectedData;
-        debug!("decrypt_protected: protected = {:?}", protected);
-
-        match self {
-            Self::SymEncryptedProtectedData { reader } => {
-                reader.decrypt(key)?;
-            }
-            Self::SymEncryptedData { .. } => {
-                // SED packets are malleable, decrypting them should only be necessary for historical data
-                bail!("Decryption of SymEncryptedData is discouraged")
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Decrypting (malleable) SED packets is not necessary for most use cases, except for
-    /// historical data.
+    /// Decrypts only SEIPD (v1 or v2) packets.
     ///
-    /// HAZMAT: Decrypts SEIPD (v1 or v2) and SED packets.
-    pub fn decrypt_legacy(&mut self, key: &PlainSessionKey) -> Result<()> {
+    /// Throws errors if any other encryption containers are encountered in the message
+    /// (also see [Self::decrypt_permissive])
+    pub fn decrypt(&mut self, key: &PlainSessionKey) -> Result<()> {
+        debug!("Edata::decrypt");
+        self.decrypt_permissive(key, DecryptionOptions::default())
+    }
+
+    /// Decrypt encryption packets, including (optionally) non-standard ones.
+    ///
+    /// This always decrypts SEIPDv1 and SEIPDv2 containers.
+    /// In addition, decryption of legacy SED packets and GnuPG AEAD (packet type 20) can be opted
+    /// into via `options`.
+    ///
+    /// HAZMAT: Depending on the `options` settings, this decrypts malleable SED packets.
+    /// Also see <https://www.rfc-editor.org/rfc/rfc9580.html#name-avoiding-ciphertext-malleab>
+    pub fn decrypt_permissive(
+        &mut self,
+        key: &PlainSessionKey,
+        options: DecryptionOptions,
+    ) -> Result<()> {
         let protected = self.tag() == Tag::SymEncryptedProtectedData;
-        debug!("decrypt_any: protected = {:?}", protected);
+        debug!("decrypt_permissive {options:?}: protected = {protected:?}");
 
         match self {
             Self::SymEncryptedProtectedData { reader } => {
                 reader.decrypt(key)?;
             }
             Self::SymEncryptedData { reader } => {
-                reader.decrypt(key)?;
+                if options.legacy {
+                    reader.decrypt(key)?;
+                } else {
+                    bail!("Decryption of SymEncryptedData is discouraged, 'DecryptionOptions' allows opting into it")
+                }
+            }
+            Self::GnupgAeadData { reader } => {
+                if options.gnupg_aead {
+                    reader.decrypt(key)?;
+                } else {
+                    bail!("GnuPG's AEAD packet (type 20) is non-standard, 'DecryptionOptions' allows opting into it")
+                }
             }
         }
 
@@ -600,28 +690,6 @@ pub enum VerificationResult {
 }
 
 impl<'a> Message<'a> {
-    /// Create a message from encrypted data
-    pub fn from_edata(edata: Edata<'a>, is_nested: bool) -> Result<Self> {
-        let source = MessageReader::Edata(Box::new(edata));
-        Self::internal_from_bytes(source, is_nested)
-    }
-
-    /// Create a message from compressed data reader
-    pub fn from_compressed(reader: CompressedDataReader<MessageReader<'a>>, is_nested: bool) -> Result<Self> {
-        let source = MessageReader::Compressed(Box::new(reader));
-        Self::internal_from_bytes(source, is_nested)
-    }
-
-    fn internal_from_bytes(source: MessageReader<'a>, is_nested: bool) -> Result<Self> {
-        let packets = crate::packet::PacketParser::new(source);
-        match super::parser::next(packets, is_nested)? {
-            Some(message) => Ok(message),
-            None => {
-                bail!("no valid OpenPGP message found");
-            }
-        }
-    }
-
     /// Decompresses the data if compressed.
     pub fn decompress(self) -> Result<Self> {
         match self {
@@ -816,7 +884,7 @@ impl<'a> Message<'a> {
     /// HAZMAT: Decrypts (malleable) SED packets.
     pub fn decrypt_legacy(self, key_pw: &Password, key: &SignedSecretKey) -> Result<Message<'a>> {
         let ring = TheRing {
-            allow_legacy: true,
+            decrypt_options: DecryptionOptions::new().enable_legacy(),
             secret_keys: vec![key],
             key_passwords: vec![key_pw],
             ..Default::default()
@@ -885,14 +953,14 @@ impl<'a> Message<'a> {
                 is_nested,
             } => {
                 // Lets go and find things, with which we can decrypt
-                let allow_legacy = ring.allow_legacy;
+                let decrypt_options = ring.decrypt_options;
                 let (session_key, result) = ring.find_session_key(&esk, abort_early)?;
                 let Some(session_key) = session_key else {
                     return Err(Error::MissingKey);
                 };
 
-                if allow_legacy {
-                    edata.decrypt_legacy(&session_key)?;
+                if decrypt_options.legacy || decrypt_options.gnupg_aead {
+                    edata.decrypt_permissive(&session_key, decrypt_options)?;
                 } else {
                     edata.decrypt(&session_key)?;
                 }
@@ -947,30 +1015,17 @@ impl<'a> Message<'a> {
     }
 
     /// Consumes the reader and reads into a vec.
-    pub fn as_data_vec(&mut self) -> crate::io::Result<Vec<u8>> {
-        // Special handling for signed messages that may be reconstructed from decrypted data
-        if let Message::Signed { reader, .. } = self {
-            if reader.is_done() {
-                // For done signed readers, try to extract data directly from the source message
-                log::debug!("Extracting data from done SignatureBodyReader via source message");
-                return reader.get_mut().as_data_vec();
-            }
-        }
-        
+    pub fn as_data_vec(&mut self) -> io::Result<Vec<u8>> {
         let mut out = Vec::new();
         self.read_to_end(&mut out)?;
         Ok(out)
     }
 
     /// Consumes the reader and reads into a string.
-    pub fn as_data_string(&mut self) -> crate::io::Result<String> {
-        let mut out = Vec::new();
-        self.read_to_end(&mut out)?;
-        String::from_utf8(out).map_err(|e| {
-            let s = e.to_string();
-            let static_str: &'static str = Box::leak(s.into_boxed_str());
-            crate::io::Error::new(crate::io::ErrorKind::InvalidData, static_str)
-        })
+    pub fn as_data_string(&mut self) -> io::Result<String> {
+        let mut out = String::new();
+        self.read_to_string(&mut out)?;
+        Ok(out)
     }
 
     pub fn into_inner(self) -> PacketBodyReader<MessageReader<'a>> {
@@ -982,6 +1037,7 @@ impl<'a> Message<'a> {
             Self::Encrypted { edata, .. } => match edata {
                 Edata::SymEncryptedData { reader } => reader.into_inner(),
                 Edata::SymEncryptedProtectedData { reader } => reader.into_inner(),
+                Edata::GnupgAeadData { reader } => reader.into_inner(),
             },
         }
     }
@@ -995,11 +1051,12 @@ impl<'a> Message<'a> {
             Self::Encrypted { edata, .. } => match edata {
                 Edata::SymEncryptedData { reader } => reader.get_mut(),
                 Edata::SymEncryptedProtectedData { reader } => reader.get_mut(),
+                Edata::GnupgAeadData { reader } => reader.get_mut(),
             },
         }
     }
 
-    fn has_buffer_available(&mut self) -> crate::io::Result<bool> {
+    fn has_buffer_available(&mut self) -> io::Result<bool> {
         let buf = self.fill_inner()?;
         Ok(!buf.is_empty())
     }
@@ -1014,7 +1071,7 @@ impl<'a> Message<'a> {
         }
     }
 
-    fn check_trailing_data(&mut self) -> crate::io::Result<()> {
+    fn check_trailing_data(&mut self) -> io::Result<()> {
         // if this is a nested message, the outer readers will verify trailing data
         if self.is_nested() {
             return Ok(());
@@ -1027,7 +1084,7 @@ impl<'a> Message<'a> {
         inner.check_trailing_data()
     }
 
-    fn fill_inner(&mut self) -> crate::io::Result<&[u8]> {
+    fn fill_inner(&mut self) -> io::Result<&[u8]> {
         match self {
             Self::Literal { reader, .. } => reader.fill_buf(),
             Self::Compressed { reader, .. } => reader.fill_buf(),
@@ -1038,38 +1095,40 @@ impl<'a> Message<'a> {
     }
 }
 
-#[cfg(not(feature = "std"))]
-impl<'a> Read for Box<Message<'a>> {
-    fn read(&mut self, buf: &mut [u8]) -> crate::io::Result<usize> {
-        (**self).read(buf)
-    }
-}
-
-#[cfg(not(feature = "std"))]
-impl<'a> BufRead for Box<Message<'a>> {
-    fn fill_buf(&mut self) -> crate::io::Result<&[u8]> {
-        (**self).fill_buf()
-    }
-
-    fn consume(&mut self, amt: usize) {
-        (**self).consume(amt)
-    }
-}
-
 impl Read for Message<'_> {
-    fn read(&mut self, buf: &mut [u8]) -> crate::io::Result<usize> {
-        match self {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let read = match self {
             Self::Literal { reader, .. } => reader.read(buf),
             Self::Compressed { reader, .. } => reader.read(buf),
             Self::Signed { reader, .. } => reader.read(buf),
             Self::SignedOnePass { reader, .. } => reader.read(buf),
             Self::Encrypted { edata, .. } => edata.read(buf),
+        }?;
+
+        if read == 0 {
+            self.check_trailing_data()?;
         }
+
+        Ok(read)
+    }
+
+    fn read_to_end(&mut self, buf: &mut Vec<u8>) -> io::Result<usize> {
+        let read = match self {
+            Self::Literal { reader, .. } => reader.read_to_end(buf),
+            Self::Compressed { reader, .. } => reader.read_to_end(buf),
+            Self::Signed { reader, .. } => reader.read_to_end(buf),
+            Self::SignedOnePass { reader, .. } => reader.read_to_end(buf),
+            Self::Encrypted { edata, .. } => edata.read_to_end(buf),
+        }?;
+
+        self.check_trailing_data()?;
+
+        Ok(read)
     }
 }
 
 impl BufRead for Message<'_> {
-    fn fill_buf(&mut self) -> crate::io::Result<&[u8]> {
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
         // sad workaround because of compiler lifetime limits
         if !self.has_buffer_available()? {
             self.check_trailing_data()?;
@@ -1097,10 +1156,8 @@ pub struct TheRing<'a> {
     pub key_passwords: Vec<&'a Password>,
     pub message_password: Vec<&'a Password>,
     pub session_keys: Vec<PlainSessionKey>,
-    /// If this is `true` (malleable) SED packets are also decrypted.
-    ///
-    /// Defaults to `false`.
-    pub allow_legacy: bool,
+
+    pub decrypt_options: DecryptionOptions,
 }
 
 impl TheRing<'_> {
@@ -1156,7 +1213,7 @@ impl TheRing<'_> {
                     PkeskVersion::V3 => EskType::V3_4,
                     PkeskVersion::V6 => EskType::V6,
                     PkeskVersion::Other(v) => {
-                        warn!("unexpected PKESK version {}", v);
+                        warn!("unexpected PKESK version {v}");
                         continue;
                     }
                 };
@@ -1229,6 +1286,12 @@ impl TheRing<'_> {
 
         for esk in skesks {
             for (i, pw) in self.message_password.iter().enumerate() {
+                // Skip v5 SKESK unless gnupg_aead is enabled
+                if !self.decrypt_options.gnupg_aead && esk.version() == SkeskVersion::V5 {
+                    debug!("skipping v5 SKESK because allow_gnupg_aead is not enabled: {esk:?}");
+                    continue;
+                }
+
                 match decrypt_session_key_with_password(esk, pw) {
                     Ok(session_key) => {
                         skesk_session_keys.push((i, session_key));
@@ -1367,6 +1430,651 @@ impl<'a> From<Option<&'a armor::Headers>> for ArmorOptions<'a> {
         Self {
             headers,
             include_checksum: true,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{fs, io::BufReader};
+
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha8Rng;
+
+    use super::*;
+    use crate::{
+        composed::{Deserializable, MessageBuilder},
+        crypto::{
+            aead::{AeadAlgorithm, ChunkSize},
+            hash::HashAlgorithm,
+        },
+        types::{CompressionAlgorithm, StringToKey},
+    };
+
+    fn is_send<T: Send>() {}
+
+    #[test]
+    fn test_message_send() {
+        is_send::<&[u8]>();
+        is_send::<MessageReader<'_>>();
+        is_send::<Message<'_>>();
+    }
+
+    #[test]
+    fn test_compression_zlib() {
+        test_compression(CompressionAlgorithm::ZLIB);
+    }
+
+    #[test]
+    fn test_compression_zip() {
+        test_compression(CompressionAlgorithm::ZIP);
+    }
+
+    #[test]
+    fn test_compression_uncompressed() {
+        test_compression(CompressionAlgorithm::Uncompressed);
+    }
+
+    #[test]
+    #[cfg(feature = "bzip2")]
+    fn test_compression_bzip2() {
+        test_compression(CompressionAlgorithm::BZip2);
+    }
+
+    fn test_compression(alg: CompressionAlgorithm) {
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+
+        let data = "hello world";
+        let mut builder = MessageBuilder::from_bytes("hello-zlib.txt", data);
+        builder.compression(alg);
+        let compressed_msg = builder.to_vec(&mut rng).unwrap();
+
+        let uncompressed_msg = Message::from_bytes(&compressed_msg[..])
+            .unwrap()
+            .decompress()
+            .unwrap()
+            .as_data_string()
+            .unwrap();
+
+        assert_eq!(data, &uncompressed_msg);
+    }
+
+    #[test]
+    fn test_rsa_encryption_seipdv1() {
+        let _ = pretty_env_logger::try_init();
+
+        let (skey, _headers) = SignedSecretKey::from_armor_single(
+            fs::File::open("./tests/openpgp-interop/testcases/messages/gnupg-v1-001-decrypt.asc")
+                .unwrap(),
+        )
+        .unwrap();
+
+        // subkey[0] is the encryption key
+        let pkey = skey.secret_subkeys[0].public_key();
+        let mut rng = rand::rngs::StdRng::seed_from_u64(100);
+        let mut rng2 = rand::rngs::StdRng::seed_from_u64(100);
+
+        const DATA: &str = "hello world\n";
+
+        // Encrypt and test that rng is the only source of randomness.
+        let armored = {
+            let mut builder = MessageBuilder::from_bytes("hello.txt", DATA);
+            builder.compression(CompressionAlgorithm::ZLIB);
+            let mut builder = builder.seipd_v1(&mut rng, SymmetricKeyAlgorithm::AES128);
+            builder.encrypt_to_key(&mut rng, &pkey).unwrap();
+
+            builder
+                .to_armored_string(&mut rng, Default::default())
+                .unwrap()
+        };
+        let armored2 = {
+            let mut builder = MessageBuilder::from_bytes("hello.txt", DATA);
+            builder.compression(CompressionAlgorithm::ZLIB);
+            let mut builder = builder.seipd_v1(&mut rng2, SymmetricKeyAlgorithm::AES128);
+            builder.encrypt_to_key(&mut rng2, &pkey).unwrap();
+            builder
+                .to_armored_string(&mut rng2, Default::default())
+                .unwrap()
+        };
+
+        assert_eq!(armored, armored2);
+
+        // fs::write("./message-rsa.asc", &armored).unwrap();
+
+        let parsed = Message::from_armor(BufReader::new(armored.as_bytes()))
+            .unwrap()
+            .0;
+
+        let decrypted = parsed.decrypt(&"test".into(), &skey).unwrap();
+        let mut decrypted = decrypted.decompress().unwrap();
+
+        assert_eq!(DATA, decrypted.as_data_string().unwrap());
+    }
+
+    #[test]
+    fn test_rsa_encryption_seipdv2() {
+        let (skey, _headers) = SignedSecretKey::from_armor_single(
+            fs::File::open("./tests/openpgp-interop/testcases/messages/gnupg-v1-001-decrypt.asc")
+                .unwrap(),
+        )
+        .unwrap();
+
+        // subkey[0] is the encryption key
+        let pkey = skey.secret_subkeys[0].public_key();
+        let mut rng = rand::rngs::StdRng::seed_from_u64(100);
+        let mut rng2 = rand::rngs::StdRng::seed_from_u64(100);
+
+        const DATA: &str = "hello world\n";
+
+        // Encrypt and test that rng is the only source of randomness.
+        let armored = {
+            let mut builder = MessageBuilder::from_bytes("", DATA);
+            builder.compression(CompressionAlgorithm::ZLIB);
+            let mut builder = builder.seipd_v2(
+                &mut rng,
+                SymmetricKeyAlgorithm::AES128,
+                AeadAlgorithm::Ocb,
+                ChunkSize::default(),
+            );
+            builder.encrypt_to_key(&mut rng, &pkey).unwrap();
+            builder
+                .to_armored_string(&mut rng, Default::default())
+                .unwrap()
+        };
+        let armored2 = {
+            let mut builder = MessageBuilder::from_bytes("", DATA).seipd_v2(
+                &mut rng2,
+                SymmetricKeyAlgorithm::AES128,
+                AeadAlgorithm::Ocb,
+                ChunkSize::default(),
+            );
+            builder
+                .compression(CompressionAlgorithm::ZLIB)
+                .encrypt_to_key(&mut rng2, &pkey)
+                .unwrap();
+            builder
+                .to_armored_string(&mut rng2, Default::default())
+                .unwrap()
+        };
+
+        assert_eq!(armored, armored2);
+
+        // fs::write("./message-rsa.asc", &armored).unwrap();
+
+        let parsed = Message::from_armor(BufReader::new(armored.as_bytes()))
+            .unwrap()
+            .0;
+
+        let decrypted = parsed.decrypt(&"test".into(), &skey).unwrap();
+        let mut decrypted = decrypted.decompress().unwrap();
+
+        assert_eq!(DATA, decrypted.as_data_string().unwrap());
+    }
+
+    #[test]
+    fn test_x25519_encryption_seipdv1() {
+        let (skey, _headers) = SignedSecretKey::from_armor_single(
+            fs::File::open("./tests/autocrypt/alice@autocrypt.example.sec.asc").unwrap(),
+        )
+        .unwrap();
+
+        // subkey[0] is the encryption key
+        let pkey = skey.secret_subkeys[0].public_key();
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+
+        const DATA: &str = "hello world\n";
+
+        for _ in 0..1000 {
+            let mut builder = MessageBuilder::from_bytes("", DATA)
+                .seipd_v1(&mut rng, SymmetricKeyAlgorithm::AES128);
+            builder
+                .compression(CompressionAlgorithm::ZLIB)
+                .encrypt_to_key(&mut rng, &pkey)
+                .unwrap();
+            let armored = builder
+                .to_armored_string(&mut rng, Default::default())
+                .unwrap();
+
+            // fs::write("./message-x25519.asc", &armored).unwrap();
+
+            let parsed = Message::from_armor(BufReader::new(armored.as_bytes()))
+                .unwrap()
+                .0;
+
+            let decrypted = parsed.decrypt(&"".into(), &skey).unwrap();
+            let mut decrypted = decrypted.decompress().unwrap();
+
+            assert_eq!(DATA, decrypted.as_data_string().unwrap());
+        }
+    }
+
+    fn x25519_encryption_seipdv2(aead: AeadAlgorithm, sym: SymmetricKeyAlgorithm) {
+        let (skey, _headers) = SignedSecretKey::from_armor_single(
+            fs::File::open("./tests/autocrypt/alice@autocrypt.example.sec.asc").unwrap(),
+        )
+        .unwrap();
+
+        // subkey[0] is the encryption key
+        let pkey = skey.secret_subkeys[0].public_key();
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+
+        let data = "hello world\n";
+
+        for _ in 0..512 {
+            let mut builder = MessageBuilder::from_bytes("hello.txt", data).seipd_v2(
+                &mut rng,
+                sym,
+                aead,
+                ChunkSize::default(),
+            );
+            builder
+                .compression(CompressionAlgorithm::ZLIB)
+                .encrypt_to_key(&mut rng, &pkey)
+                .unwrap();
+            let armored = builder
+                .to_armored_string(&mut rng, Default::default())
+                .unwrap();
+
+            // fs::write("./message-x25519.asc", &armored).unwrap();
+
+            let (parsed, _headers) = Message::from_armor(armored.as_bytes()).unwrap();
+
+            let msg = parsed.decrypt(&"".into(), &skey).unwrap();
+            let mut msg = msg.decompress().unwrap();
+            let text = msg.as_data_string().unwrap();
+
+            assert_eq!(data, text);
+        }
+    }
+
+    #[test]
+    fn test_x25519_encryption_seipdv2_ocb_aes128() {
+        x25519_encryption_seipdv2(AeadAlgorithm::Ocb, SymmetricKeyAlgorithm::AES128);
+    }
+
+    #[test]
+    fn test_x25519_encryption_seipdv2_eax_aes128() {
+        x25519_encryption_seipdv2(AeadAlgorithm::Eax, SymmetricKeyAlgorithm::AES128);
+    }
+
+    #[test]
+    fn test_x25519_encryption_seipdv2_gcm_aes128() {
+        x25519_encryption_seipdv2(AeadAlgorithm::Gcm, SymmetricKeyAlgorithm::AES128);
+    }
+
+    #[test]
+    fn test_x25519_encryption_seipdv2_ocb_aes192() {
+        x25519_encryption_seipdv2(AeadAlgorithm::Ocb, SymmetricKeyAlgorithm::AES192);
+    }
+
+    #[test]
+    fn test_x25519_encryption_seipdv2_eax_aes192() {
+        x25519_encryption_seipdv2(AeadAlgorithm::Eax, SymmetricKeyAlgorithm::AES192);
+    }
+
+    #[test]
+    fn test_x25519_encryption_seipdv2_gcm_aes192() {
+        x25519_encryption_seipdv2(AeadAlgorithm::Gcm, SymmetricKeyAlgorithm::AES192);
+    }
+
+    #[test]
+    fn test_x25519_encryption_seipdv2_ocb_aes256() {
+        x25519_encryption_seipdv2(AeadAlgorithm::Ocb, SymmetricKeyAlgorithm::AES256);
+    }
+
+    #[test]
+    fn test_x25519_encryption_seipdv2_eax_aes256() {
+        x25519_encryption_seipdv2(AeadAlgorithm::Eax, SymmetricKeyAlgorithm::AES256);
+    }
+
+    #[test]
+    fn test_x25519_encryption_seipdv2_gcm_aes256() {
+        x25519_encryption_seipdv2(AeadAlgorithm::Gcm, SymmetricKeyAlgorithm::AES256);
+    }
+
+    #[test]
+    fn test_password_encryption_seipdv1() {
+        let _ = pretty_env_logger::try_init();
+
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+
+        let s2k = StringToKey::new_default(&mut rng);
+
+        let data = "hello world\n";
+
+        let mut builder = MessageBuilder::from_bytes("hello.txt", data)
+            .seipd_v1(&mut rng, SymmetricKeyAlgorithm::AES128);
+
+        builder
+            .compression(CompressionAlgorithm::ZLIB)
+            .encrypt_with_password(s2k, &"secret".into())
+            .unwrap();
+        let armored = builder
+            .to_armored_string(&mut rng, Default::default())
+            .unwrap();
+
+        // fs::write("./message-password.asc", &armored).unwrap();
+
+        let parsed = Message::from_armor(BufReader::new(armored.as_bytes()))
+            .unwrap()
+            .0;
+        let decrypted = parsed.decrypt_with_password(&"secret".into()).unwrap();
+        let mut decrypted = decrypted.decompress().unwrap();
+
+        assert_eq!(data, decrypted.as_data_string().unwrap());
+    }
+
+    fn password_encryption_seipdv2(aead: AeadAlgorithm, sym: SymmetricKeyAlgorithm) {
+        let _ = pretty_env_logger::try_init();
+
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+
+        let data = "hello world\n";
+        let s2k = StringToKey::new_default(&mut rng);
+        let mut builder = MessageBuilder::from_bytes("hello.txt", data).seipd_v2(
+            &mut rng,
+            sym,
+            aead,
+            ChunkSize::default(),
+        );
+        builder
+            .encrypt_with_password(&mut rng, s2k, &"secret".into())
+            .unwrap();
+        let armored = builder
+            .to_armored_string(&mut rng, Default::default())
+            .unwrap();
+
+        // fs::write("./message-password.asc", &armored).unwrap();
+
+        let (msg, _headers) = Message::from_armor(armored.as_bytes()).unwrap();
+
+        let mut msg = msg.decrypt_with_password(&"secret".into()).unwrap();
+        let text = msg.as_data_string().unwrap();
+
+        assert_eq!(data, text);
+    }
+
+    #[test]
+    fn test_password_encryption_seipdv2_ocb_aes128() {
+        password_encryption_seipdv2(AeadAlgorithm::Ocb, SymmetricKeyAlgorithm::AES128);
+    }
+
+    #[test]
+    fn test_password_encryption_seipdv2_eax_aes128() {
+        password_encryption_seipdv2(AeadAlgorithm::Eax, SymmetricKeyAlgorithm::AES128);
+    }
+
+    #[test]
+    fn test_password_encryption_seipdv2_gcm_aes128() {
+        password_encryption_seipdv2(AeadAlgorithm::Gcm, SymmetricKeyAlgorithm::AES128);
+    }
+
+    #[test]
+    fn test_password_encryption_seipdv2_ocb_aes192() {
+        password_encryption_seipdv2(AeadAlgorithm::Ocb, SymmetricKeyAlgorithm::AES192);
+    }
+
+    #[test]
+    fn test_password_encryption_seipdv2_eax_aes192() {
+        password_encryption_seipdv2(AeadAlgorithm::Eax, SymmetricKeyAlgorithm::AES192);
+    }
+
+    #[test]
+    fn test_password_encryption_seipdv2_gcm_aes192() {
+        password_encryption_seipdv2(AeadAlgorithm::Gcm, SymmetricKeyAlgorithm::AES192);
+    }
+
+    #[test]
+    fn test_password_encryption_seipdv2_ocb_aes256() {
+        password_encryption_seipdv2(AeadAlgorithm::Ocb, SymmetricKeyAlgorithm::AES256);
+    }
+
+    #[test]
+    fn test_password_encryption_seipdv2_eax_aes256() {
+        password_encryption_seipdv2(AeadAlgorithm::Eax, SymmetricKeyAlgorithm::AES256);
+    }
+
+    #[test]
+    fn test_password_encryption_seipdv2_gcm_aes256() {
+        password_encryption_seipdv2(AeadAlgorithm::Gcm, SymmetricKeyAlgorithm::AES256);
+    }
+
+    #[test]
+    fn test_no_plaintext_decryption() {
+        // Invalid message "encrypted" with plaintext algorithm.
+        // Generated with the Python script below.
+        let msg_raw = b"\xc3\x04\x04\x00\x00\x08\xd2-\x01\x00\x00\xcb\x12b\x00\x00\x00\x00\x00Hello world!\xd3\x14\xc3\xadw\x022\x05\x0ek'k\x8d\x12\xaa8\r'\x8d\xc0\x82)";
+        /*
+                import hashlib
+                import sys
+                data = (
+                    b"\xc3"  # PTag = 11000011, new packet format, tag 3 = SKESK
+                    b"\x04"  # Packet length, 4
+                    b"\x04"  # Version number, 4
+                    b"\x00"  # Algorithm, plaintext
+                    b"\x00\x08"  # S2K specifier, Simple S2K, SHA256
+                    b"\xd2"  # PTag = 1101 0010, new packet format, tag 18 = SEIPD
+                    b"\x2d"  # Packet length, 45
+                    b"\x01"  # Version number, 1
+                )
+                inner_data = (
+                    b"\x00\x00"  # IV
+                    b"\xcb"  # PTag = 11001011, new packet format, tag 11 = literal data packet
+                    b"\x12"  # Packet length, 18
+                    b"\x62"  # Binary data ('b')
+                    b"\x00"  # No filename, empty filename length
+                    b"\x00\x00\x00\x00"  # Date
+                    b"Hello world!"
+                )
+                data += inner_data
+                data += (
+                    b"\xd3"  # Modification Detection Code packet, tag 19
+                    b"\x14"  # MDC packet length, 20 bytes
+                )
+                data += hashlib.new("SHA1", inner_data + b"\xd3\x14").digest()
+                print(data)
+        */
+        let msg = Message::from_bytes(&msg_raw[..]).unwrap();
+
+        // Before the fix message eventually decrypted to
+        //   Literal(LiteralData { packet_version: New, mode: Binary, created: 1970-01-01T00:00:00Z, file_name: "", data: "48656c6c6f20776f726c6421" })
+        // where "48656c6c6f20776f726c6421" is an encoded "Hello world!" string.
+        dbg!(&msg);
+        let decrypted_err = msg
+            .decrypt_with_password(&"foobarbaz".into())
+            .err()
+            .unwrap()
+            .to_string();
+        assert!(decrypted_err.contains("plaintext"), "{}", decrypted_err);
+    }
+
+    #[test]
+    fn test_x25519_signing_string() {
+        let _ = pretty_env_logger::try_init();
+
+        let (skey, _headers) = SignedSecretKey::from_armor_single(
+            fs::File::open("./tests/autocrypt/alice@autocrypt.example.sec.asc").unwrap(),
+        )
+        .unwrap();
+
+        let pkey = skey.public_key();
+        let rng = ChaCha8Rng::seed_from_u64(0);
+
+        let mut builder = MessageBuilder::from_bytes("hello.txt", "hello world\n".as_bytes());
+        builder
+            .sign_text()
+            .sign(&*skey, Password::empty(), HashAlgorithm::Sha256);
+
+        let armored = builder
+            .to_armored_string(rng, ArmorOptions::default())
+            .expect("serialize");
+        // fs::write("./message-string-signed-x25519.asc", &armored).unwrap();
+
+        let (mut parsed, _headers) = Message::from_armor(armored.as_bytes()).expect("parsing");
+
+        let mut sink = vec![];
+        parsed.read_to_end(&mut sink).expect("read message");
+        parsed.verify(&*pkey).expect("verify");
+    }
+
+    #[test]
+    fn test_x25519_signing_bytes() {
+        let (skey, _headers) = SignedSecretKey::from_armor_single(
+            fs::File::open("./tests/autocrypt/alice@autocrypt.example.sec.asc").unwrap(),
+        )
+        .unwrap();
+
+        let pkey = skey.public_key();
+        let rng = ChaCha8Rng::seed_from_u64(0);
+
+        let mut builder = MessageBuilder::from_bytes("hello.txt", "hello world\n".as_bytes());
+        builder.sign(&*skey, Password::empty(), HashAlgorithm::Sha256);
+
+        let armored = builder
+            .to_armored_string(rng, ArmorOptions::default())
+            .expect("serialize");
+        // fs::write("./message-bytes-signed-x25519.asc", &armored).unwrap();
+
+        let mut parsed = Message::from_armor(BufReader::new(armored.as_bytes()))
+            .unwrap()
+            .0;
+        let mut sink = vec![];
+        parsed.read_to_end(&mut sink).expect("read message");
+        parsed.verify(&*pkey).unwrap();
+    }
+
+    #[test]
+    fn test_x25519_signing_bytes_compressed() {
+        let (skey, _headers) = SignedSecretKey::from_armor_single(
+            fs::File::open("./tests/autocrypt/alice@autocrypt.example.sec.asc").unwrap(),
+        )
+        .unwrap();
+
+        let pkey = skey.public_key();
+        let rng = ChaCha8Rng::seed_from_u64(0);
+
+        let mut builder = MessageBuilder::from_bytes("hello.txt", "hello world\n".as_bytes());
+        builder.sign(&*skey, Password::empty(), HashAlgorithm::Sha256);
+        builder.compression(CompressionAlgorithm::ZLIB);
+
+        let armored = builder
+            .to_armored_string(rng, ArmorOptions::default())
+            .expect("serialize");
+        // fs::write("./message-bytes-compressed-signed-x25519.asc", &armored).unwrap();
+
+        let parsed = Message::from_armor(BufReader::new(armored.as_bytes()))
+            .unwrap()
+            .0;
+        let mut decompressed = parsed.decompress().expect("decompress");
+        let mut sink = vec![];
+        decompressed.read_to_end(&mut sink).expect("read message");
+
+        decompressed.verify(&*pkey).unwrap();
+    }
+
+    #[test]
+    fn test_rsa_signing_string() {
+        let _ = pretty_env_logger::try_init();
+
+        let (skey, _headers) = SignedSecretKey::from_armor_single(
+            fs::File::open("./tests/openpgp-interop/testcases/messages/gnupg-v1-001-decrypt.asc")
+                .unwrap(),
+        )
+        .unwrap();
+        let pkey = skey.public_key();
+
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+
+        let inputs = [
+            &b"hello world\r\n"[..],
+            &b"hello world\n"[..],
+            &b"hello world\r"[..],
+        ];
+
+        for input in inputs {
+            let mut builder = MessageBuilder::from_bytes("hello.txt", input);
+            builder
+                .sign_text()
+                .sign(&*skey, Password::from("test"), HashAlgorithm::Sha256);
+
+            let armored = builder
+                .to_armored_string(&mut rng, ArmorOptions::default())
+                .expect("serialize");
+
+            // fs::write("./message-string-signed-rsa.asc", &armored).unwrap();
+
+            // signed_msg.verify(&*pkey).unwrap();
+
+            let (mut parsed, _headers) =
+                Message::from_armor(BufReader::new(armored.as_bytes())).unwrap();
+
+            let mut sink = vec![];
+            parsed.read_to_end(&mut sink).expect("read message");
+            assert_eq!(sink, input);
+            parsed.verify(&*pkey).expect("signature verification");
+        }
+    }
+
+    #[test]
+    fn test_rsa_signing_bytes() {
+        let (skey, _headers) = SignedSecretKey::from_armor_single(
+            fs::File::open("./tests/openpgp-interop/testcases/messages/gnupg-v1-001-decrypt.asc")
+                .unwrap(),
+        )
+        .unwrap();
+        let pkey = skey.public_key();
+
+        let rng = ChaCha8Rng::seed_from_u64(0);
+
+        let mut builder = MessageBuilder::from_bytes("hello.txt", "hello world\n".as_bytes());
+        builder.sign(&*skey, Password::from("test"), HashAlgorithm::Sha256);
+
+        let armored = builder
+            .to_armored_string(rng, ArmorOptions::default())
+            .expect("serialize");
+
+        // fs::write("./message-string-signed-rsa.asc", &armored).unwrap();
+
+        let (mut parsed, _headers) =
+            Message::from_armor(BufReader::new(armored.as_bytes())).unwrap();
+
+        let mut sink = vec![];
+        parsed.read_to_end(&mut sink).expect("read message");
+        parsed.verify(&*pkey).unwrap();
+    }
+
+    #[test]
+    fn test_rsa_signing_bytes_compressed() {
+        let (skey, _headers) = SignedSecretKey::from_armor_single(
+            fs::File::open("./tests/openpgp-interop/testcases/messages/gnupg-v1-001-decrypt.asc")
+                .unwrap(),
+        )
+        .unwrap();
+        let pkey = skey.public_key();
+
+        for _ in 0..100 {
+            let rng = ChaCha8Rng::seed_from_u64(0);
+
+            let mut builder = MessageBuilder::from_bytes("hello.txt", "hello world\n".as_bytes());
+            builder.compression(CompressionAlgorithm::ZLIB);
+
+            builder.sign(&*skey, Password::from("test"), HashAlgorithm::Sha256);
+
+            let armored = builder
+                .to_armored_string(rng, ArmorOptions::default())
+                .expect("serialize");
+
+            // fs::write("./message-string-signed-rsa.asc", &armored).unwrap();
+
+            // signed_msg.verify(&*pkey).unwrap();
+
+            let parsed = Message::from_armor(BufReader::new(armored.as_bytes()))
+                .unwrap()
+                .0;
+            let mut decompressed = parsed.decompress().expect("decompress");
+            let mut sink = vec![];
+            decompressed.read_to_end(&mut sink).expect("read message");
+            decompressed.verify(&*pkey).unwrap();
         }
     }
 }

@@ -1,6 +1,4 @@
 //! # Cryptography module
-extern crate alloc;
-use alloc::vec::Vec;
 
 use self::hash::HashAlgorithm;
 use crate::types::SignatureBytes;

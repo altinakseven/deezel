@@ -1,5 +1,5 @@
-use alloc::string::ToString;
-extern crate alloc;
+use std::io::{self, BufRead, Read};
+
 use super::PacketBodyReader;
 use crate::{
     composed::PlainSessionKey,
@@ -8,9 +8,6 @@ use crate::{
     packet::PacketHeader,
     types::Tag,
 };
-
-use crate::io::{BufRead, Error, Read};
-
 
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
@@ -61,7 +58,7 @@ impl<R: BufRead> SymEncryptedDataReader<R> {
             }
         };
 
-        match core::mem::replace(self, Self::Error) {
+        match std::mem::replace(self, Self::Error) {
             Self::Body {
                 decryptor: MaybeDecryptor::Raw(source),
             } => {
@@ -81,7 +78,7 @@ impl<R: BufRead> SymEncryptedDataReader<R> {
 }
 
 impl<R: BufRead> BufRead for SymEncryptedDataReader<R> {
-    fn fill_buf(&mut self) -> Result<&[u8], Error> {
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
         match self {
             Self::Body { ref mut decryptor } => decryptor.fill_buf(),
             Self::Error => {
@@ -99,12 +96,11 @@ impl<R: BufRead> BufRead for SymEncryptedDataReader<R> {
 }
 
 impl<R: BufRead> Read for SymEncryptedDataReader<R> {
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
-        let internal_buf = self.fill_buf()?;
-        let len = internal_buf.len().min(buf.len());
-        buf[..len].copy_from_slice(&internal_buf[..len]);
-        self.consume(len);
-        Ok(len)
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self {
+            Self::Body { decryptor } => decryptor.read(buf),
+            Self::Error => Err(io::Error::other("SymEncryptedDataReader errored")),
+        }
     }
 }
 
@@ -139,7 +135,7 @@ impl<R: BufRead> MaybeDecryptor<R> {
 }
 
 impl<R: BufRead> BufRead for MaybeDecryptor<R> {
-    fn fill_buf(&mut self) -> Result<&[u8], Error> {
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
         match self {
             Self::Raw(r) => r.fill_buf(),
             Self::Decryptor(r) => r.fill_buf(),
@@ -155,11 +151,10 @@ impl<R: BufRead> BufRead for MaybeDecryptor<R> {
 }
 
 impl<R: BufRead> Read for MaybeDecryptor<R> {
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
-        let internal_buf = self.fill_buf()?;
-        let len = internal_buf.len().min(buf.len());
-        buf[..len].copy_from_slice(&internal_buf[..len]);
-        self.consume(len);
-        Ok(len)
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self {
+            Self::Raw(r) => r.read(buf),
+            Self::Decryptor(r) => r.read(buf),
+        }
     }
 }

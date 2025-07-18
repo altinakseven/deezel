@@ -1,7 +1,3 @@
-use alloc::string::ToString;
-use alloc::vec::Vec;
-use alloc::format;
-extern crate alloc;
 use log::debug;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 

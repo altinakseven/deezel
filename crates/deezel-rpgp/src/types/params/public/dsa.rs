@@ -1,5 +1,4 @@
-extern crate alloc;
-use crate::io::{BufRead, Write};
+use std::io::{self, BufRead};
 
 use crate::{errors::Result, ser::Serialize, types::Mpi};
 
@@ -14,11 +13,11 @@ pub struct DsaPublicParams {
 impl Eq for DsaPublicParams {}
 
 impl DsaPublicParams {
-    pub fn try_from_reader<B: BufRead>(i: &mut B) -> Result<Self> {
-        let p = Mpi::try_from_reader(i)?;
-        let q = Mpi::try_from_reader(i)?;
-        let g = Mpi::try_from_reader(i)?;
-        let y = Mpi::try_from_reader(i)?;
+    pub fn try_from_reader<B: BufRead>(mut i: B) -> Result<Self> {
+        let p = Mpi::try_from_reader(&mut i)?;
+        let q = Mpi::try_from_reader(&mut i)?;
+        let g = Mpi::try_from_reader(&mut i)?;
+        let y = Mpi::try_from_reader(&mut i)?;
 
         let params = DsaPublicParams::try_from_mpi(p, q, g, y)?;
         Ok(params)
@@ -33,7 +32,7 @@ impl DsaPublicParams {
 }
 
 impl Serialize for DsaPublicParams {
-    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
         let c = self.key.components();
         let p: Mpi = c.p().into();
         p.to_writer(writer)?;
@@ -65,7 +64,6 @@ impl Serialize for DsaPublicParams {
 
 #[cfg(test)]
 mod tests {
-    use alloc::{format, vec::Vec};
     use proptest::prelude::*;
     use rand::SeedableRng;
 

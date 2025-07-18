@@ -1,6 +1,3 @@
-extern crate alloc;
-use alloc::string::ToString;
-use alloc::vec;
 use aes::{Aes128, Aes192, Aes256};
 use blowfish::Blowfish;
 use bytes::{Buf, Bytes, BytesMut};
@@ -25,7 +22,7 @@ use crate::{
 #[allow(clippy::large_enum_variant)]
 pub enum StreamEncryptor<R>
 where
-    R: crate::io::Read,
+    R: std::io::Read,
 {
     Idea(StreamEncryptorInner<Idea, R>),
     TripleDes(StreamEncryptorInner<TdesEde3, R>),
@@ -40,7 +37,7 @@ where
     Camellia256(StreamEncryptorInner<Camellia256, R>),
 }
 
-impl<R: crate::io::Read> StreamEncryptor<R> {
+impl<R: std::io::Read> StreamEncryptor<R> {
     pub fn new<B: Rng + CryptoRng>(
         rng: B,
         alg: SymmetricKeyAlgorithm,
@@ -91,11 +88,11 @@ impl<R: crate::io::Read> StreamEncryptor<R> {
     }
 }
 
-impl<R> crate::io::Read for StreamEncryptor<R>
+impl<R> std::io::Read for StreamEncryptor<R>
 where
-    R: crate::io::Read,
+    R: std::io::Read,
 {
-    fn read(&mut self, buf: &mut [u8]) -> crate::io::Result<usize> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         match self {
             Self::Idea(ref mut i) => i.read(buf),
             Self::TripleDes(ref mut i) => i.read(buf),
@@ -110,6 +107,22 @@ where
             Self::Camellia256(ref mut i) => i.read(buf),
         }
     }
+
+    fn read_to_end(&mut self, buf: &mut Vec<u8>) -> std::io::Result<usize> {
+        match self {
+            Self::Idea(ref mut i) => i.read_to_end(buf),
+            Self::TripleDes(ref mut i) => i.read_to_end(buf),
+            Self::Cast5(ref mut i) => i.read_to_end(buf),
+            Self::Blowfish(ref mut i) => i.read_to_end(buf),
+            Self::Aes128(ref mut i) => i.read_to_end(buf),
+            Self::Aes192(ref mut i) => i.read_to_end(buf),
+            Self::Aes256(ref mut i) => i.read_to_end(buf),
+            Self::Twofish(ref mut i) => i.read_to_end(buf),
+            Self::Camellia128(ref mut i) => i.read_to_end(buf),
+            Self::Camellia192(ref mut i) => i.read_to_end(buf),
+            Self::Camellia256(ref mut i) => i.read_to_end(buf),
+        }
+    }
 }
 
 #[derive(derive_more::Debug)]
@@ -117,7 +130,7 @@ pub enum StreamEncryptorInner<M, R>
 where
     M: BlockDecrypt + BlockEncryptMut + BlockCipher,
     BufEncryptor<M>: KeyIvInit,
-    R: crate::io::Read,
+    R: std::io::Read,
 {
     Prefix {
         // We use regular sha1 for MDC, not sha1_checked. Collisions are not currently a concern with MDC.
@@ -146,7 +159,7 @@ impl<M, R> StreamEncryptorInner<M, R>
 where
     M: BlockDecrypt + BlockEncryptMut + BlockCipher,
     BufEncryptor<M>: KeyIvInit,
-    R: crate::io::Read,
+    R: std::io::Read,
 {
     fn new<RAND>(mut rng: RAND, source: R, key: &[u8]) -> Result<Self>
     where
@@ -185,150 +198,192 @@ where
     }
 
     fn buffer_size() -> usize {
-        let block_size = <M as BlockSizeUser>::block_size();
-        block_size * 2
+        8 * 1024
     }
-}
 
-impl<M, R> crate::io::Read for StreamEncryptorInner<M, R>
-where
-    M: BlockDecrypt + BlockEncryptMut + BlockCipher,
-    BufEncryptor<M>: KeyIvInit,
-    R: crate::io::Read,
-{
-    fn read(&mut self, buf: &mut [u8]) -> crate::io::Result<usize> {
-        match core::mem::replace(self, Self::Unknown) {
-            Self::Prefix {
-                mut hasher,
-                mut encryptor,
-                mut prefix,
-                mut source,
-            } => {
-                // Prefix
-                let to_write = buf.len().min(prefix.remaining());
-                prefix.copy_to_slice(&mut buf[..to_write]);
-
+    fn fill_inner(&mut self) -> std::io::Result<()> {
+        match self {
+            Self::Prefix { prefix, .. } => {
                 if prefix.has_remaining() {
-                    *self = Self::Prefix {
-                        hasher,
-                        encryptor,
-                        prefix,
-                        source,
-                    };
-                } else {
-                    // prefix written, transition to data
-                    let mut buffer = BytesMut::zeroed(Self::buffer_size());
-
+                    return Ok(());
+                }
+            }
+            Self::Data {
+                hasher,
+                encryptor,
+                buffer,
+                source,
+            } => {
+                if buffer.has_remaining() {
+                    return Ok(());
+                }
+                // needs filling
+                let mdc = if let Some(source) = source {
                     // fill buffer
-                    let read = fill_buffer(&mut source, &mut buffer, None)?;
-                    let source = if read < buffer.len() {
+                    // TODO: require source to be a BufRead
+                    // let read = fill_buffer_bytes(source, buffer, Self::buffer_size())?;
+                    buffer.resize(Self::buffer_size(), 0);
+                    let read = fill_buffer(source, buffer, None)?;
+                    if read < buffer.len() {
                         // done reading
                         // shorten buffer accordingly
                         buffer.truncate(read);
-                        None
+                    }
+                    if buffer.is_empty() {
+                        // nothing left
+                        true
                     } else {
-                        Some(source)
-                    };
+                        // encrypt it
+                        hasher.update(&buffer);
+                        encryptor.encrypt(buffer);
+                        false
+                    }
+                } else {
+                    true
+                };
 
-                    // encrypt it
-                    hasher.update(&buffer);
-                    encryptor.encrypt(&mut buffer);
-
-                    *self = Self::Data {
-                        hasher,
-                        encryptor,
-                        buffer,
-                        source,
-                    };
+                if !mdc {
+                    return Ok(());
                 }
+            }
+            Self::Mdc { mdc } => {
+                if mdc.has_remaining() {
+                    return Ok(());
+                }
+            }
+            Self::Done => {
+                return Ok(());
+            }
+            Self::Unknown => {
+                panic!("encryption panicked");
+            }
+        };
 
-                Ok(to_write)
+        match std::mem::replace(self, Self::Unknown) {
+            Self::Prefix {
+                mut hasher,
+                mut encryptor,
+                mut source,
+                ..
+            } => {
+                // prefix written, transition to data
+                let mut buffer = BytesMut::zeroed(Self::buffer_size());
+
+                // fill buffer
+                let read = fill_buffer(&mut source, &mut buffer, None)?;
+                let source = if read < buffer.len() {
+                    // done reading
+                    // shorten buffer accordingly
+                    buffer.truncate(read);
+                    None
+                } else {
+                    Some(source)
+                };
+
+                // encrypt it
+                hasher.update(&buffer);
+                encryptor.encrypt(&mut buffer);
+
+                *self = Self::Data {
+                    hasher,
+                    encryptor,
+                    buffer,
+                    source,
+                };
             }
             Self::Data {
                 mut hasher,
                 mut encryptor,
-                mut buffer,
-                source,
+                ..
             } => {
-                let to_write = buf.len().min(buffer.remaining());
-                buffer.copy_to_slice(&mut buf[..to_write]);
+                // source is fully read, move on to Mdc
+                // mdc header
+                let mdc_header = [0xD3, 0x14];
+                hasher.update(mdc_header);
 
-                if buffer.has_remaining() {
-                    *self = Self::Data {
-                        hasher,
-                        encryptor,
-                        buffer,
-                        source,
-                    };
-                } else {
-                    // needs filling
-                    let (mdc, source) = if let Some(mut source) = source {
-                        // fill buffer
-                        buffer.resize(Self::buffer_size(), 0);
-                        let read = fill_buffer(&mut source, &mut buffer, None)?;
-                        let source = if read < buffer.len() {
-                            // done reading
-                            // shorten buffer accordingly
-                            buffer.truncate(read);
-                            None
-                        } else {
-                            Some(source)
-                        };
-                        if buffer.is_empty() {
-                            // nothing left
-                            (true, source)
-                        } else {
-                            // encrypt it
-                            hasher.update(&buffer);
-                            encryptor.encrypt(&mut buffer);
-                            (false, source)
-                        }
-                    } else {
-                        (true, source)
-                    };
+                let mut mdc = BytesMut::zeroed(22);
+                mdc[..2].copy_from_slice(&mdc_header);
 
-                    if mdc {
-                        // source is fully read, move on to Mdc
-                        // mdc header
-                        let mdc_header = [0xD3, 0x14];
-                        hasher.update(mdc_header);
+                // mdc body
+                let checksum = &hasher.finalize()[..20];
+                mdc[2..22].copy_from_slice(checksum);
 
-                        let mut mdc = BytesMut::zeroed(22);
-                        mdc[..2].copy_from_slice(&mdc_header);
-
-                        // mdc body
-                        let checksum = &hasher.finalize()[..20];
-                        mdc[2..22].copy_from_slice(checksum);
-
-                        encryptor.encrypt(&mut mdc[..]);
-                        *self = Self::Mdc { mdc: mdc.freeze() };
-                    } else {
-                        *self = Self::Data {
-                            hasher,
-                            encryptor,
-                            buffer,
-                            source,
-                        };
-                    };
-                }
-                Ok(to_write)
+                encryptor.encrypt(&mut mdc[..]);
+                *self = Self::Mdc { mdc: mdc.freeze() };
             }
-            Self::Mdc { mut mdc } => {
-                let to_write = buf.len().min(mdc.remaining());
-                mdc.copy_to_slice(&mut buf[..to_write]);
-
-                if mdc.has_remaining() {
-                    *self = Self::Mdc { mdc };
-                } else {
-                    *self = Self::Done;
-                }
-
-                Ok(to_write)
+            Self::Mdc { .. } => {
+                *self = Self::Done;
             }
-            Self::Done => Ok(0),
+            Self::Done => {}
             Self::Unknown => {
                 panic!("encryption panicked");
             }
         }
+        Ok(())
+    }
+}
+
+impl<M, R> std::io::Read for StreamEncryptorInner<M, R>
+where
+    M: BlockDecrypt + BlockEncryptMut + BlockCipher,
+    BufEncryptor<M>: KeyIvInit,
+    R: std::io::Read,
+{
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.fill_inner()?;
+        match self {
+            Self::Prefix { prefix, .. } => {
+                // Prefix
+                let to_write = buf.len().min(prefix.remaining());
+                prefix.copy_to_slice(&mut buf[..to_write]);
+                Ok(to_write)
+            }
+            Self::Data { buffer, .. } => {
+                let to_write = buf.len().min(buffer.remaining());
+                buffer.copy_to_slice(&mut buf[..to_write]);
+                Ok(to_write)
+            }
+            Self::Mdc { mdc } => {
+                let to_write = buf.len().min(mdc.remaining());
+                mdc.copy_to_slice(&mut buf[..to_write]);
+                Ok(to_write)
+            }
+            Self::Done => Ok(0),
+            Self::Unknown => unreachable!("error state"),
+        }
+    }
+
+    fn read_to_end(&mut self, buf: &mut Vec<u8>) -> std::io::Result<usize> {
+        let mut read = 0;
+        loop {
+            self.fill_inner()?;
+            match self {
+                Self::Prefix { prefix, .. } => {
+                    // Prefix
+                    let to_write = prefix.remaining();
+                    buf.extend_from_slice(&prefix[..to_write]);
+                    prefix.advance(to_write);
+                    read += to_write;
+                }
+                Self::Data { buffer, .. } => {
+                    let to_write = buffer.remaining();
+                    buf.extend_from_slice(&buffer[..to_write]);
+                    buffer.advance(to_write);
+                    read += to_write;
+                }
+                Self::Mdc { mdc } => {
+                    let to_write = mdc.remaining();
+                    buf.extend_from_slice(&mdc[..to_write]);
+                    mdc.advance(to_write);
+                    read += to_write;
+                }
+                Self::Done => {
+                    break;
+                }
+                Self::Unknown => unreachable!("error state"),
+            }
+        }
+
+        Ok(read)
     }
 }

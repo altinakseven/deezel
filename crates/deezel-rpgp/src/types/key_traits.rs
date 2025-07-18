@@ -1,5 +1,3 @@
-use alloc::boxed::Box;
-extern crate alloc;
 use crate::{
     crypto::{
         hash::{HashAlgorithm, KnownDigest},
@@ -33,8 +31,8 @@ pub trait Imprint {
     fn imprint<D: KnownDigest>(&self) -> Result<generic_array::GenericArray<u8, D::OutputSize>>;
 }
 
-pub trait PublicKeyTrait: KeyDetails + core::fmt::Debug {
-    fn created_at(&self) -> chrono::DateTime<chrono::Utc>;
+pub trait PublicKeyTrait: KeyDetails + std::fmt::Debug {
+    fn created_at(&self) -> &chrono::DateTime<chrono::Utc>;
     fn expiration(&self) -> Option<u16>;
 
     /// Verify a signed message.
@@ -50,6 +48,15 @@ pub trait PublicKeyTrait: KeyDetails + core::fmt::Debug {
 
     fn is_signing_key(&self) -> bool {
         use crate::crypto::public_key::PublicKeyAlgorithm::*;
+
+        #[cfg(feature = "draft-pqc")]
+        if matches!(
+            self.algorithm(),
+            MlDsa65Ed25519 | MlDsa87Ed448 | SlhDsaShake128s | SlhDsaShake128f | SlhDsaShake256s
+        ) {
+            return true;
+        }
+
         matches!(
             self.algorithm(),
             RSA | RSASign | Elgamal | DSA | ECDSA | EdDSALegacy | Ed25519 | Ed448
@@ -58,6 +65,11 @@ pub trait PublicKeyTrait: KeyDetails + core::fmt::Debug {
 
     fn is_encryption_key(&self) -> bool {
         use crate::crypto::public_key::PublicKeyAlgorithm::*;
+
+        #[cfg(feature = "draft-pqc")]
+        if matches!(self.algorithm(), MlKem768X25519 | MlKem1024X448) {
+            return true;
+        }
 
         matches!(
             self.algorithm(),
@@ -103,7 +115,7 @@ impl<T: PublicKeyTrait> PublicKeyTrait for &T {
         (*self).expiration()
     }
 
-    fn created_at(&self) -> chrono::DateTime<chrono::Utc> {
+    fn created_at(&self) -> &chrono::DateTime<chrono::Utc> {
         (*self).created_at()
     }
 }
@@ -141,7 +153,7 @@ impl SecretKeyTrait for Box<&dyn SecretKeyTrait> {
     }
 }
 
-pub trait SecretKeyTrait: KeyDetails + core::fmt::Debug {
+pub trait SecretKeyTrait: KeyDetails + std::fmt::Debug {
     fn create_signature(
         &self,
         key_pw: &Password,

@@ -1,7 +1,5 @@
-use alloc::boxed::Box;
-use alloc::string::ToString;
-use alloc::format;
-extern crate alloc;
+use std::io::{self, BufRead, Read};
+
 use bytes::{Buf, BytesMut};
 use log::debug;
 
@@ -9,12 +7,11 @@ use super::PacketBodyReader;
 use crate::{
     composed::{Message, MessageReader, RingResult, TheRing},
     errors::{bail, ensure_eq, Result},
-    packet::{OnePassSignature, OpsVersionSpecific, Packet, Signature, SignatureType},
-    util::{fill_buffer, NormalizingHasher},
+    packet::{OnePassSignature, OpsVersionSpecific, Packet, PacketTrait, Signature, SignatureType},
+    util::{fill_buffer_bytes, NormalizingHasher},
 };
 
-use crate::io::{BufRead, Error, Read};
-
+const BUFFER_SIZE: usize = 8 * 1024;
 
 #[derive(derive_more::Debug)]
 pub enum SignatureOnePassReader<'a> {
@@ -117,58 +114,26 @@ impl<'a> SignatureOnePassReader<'a> {
         }
     }
 
-    fn fill_inner(&mut self) -> Result<(), Error> {
+    fn fill_inner(&mut self) -> io::Result<()> {
         if matches!(self, Self::Done { .. }) {
             return Ok(());
         }
 
         loop {
-            match core::mem::replace(self, Self::Error) {
+            match std::mem::replace(self, Self::Error) {
                 Self::Init {
                     mut norm_hasher,
                     mut source,
                 } => {
                     debug!("SignatureOnePassReader init");
-                    let mut buffer = BytesMut::zeroed(1024);
-                    let read = fill_buffer(&mut source, &mut buffer, None)?;
-                    buffer.truncate(read);
+                    let mut buffer = BytesMut::with_capacity(BUFFER_SIZE);
+                    let read = fill_buffer_bytes(&mut source, &mut buffer, BUFFER_SIZE)?;
 
                     if read == 0 {
-                        debug!("SignatureOnePassReader: source returned 0 bytes on init, checking if source has more data");
-                        
-                        // Before giving up, check if the source has any data available
-                        // This handles reconstructed messages where the first read might return 0
-                        loop {
-                            match source.fill_buf() {
-                                Ok(buf) if buf.is_empty() => {
-                                    debug!("SignatureOnePassReader: source is truly empty on init");
-                                    return Err(crate::io::Error::new(crate::io::ErrorKind::UnexpectedEof, "unexpected end of file"));
-                                }
-                                Ok(buf) => {
-                                    debug!("SignatureOnePassReader: source has {} bytes available after 0-byte read", buf.len());
-                                    let len = buf.len().min(1024);
-                                    buffer.clear();
-                                    buffer.extend_from_slice(&buf[..len]);
-                                    
-                                    if let Some(ref mut hasher) = norm_hasher {
-                                        hasher.hash_buf(&buffer[..len]);
-                                    }
-                                    
-                                    source.consume(len);
-                                    
-                                    *self = Self::Body {
-                                        norm_hasher,
-                                        source,
-                                        buffer,
-                                    };
-                                    return Ok(());
-                                }
-                                Err(e) => {
-                                    debug!("SignatureOnePassReader: error reading from source on init: {:?}", e);
-                                    return Err(e);
-                                }
-                            }
-                        }
+                        return Err(io::Error::new(
+                            io::ErrorKind::UnexpectedEof,
+                            "missing signature",
+                        ));
                     }
 
                     if let Some(ref mut hasher) = norm_hasher {
@@ -197,9 +162,7 @@ impl<'a> SignatureOnePassReader<'a> {
                         return Ok(());
                     }
 
-                    buffer.resize(1024, 0);
-                    let read = fill_buffer(&mut source, &mut buffer, None)?;
-                    buffer.truncate(read);
+                    let read = fill_buffer_bytes(&mut source, &mut buffer, BUFFER_SIZE)?;
 
                     if let Some(ref mut hasher) = norm_hasher {
                         hasher.hash_buf(&buffer[..read]);
@@ -208,29 +171,6 @@ impl<'a> SignatureOnePassReader<'a> {
                     if read == 0 {
                         debug!("SignatureOnePassReader finish");
 
-                        // Before processing signature, ensure all data from source is consumed
-                        // This is critical for reconstructed messages where the PacketBodyReader may still have data
-                        loop {
-                            match source.fill_buf() {
-                                Ok(buf) if buf.is_empty() => {
-                                    debug!("SignatureOnePassReader: source is truly empty, proceeding with signature processing");
-                                    break;
-                                }
-                                Ok(buf) => {
-                                    debug!("SignatureOnePassReader: source still has {} bytes, consuming them", buf.len());
-                                    let len = buf.len();
-                                    if let Some(ref mut hasher) = norm_hasher {
-                                        hasher.hash_buf(buf);
-                                    }
-                                    source.consume(len);
-                                }
-                                Err(e) => {
-                                    debug!("SignatureOnePassReader: error reading from source: {:?}", e);
-                                    return Err(e);
-                                }
-                            }
-                        }
-
                         let hasher = norm_hasher.map(|h| h.done());
 
                         let (reader, parts) = source.into_parts();
@@ -238,13 +178,22 @@ impl<'a> SignatureOnePassReader<'a> {
                         // read the signature
                         let mut packets = crate::packet::PacketParser::new(reader);
                         let Some(packet) = packets.next() else {
-                            return Err(crate::io::Error::new(crate::io::ErrorKind::Other, "missing signature packet"));
+                            return Err(io::Error::new(
+                                io::ErrorKind::UnexpectedEof,
+                                "missing signature packet",
+                            ));
                         };
                         let packet =
-                            packet.map_err(|_| crate::io::Error::new(crate::io::ErrorKind::Other, "failed to parse packet"))?;
+                            packet.map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
                         let Packet::Signature(signature) = packet else {
-                            return Err(crate::io::Error::new(crate::io::ErrorKind::Other, "expected signature packet"));
+                            return Err(io::Error::new(
+                                io::ErrorKind::UnexpectedEof,
+                                format!(
+                                    "missing signature packet, found {:?} instead",
+                                    packet.tag()
+                                ),
+                            ));
                         };
 
                         // calculate final hash
@@ -253,9 +202,11 @@ impl<'a> SignatureOnePassReader<'a> {
                             if let Some(config) = signature.config() {
                                 let len = config
                                     .hash_signature_data(&mut hasher)
-                                    .map_err(|_| crate::io::Error::new(crate::io::ErrorKind::Other, "failed to hash signature data"))?;
+                                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
                                 hasher.update(
-                                    &config.trailer(len).map_err(|_| crate::io::Error::new(crate::io::ErrorKind::Other, "failed to create trailer"))?,
+                                    &config.trailer(len).map_err(|e| {
+                                        io::Error::new(io::ErrorKind::InvalidData, e)
+                                    })?,
                                 );
                                 Some(hasher.finalize())
                             } else {
@@ -280,7 +231,7 @@ impl<'a> SignatureOnePassReader<'a> {
                             source,
                             buffer,
                         }
-                    };
+                    }
 
                     return Ok(());
                 }
@@ -296,7 +247,7 @@ impl<'a> SignatureOnePassReader<'a> {
                     };
                     return Ok(());
                 }
-                Self::Error => return Err(crate::io::Error::new(crate::io::ErrorKind::Other, "signed one pass reader error")),
+                Self::Error => return Err(io::Error::other("SignatureOnePassReader errored")),
             }
         }
     }
@@ -350,13 +301,13 @@ impl<'a> SignatureOnePassReader<'a> {
 }
 
 impl BufRead for SignatureOnePassReader<'_> {
-    fn fill_buf(&mut self) -> Result<&[u8], Error> {
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
         self.fill_inner()?;
         match self {
             Self::Init { .. } => unreachable!("invalid state"),
             Self::Body { buffer, .. } => Ok(&buffer[..]),
             Self::Done { .. } => Ok(&[][..]),
-            Self::Error => Err(crate::io::Error::new(crate::io::ErrorKind::Other, "signed one pass reader error")),
+            Self::Error => Err(io::Error::other("SignatureOnePassReader errored")),
         }
     }
 
@@ -373,11 +324,17 @@ impl BufRead for SignatureOnePassReader<'_> {
 }
 
 impl Read for SignatureOnePassReader<'_> {
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
-        let internal_buf = self.fill_buf()?;
-        let len = internal_buf.len().min(buf.len());
-        buf[..len].copy_from_slice(&internal_buf[..len]);
-        self.consume(len);
-        Ok(len)
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.fill_inner()?;
+        match self {
+            Self::Init { .. } => unreachable!("invalid state"),
+            Self::Body { buffer, .. } => {
+                let to_write = buffer.remaining().min(buf.len());
+                buffer.copy_to_slice(&mut buf[..to_write]);
+                Ok(to_write)
+            }
+            Self::Done { .. } => Ok(0),
+            Self::Error => Err(io::Error::other("SignatureOnePassReader errored")),
+        }
     }
 }

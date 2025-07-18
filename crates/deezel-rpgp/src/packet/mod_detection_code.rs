@@ -1,5 +1,4 @@
-extern crate alloc;
-use crate::io::{BufRead, Write};
+use std::io::{self, BufRead};
 
 use crate::{
     errors::Result,
@@ -20,6 +19,7 @@ use crate::{
 /// corresponding flag is known as "Version 1 Symmetrically Encrypted and Integrity Protected
 /// Data packet".
 #[derive(derive_more::Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct ModDetectionCode {
     packet_header: PacketHeader,
     /// 20 byte SHA1 hash of the preceding plaintext data.
@@ -40,7 +40,7 @@ impl ModDetectionCode {
 }
 
 impl Serialize for ModDetectionCode {
-    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
         writer.write_all(&self.hash[..])?;
         Ok(())
     }
@@ -56,3 +56,26 @@ impl PacketTrait for ModDetectionCode {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+
+    use super::*;
+
+    proptest! {
+        #[test]
+        fn write_len(packet: ModDetectionCode) {
+            let mut buf = Vec::new();
+            packet.to_writer(&mut buf).unwrap();
+            prop_assert_eq!(buf.len(), packet.write_len());
+        }
+
+        #[test]
+        fn packet_roundtrip(packet: ModDetectionCode) {
+            let mut buf = Vec::new();
+            packet.to_writer(&mut buf).unwrap();
+            let new_packet = ModDetectionCode::try_from_reader(packet.packet_header, &mut &buf[..]).unwrap();
+            prop_assert_eq!(packet, new_packet);
+        }
+    }
+}

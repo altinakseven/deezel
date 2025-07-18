@@ -1,4 +1,5 @@
-extern crate alloc;
+use std::io::{self, BufRead, Read};
+
 use bytes::{Buf, BytesMut};
 use log::debug;
 
@@ -6,11 +7,10 @@ use super::PacketBodyReader;
 use crate::{
     packet::{LiteralDataHeader, PacketHeader},
     types::Tag,
-    util::fill_buffer,
+    util::fill_buffer_bytes,
 };
 
-use crate::io::{BufRead, Error, Read};
-
+const BUFFER_SIZE: usize = 8 * 1024;
 
 /// Read the underlying literal data.
 #[derive(derive_more::Debug)]
@@ -31,13 +31,13 @@ pub enum LiteralDataReader<R: BufRead> {
 }
 
 impl<R: BufRead> LiteralDataReader<R> {
-    pub fn new(mut source: PacketBodyReader<R>) -> Result<Self, Error> {
+    pub fn new(mut source: PacketBodyReader<R>) -> io::Result<Self> {
         debug_assert_eq!(source.packet_header().tag(), Tag::LiteralData);
-        let header = LiteralDataHeader::try_from_reader(&mut source).map_err(|_| crate::io::Error::new(crate::io::ErrorKind::Other, "failed to read literal data header"))?;
+        let header = LiteralDataHeader::try_from_reader(&mut source)?;
 
         Ok(Self::Body {
             source,
-            buffer: BytesMut::with_capacity(1024),
+            buffer: BytesMut::with_capacity(BUFFER_SIZE),
             header,
         })
     }
@@ -90,12 +90,12 @@ impl<R: BufRead> LiteralDataReader<R> {
         }
     }
 
-    fn fill_inner(&mut self) -> Result<(), Error> {
+    fn fill_inner(&mut self) -> io::Result<()> {
         if self.is_done() {
             return Ok(());
         }
 
-        match core::mem::replace(self, Self::Error) {
+        match std::mem::replace(self, Self::Error) {
             Self::Body {
                 mut source,
                 mut buffer,
@@ -111,11 +111,9 @@ impl<R: BufRead> LiteralDataReader<R> {
                 }
 
                 debug!("literal packet: filling buffer");
-                buffer.resize(1024, 0);
-                let read = fill_buffer(&mut source, &mut buffer, Some(1024))?;
-                buffer.truncate(read);
+                let read = fill_buffer_bytes(&mut source, &mut buffer, BUFFER_SIZE)?;
 
-                if read < 1024 {
+                if read < BUFFER_SIZE {
                     // done reading the source
                     *self = Self::Done {
                         source,
@@ -143,17 +141,17 @@ impl<R: BufRead> LiteralDataReader<R> {
                 };
                 Ok(())
             }
-            Self::Error => Err(crate::io::Error::new(crate::io::ErrorKind::Other, "literal data reader error")),
+            Self::Error => Err(io::Error::other("LiteralDataReader errored")),
         }
     }
 }
 
 impl<R: BufRead> BufRead for LiteralDataReader<R> {
-    fn fill_buf(&mut self) -> Result<&[u8], Error> {
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
         self.fill_inner()?;
         match self {
             Self::Body { buffer, .. } | Self::Done { buffer, .. } => Ok(&buffer[..]),
-            Self::Error => Err(crate::io::Error::new(crate::io::ErrorKind::Other, "literal data reader error")),
+            Self::Error => Err(io::Error::other("LiteralDataReader errored")),
         }
     }
 
@@ -168,11 +166,38 @@ impl<R: BufRead> BufRead for LiteralDataReader<R> {
 }
 
 impl<R: BufRead> Read for LiteralDataReader<R> {
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
-        let internal_buf = self.fill_buf()?;
-        let len = internal_buf.len().min(buf.len());
-        buf[..len].copy_from_slice(&internal_buf[..len]);
-        self.consume(len);
-        Ok(len)
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.fill_inner()?;
+        match self {
+            Self::Body { buffer, .. } | Self::Done { buffer, .. } => {
+                let to_write = buffer.remaining().min(buf.len());
+                buffer.copy_to_slice(&mut buf[..to_write]);
+                Ok(to_write)
+            }
+            Self::Error => Err(io::Error::other("LiteralDataReader errored")),
+        }
+    }
+
+    fn read_to_end(&mut self, buf: &mut Vec<u8>) -> io::Result<usize> {
+        let mut read = 0;
+        loop {
+            self.fill_inner()?;
+            match self {
+                Self::Body { buffer, .. } => {
+                    read += buffer.len();
+                    buf.extend_from_slice(buffer);
+                    buffer.clear();
+                }
+                Self::Done { buffer, .. } => {
+                    read += buffer.len();
+                    buf.extend_from_slice(buffer);
+                    buffer.clear();
+                    break;
+                }
+                Self::Error => return Err(io::Error::other("LiteralDataReader errored")),
+            }
+        }
+
+        Ok(read)
     }
 }

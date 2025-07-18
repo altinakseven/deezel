@@ -1,6 +1,4 @@
-use alloc::format;
-extern crate alloc;
-use crate::io::{self, BufRead};
+use std::io::{self, BufRead};
 
 use crate::{
     errors::{ensure_eq, Result},
@@ -15,6 +13,7 @@ const PGP: [u8; 3] = [0x50, 0x47, 0x50];
 /// Marker Packet
 /// <https://www.rfc-editor.org/rfc/rfc9580.html#name-marker-packet-type-id-10>
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct Marker {
     packet_header: PacketHeader,
 }
@@ -46,3 +45,27 @@ impl PacketTrait for Marker {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+
+    use super::*;
+
+    proptest! {
+        #[test]
+        fn write_len(marker: Marker) {
+            let mut buf = Vec::new();
+            marker.to_writer(&mut buf).unwrap();
+            assert_eq!(buf.len(), marker.write_len());
+        }
+
+
+        #[test]
+        fn packet_roundtrip(marker: Marker) {
+            let mut buf = Vec::new();
+            marker.to_writer(&mut buf).unwrap();
+            let new_marker = Marker::try_from_reader(marker.packet_header, &mut &buf[..]).unwrap();
+            assert_eq!(marker, new_marker);
+        }
+    }
+}

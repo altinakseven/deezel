@@ -1,7 +1,3 @@
-extern crate alloc;
-use alloc::format;
-use alloc::vec;
-use alloc::vec::Vec;
 pub use dsa::KeySize;
 use dsa::{Components, Signature, SigningKey};
 use num_bigint::BigUint;
@@ -18,13 +14,10 @@ use crate::{
 
 /// Secret key for DSA.
 #[derive(Clone, PartialEq, derive_more::Debug)]
-#[cfg_attr(all(test, feature = "std"), derive(proptest_derive::Arbitrary))]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct SecretKey {
     #[debug("..")]
-    #[cfg_attr(
-        all(test, feature = "std"),
-        proptest(strategy = "crate::crypto::dsa::tests::key_gen()")
-    )]
+    #[cfg_attr(test, proptest(strategy = "tests::key_gen()"))]
     key: dsa::SigningKey,
 }
 
@@ -80,7 +73,7 @@ impl SecretKey {
 }
 
 impl Serialize for SecretKey {
-    fn to_writer<W: crate::io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
         self.to_mpi().to_writer(writer)?;
 
         Ok(())

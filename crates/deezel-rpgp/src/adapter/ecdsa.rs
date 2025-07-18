@@ -1,7 +1,4 @@
-use alloc::vec::Vec;
-extern crate alloc;
-use alloc::{format, vec};
-use core::marker::PhantomData;
+use std::marker::PhantomData;
 
 use chrono::{DateTime, Utc};
 use digest::{typenum::Unsigned, OutputSizeUser};
@@ -71,7 +68,7 @@ where
         let public_key = PubKeyInner::new(
             version,
             <T as Keypair>::VerifyingKey::PGP_ALGORITHM,
-            created_at.timestamp() as u32,
+            created_at,
             None,
             inner.verifying_key().pgp_parameters(),
         )?;
@@ -178,7 +175,7 @@ impl<C, T> PublicKeyTrait for EcdsaSigner<T, C> {
         self.public_key.verify_signature(hash, data, sig)
     }
 
-    fn created_at(&self) -> chrono::DateTime<chrono::Utc> {
+    fn created_at(&self) -> &chrono::DateTime<chrono::Utc> {
         self.public_key.created_at()
     }
 

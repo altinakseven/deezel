@@ -1,7 +1,3 @@
-use alloc::string::ToString;
-use alloc::vec;
-use alloc::format;
-extern crate alloc;
 use digest::{const_oid::AssociatedOid, Digest};
 use md5::Md5;
 use num_bigint::ModInverse;
@@ -32,8 +28,10 @@ pub(crate) const MAX_KEY_SIZE: usize = 16384;
 
 /// Private Key for RSA.
 #[derive(derive_more::Debug, ZeroizeOnDrop, Clone, PartialEq, Eq)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct SecretKey(
     #[debug("..")]
+    #[cfg_attr(test, proptest(strategy = "tests::key_gen()"))]
     RsaPrivateKey,
 );
 
@@ -84,7 +82,7 @@ impl SecretKey {
     }
 
     /// Returns `d`, `p`, `q`, `u` in big endian
-    pub fn to_bytes(&self) -> (alloc::vec::Vec<u8>, alloc::vec::Vec<u8>, alloc::vec::Vec<u8>, alloc::vec::Vec<u8>) {
+    pub fn to_bytes(&self) -> (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>) {
         let d = self.0.d().to_bytes_be();
         let p = self.0.primes()[0].to_bytes_be();
         let q = self.0.primes()[1].to_bytes_be();
@@ -109,7 +107,7 @@ impl From<&SecretKey> for RsaPublicParams {
 }
 
 impl Serialize for SecretKey {
-    fn to_writer<W: crate::io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
         let (d, p, q, u) = self.to_mpi();
         d.to_writer(writer)?;
         p.to_writer(writer)?;
@@ -134,7 +132,7 @@ impl Decryptor for SecretKey {
     type EncryptionFields<'a> = &'a Mpi;
 
     /// RSA decryption using PKCS1v15 padding.
-    fn decrypt(&self, mpi: Self::EncryptionFields<'_>) -> Result<alloc::vec::Vec<u8>> {
+    fn decrypt(&self, mpi: Self::EncryptionFields<'_>) -> Result<Vec<u8>> {
         let m = self.0.decrypt(Pkcs1v15Encrypt, mpi.as_ref())?;
 
         Ok(m)
@@ -210,7 +208,7 @@ pub fn verify(
     let signature = if signature.len() < key.size() {
         // RSA short signatures are allowed by PGP, but not by the RSA crate.
         // So we pad out the signature if we encounter a short one.
-        let mut signature_padded = alloc::vec![0u8; key.size()];
+        let mut signature_padded = vec![0u8; key.size()];
         let diff = key.size() - signature.len();
         signature_padded[diff..].copy_from_slice(signature);
         RsaSignature::try_from(&signature_padded[..])?
@@ -234,19 +232,17 @@ pub fn verify(
     }
 }
 
-#[cfg(all(test, feature = "std"))]
+#[cfg(test)]
 mod tests {
-    use super::*;
     use proptest::prelude::*;
+    use rand::SeedableRng;
 
-    impl Arbitrary for SecretKey {
-        type Parameters = ();
-        type Strategy = BoxedStrategy<Self>;
+    use super::*;
 
-        fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-            // TODO: consider other key sizes
-            Just(SecretKey::generate(rand::thread_rng(), 1024).unwrap()).boxed()
+    prop_compose! {
+        pub fn key_gen()(seed: u64) -> RsaPrivateKey {
+            let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
+            RsaPrivateKey::new(&mut rng, 512).unwrap()
         }
     }
 }
-

@@ -65,15 +65,14 @@
 //!      .verify(&*verification_key, DATA)
 //!      .expect("Failed to validate signature");
 //! ```
-extern crate alloc;
 
 mod header;
 mod many;
 mod packet_sum;
 mod single;
 
-pub mod compressed_data;
-mod decompressor_reader;
+mod compressed_data;
+mod gnupg_aead;
 mod key;
 mod literal_data;
 mod marker;
@@ -94,7 +93,7 @@ mod secret_key_parser;
 
 pub use self::{
     compressed_data::*,
-    decompressor_reader::Decompressor,
+    gnupg_aead::{Config as GnupgAeadConfig, GnupgAeadData},
     header::{NewPacketHeader, OldPacketHeader, PacketHeader},
     key::*,
     literal_data::*,
@@ -111,7 +110,8 @@ pub use self::{
     },
     sym_encrypted_data::*,
     sym_encrypted_protected_data::{
-        Config as SymEncryptedProtectedDataConfig, StreamDecryptor, SymEncryptedProtectedData,
+        Config as SymEncryptedProtectedDataConfig, ProtectedDataConfig, StreamDecryptor,
+        SymEncryptedProtectedData,
     },
     sym_key_encrypted_session_key::*,
     trust::*,

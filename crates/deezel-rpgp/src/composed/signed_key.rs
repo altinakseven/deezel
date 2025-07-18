@@ -102,7 +102,6 @@
 //!     .verify_signature(HashAlgorithm::Sha256, digest, &raw_signature)
 //!     .expect("Verify must succeed");
 //! ```
-extern crate alloc;
 
 mod key_parser;
 mod parse;

@@ -1,63 +1,57 @@
 //! # Utilities
 
-extern crate alloc;
-use alloc::boxed::Box;
+use std::{hash, io};
 
-use core::hash;
+use bytes::{Buf, BufMut, BytesMut};
 use digest::DynDigest;
 use nom::Input;
-use dyn_clone::DynClone;
 
-use crate::io::{Read, Write};
-
-pub(crate) fn fill_buffer<R: Read>(
-    source: &mut R,
+pub(crate) fn fill_buffer<R: std::io::Read>(
+    mut source: R,
     buffer: &mut [u8],
     chunk_size: Option<usize>,
-) -> Result<usize, crate::io::Error> {
-    let target_size = chunk_size.unwrap_or(buffer.len());
-    let mut total_read = 0;
+) -> std::io::Result<usize> {
+    let mut offset = 0;
+    let chunk_size = chunk_size.unwrap_or(buffer.len());
+    loop {
+        let read = source.read(&mut buffer[offset..chunk_size])?;
+        offset += read;
 
-    while total_read < target_size {
-        let remaining_target = target_size - total_read;
-        let buffer_slice = &mut buffer[total_read..];
-
-        // Determine the slice to read into for this iteration.
-        // It's the smaller of the remaining buffer or the remaining target.
-        let len = buffer_slice.len();
-        let read_buf = &mut buffer_slice[..remaining_target.min(len)];
-
-        if read_buf.is_empty() {
-            // This can happen if target_size > buffer.len() and we've filled the buffer.
+        if read == 0 || offset == chunk_size {
             break;
         }
+    }
+    Ok(offset)
+}
 
-        match source.read(read_buf) {
-            Ok(0) => {
-                break; // EOF
-            }
-            Ok(n) => {
-                total_read += n;
-            }
-            Err(e) => {
-                if e.kind() != crate::io::ErrorKind::Interrupted {
-                    return Err(e);
-                }
-            }
+pub(crate) fn fill_buffer_bytes<R: std::io::BufRead>(
+    mut source: R,
+    buffer: &mut BytesMut,
+    len: usize,
+) -> std::io::Result<usize> {
+    let mut read_total = 0;
+    while buffer.remaining() < len {
+        let source_buffer = source.fill_buf()?;
+        let read = source_buffer.len().min(len - buffer.remaining());
+        buffer.put_slice(&source_buffer[..read]);
+        read_total += read;
+        source.consume(read);
+
+        if read == 0 {
+            break;
         }
     }
-
-    Ok(total_read)
+    Ok(read_total)
 }
 
 macro_rules! impl_try_from_into {
     ($enum_name:ident, $( $name:ident => $variant_type:ty ),*) => {
        $(
-           impl core::convert::TryFrom<$enum_name> for $variant_type {
+           impl std::convert::TryFrom<$enum_name> for $variant_type {
                // TODO: Proper error
                type Error = $crate::errors::Error;
 
-               fn try_from(other: $enum_name) -> ::core::result::Result<$variant_type, Self::Error> {
+               fn try_from(other: $enum_name) -> ::std::result::Result<$variant_type, Self::Error> {
                    if let $enum_name::$name(value) = other {
                        Ok(value)
                    } else {
@@ -88,46 +82,97 @@ impl<'a, A, B> TeeWriter<'a, A, B> {
     }
 }
 
+impl<A: hash::Hasher, B: io::Write> io::Write for TeeWriter<'_, A, B> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let written = self.b.write(buf)?;
+        self.a.write(&buf[..written]);
 
-impl<A: hash::Hasher, B: Write> Write for TeeWriter<'_, A, B> {
-    fn write(&mut self, buf: &[u8]) -> crate::io::Result<usize> {
-        self.a.write(buf);
-        self.b.write(buf)
+        Ok(written)
     }
 
-    fn flush(&mut self) -> crate::io::Result<()> {
-        self.b.flush()
+    fn write_all(&mut self, mut buf: &[u8]) -> io::Result<()> {
+        while !buf.is_empty() {
+            match self.write(buf) {
+                Ok(0) => {}
+                Ok(n) => buf = &buf[n..],
+                Err(ref e) if e.kind() == io::ErrorKind::Interrupted => {}
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.b.flush()?;
+
+        Ok(())
     }
 }
 
-/// A `DynDigest` that is also `Clone` and `Send`.
-pub trait CloneableDigest: DynDigest + DynClone + Send {}
+#[cfg(test)]
+pub(crate) mod test {
+    use bytes::{Buf, Bytes};
+    use rand::Rng;
 
-dyn_clone::clone_trait_object!(CloneableDigest);
+    const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ\
+                            abcdefghijklmnopqrstuvwxyz\
+                            0123456789)(*&^%$#@!~\r\n .,-!?\t";
 
-// Every type that implements `DynDigest`, `DynClone` and `Send` also implements `CloneableDigest`.
-impl<T: DynDigest + DynClone + Send + 'static> CloneableDigest for T {}
+    pub(crate) fn random_string(rng: &mut impl Rng, size: usize) -> String {
+        (0..size)
+            .map(|_| {
+                let idx = rng.gen_range(0..CHARSET.len());
+                CHARSET[idx] as char
+            })
+            .collect()
+    }
+
+    #[derive(Debug)]
+    pub(crate) struct ChaosReader<R: Rng> {
+        rng: R,
+        source: Bytes,
+    }
+
+    impl<R: Rng> ChaosReader<R> {
+        pub(crate) fn new(rng: R, source: impl Into<Bytes>) -> Self {
+            Self {
+                rng,
+                source: source.into(),
+            }
+        }
+    }
+
+    impl<R: Rng> std::io::Read for ChaosReader<R> {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            if !self.source.has_remaining() {
+                return Ok(0);
+            }
+            let max = buf.len().min(self.source.remaining());
+            let to_write: usize = self.rng.gen_range(1..=max);
+
+            self.source.copy_to_slice(&mut buf[..to_write]);
+            Ok(to_write)
+        }
+    }
+
+    pub(crate) fn check_strings(a: impl AsRef<str>, b: impl AsRef<str>) {
+        assert_eq!(
+            escape_string::escape(a.as_ref()),
+            escape_string::escape(b.as_ref())
+        );
+    }
+}
 
 #[derive(derive_more::Debug)]
 pub struct NormalizingHasher {
     #[debug("hasher")]
-    hasher: Box<dyn CloneableDigest>,
+    hasher: Box<dyn DynDigest + Send>,
     text_mode: bool,
     last_was_cr: bool,
 }
 
-impl Clone for NormalizingHasher {
-    fn clone(&self) -> Self {
-        Self {
-            hasher: self.hasher.clone(),
-            text_mode: self.text_mode,
-            last_was_cr: self.last_was_cr,
-        }
-    }
-}
-
 impl NormalizingHasher {
-    pub(crate) fn new(hasher: Box<dyn CloneableDigest>, text_mode: bool) -> Self {
+    pub(crate) fn new(hasher: Box<dyn DynDigest + Send>, text_mode: bool) -> Self {
         Self {
             hasher,
             text_mode,
@@ -135,7 +180,7 @@ impl NormalizingHasher {
         }
     }
 
-    pub(crate) fn done(mut self) -> Box<dyn CloneableDigest> {
+    pub(crate) fn done(mut self) -> Box<dyn DynDigest + Send> {
         if self.text_mode && self.last_was_cr {
             self.hasher.update(b"\n")
         }
@@ -209,53 +254,5 @@ impl NormalizingHasher {
                 }
             }
         }
-    }
-}
-#[cfg(test)]
-pub mod test {
-    use crate::io::{self, Read};
-    use alloc::string::String;
-    use alloc::vec::Vec;
-    use rand::{Rng, RngCore};
-
-    #[derive(Debug, Clone)]
-    pub struct ChaosReader<R: Rng> {
-        rng: R,
-        data: Vec<u8>,
-        pos: usize,
-    }
-
-    impl<R: Rng> ChaosReader<R> {
-        pub fn new(rng: R, data: Vec<u8>) -> Self {
-            Self { rng, data, pos: 0 }
-        }
-    }
-
-    impl<R: RngCore> Read for ChaosReader<R> {
-        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-            if self.pos >= self.data.len() {
-                return Ok(0);
-            }
-
-            let remaining = self.data.len() - self.pos;
-            let max_read = self.rng.gen_range(1..=buf.len().min(remaining));
-            let end = self.pos + max_read;
-            buf[..max_read].copy_from_slice(&self.data[self.pos..end]);
-            self.pos = end;
-
-            Ok(max_read)
-        }
-    }
-
-    pub fn random_string<R: Rng>(rng: &mut R, len: usize) -> String {
-        let mut s = String::with_capacity(len);
-        for _ in 0..len {
-            s.push(rng.gen_range('a'..='z') as char);
-        }
-        s
-    }
-
-    pub fn check_strings(a: &str, b: &str) {
-        assert_eq!(a, b);
     }
 }

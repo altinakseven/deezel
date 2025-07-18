@@ -1,7 +1,5 @@
-use alloc::boxed::Box;
-use alloc::string::ToString;
-use alloc::format;
-extern crate alloc;
+use std::io::{self, BufRead, Read};
+
 use bytes::{Buf, BytesMut};
 use log::debug;
 
@@ -10,11 +8,10 @@ use crate::{
     composed::{Message, MessageReader, RingResult, TheRing},
     errors::{bail, ensure_eq, Result},
     packet::{Signature, SignatureType, SignatureVersionSpecific},
-    util::{fill_buffer, NormalizingHasher},
+    util::{fill_buffer_bytes, NormalizingHasher},
 };
 
-use crate::io::{BufRead, Error, Read};
-
+const BUFFER_SIZE: usize = 8 * 1024;
 
 #[derive(derive_more::Debug)]
 pub enum SignatureBodyReader<'a> {
@@ -124,50 +121,28 @@ impl<'a> SignatureBodyReader<'a> {
         }
     }
 
-    fn fill_inner(&mut self) -> Result<(), Error> {
+    fn fill_inner(&mut self) -> io::Result<()> {
         if matches!(self, Self::Done { .. }) {
             return Ok(());
         }
 
         loop {
-            match core::mem::replace(self, Self::Error) {
+            match std::mem::replace(self, Self::Error) {
                 Self::Init {
                     mut norm_hasher,
                     mut source,
                     signature,
                 } => {
                     debug!("SignatureReader init");
-                    let mut buffer = BytesMut::zeroed(1024);
-                    let buf = source.fill_buf()?;
-                    if buf.is_empty() {
-                        let hash = if let Some(norm_hasher) = norm_hasher {
-                            let mut hasher = norm_hasher.done();
-                            let config = signature.config().ok_or_else(|| crate::io::Error::new(crate::io::ErrorKind::Other, "signed reader error"))?;
-                            // calculate final hash
-                            let len = config
-                                .hash_signature_data(&mut hasher)
-                                .map_err(|_| crate::io::Error::new(crate::io::ErrorKind::Other, "signed reader error"))?;
-                            hasher.update(
-                                &config
-                                    .trailer(len)
-                                    .map_err(|_| crate::io::Error::new(crate::io::ErrorKind::Other, "signed reader error"))?,
-                            );
+                    let mut buffer = BytesMut::with_capacity(BUFFER_SIZE);
+                    let read = fill_buffer_bytes(&mut source, &mut buffer, BUFFER_SIZE)?;
 
-                            Some(hasher.finalize())
-                        } else {
-                            None
-                        };
-
-                        *self = Self::Done {
-                            signature,
-                            hash,
-                            source,
-                        };
-                        return Ok(());
+                    if read == 0 {
+                        return Err(io::Error::new(
+                            io::ErrorKind::UnexpectedEof,
+                            "missing signature",
+                        ));
                     }
-                    let len = buf.len();
-                    buffer.extend_from_slice(buf);
-                    source.consume(len);
 
                     if let Some(ref mut hasher) = norm_hasher {
                         hasher.hash_buf(&buffer);
@@ -198,9 +173,7 @@ impl<'a> SignatureBodyReader<'a> {
                         return Ok(());
                     }
 
-                    buffer.resize(1024, 0);
-                    let read = fill_buffer(&mut source, &mut buffer, None)?;
-                    buffer.truncate(read);
+                    let read = fill_buffer_bytes(&mut source, &mut buffer, BUFFER_SIZE)?;
 
                     if let Some(ref mut hasher) = norm_hasher {
                         hasher.hash_buf(&buffer);
@@ -211,15 +184,20 @@ impl<'a> SignatureBodyReader<'a> {
 
                         let hash = if let Some(norm_hasher) = norm_hasher {
                             let mut hasher = norm_hasher.done();
-                            let config = signature.config().ok_or_else(|| crate::io::Error::new(crate::io::ErrorKind::Other, "signed reader error"))?;
+                            let config = signature.config().ok_or_else(|| {
+                                io::Error::new(
+                                    io::ErrorKind::InvalidData,
+                                    "inconsistent signature state",
+                                )
+                            })?;
                             // calculate final hash
                             let len = config
                                 .hash_signature_data(&mut hasher)
-                                .map_err(|_| crate::io::Error::new(crate::io::ErrorKind::Other, "signed reader error"))?;
+                                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
                             hasher.update(
                                 &config
                                     .trailer(len)
-                                    .map_err(|_| crate::io::Error::new(crate::io::ErrorKind::Other, "signed reader error"))?,
+                                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,
                             );
 
                             Some(hasher.finalize())
@@ -255,7 +233,7 @@ impl<'a> SignatureBodyReader<'a> {
                     };
                     return Ok(());
                 }
-                Self::Error => return Err(crate::io::Error::new(crate::io::ErrorKind::Other, "signed reader error")),
+                Self::Error => return Err(io::Error::other("SignatureBodyReader errored")),
             }
         }
     }
@@ -312,14 +290,14 @@ impl<'a> SignatureBodyReader<'a> {
     }
 }
 
-impl<'a> BufRead for SignatureBodyReader<'a> {
-    fn fill_buf(&mut self) -> Result<&[u8], Error> {
+impl BufRead for SignatureBodyReader<'_> {
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
         self.fill_inner()?;
         match self {
             Self::Init { .. } => unreachable!("invalid state"),
             Self::Body { buffer, .. } => Ok(&buffer[..]),
             Self::Done { .. } => Ok(&[][..]),
-            Self::Error => Err(crate::io::Error::new(crate::io::ErrorKind::Other, "signed reader error")),
+            Self::Error => Err(io::Error::other("SignatureBodyReader errored")),
         }
     }
 
@@ -335,12 +313,18 @@ impl<'a> BufRead for SignatureBodyReader<'a> {
     }
 }
 
-impl<'a> Read for SignatureBodyReader<'a> {
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
-        let internal_buf = self.fill_buf()?;
-        let len = internal_buf.len().min(buf.len());
-        buf[..len].copy_from_slice(&internal_buf[..len]);
-        self.consume(len);
-        Ok(len)
+impl Read for SignatureBodyReader<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.fill_inner()?;
+        match self {
+            Self::Init { .. } => unreachable!("invalid state"),
+            Self::Body { buffer, .. } => {
+                let to_write = buffer.remaining().min(buf.len());
+                buffer.copy_to_slice(&mut buf[..to_write]);
+                Ok(to_write)
+            }
+            Self::Done { .. } => Ok(0),
+            Self::Error => Err(io::Error::other("SignatureBodyReader errored")),
+        }
     }
 }

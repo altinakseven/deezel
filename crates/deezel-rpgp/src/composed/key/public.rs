@@ -1,7 +1,4 @@
-use alloc::vec::Vec;
-use alloc::vec;
-extern crate alloc;
-use core::ops::Deref;
+use std::ops::Deref;
 
 use rand::{CryptoRng, Rng};
 
@@ -9,8 +6,7 @@ use crate::{
     composed::{KeyDetails, SignedPublicKey, SignedPublicSubKey},
     crypto::{hash::HashAlgorithm, public_key::PublicKeyAlgorithm},
     errors::Result,
-    packet,
-    packet::{KeyFlags, Signature},
+    packet::{self, KeyFlags, Signature},
     ser::Serialize,
     types::{
         EskType, Fingerprint, KeyId, Password, PkeskBytes, PublicKeyTrait, PublicParams,
@@ -59,7 +55,7 @@ impl PublicKey {
     ) -> Result<SignedPublicKey>
     where
         R: CryptoRng + Rng,
-        K: SecretKeyTrait + crate::types::PublicKeyTrait,
+        K: SecretKeyTrait,
         P: PublicKeyTrait + Serialize,
     {
         let primary_key = self.primary_key;
@@ -114,7 +110,7 @@ impl PublicSubkey {
     ) -> Result<SignedPublicSubKey>
     where
         R: CryptoRng + Rng,
-        K: SecretKeyTrait + crate::types::PublicKeyTrait,
+        K: SecretKeyTrait,
         P: PublicKeyTrait + Serialize,
     {
         let key = self.key;
@@ -173,7 +169,7 @@ impl PublicKeyTrait for PublicSubkey {
         self.key.public_params()
     }
 
-    fn created_at(&self) -> chrono::DateTime<chrono::Utc> {
+    fn created_at(&self) -> &chrono::DateTime<chrono::Utc> {
         self.key.created_at()
     }
 

@@ -11,10 +11,9 @@ use bip39::{Mnemonic, Seed};
 use bitcoin::bip32::{DerivationPath, Xpriv};
 use bitcoin::network::Network;
 use deezel_rpgp::{
+    composed::{MessageBuilder, ArmorOptions},
     crypto::{hash::HashAlgorithm, sym::SymmetricKeyAlgorithm},
     types::{Password, StringToKey},
-    ser::Serialize,
-    packet::{SymKeyEncryptedSessionKey, SymEncryptedProtectedData},
 };
 use bip39::MnemonicType;
 use std::str::FromStr;
@@ -32,32 +31,14 @@ fn encrypt_mnemonic(mnemonic: &str, passphrase: &str) -> Result<(String, PbkdfPa
         _ => return Err(anyhow::anyhow!("Expected iterated S2K").into()),
     };
 
-    let sym_alg = SymmetricKeyAlgorithm::AES256;
-    let session_key = sym_alg.new_session_key(&mut rng);
+    let mut builder = MessageBuilder::from_bytes("mnemonic", mnemonic.as_bytes().to_vec())
+        .seipd_v1(&mut rng, SymmetricKeyAlgorithm::AES256);
 
-    let esk = SymKeyEncryptedSessionKey::encrypt_v4(
-        &Password::from(passphrase.as_bytes()),
-        &session_key,
-        s2k,
-        sym_alg,
-    ).map_err(|e| anyhow::anyhow!(e))?;
+    builder.encrypt_with_password(s2k, &Password::from(passphrase.as_bytes()))
+        .map_err(|e| anyhow::anyhow!(e))?;
 
-    let seipd = SymEncryptedProtectedData::encrypt_seipdv1(
-        &mut rng,
-        sym_alg,
-        &session_key,
-        mnemonic.as_bytes(),
-    ).map_err(|e| anyhow::anyhow!(e))?;
-
-    let mut armored_writer = Vec::new();
-    {
-        let mut armor = deezel_rpgp::armor::ArmorWriter::new(&mut armored_writer, deezel_rpgp::armor::BlockType::Message.to_str(), Default::default())
-            .map_err(|e| anyhow::anyhow!(e))?;
-        esk.to_writer(&mut armor).map_err(|e| anyhow::anyhow!(e))?;
-        seipd.to_writer(&mut armor).map_err(|e| anyhow::anyhow!(e))?;
-        armor.finish().map_err(|e| anyhow::anyhow!(e))?;
-    }
-    let armored_message = String::from_utf8(armored_writer).map_err(|e| anyhow::anyhow!(e))?;
+    let armored_message = builder.to_armored_string(&mut rng, ArmorOptions::default())
+        .map_err(|e| anyhow::anyhow!(e))?;
 
     Ok((
         armored_message,
@@ -112,6 +93,4 @@ fn test_keystore_encryption_decryption_roundtrip() {
 
     // 8. Verify that the derived private keys are identical
     assert_eq!(original_xpriv, decrypted_xpriv);
-
-    panic!("---\n{}\n---", keystore.encrypted_seed);
 }

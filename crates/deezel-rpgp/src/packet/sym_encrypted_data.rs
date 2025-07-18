@@ -1,5 +1,4 @@
-extern crate alloc;
-use crate::io::{self, BufRead};
+use std::io::{self, BufRead};
 
 use bytes::Bytes;
 

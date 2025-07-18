@@ -11,10 +11,8 @@
 //! However, at the OpenPGP layer their representation in the key material differs.
 //! This implicitly yields differing OpenPGP fingerprints, so the two OpenPGP key variants cannot
 //! be used interchangeably.
-extern crate alloc;
-use alloc::format;
-use alloc::vec;
-use core::ops::Deref;
+
+use std::ops::Deref;
 
 use rand::{CryptoRng, Rng};
 use signature::{Signer as _, Verifier};
@@ -35,7 +33,7 @@ pub const KEY_LEN: usize = 32;
 /// Specifies which OpenPGP framing (e.g. `Ed25519` vs. `EdDSALegacy`) is used, and also chooses
 /// between curve Ed25519 and Ed448 (TODO: not yet implemented)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(all(test, feature = "std"), derive(proptest_derive::Arbitrary))]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub enum Mode {
     /// EdDSALegacy (with curve Ed25519). May only be used with v4 keys.
     ///
@@ -50,14 +48,11 @@ pub enum Mode {
 
 /// Secret key for EdDSA with Curve25519, the only combination we currently support.
 #[derive(Clone, PartialEq, Eq, ZeroizeOnDrop, derive_more::Debug)]
-#[cfg_attr(all(test, feature = "std"), derive(proptest_derive::Arbitrary))]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct SecretKey {
     /// The secret point.
     #[debug("..")]
-    #[cfg_attr(
-        all(test, feature = "std"),
-        proptest(strategy = "crate::crypto::ed25519::tests::key_gen()")
-    )]
+    #[cfg_attr(test, proptest(strategy = "tests::key_gen()"))]
     secret: ed25519_dalek::SigningKey,
     #[zeroize(skip)]
     pub(crate) mode: Mode,
@@ -152,7 +147,7 @@ impl Signer for SecretKey {
 }
 
 impl Serialize for SecretKey {
-    fn to_writer<W: crate::io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
         match self.mode {
             Mode::EdDSALegacy => {
                 Mpi::from_slice(&self.secret.as_bytes()[..]).to_writer(writer)?;
@@ -195,7 +190,7 @@ pub fn verify(
     Ok(key.verify(hashed, &sig)?)
 }
 
-#[cfg(all(test, feature = "std"))]
+#[cfg(test)]
 mod tests {
     use proptest::prelude::*;
 
