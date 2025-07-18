@@ -53,6 +53,11 @@ impl MockMetashrewServer {
                         
                         match stream.read(&mut buffer).await {
                             Ok(n) => {
+                                if n == 0 {
+                                    debug!("Connection closed by peer");
+                                    return;
+                                }
+
                                 let request = String::from_utf8_lossy(&buffer[..n]);
                                 debug!("Received request: {}", request);
                                 
@@ -66,7 +71,7 @@ impl MockMetashrewServer {
                                 
                                 let response_str = response.to_string();
                                 let http_response = format!(
-                                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\n\r\n{}",
+                                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\nAccess-Control-Allow-Origin: *\r\n\r\n{}",
                                     response_str.len(),
                                     response_str
                                 );
