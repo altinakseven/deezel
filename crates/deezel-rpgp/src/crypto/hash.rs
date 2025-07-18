@@ -16,7 +16,15 @@ use crate::{crypto::checksum::Sha1HashCollisionSnafu, util::CloneableDigest};
 /// Available hash algorithms.
 /// Ref: <https://www.rfc-editor.org/rfc/rfc9580.html#name-hash-algorithms>
 #[derive(
-    Debug, PartialEq, Eq, Copy, Clone, FromPrimitive, IntoPrimitive, Hash, derive_more::Display,
+    Debug,
+    PartialEq,
+    Eq,
+    Copy,
+    Clone,
+    FromPrimitive,
+    IntoPrimitive,
+    Hash,
+    derive_more::Display,
 )]
 #[repr(u8)]
 #[non_exhaustive]
@@ -209,6 +217,31 @@ impl HashAlgorithm {
 }
 
 #[cfg(all(test, feature = "std"))]
+use proptest::{prelude::*, strategy::{BoxedStrategy, Strategy}};
+
+#[cfg(all(test, feature = "std"))]
+prop_compose! {
+    pub fn arbitrary_hash_alg()(
+        num in prop_oneof![
+            Just(0u8), Just(1), Just(2), Just(3), Just(8), Just(9), Just(10),
+            Just(11), Just(12), Just(14), Just(110),
+        ]
+    ) -> HashAlgorithm {
+        HashAlgorithm::from(num)
+    }
+}
+
+#[cfg(all(test, feature = "std"))]
+impl Arbitrary for HashAlgorithm {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        arbitrary_hash_alg().boxed()
+    }
+}
+
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
 
@@ -219,5 +252,13 @@ mod tests {
         assert_eq!(HashAlgorithm::Sha256.to_string(), "SHA256".to_string());
 
         assert_eq!(HashAlgorithm::Sha3_512, "SHA3-512".parse().unwrap());
+    }
+
+    proptest! {
+        #[test]
+        fn arbitrary(alg in arbitrary_hash_alg()) {
+            let num: u8 = alg.into();
+            assert_eq!(alg, HashAlgorithm::from(num));
+        }
     }
 }

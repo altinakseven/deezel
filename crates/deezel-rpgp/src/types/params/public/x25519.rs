@@ -4,9 +4,9 @@ use crate::io::{BufRead, Write};
 use crate::{errors::Result, parsing_reader::BufReadParsing, ser::Serialize};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+#[cfg_attr(all(test, feature = "std"), derive(proptest_derive::Arbitrary))]
 pub struct X25519PublicParams {
-    #[cfg_attr(test, proptest(strategy = "super::ecdh::tests::ecdh_curve25519_gen()"))]
+    #[cfg_attr(all(test, feature = "std"), proptest(strategy = "crate::types::params::public::ecdh::tests::ecdh_curve25519_gen()"))]
     pub key: x25519_dalek::PublicKey,
 }
 

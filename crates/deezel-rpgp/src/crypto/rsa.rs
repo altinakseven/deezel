@@ -234,3 +234,19 @@ pub fn verify(
     }
 }
 
+#[cfg(all(test, feature = "std"))]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    impl Arbitrary for SecretKey {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+            // TODO: consider other key sizes
+            Just(SecretKey::generate(rand::thread_rng(), 1024).unwrap()).boxed()
+        }
+    }
+}
+

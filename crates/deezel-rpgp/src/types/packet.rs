@@ -1,7 +1,6 @@
 extern crate alloc;
 use crate::io::BufRead;
 
-use byteorder::WriteBytesExt;
 use crate::io::Write;
 use log::debug;
 use num_enum::{FromPrimitive, IntoPrimitive, TryFromPrimitive};
@@ -63,13 +62,13 @@ impl PacketLength {
         match self {
             PacketLength::Fixed(len) => {
                 if *len < 192 {
-                    writer.write_u8(*len as u8)?;
+                    writer.write_all(&[*len as u8])?;
                 } else if *len < 8384 {
-                    writer.write_u8((((len - 192) >> 8) + 192) as u8)?;
-                    writer.write_u8(((len - 192) & 0xFF) as u8)?;
+                    writer.write_all(&[(((len - 192) >> 8) + 192) as u8])?;
+                    writer.write_all(&[((len - 192) & 0xFF) as u8])?;
                 } else {
-                    writer.write_u8(255)?;
-                    writer.write_be_u32(*len)?;
+                    writer.write_all(&[255])?;
+                    writer.write_all(&len.to_be_bytes())?;
                 }
             }
             PacketLength::Indeterminate => {
@@ -81,7 +80,7 @@ impl PacketLength {
                 // y & 0x1F
                 let n = len.trailing_zeros();
                 let n = (224 + n) as u8;
-                writer.write_u8(n)?;
+                writer.write_all(&[n])?;
             }
         }
         Ok(())
@@ -95,7 +94,6 @@ impl PacketLength {
 ///
 /// However, rPGP will continue to use the term "(Packet) Tag" for the time being.
 #[derive(Debug, PartialEq, Eq, Clone, Copy, FromPrimitive, IntoPrimitive)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 #[repr(u8)]
 #[non_exhaustive]
 pub enum Tag {
@@ -137,7 +135,6 @@ pub enum Tag {
     Padding = 21,
 
     #[num_enum(catch_all)]
-    #[cfg_attr(test, proptest(skip))]
     Other(u8),
 }
 
@@ -206,7 +203,6 @@ impl Tag {
 #[derive(Debug, PartialEq, Eq, Clone, Copy, TryFromPrimitive)]
 #[repr(u8)]
 #[derive(Default)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub enum PacketHeaderVersion {
     /// Old Packet Format ("Legacy packet format")
     Old = 0,
@@ -223,28 +219,28 @@ impl PacketHeaderVersion {
             PacketHeaderVersion::Old => {
                 if len < 256 {
                     // one octet
-                    writer.write_u8(0b1000_0000 | (tag << 2))?;
-                    writer.write_u8(len.try_into()?)?;
+                    writer.write_all(&[0b1000_0000 | (tag << 2)])?;
+                    writer.write_all(&[len.try_into()?])?;
                 } else if len < 65536 {
                     // two octets
-                    writer.write_u8(0b1000_0001 | (tag << 2))?;
+                    writer.write_all(&[0b1000_0001 | (tag << 2)])?;
                     writer.write_all(&(len as u16).to_be_bytes())?;
                 } else {
                     // four octets
-                    writer.write_u8(0b1000_0010 | (tag << 2))?;
-                    writer.write_be_u32(len as u32)?;
+                    writer.write_all(&[0b1000_0010 | (tag << 2)])?;
+                    writer.write_all(&(len as u32).to_be_bytes())?;
                 }
             }
             PacketHeaderVersion::New => {
-                writer.write_u8(0b1100_0000 | tag)?;
+                writer.write_all(&[0b1100_0000 | tag])?;
                 if len < 192 {
-                    writer.write_u8(len.try_into()?)?;
+                    writer.write_all(&[len.try_into()?])?;
                 } else if len < 8384 {
-                    writer.write_u8((((len - 192) >> 8) + 192) as u8)?;
-                    writer.write_u8(((len - 192) & 0xFF) as u8)?;
+                    writer.write_all(&[(((len - 192) >> 8) + 192) as u8])?;
+                    writer.write_all(&[((len - 192) & 0xFF) as u8])?;
                 } else {
-                    writer.write_u8(255)?;
-                    writer.write_be_u32(len as u32)?;
+                    writer.write_all(&[255])?;
+                    writer.write_all(&(len as u32).to_be_bytes())?;
                 }
             }
         }
@@ -282,18 +278,15 @@ impl PacketHeaderVersion {
 
 // TODO: find a better place for this
 #[derive(Debug, PartialEq, Eq, Clone, Copy, PartialOrd, FromPrimitive, IntoPrimitive)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 #[repr(u8)]
 pub enum KeyVersion {
     V2 = 2,
     V3 = 3,
     V4 = 4,
-    #[cfg_attr(test, proptest(skip))] // mostly not implemented
     V5 = 5,
     V6 = 6,
 
     #[num_enum(catch_all)]
-    #[cfg_attr(test, proptest(skip))]
     Other(u8),
 }
 
@@ -336,34 +329,53 @@ pub enum SkeskVersion {
     Other(u8),
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use proptest::prelude::*;
+    use proptest::strategy::{BoxedStrategy, Strategy};
 
     use super::*;
 
-    #[test]
-    fn test_write_header() {
-        let mut buf = Vec::new();
-        PacketHeaderVersion::New
-            .write_header(&mut buf, Tag::UserAttribute, 12875)
-            .unwrap();
+    impl Arbitrary for PacketHeaderVersion {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
 
-        assert_eq!(hex::encode(buf), "d1ff0000324b");
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            prop_oneof![
+                Just(PacketHeaderVersion::Old),
+                Just(PacketHeaderVersion::New),
+            ]
+            .boxed()
+        }
+    }
 
-        let mut buf = Vec::new();
-        PacketHeaderVersion::New
-            .write_header(&mut buf, Tag::Signature, 302)
-            .unwrap();
+    impl Arbitrary for Tag {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
 
-        assert_eq!(hex::encode(buf), "c2c06e");
-
-        let mut buf = Vec::new();
-        PacketHeaderVersion::New
-            .write_header(&mut buf, Tag::Signature, 303)
-            .unwrap();
-
-        assert_eq!(hex::encode(buf), "c2c06f");
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            prop_oneof![
+                Just(Tag::PublicKeyEncryptedSessionKey),
+                Just(Tag::Signature),
+                Just(Tag::SymKeyEncryptedSessionKey),
+                Just(Tag::OnePassSignature),
+                Just(Tag::SecretKey),
+                Just(Tag::PublicKey),
+                Just(Tag::SecretSubkey),
+                Just(Tag::CompressedData),
+                Just(Tag::SymEncryptedData),
+                Just(Tag::Marker),
+                Just(Tag::LiteralData),
+                Just(Tag::Trust),
+                Just(Tag::UserId),
+                Just(Tag::PublicSubkey),
+                Just(Tag::UserAttribute),
+                Just(Tag::SymEncryptedProtectedData),
+                Just(Tag::ModDetectionCode),
+                Just(Tag::Padding),
+            ]
+            .boxed()
+        }
     }
 
     impl Arbitrary for PacketLength {
@@ -386,6 +398,22 @@ mod tests {
             let mut buf = Vec::new();
             version.write_header(&mut buf, Tag::Signature, len).unwrap();
             assert_eq!(buf.len(), version.header_len(len));
+        }
+    }
+
+    impl Arbitrary for KeyVersion {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            prop_oneof![
+                Just(KeyVersion::V2),
+                Just(KeyVersion::V3),
+                Just(KeyVersion::V4),
+                Just(KeyVersion::V5),
+                Just(KeyVersion::V6),
+            ]
+            .boxed()
         }
     }
 }

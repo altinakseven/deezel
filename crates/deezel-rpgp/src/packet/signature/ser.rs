@@ -18,7 +18,7 @@ use crate::{
 
 impl Serialize for Signature {
     fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
-        writer.write_u8(self.version().into())?;
+        writer.write_all(&[self.version().into()])?;
 
         match &self.inner {
             InnerSignature::Known {
@@ -43,7 +43,7 @@ impl Serialize for Signature {
                     // salt, if v6
                     if let SignatureVersionSpecific::V6 { salt } = &config.version_specific {
                         debug!("writing salt {} bytes", salt.len());
-                        writer.write_u8(salt.len().try_into()?)?;
+                        writer.write_all(&[salt.len().try_into()?])?;
                         writer.write_all(salt)?;
                     }
 
@@ -150,13 +150,13 @@ impl Serialize for SubpacketData {
         debug!("writing subpacket: {:?}", self);
         match &self {
             SubpacketData::SignatureCreationTime(t) => {
-                writer.write_be_u32(t.timestamp().try_into()?)?;
+                writer.write_all(&(t.timestamp() as u32).to_be_bytes())?;
             }
             SubpacketData::SignatureExpirationTime(d) => {
-                writer.write_be_u32(duration_to_u32(d))?;
+                writer.write_all(&duration_to_u32(d).to_be_bytes())?;
             }
             SubpacketData::KeyExpirationTime(d) => {
-                writer.write_be_u32(duration_to_u32(d))?;
+                writer.write_all(&duration_to_u32(d).to_be_bytes())?;
             }
             SubpacketData::Issuer(id) => {
                 writer.write_all(id.as_ref())?;
@@ -180,14 +180,14 @@ impl Serialize for SubpacketData {
                 features.to_writer(writer)?;
             }
             SubpacketData::RevocationReason(code, reason) => {
-                writer.write_u8((*code).into())?;
+                writer.write_all(&[(*code).into()])?;
                 writer.write_all(reason)?;
             }
             SubpacketData::IsPrimary(is_primary) => {
-                writer.write_u8((*is_primary).into())?;
+                writer.write_all(&[(*is_primary).into()])?;
             }
             SubpacketData::Revocable(is_revocable) => {
-                writer.write_u8((*is_revocable).into())?;
+                writer.write_all(&[(*is_revocable).into()])?;
             }
             SubpacketData::EmbeddedSignature(inner_sig) => {
                 (*inner_sig).to_writer(writer)?;
@@ -199,16 +199,16 @@ impl Serialize for SubpacketData {
                 let is_readable = if notation.readable { 0x80 } else { 0 };
                 writer.write_all(&[is_readable, 0, 0, 0])?;
 
-                writer.write_be_u16(notation.name.len().try_into()?)?;
+                writer.write_all(&(notation.name.len() as u16).to_be_bytes())?;
 
-                writer.write_be_u16(notation.value.len().try_into()?)?;
+                writer.write_all(&(notation.value.len() as u16).to_be_bytes())?;
 
                 writer.write_all(&notation.name)?;
                 writer.write_all(&notation.value)?;
             }
             SubpacketData::RevocationKey(rev_key) => {
-                writer.write_u8(rev_key.class as u8)?;
-                writer.write_u8(rev_key.algorithm.into())?;
+                writer.write_all(&[rev_key.class as u8])?;
+                writer.write_all(&[rev_key.algorithm.into()])?;
                 writer.write_all(&rev_key.fingerprint[..])?;
             }
             SubpacketData::SignersUserID(body) => {
@@ -218,18 +218,18 @@ impl Serialize for SubpacketData {
                 writer.write_all(uri.as_bytes())?;
             }
             SubpacketData::TrustSignature(depth, value) => {
-                writer.write_u8(*depth)?;
-                writer.write_u8(*value)?;
+                writer.write_all(&[*depth])?;
+                writer.write_all(&[*value])?;
             }
             SubpacketData::RegularExpression(regexp) => {
                 writer.write_all(regexp)?;
             }
             SubpacketData::ExportableCertification(is_exportable) => {
-                writer.write_u8((*is_exportable).into())?;
+                writer.write_all(&[(*is_exportable).into()])?;
             }
             SubpacketData::IssuerFingerprint(fp) => {
                 if let Some(version) = fp.version() {
-                    writer.write_u8(version.into())?;
+                    writer.write_all(&[version.into()])?;
                     writer.write_all(fp.as_bytes())?;
                 } else {
                     bail!("IssuerFingerprint: needs versioned fingerprint")
@@ -240,7 +240,7 @@ impl Serialize for SubpacketData {
             }
             SubpacketData::IntendedRecipientFingerprint(fp) => {
                 if let Some(version) = fp.version() {
-                    writer.write_u8(version.into())?;
+                    writer.write_all(&[version.into()])?;
                     writer.write_all(fp.as_bytes())?;
                 } else {
                     bail!("IntendedRecipientFingerprint: needs versioned fingerprint")
@@ -261,8 +261,8 @@ impl Serialize for SubpacketData {
                 writer.write_all(body)?;
             }
             SubpacketData::SignatureTarget(pub_alg, hash_alg, hash) => {
-                writer.write_u8((*pub_alg).into())?;
-                writer.write_u8((*hash_alg).into())?;
+                writer.write_all(&[(*pub_alg).into()])?;
+                writer.write_all(&[(*hash_alg).into()])?;
                 writer.write_all(hash)?;
             }
         }
@@ -320,7 +320,7 @@ impl Serialize for SubpacketData {
 impl Serialize for Subpacket {
     fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
         self.len.to_writer(writer)?;
-        writer.write_u8(self.typ().as_u8(self.is_critical))?;
+        writer.write_all(&[self.typ().as_u8(self.is_critical)])?;
         self.data.to_writer(writer)?;
 
         Ok(())
@@ -336,20 +336,20 @@ impl Serialize for Subpacket {
 impl SignatureConfig {
     /// Serializes a v2 or v3 signature.
     fn to_writer_v3<W: io::Write>(&self, writer: &mut W) -> Result<()> {
-        writer.write_u8(0x05)?; // 1-octet length of the following hashed material; it MUST be 5
-        writer.write_u8(self.typ.into())?; // type
+        writer.write_all(&[0x05])?; // 1-octet length of the following hashed material; it MUST be 5
+        writer.write_all(&[self.typ.into()])?; // type
 
         if let SignatureVersionSpecific::V2 { created, issuer }
         | SignatureVersionSpecific::V3 { created, issuer } = &self.version_specific
         {
-            writer.write_be_u32(created.timestamp().try_into()?)?;
+            writer.write_all(&(created.timestamp() as u32).to_be_bytes())?;
             writer.write_all(issuer.as_ref())?;
         } else {
             bail!("expecting SignatureVersionSpecific::V3 for a v2/v3 signature")
         }
 
-        writer.write_u8(self.pub_alg.into())?; // public algorithm
-        writer.write_u8(self.hash_alg.into())?; // hash algorithm
+        writer.write_all(&[self.pub_alg.into()])?; // public algorithm
+        writer.write_all(&[self.hash_alg.into()])?; // hash algorithm
 
         Ok(())
     }
@@ -373,16 +373,16 @@ impl SignatureConfig {
 
     /// Serializes a v4 or v6 signature.
     fn to_writer_v4_v6<W: io::Write>(&self, writer: &mut W) -> Result<()> {
-        writer.write_u8(self.typ.into())?; // type
+        writer.write_all(&[self.typ.into()])?; // type
 
-        writer.write_u8(self.pub_alg.into())?; // public algorithm
-        writer.write_u8(self.hash_alg.into())?; // hash algorithm
+        writer.write_all(&[self.pub_alg.into()])?; // public algorithm
+        writer.write_all(&[self.hash_alg.into()])?; // hash algorithm
 
         // hashed subpackets
         let hashed_sub_len = self.hashed_subpackets.write_len();
         match self.version() {
-            SignatureVersion::V4 => writer.write_be_u16(hashed_sub_len.try_into()?)?,
-            SignatureVersion::V6 => writer.write_be_u32(hashed_sub_len.try_into()?)?,
+            SignatureVersion::V4 => writer.write_all(&(hashed_sub_len as u16).to_be_bytes())?,
+            SignatureVersion::V6 => writer.write_all(&(hashed_sub_len as u32).to_be_bytes())?,
             v => unimplemented_err!("signature version {:?}", v),
         }
 
@@ -394,8 +394,8 @@ impl SignatureConfig {
         let unhashed_sub_len = self.unhashed_subpackets.write_len();
 
         match self.version() {
-            SignatureVersion::V4 => writer.write_be_u16(unhashed_sub_len.try_into()?)?,
-            SignatureVersion::V6 => writer.write_be_u32(unhashed_sub_len.try_into()?)?,
+            SignatureVersion::V4 => writer.write_all(&(unhashed_sub_len as u16).to_be_bytes())?,
+            SignatureVersion::V6 => writer.write_all(&(unhashed_sub_len as u32).to_be_bytes())?,
             v => unimplemented_err!("signature version {:?}", v),
         }
 

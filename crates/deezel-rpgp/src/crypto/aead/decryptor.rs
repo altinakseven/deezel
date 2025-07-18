@@ -142,6 +142,7 @@ impl<R: BufRead> StreamDecryptor<R> {
         self.in_buffer_end -= final_auth_tag.len();
 
         // decrypt any remaining data, not part of the final auth tag
+        // decrypt any remaining data, not part of the final auth tag
         while self.in_buffer_end > 0 {
             self.decrypt()?;
         }
@@ -162,7 +163,9 @@ impl<R: BufRead> StreamDecryptor<R> {
                 &final_info,
                 &mut final_auth_tag,
             )
-            .map_err(|_e| io::Error::new(io::ErrorKind::InvalidInput, "AEAD final decryption failed"))?;
+            .map_err(|_e| {
+                io::Error::new(io::ErrorKind::InvalidInput, "AEAD final decryption failed")
+            })?;
 
         Ok(())
     }

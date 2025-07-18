@@ -7,7 +7,6 @@ extern crate serde_json;
 extern crate serde;
 extern crate deezel_rpgp;
 extern crate pretty_env_logger;
-#[macro_use]
 extern crate log;
 
 use deezel_rpgp::{
@@ -76,8 +75,9 @@ fn test_parse_msg(entry: &str, base_path: &str, _is_normalized: bool) {
     let cipher_file_path = format!("{base_path}/{file_name}");
     // let cipher_file = File::open(&cipher_file_path).unwrap();
 
+    let cipher_file = std::fs::read_to_string(cipher_file_path).unwrap();
     let (message, _headers) =
-        Message::from_armor_file(cipher_file_path).expect("failed to parse message");
+        Message::from_armor(cipher_file.as_bytes()).expect("failed to parse message");
     info!("message: {:?}", &message);
 
     match &message {

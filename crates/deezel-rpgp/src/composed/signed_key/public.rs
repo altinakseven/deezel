@@ -142,13 +142,20 @@ impl SignedPublicKey {
         writer: &mut impl Write,
         opts: ArmorOptions<'_>,
     ) -> Result<()> {
-        armor::write(
-            self,
-            armor::BlockType::PublicKey,
-            writer,
-            opts.headers,
-            opts.include_checksum,
-        )
+        let headers = opts
+            .headers
+            .map(|h| {
+                h.iter()
+                    .map(|(k, v)| (k.to_string(), v.join(", ")))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let armored = armor::Armored {
+            message_type: "PUBLIC KEY".to_string(),
+            headers,
+            data: self.to_bytes()?,
+        };
+        armored.to_writer(writer)
     }
 
     pub fn to_armored_bytes(&self, opts: ArmorOptions<'_>) -> Result<Vec<u8>> {

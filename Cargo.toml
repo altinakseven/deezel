@@ -15,9 +15,7 @@ members = [
   "crates/deezel-web",
   "crates/deezel-sys"
 ]
-exclude = [
-    "crates/deezel-rpgp",
-]
+exclude = []
 resolver = "2"
 
 [workspace.dependencies]
@@ -99,8 +97,11 @@ dirs = "5.0"
 
 # GPG functionality (only used by deezel crate)
 gpgme = "0.11"
+getrandom = { version = "0.2", features = ["js"] }
 
 [workspace.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
+
+
 

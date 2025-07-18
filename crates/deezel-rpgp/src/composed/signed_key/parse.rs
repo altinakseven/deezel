@@ -2,7 +2,9 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use alloc::format;
 extern crate alloc;
+use alloc::string::String;
 use core::iter;
+use core::str::FromStr;
 
 use crate::{
     armor::{self, BlockType},
@@ -21,21 +23,21 @@ impl PublicOrSecret {
     /// Returns an iterator of public or secret keys and a BTreeMap containing armor headers
     /// (None, if the data was unarmored)
     #[allow(clippy::type_complexity)]
-    pub fn from_reader_many<'a>(
-        input: &'a [u8],
+    pub fn from_reader_many(
+        input: &[u8],
     ) -> Result<(
-        Box<dyn Iterator<Item = Result<PublicOrSecret>> + 'a>,
-        Option<armor::Headers>,
+        Box<dyn Iterator<Item = Result<PublicOrSecret>> + '_>,
+        Option<Vec<(String, String)>>,
     )> {
         Self::from_reader_many_buf(input)
     }
 
     #[allow(clippy::type_complexity)]
-    pub fn from_reader_many_buf<'a>(
-        mut input: &'a [u8],
+    pub fn from_reader_many_buf(
+        mut input: &[u8],
     ) -> Result<(
-        Box<dyn Iterator<Item = Result<PublicOrSecret>> + 'a>,
-        Option<armor::Headers>,
+        Box<dyn Iterator<Item = Result<PublicOrSecret>> + '_>,
+        Option<Vec<(String, String)>>,
     )> {
         if !crate::composed::shared::is_binary(&mut input)? {
             let (keys, headers) = Self::from_armor_many(input)?;
@@ -47,19 +49,29 @@ impl PublicOrSecret {
 
     /// Parses a list of secret and public keys from ascii armored text.
     #[allow(clippy::type_complexity)]
-    pub fn from_armor_many<'a>(
-        input: &'a [u8],
+    pub fn from_armor_many(
+        input: &[u8],
     ) -> Result<(
-        Box<dyn Iterator<Item = Result<PublicOrSecret>> + 'a>,
-        armor::Headers,
+        Box<dyn Iterator<Item = Result<PublicOrSecret>>>,
+        Vec<(String, String)>,
     )> {
-        let (typ, headers, decoded) = armor::decode(input)?;
+        let armored = armor::Armored::decode(input)?;
+        let (typ, headers, decoded) = (armored.message_type, armored.headers, armored.data);
 
         // TODO: add typ information to the key possibly?
-        match typ {
+        match typ.as_str() {
             // Standard PGP types
-            BlockType::PublicKey | BlockType::PrivateKey | BlockType::File => {
+            "PUBLIC KEY" | "PRIVATE KEY" | "FILE" => {
+                let block_type = BlockType::from_str(&typ)?;
+
                 // TODO: check that the result is what it actually said.
+                if !matches!(
+                    block_type,
+                    BlockType::PublicKey | BlockType::PrivateKey | BlockType::File
+                ) {
+                    bail!("unexpected block type: {}", typ);
+                }
+
                 // We need to own the decoded data to avoid lifetime issues
                 let owned_decoded = decoded.into_boxed_slice();
                 // We need to collect packets to avoid lifetime issues with the decoded buffer
@@ -67,22 +79,17 @@ impl PublicOrSecret {
                     .filter_map(crate::composed::shared::filter_parsed_packet_results)
                     .collect::<Result<Vec<_>>>()?;
 
-              Ok((Box::new(PubPrivIterator {
-                  inner: Some(packets.into_iter().map(Ok).peekable()),
-              }), headers))
+                Ok((
+                    Box::new(PubPrivIterator {
+                        inner: Some(packets.into_iter().map(Ok).peekable()),
+                    }),
+                    headers,
+                ))
             }
-            BlockType::Message
-            | BlockType::MultiPartMessage(_, _)
-            | BlockType::Signature
-            | BlockType::CleartextMessage => {
+            "MESSAGE" | "SIGNATURE" | "SIGNED MESSAGE" => {
                 bail!("unexpected block type: {}", typ)
             }
-            BlockType::PublicKeyPKCS1(_)
-            | BlockType::PublicKeyPKCS8
-            | BlockType::PublicKeyOpenssh
-            | BlockType::PrivateKeyPKCS1(_)
-            | BlockType::PrivateKeyPKCS8
-            | BlockType::PrivateKeyOpenssh => {
+            _ => {
                 unimplemented_err!("key format {}", typ);
             }
         }

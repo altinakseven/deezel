@@ -19,7 +19,7 @@ use snafu::Snafu;
 use zeroize::Zeroizing;
 
 use super::sym::SymmetricKeyAlgorithm;
-use crate::types::Tag;
+use crate::{errors::SnafuIoError, types::Tag};
 
 type Aes128Ocb3 = Ocb3<Aes128, U15, U16>;
 type Aes192Ocb3 = Ocb3<Aes192, U15, U16>;
@@ -48,7 +48,15 @@ pub enum Error {
     #[snafu(display("encryption failed: {:?}", alg))]
     Encrypt { alg: AeadAlgorithm },
     #[snafu(display("IO error: {}", source))]
-    Io { source: crate::io::Error },
+    Io { source: SnafuIoError },
+}
+
+impl From<crate::io::Error> for Error {
+    fn from(e: crate::io::Error) -> Self {
+        Error::Io {
+            source: SnafuIoError(e),
+        }
+    }
 }
 
 /// Available AEAD algorithms.

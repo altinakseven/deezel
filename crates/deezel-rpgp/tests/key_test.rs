@@ -6,19 +6,16 @@ extern crate pretty_assertions;
 #[macro_use]
 extern crate smallvec;
 
-use std::{io::Read, path::Path};
+use std::path::Path;
 
-use buffer_redux::BufReader;
 use chrono::{DateTime, Utc};
 use num_traits::ToPrimitive;
 use deezel_rpgp::{
-    armor,
     composed::{Deserializable, PublicOrSecret, SignedPublicKey, SignedSecretKey},
     crypto::{
         ecdsa::SecretKey as ECDSASecretKey, hash::HashAlgorithm, public_key::PublicKeyAlgorithm,
         sym::SymmetricKeyAlgorithm,
     },
-    errors::Error,
     packet::{
         KeyFlags, KnownFeatures, PacketHeader, Signature, SignatureType, Subpacket, SubpacketData,
         UserAttribute, UserId,
@@ -40,6 +37,7 @@ use rsa::traits::PublicKeyParts;
 } */
 
 #[derive(Debug, Default, PartialEq, Eq, Clone)]
+#[allow(dead_code)]
 struct DumpResult {
     valid_count: usize,
     err_count: usize,

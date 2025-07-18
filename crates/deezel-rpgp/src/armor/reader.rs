@@ -1,360 +1,302 @@
-extern crate alloc;
-use alloc::{
-    collections::BTreeMap,
-    string::{String, ToString},
-    vec::Vec,
-};
-use core::{fmt, str};
-use crate::ser::Serialize;
+// Copyright 2022-2024, The Deezel Developers.
+// Deezel is a part of the Deezel project.
+// Deezel is a free software, licensed under the MIT license.
 
-use crate::io::BufReader;
-use nom::{
-    branch::alt,
-    bytes::streaming::{tag, take_until1},
-    character::streaming::{digit1, line_ending, not_line_ending},
-    combinator::{complete, map, map_res, opt, value},
-    multi::many0,
-    sequence::{delimited, pair, preceded, terminated},
-    AsChar, IResult, Input, Parser,
-};
+use alloc::{string::{String, ToString}, vec::Vec};
+use core::str;
 
-use crate::{
-    base64::Base64Reader,
-    errors::Result,
-    io::{Cursor, Read},
-};
+use crate::armor::writer::ArmorWriter;
+use crate::base64::decoder::Base64Decoder;
+use crate::io::{self as io, BufRead, Cursor, Read, Write};
+use crate::normalize_lines::NormalizedReader;
+use crate::packet::{Packet, PacketHeader};
+use crate::errors::{Error, Result};
+use crate::line_writer::LineBreak;
+use crate::buf_reader::BufReader;
 
-/// Armor block types.
-///
-/// Both OpenPGP (RFC 9580) and OpenSSL PEM armor types are included.
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
-pub enum BlockType {
-    /// PGP public key
-    PublicKey,
-    /// PEM encoded PKCS#1 public key
-    PublicKeyPKCS1(PKCS1Type),
-    /// PEM encoded PKCS#8 public key
-    PublicKeyPKCS8,
-    /// Public key OpenSSH
-    PublicKeyOpenssh,
-    /// PGP private key
-    PrivateKey,
-    /// PEM encoded PKCS#1 private key
-    PrivateKeyPKCS1(PKCS1Type),
-    /// PEM encoded PKCS#8 private key
-    PrivateKeyPKCS8,
-    /// OpenSSH private key
-    PrivateKeyOpenssh,
-    Message,
-    MultiPartMessage(usize, usize),
-    Signature,
-    // gnupgp extension
-    File,
-    /// Cleartext Framework message
-    CleartextMessage,
+/// A reader that de-armors PGP data.
+pub struct Dearmor<R: Read> {
+    /// The underlying reader.
+    inner: BufReader<R>,
+    /// The decoded, but not yet parsed, data.
+    buffer: Cursor<Vec<u8>>,
+    /// Whether we are done reading.
+    done: bool,
 }
 
-impl fmt::Display for BlockType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            BlockType::PublicKey => f.write_str("PGP PUBLIC KEY BLOCK"),
-            BlockType::PrivateKey => f.write_str("PGP PRIVATE KEY BLOCK"),
-            BlockType::MultiPartMessage(x, y) => write!(f, "PGP MESSAGE, PART {x}/{y}"),
-            BlockType::Message => f.write_str("PGP MESSAGE"),
-            BlockType::Signature => f.write_str("PGP SIGNATURE"),
-            BlockType::File => f.write_str("PGP ARMORED FILE"),
-            BlockType::PublicKeyPKCS1(typ) => write!(f, "{typ} PUBLIC KEY"),
-            BlockType::PublicKeyPKCS8 => f.write_str("PUBLIC KEY"),
-            BlockType::PublicKeyOpenssh => f.write_str("OPENSSH PUBLIC KEY"),
-            BlockType::PrivateKeyPKCS1(typ) => write!(f, "{typ} PRIVATE KEY"),
-            BlockType::PrivateKeyPKCS8 => f.write_str("PRIVATE KEY"),
-            BlockType::PrivateKeyOpenssh => f.write_str("OPENSSH PRIVATE KEY"),
-            BlockType::CleartextMessage => f.write_str("PGP SIGNED MESSAGE"),
+impl<R: Read> Dearmor<R> {
+    /// Creates a new de-armoring reader.
+    pub fn new(reader: R) -> Self {
+        Self {
+            inner: BufReader::new(reader),
+            buffer: Cursor::new(Vec::new()),
+            done: false,
         }
     }
-}
 
-impl Serialize for BlockType {
-    fn to_writer<W: crate::io::Write>(&self, w: &mut W) -> Result<()> {
-        w.write_all(self.to_string().as_bytes())?;
+    /// Returns the next packet from the stream.
+    pub fn next_packet(&mut self) -> Result<Option<Packet>> {
+        loop {
+            if self.done {
+                return Ok(None);
+            }
 
-        Ok(())
-    }
-
-    fn write_len(&self) -> usize {
-        // allocates, but this is tiny, should be fine
-        let x = self.to_string();
-        x.len()
-    }
-}
-
-/// OpenSSL PKCS#1 PEM armor types
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
-pub enum PKCS1Type {
-    RSA,
-    DSA,
-    EC,
-}
-
-impl fmt::Display for PKCS1Type {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            PKCS1Type::RSA => write!(f, "RSA"),
-            PKCS1Type::DSA => write!(f, "DSA"),
-            PKCS1Type::EC => write!(f, "EC"),
-        }
-    }
-}
-
-/// Armor Headers.
-pub type Headers = BTreeMap<String, Vec<String>>;
-
-/// Parses a single ascii armor header separator.
-fn armor_header_sep(i: &[u8]) -> IResult<&[u8], &[u8]> {
-    tag(&b"-----"[..])(i)
-}
-
-#[inline]
-fn parse_digit(x: &[u8]) -> Result<usize> {
-    let s = str::from_utf8(x)?;
-    let digit: usize = s.parse()?;
-    Ok(digit)
-}
-
-/// Parses the type inside of an ascii armor header.
-fn armor_header_type(i: &[u8]) -> IResult<&[u8], BlockType> {
-    alt((
-        value(BlockType::PublicKey, tag("PGP PUBLIC KEY BLOCK")),
-        value(BlockType::PrivateKey, tag("PGP PRIVATE KEY BLOCK")),
-        map(
-            preceded(
-                tag("PGP MESSAGE, PART "),
-                pair(
-                    map_res(digit1, parse_digit),
-                    opt(preceded(tag("/"), map_res(digit1, parse_digit))),
-                ),
-            ),
-            |(x, y)| BlockType::MultiPartMessage(x, y.unwrap_or(0)),
-        ),
-        value(BlockType::Message, tag("PGP MESSAGE")),
-        value(BlockType::Signature, tag("PGP SIGNATURE")),
-        value(BlockType::File, tag("PGP ARMORED FILE")),
-        value(BlockType::CleartextMessage, tag("PGP SIGNED MESSAGE")),
-        // OpenSSL formats
-        // Public Key File PKCS#1
-        value(
-            BlockType::PublicKeyPKCS1(PKCS1Type::RSA),
-            tag("RSA PUBLIC KEY"),
-        ),
-        // Public Key File PKCS#1
-        value(
-            BlockType::PublicKeyPKCS1(PKCS1Type::DSA),
-            tag("DSA PUBLIC KEY"),
-        ),
-        // Public Key File PKCS#1
-        value(
-            BlockType::PublicKeyPKCS1(PKCS1Type::EC),
-            tag("EC PUBLIC KEY"),
-        ),
-        // Public Key File PKCS#8
-        value(BlockType::PublicKeyPKCS8, tag("PUBLIC KEY")),
-        // OpenSSH Public Key File
-        value(BlockType::PublicKeyOpenssh, tag("OPENSSH PUBLIC KEY")),
-        // Private Key File PKCS#1
-        value(
-            BlockType::PrivateKeyPKCS1(PKCS1Type::RSA),
-            tag("RSA PRIVATE KEY"),
-        ),
-        // Private Key File PKCS#1
-        value(
-            BlockType::PrivateKeyPKCS1(PKCS1Type::DSA),
-            tag("DSA PRIVATE KEY"),
-        ),
-        // Private Key File PKCS#1
-        value(
-            BlockType::PrivateKeyPKCS1(PKCS1Type::EC),
-            tag("EC PRIVATE KEY"),
-        ),
-        // Private Key File PKCS#8
-        value(BlockType::PrivateKeyPKCS8, tag("PRIVATE KEY")),
-        // OpenSSH Private Key File
-        value(BlockType::PrivateKeyOpenssh, tag("OPENSSH PRIVATE KEY")),
-    ))
-    .parse(i)
-}
-
-/// Parses a single armor header line.
-fn armor_header_line(i: &[u8]) -> IResult<&[u8], BlockType> {
-    delimited(
-        pair(armor_header_sep, tag(&b"BEGIN "[..])),
-        armor_header_type,
-        pair(armor_header_sep, line_ending),
-    )
-    .parse(i)
-}
-
-/// Parses a single key value pair, for the header.
-fn key_value_pair(i: &[u8]) -> IResult<&[u8], (&str, &str)> {
-    let (i, key) = map_res(
-        alt((
-            complete(take_until1(":\r\n")),
-            complete(take_until1(":\n")),
-            complete(take_until1(": ")),
-        )),
-        str::from_utf8,
-    )
-    .parse(i)?;
-
-    // consume the ":"
-    let (i, _) = tag(":")(i)?;
-    let (i, t) = alt((tag(" "), line_ending)).parse(i)?;
-
-    let (i, value) = if t == b" " {
-        let (i, value) = map_res(not_line_ending, str::from_utf8).parse(i)?;
-        let (i, _) = line_ending(i)?;
-        (i, value)
-    } else {
-        // empty value
-        (i, "")
-    };
-
-    Ok((i, (key, value)))
-}
-
-/// Parses a list of key value pairs.
-fn key_value_pairs(i: &[u8]) -> IResult<&[u8], Vec<(&str, &str)>> {
-    many0(complete(key_value_pair)).parse(i)
-}
-
-/// Parses the full armor header.
-fn armor_headers(i: &[u8]) -> IResult<&[u8], Headers> {
-    map(key_value_pairs, |pairs| {
-        // merge multiple values with the same name
-        let mut out = BTreeMap::<String, Vec<String>>::new();
-        for (k, v) in pairs {
-            let e = out.entry(k.to_string()).or_default();
-            e.push(v.to_string());
-        }
-        out
-    })
-    .parse(i)
-}
-
-/// Armor Header
-pub fn armor_header(i: &[u8]) -> IResult<&[u8], (BlockType, Headers)> {
-    let (i, typ) = armor_header_line(i)?;
-    let (i, headers) = match typ {
-        BlockType::CleartextMessage => armor_headers_hash(i)?,
-        _ => armor_headers(i)?,
-    };
-
-    Ok((i, (typ, headers)))
-}
-
-fn armor_headers_hash(i: &[u8]) -> IResult<&[u8], Headers> {
-    let (i, headers) = many0(complete(hash_header_line)).parse(i)?;
-
-    let mut res = BTreeMap::new();
-    let headers = headers.into_iter().flatten().collect();
-    res.insert("Hash".to_string(), headers);
-
-    Ok((i, res))
-}
-
-pub fn alphanumeric1_or_dash<T, E: nom::error::ParseError<T>>(input: T) -> IResult<T, T, E>
-where
-    T: Input,
-    <T as Input>::Item: AsChar,
-{
-    input.split_at_position1(
-        |item| {
-            let i = item.as_char();
-
-            !(i.is_alphanum() || i == '-')
-        },
-        nom::error::ErrorKind::AlphaNumeric,
-    )
-}
-
-fn hash_header_line(i: &[u8]) -> IResult<&[u8], Vec<String>> {
-    let (i, _) = tag("Hash: ")(i)?;
-    let (i, mut values) = many0(map_res(terminated(alphanumeric1_or_dash, tag(",")), |s| {
-        str::from_utf8(s).map(|s| s.to_string())
-    }))
-    .parse(i)?;
-
-    let (i, last_value) = terminated(
-        map_res(alphanumeric1_or_dash, |s| {
-            str::from_utf8(s).map(|s| s.to_string())
-        }),
-        line_ending,
-    )
-    .parse(i)?;
-    values.push(last_value);
-
-    Ok((i, values))
-}
-
-pub fn decode(i: &[u8]) -> Result<(BlockType, Headers, Vec<u8>)> {
-    let (remaining, (typ, headers)) = armor_header(i).map_err(|e: nom::Err<nom::error::Error<_>>| {
-        crate::errors::Error::from(e.to_string())
-    })?;
-
-    // Skip the blank line after headers
-    let remaining = if remaining.starts_with(b"\r\n") {
-        &remaining[2..]
-    } else if remaining.starts_with(b"\n") {
-        &remaining[1..]
-    } else {
-        remaining
-    };
-
-    // Find the footer and extract the base64 content
-    let footer_start = if let Some(pos) = find_footer_start(remaining) {
-        pos
-    } else {
-        return Err(crate::errors::Error::from("armor footer not found".to_string()));
-    };
-
-    let base64_content = &remaining[..footer_start];
-    
-    // Clean up the base64 content by removing line endings and whitespace
-    let cleaned_base64: Vec<u8> = base64_content
-        .iter()
-        .filter(|&&b| !matches!(b, b'\r' | b'\n' | b' ' | b'\t'))
-        .copied()
-        .collect();
-
-    // Decode the base64 content
-    let mut reader = Base64Reader::new(BufReader::new(Cursor::new(&cleaned_base64)));
-    let mut decoded = Vec::new();
-    reader.read_to_end(&mut decoded)?;
-
-    Ok((typ, headers, decoded))
-}
-
-// Helper function to find the start of the armor footer
-fn find_footer_start(data: &[u8]) -> Option<usize> {
-    // Look for patterns like "=XXXX\n-----END" or "\n-----END" or "-----END"
-    let mut i = 0;
-    while i < data.len() {
-        if data[i..].starts_with(b"-----END") {
-            return Some(i);
-        }
-        if data[i] == b'=' {
-            // Look for checksum pattern like "=XXXX\n-----END"
-            let mut j = i + 1;
-            while j < data.len() && j < i + 10 {
-                if data[j] == b'\n' || data[j] == b'\r' {
-                    if data[j..].starts_with(b"\n-----END") || data[j..].starts_with(b"\r\n-----END") {
-                        return Some(i);
+            let packet_header = match PacketHeader::try_from_reader(&mut self.buffer) {
+                Ok(packet_header) => packet_header,
+                Err(e) => {
+                    let e: Error = e.try_into().unwrap();
+                    if self.read_into_buffer().is_err() {
+                        return Err(e);
                     }
-                    break;
+                    // try again
+                    continue;
                 }
-                j += 1;
+            };
+
+            match Packet::from_reader(packet_header, &mut self.buffer) {
+                Ok(packet) => return Ok(Some(packet)),
+                Err(Error::PacketIncomplete { source, .. }) => {
+                    // We need more data.
+                    if self.read_into_buffer()? == 0 {
+                        // No more data, but we have a partial packet.
+                        return Err(Error::PacketIncomplete {
+                            source,
+                            #[cfg(feature = "std")]
+                            backtrace: snafu::GenerateImplicitData::generate(),
+                        });
+                    }
+                }
+                Err(e) => return Err(e),
             }
         }
-        i += 1;
     }
-    None
+
+    // Reads from the underlying reader and de-armors the data into the buffer.
+    fn read_into_buffer(&mut self) -> Result<usize> {
+        // Find the next armor header.
+        let mut line = Vec::new();
+        loop {
+            let read = read_line(&mut self.inner, &mut line)?;
+            if read == 0 {
+                // We are done.
+                self.done = true;
+                return Ok(0);
+            }
+
+            if line.ends_with(b"-----\n") && line.starts_with(b"-----BEGIN ") {
+                break;
+            }
+
+            line.clear();
+        }
+
+        // We found an armor header, now find the footer.
+        let mut armored = Vec::new();
+        line.clear();
+        loop {
+            let read = read_line(&mut self.inner, &mut line)?;
+            if read == 0 {
+                // We are done.
+                self.done = true;
+                return Ok(0);
+            }
+
+            if line.starts_with(b"=") || line.starts_with(b"-----END ") {
+                break;
+            }
+
+            if line.ends_with(b"\n") {
+                line.pop();
+                if line.ends_with(b"\r") {
+                    line.pop();
+                }
+            }
+            armored.extend_from_slice(&line);
+            line.clear();
+        }
+
+        // Decode the armored data.
+        let mut cursor = Cursor::new(armored);
+        let mut decoder = Base64Decoder::new(&mut cursor);
+        let mut decoded = Vec::new();
+        // Implement read_to_end manually
+        let mut buf = [0u8; 1024];
+        loop {
+            let n = decoder.read(&mut buf)?;
+            if n == 0 {
+                break;
+            }
+            decoded.extend_from_slice(&buf[..n]);
+        }
+
+
+        // Write the decoded data to the buffer.
+        let pos = self.buffer.position();
+        self.buffer.get_mut().splice(pos as usize.., decoded);
+        self.buffer.set_position(pos);
+
+        Ok(self.buffer.get_ref().len())
+    }
+}
+
+fn read_line<R: Read>(reader: &mut BufReader<R>, buf: &mut Vec<u8>) -> io::Result<usize> {
+    let mut read = 0;
+    loop {
+        let available = match reader.fill_buf() {
+            Ok(n) => n,
+            Err(e) => return Err(e),
+        };
+
+        if available.is_empty() {
+            break;
+        }
+
+        let (done, used) = {
+            if let Some(i) = available.iter().position(|&b| b == b'\n') {
+                buf.extend_from_slice(&available[..=i]);
+                (true, i + 1)
+            } else {
+                buf.extend_from_slice(available);
+                (false, available.len())
+            }
+        };
+
+        reader.consume(used);
+        read += used;
+
+        if done {
+            break;
+        }
+    }
+    Ok(read)
+}
+
+
+impl<R: Read> Read for Dearmor<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        // Try to read from the buffer first.
+        let read = self.buffer.read(buf)?;
+        if read > 0 {
+            return Ok(read);
+        }
+
+        // If the buffer is empty, read from the underlying reader.
+        if self
+            .read_into_buffer()
+            .map_err(|_e| io::Error::new(io::ErrorKind::Other, "read_into_buffer failed"))?
+            == 0
+        {
+            // We are done.
+            return Ok(0);
+        }
+
+        // Try to read from the buffer again.
+        self.buffer.read(buf)
+    }
+}
+
+impl<R: Read> BufRead for Dearmor<R> {
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
+        if self.buffer.position() as usize == self.buffer.get_ref().len() {
+            self.read_into_buffer()
+                .map_err(|_e| io::Error::new(io::ErrorKind::Other, "read_into_buffer failed"))?;
+        }
+        self.buffer.fill_buf()
+    }
+
+    fn consume(&mut self, amt: usize) {
+        self.buffer.consume(amt);
+    }
+}
+
+/// A struct that holds the decoded parts of a PGP message.
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
+pub struct Armored {
+    /// The message type.
+    pub message_type: String,
+    /// The headers.
+    pub headers: Vec<(String, String)>,
+    /// The decoded data.
+    pub data: Vec<u8>,
+}
+
+impl Armored {
+    /// Decodes an armored PGP message.
+    pub fn decode(input: &[u8]) -> Result<Self> {
+        let mut lines = BufReader::new(NormalizedReader::new(input, LineBreak::Lf));
+
+        // Find the armor header.
+        let mut header = Vec::new();
+        read_line(&mut lines, &mut header)?;
+        if !header.ends_with(b"-----\n") || !header.starts_with(b"-----BEGIN ") {
+            return Err(Error::InvalidInput {
+                #[cfg(feature = "std")]
+                backtrace: snafu::GenerateImplicitData::generate(),
+            });
+        }
+
+        let message_type = str::from_utf8(&header[11..header.len() - 6]).unwrap().to_string();
+
+        // Read the headers.
+        let mut headers = Vec::new();
+        let mut armored = Vec::new();
+        loop {
+            let mut line = Vec::new();
+            read_line(&mut lines, &mut line)?;
+            if line.is_empty() || line == b"\n" {
+                break;
+            }
+
+            let mut parts = line.splitn(2, |c| *c == b':');
+            if let (Some(key), Some(value)) = (parts.next(), parts.next()) {
+                let key = str::from_utf8(key).unwrap().to_string();
+                let value = str::from_utf8(value).unwrap().trim().to_string();
+                headers.push((key, value));
+            }
+        }
+
+        // Read the armored data.
+        loop {
+            let mut line = Vec::new();
+            read_line(&mut lines, &mut line)?;
+            if line.is_empty() || line.starts_with(b"=") || line.starts_with(b"-----END ") {
+                break;
+            }
+            if line.ends_with(b"\n") {
+                line.pop();
+                if line.ends_with(b"\r") {
+                    line.pop();
+                }
+            }
+            armored.extend_from_slice(&line);
+        }
+
+        // Decode the armored data.
+        let mut cursor = Cursor::new(armored);
+        let mut decoder = Base64Decoder::new(&mut cursor);
+        let mut data = Vec::new();
+        // Implement read_to_end manually
+        let mut buf = [0u8; 1024];
+        loop {
+            let n = decoder.read(&mut buf)?;
+            if n == 0 {
+                break;
+            }
+            data.extend_from_slice(&buf[..n]);
+        }
+
+        Ok(Self {
+            message_type,
+            headers,
+            data,
+        })
+    }
+
+    /// Encodes the message into an armored PGP message.
+    pub fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
+        let mut armor_writer = ArmorWriter::new(writer, &self.message_type, self.headers.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect())?;
+        armor_writer.write_all(&self.data)?;
+        armor_writer.finish()?;
+        Ok(())
+    }
 }

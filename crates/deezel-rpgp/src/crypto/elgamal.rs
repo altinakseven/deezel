@@ -52,3 +52,28 @@ impl Serialize for SecretKey {
         x.write_len()
     }
 }
+
+#[cfg(all(test, feature = "std"))]
+mod tests {
+    use proptest::{prelude::*, strategy::BoxedStrategy};
+
+    use super::{ElgamalPublicParams, SecretKey};
+
+    prop_compose! {
+        pub fn key_gen()(
+            x in proptest::collection::vec(any::<u8>(), 1..1024),
+            public in any::<ElgamalPublicParams>(),
+        ) -> SecretKey {
+            SecretKey { x, public }
+        }
+    }
+
+    impl Arbitrary for SecretKey {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            key_gen().boxed()
+        }
+    }
+}

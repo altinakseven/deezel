@@ -102,12 +102,10 @@ where
 /// Available symmetric key algorithms.
 /// Ref: <https://www.rfc-editor.org/rfc/rfc9580.html#name-symmetric-key-algorithms>
 #[derive(Debug, PartialEq, Eq, Copy, Clone, FromPrimitive, IntoPrimitive)]
-#[cfg_attr(all(test, feature = "std"), derive(proptest_derive::Arbitrary))]
 #[repr(u8)]
 #[non_exhaustive]
 pub enum SymmetricKeyAlgorithm {
     /// Plaintext or unencrypted data
-    #[cfg_attr(all(test, feature = "std"), proptest(skip))]
     Plaintext = 0,
     /// IDEA
     IDEA = 1,
@@ -135,7 +133,7 @@ pub enum SymmetricKeyAlgorithm {
     Private10 = 110,
 
     #[num_enum(catch_all)]
-    Other(#[cfg_attr(all(test, feature = "std"), proptest(strategy = "111u8.."))] u8),
+    Other(u8),
 }
 
 impl Default for SymmetricKeyAlgorithm {
@@ -733,7 +731,33 @@ where
     digest.finalize().into()
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
+use proptest::{prelude::*, strategy::{BoxedStrategy, Strategy}};
+
+#[cfg(all(test, feature = "std"))]
+prop_compose! {
+    pub fn arbitrary_sym_alg()(
+        num in prop_oneof![
+            Just(1u8), Just(2), Just(3), Just(4), Just(7), Just(8), Just(9),
+            Just(10), Just(11), Just(12), Just(13), Just(110),
+        ]
+    ) -> SymmetricKeyAlgorithm {
+        SymmetricKeyAlgorithm::from(num)
+    }
+}
+
+#[cfg(all(test, feature = "std"))]
+impl Arbitrary for SymmetricKeyAlgorithm {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        arbitrary_sym_alg().boxed()
+    }
+}
+
+
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use crate::io::Read;
 
@@ -929,5 +953,13 @@ mod tests {
         assert!(SymmetricKeyAlgorithm::AES128
             .decrypt(&key, &mut prefix, &mut cipher_text)
             .is_err());
+    }
+
+    proptest! {
+        #[test]
+        fn arbitrary(alg in arbitrary_sym_alg()) {
+            let num: u8 = alg.into();
+            assert_eq!(alg, SymmetricKeyAlgorithm::from(num));
+        }
     }
 }

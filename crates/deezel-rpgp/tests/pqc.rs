@@ -42,7 +42,8 @@ impl TestCase {
                 primary_key_alg,
                 sub_keys,
             } => {
-                let (key, _) = SignedSecretKey::from_armor_file(source)?;
+                let key_bytes = std::fs::read(source)?;
+                let (key, _) = SignedSecretKey::from_armor(&key_bytes)?;
 
                 assert_eq!(key.primary_key.algorithm(), *primary_key_alg);
                 assert_eq!(&key.primary_key.fingerprint().to_string(), primary_key_fp);
@@ -62,7 +63,8 @@ impl TestCase {
                 primary_key_alg,
                 sub_keys,
             } => {
-                let (key, _) = SignedPublicKey::from_armor_file(source)?;
+                let key_bytes = std::fs::read(source)?;
+                let (key, _) = SignedPublicKey::from_armor(&key_bytes)?;
 
                 assert_eq!(key.primary_key.algorithm(), *primary_key_alg);
 
@@ -81,13 +83,16 @@ impl TestCase {
                 msg,
                 hash,
             } => {
-                let (sec_key, _) = SignedSecretKey::from_armor_file(sec_key)?;
+                let sec_key_bytes = std::fs::read(sec_key)?;
+                let (sec_key, _) = SignedSecretKey::from_armor(&sec_key_bytes)?;
                 sec_key.verify()?;
-                let (pub_key, _) = SignedPublicKey::from_armor_file(pub_key)?;
+                let pub_key_bytes = std::fs::read(pub_key)?;
+                let (pub_key, _) = SignedPublicKey::from_armor(&pub_key_bytes)?;
                 pub_key.verify()?;
 
                 {
-                    let (msg, _) = Message::from_armor_file(msg)?;
+                    let msg_bytes = std::fs::read(msg)?;
+                    let (msg, _) = Message::from_armor(&msg_bytes)?;
 
                     dbg!(&msg);
                     let mut msg = msg.decrypt(&Password::empty(), &sec_key)?;
@@ -323,12 +328,15 @@ fn test_a_3_3_signed_encrypted() -> TestResult {
 fn test_a_3_4_detached_signature() -> TestResult {
     let _ = pretty_env_logger::try_init();
 
-    let (pub_key, _) = SignedPublicKey::from_armor_file("./tests/pqc/v6-mldsa-65-sample-pk.asc")?;
+    let pub_key_bytes = std::fs::read("./tests/pqc/v6-mldsa-65-sample-pk.asc")?;
+    let (pub_key, _) = SignedPublicKey::from_armor(&pub_key_bytes)?;
     pub_key.verify()?;
 
     {
-        let (sig, _) =
-            StandaloneSignature::from_armor_file("./tests/pqc/v6-mldsa-65-sample-signature.asc")?;
+        let (sig, _) = {
+            let sig_bytes = std::fs::read("./tests/pqc/v6-mldsa-65-sample-signature.asc")?;
+            StandaloneSignature::from_armor(&sig_bytes)?
+        };
 
         dbg!(&sig);
         sig.verify(&pub_key, &b"Testing\n"[..])?;
@@ -379,12 +387,15 @@ fn test_a_4_3_signed_encrypted() -> TestResult {
 fn test_a_4_4_detached_signature() -> TestResult {
     let _ = pretty_env_logger::try_init();
 
-    let (pub_key, _) = SignedPublicKey::from_armor_file("./tests/pqc/v6-mldsa-87-sample-pk.asc")?;
+    let pub_key_bytes = std::fs::read("./tests/pqc/v6-mldsa-87-sample-pk.asc")?;
+    let (pub_key, _) = SignedPublicKey::from_armor(&pub_key_bytes)?;
     pub_key.verify()?;
 
     {
-        let (sig, _) =
-            StandaloneSignature::from_armor_file("./tests/pqc/v6-mldsa-87-sample-signature.asc")?;
+        let (sig, _) = {
+            let sig_bytes = std::fs::read("./tests/pqc/v6-mldsa-87-sample-signature.asc")?;
+            StandaloneSignature::from_armor(&sig_bytes)?
+        };
 
         dbg!(&sig);
         sig.verify(&pub_key, &b"Testing\n"[..])?;
@@ -436,14 +447,15 @@ fn test_a_5_3_signed_encrypted() -> TestResult {
 fn test_a_5_4_detached_signature() -> TestResult {
     let _ = pretty_env_logger::try_init();
 
-    let (pub_key, _) =
-        SignedPublicKey::from_armor_file("./tests/pqc/v6-slhdsa-128s-sample-pk.asc")?;
+    let (pub_key, _) = {
+        let pub_key_bytes = std::fs::read("./tests/pqc/v6-slhdsa-128s-sample-pk.asc")?;
+        SignedPublicKey::from_armor(&pub_key_bytes)?
+    };
     pub_key.verify()?;
 
     {
-        let (sig, _) = StandaloneSignature::from_armor_file(
-            "./tests/pqc/v6-slhdsa-128s-sample-signature.asc",
-        )?;
+        let sig_bytes = std::fs::read("./tests/pqc/v6-slhdsa-128s-sample-signature.asc")?;
+        let (sig, _) = StandaloneSignature::from_armor(&sig_bytes)?;
 
         dbg!(&sig);
         sig.verify(&pub_key, &b"Testing\n"[..])?;
@@ -483,14 +495,15 @@ fn test_a_6_2_transferable_public_key() -> TestResult {
 fn test_a_6_3_detached_signature() -> TestResult {
     let _ = pretty_env_logger::try_init();
 
-    let (pub_key, _) =
-        SignedPublicKey::from_armor_file("./tests/pqc/v6-slhdsa-128f-sample-pk.asc")?;
+    let (pub_key, _) = {
+        let pub_key_bytes = std::fs::read("./tests/pqc/v6-slhdsa-128f-sample-pk.asc")?;
+        SignedPublicKey::from_armor(&pub_key_bytes)?
+    };
     pub_key.verify()?;
 
     {
-        let (sig, _) = StandaloneSignature::from_armor_file(
-            "./tests/pqc/v6-slhdsa-128f-sample-signature.asc",
-        )?;
+        let sig_bytes = std::fs::read("./tests/pqc/v6-slhdsa-128f-sample-signature.asc")?;
+        let (sig, _) = StandaloneSignature::from_armor(&sig_bytes)?;
 
         dbg!(&sig);
         sig.verify(&pub_key, &b"Testing\n"[..])?;
@@ -530,14 +543,15 @@ fn test_a_7_2_transferable_public_key() -> TestResult {
 fn test_a_7_3_detached_signature() -> TestResult {
     let _ = pretty_env_logger::try_init();
 
-    let (pub_key, _) =
-        SignedPublicKey::from_armor_file("./tests/pqc/v6-slhdsa-256s-sample-pk.asc")?;
+    let (pub_key, _) = {
+        let pub_key_bytes = std::fs::read("./tests/pqc/v6-slhdsa-256s-sample-pk.asc")?;
+        SignedPublicKey::from_armor(&pub_key_bytes)?
+    };
     pub_key.verify()?;
 
     {
-        let (sig, _) = StandaloneSignature::from_armor_file(
-            "./tests/pqc/v6-slhdsa-256s-sample-signature.asc",
-        )?;
+        let sig_bytes = std::fs::read("./tests/pqc/v6-slhdsa-256s-sample-signature.asc")?;
+        let (sig, _) = StandaloneSignature::from_armor(&sig_bytes)?;
 
         dbg!(&sig);
         sig.verify(&pub_key, &b"Testing\n"[..])?;

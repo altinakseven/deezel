@@ -964,9 +964,13 @@ impl<'a> Message<'a> {
 
     /// Consumes the reader and reads into a string.
     pub fn as_data_string(&mut self) -> crate::io::Result<String> {
-        let mut out = String::new();
-        self.read_to_string(&mut out)?;
-        Ok(out)
+        let mut out = Vec::new();
+        self.read_to_end(&mut out)?;
+        String::from_utf8(out).map_err(|e| {
+            let s = e.to_string();
+            let static_str: &'static str = Box::leak(s.into_boxed_str());
+            crate::io::Error::new(crate::io::ErrorKind::InvalidData, static_str)
+        })
     }
 
     pub fn into_inner(self) -> PacketBodyReader<MessageReader<'a>> {
@@ -1031,6 +1035,24 @@ impl<'a> Message<'a> {
             Self::SignedOnePass { reader, .. } => reader.fill_buf(),
             Self::Encrypted { edata, .. } => edata.fill_buf(),
         }
+    }
+}
+
+#[cfg(not(feature = "std"))]
+impl<'a> Read for Box<Message<'a>> {
+    fn read(&mut self, buf: &mut [u8]) -> crate::io::Result<usize> {
+        (**self).read(buf)
+    }
+}
+
+#[cfg(not(feature = "std"))]
+impl<'a> BufRead for Box<Message<'a>> {
+    fn fill_buf(&mut self) -> crate::io::Result<&[u8]> {
+        (**self).fill_buf()
+    }
+
+    fn consume(&mut self, amt: usize) {
+        (**self).consume(amt)
     }
 }
 

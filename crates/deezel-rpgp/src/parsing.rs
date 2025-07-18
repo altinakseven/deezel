@@ -27,9 +27,9 @@ pub enum Error {
         #[snafu(backtrace)]
         backtrace: Backtrace,
     },
-    #[snafu(display("Unexpected EOF: {source}"))]
+    #[snafu(display("Unexpected EOF: {error}"))]
     UnexpectedEof {
-        source: crate::io::Error,
+        error: crate::io::Error,
         #[cfg(feature = "std")]
         #[snafu(backtrace)]
         backtrace: Backtrace,

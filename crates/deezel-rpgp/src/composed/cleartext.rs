@@ -8,8 +8,9 @@ use chrono::TimeZone;
 use log::debug;
 
 use crate::{
-    armor::{self, Headers},
+    armor::Headers,
     composed::{ArmorOptions, StandaloneSignature},
+    io::Cursor,
     crypto::hash::HashAlgorithm,
     errors::{bail, ensure_eq, format_err, InvalidInputSnafu, Result},
     packet::{Signature, SignatureConfig, SignatureType, Subpacket, SubpacketData},
@@ -52,7 +53,7 @@ impl CleartextSignedMessage {
     ) -> Result<Self>
     where
     {
-        let bytes = text.as_bytes();
+        let mut bytes = text.as_bytes();
         #[cfg(feature = "std")]
         let signature_text = NormalizedReader::new(&mut bytes, LineBreak::Crlf);
         #[cfg(not(feature = "std"))]
@@ -249,20 +250,16 @@ impl CleartextSignedMessage {
         writer.write_all(self.csf_encoded_text.as_bytes())?;
         writer.write_all(b"\n")?;
 
-        armor::write(
-            &self.signatures,
-            armor::BlockType::Signature,
-            writer,
-            opts.headers,
-            opts.include_checksum,
-        )?;
+        for sig in &self.signatures {
+            sig.to_armored_writer(writer, opts.clone())?;
+        }
 
         Ok(())
     }
 
     pub fn to_armored_bytes(&self, opts: ArmorOptions<'_>) -> Result<Vec<u8>> {
         let mut buf = Vec::new();
-        self.to_armored_writer(&mut buf, opts)?;
+        self.to_armored_writer(&mut Cursor::new(&mut buf[..]), opts)?;
         Ok(buf)
     }
 

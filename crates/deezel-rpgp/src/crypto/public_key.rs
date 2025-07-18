@@ -1,6 +1,45 @@
 extern crate alloc;
 use num_enum::{FromPrimitive, IntoPrimitive};
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloc::vec;
+    use proptest::prelude::*;
+    use proptest::strategy::{BoxedStrategy, Strategy};
+
+    prop_compose! {
+        pub fn arbitrary_pk_alg()(
+            num in prop_oneof![
+                Just(1u8), Just(2), Just(3), Just(16), Just(17), Just(18), Just(19),
+                Just(20), Just(21), Just(22), Just(25), Just(26), Just(27), Just(28),
+                Just(30), Just(31), Just(32), Just(33), Just(34), Just(35), Just(36),
+                Just(100), Just(101), Just(102), Just(103), Just(104), Just(105),
+                Just(106), Just(107), Just(108), Just(109), Just(110),
+            ]
+        ) -> PublicKeyAlgorithm {
+            PublicKeyAlgorithm::from(num)
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn arbitrary(alg in arbitrary_pk_alg()) {
+            let num: u8 = alg.into();
+            assert_eq!(alg, PublicKeyAlgorithm::from(num));
+        }
+    }
+
+    impl Arbitrary for PublicKeyAlgorithm {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            arbitrary_pk_alg().boxed()
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone, Copy, FromPrimitive, IntoPrimitive)]
 #[repr(u8)]
 #[non_exhaustive]
@@ -73,6 +112,12 @@ pub enum PublicKeyAlgorithm {
 
     #[num_enum(catch_all)]
     Unknown(u8),
+}
+
+impl Default for PublicKeyAlgorithm {
+    fn default() -> Self {
+        Self::RSA
+    }
 }
 
 impl PublicKeyAlgorithm {

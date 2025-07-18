@@ -35,7 +35,7 @@ const MAX_PARTIAL_LEN: u32 = 2u32.pow(30);
 impl PacketHeader {
     /// Parse a single packet header from the given reader.
     pub fn try_from_reader<R: BufRead>(mut r: R) -> Result<Self, crate::io::Error> {
-        let header = r.read_u8()?;
+        let header = BufReadParsing::read_u8(&mut r)?;
 
         let first_two_bits = header & 0b1100_0000;
         match first_two_bits {
@@ -51,7 +51,7 @@ impl PacketHeader {
                 let header = OldPacketHeader::from_bits(header);
                 let length = match header.length_type() {
                     // One-Octet Lengths
-                    0 => PacketLength::Fixed(r.read_u8()?.into()),
+                    0 => PacketLength::Fixed(BufReadParsing::read_u8(&mut r)?.into()),
                     // Two-Octet Lengths
                     1 => PacketLength::Fixed(r.read_be_u16()?.into()),
                     // Four-Octet Lengths
@@ -167,29 +167,25 @@ impl Serialize for PacketHeader {
 
         match self {
             Self::New { header, length } => {
-                crate::io::Write::write_u8(writer, header.into_bits())?;
-                length
-                    .to_writer_new(writer)
-                    .map_err(|e| crate::errors::Error::from(e.to_string()))?;
+                writer.write_all(&[header.into_bits()])?;
+                length.to_writer_new(writer)?;
             }
             Self::Old { header, length } => match length {
                 PacketLength::Fixed(len) => {
-                    crate::io::Write::write_u8(writer, header.into_bits())?;
+                    writer.write_all(&[header.into_bits()])?;
                     if *len < 256 {
                         // one octet
-                        crate::io::Write::write_u8(writer, *len as u8)?;
+                        writer.write_all(&[*len as u8])?;
                     } else if *len < 65536 {
                         // two octets
-                        crate::io::Write::write_be_u16(writer, *len as u16)
-                            .map_err(|e| crate::errors::Error::from(e.to_string()))?;
+                        writer.write_all(&u16::to_be_bytes(*len as u16))?;
                     } else {
                         // four octets
-                        crate::io::Write::write_be_u32(writer, *len)
-                            .map_err(|e| crate::errors::Error::from(e.to_string()))?;
+                        writer.write_all(&u32::to_be_bytes(*len))?;
                     }
                 }
                 PacketLength::Indeterminate => {
-                    crate::io::Write::write_u8(writer, header.into_bits())?;
+                    writer.write_all(&[header.into_bits()])?;
                 }
                 PacketLength::Partial(_) => {
                     unreachable!("invalid state: partial lengths for old style packet header");
@@ -332,7 +328,6 @@ mod tests {
         assert_eq!(header.packet_length(), PacketLength::Fixed(4973));
     }
 
-    #[cfg(feature = "std")]
     impl Arbitrary for OldPacketHeader {
         type Parameters = u8; // length type
         type Strategy = BoxedStrategy<Self>;
@@ -355,7 +350,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "std")]
     impl Arbitrary for NewPacketHeader {
         type Parameters = ();
         type Strategy = BoxedStrategy<Self>;
@@ -367,7 +361,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "std")]
     impl Arbitrary for PacketHeader {
         type Parameters = ();
         type Strategy = BoxedStrategy<Self>;
@@ -397,7 +390,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "std")]
     proptest! {
         #[test]
         fn write_len(header: PacketHeader) {

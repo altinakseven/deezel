@@ -110,8 +110,12 @@ impl Packet {
                 }
                 Ok(res)
             }
-            Err(Error::PacketParsing { source }) if source.is_incomplete() => {
-                Err(Error::PacketIncomplete { source })
+            Err(Error::PacketParsing { source, .. }) if source.is_incomplete() => {
+                Err(Error::PacketIncomplete {
+                    source,
+                    #[cfg(feature = "std")]
+                    backtrace: snafu::GenerateImplicitData::generate(),
+                })
             }
             // This needs to be refactored to not use crate::io::ErrorKind
             // Err(Error::IO { source, backtrace })

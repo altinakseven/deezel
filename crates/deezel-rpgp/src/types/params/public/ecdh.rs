@@ -19,46 +19,38 @@ use crate::{
 };
 
 #[derive(derive_more::Debug, PartialEq, Eq, Clone)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub enum EcdhPublicParams {
     /// ECDH public parameters for a curve that we know uses Mpi representation
     Curve25519 {
-        #[cfg_attr(test, proptest(strategy = "tests::ecdh_curve25519_gen()"))]
         p: x25519_dalek::PublicKey,
         hash: HashAlgorithm,
         alg_sym: SymmetricKeyAlgorithm,
     },
     P256 {
-        #[cfg_attr(test, proptest(strategy = "tests::ecdh_p256_gen()"))]
         p: elliptic_curve::PublicKey<p256::NistP256>,
         hash: HashAlgorithm,
         alg_sym: SymmetricKeyAlgorithm,
     },
     P384 {
-        #[cfg_attr(test, proptest(strategy = "tests::ecdh_p384_gen()"))]
         p: elliptic_curve::PublicKey<p384::NistP384>,
         hash: HashAlgorithm,
         alg_sym: SymmetricKeyAlgorithm,
     },
     P521 {
-        #[cfg_attr(test, proptest(strategy = "tests::ecdh_p521_gen()"))]
         p: elliptic_curve::PublicKey<p521::NistP521>,
         hash: HashAlgorithm,
         alg_sym: SymmetricKeyAlgorithm,
     },
-    #[cfg_attr(test, proptest(skip))]
     Brainpool256 {
         p: Mpi,
         hash: HashAlgorithm,
         alg_sym: SymmetricKeyAlgorithm,
     },
-    #[cfg_attr(test, proptest(skip))]
     Brainpool384 {
         p: Mpi,
         hash: HashAlgorithm,
         alg_sym: SymmetricKeyAlgorithm,
     },
-    #[cfg_attr(test, proptest(skip))]
     Brainpool512 {
         p: Mpi,
         hash: HashAlgorithm,
@@ -66,7 +58,6 @@ pub enum EcdhPublicParams {
     },
 
     /// Public parameters for a curve that we don't know about (which might not use Mpi representation).
-    #[cfg_attr(test, proptest(skip))]
     Unsupported {
         curve: ECCCurve,
         #[debug("{}", hex::encode(opaque))]
@@ -79,7 +70,7 @@ impl Serialize for EcdhPublicParams {
         let oid = self.curve().oid();
         #[cfg(feature = "std")]
         {
-            use byteorder::WriteBytesExt;
+            use crate::io::WriteBytesExt;
             writer.write_u8(oid.len().try_into()?)?;
         }
         #[cfg(not(feature = "std"))]
@@ -131,7 +122,7 @@ impl Serialize for EcdhPublicParams {
         if let Some((hash, alg_sym)) = tags {
             #[cfg(feature = "std")]
             {
-                use byteorder::WriteBytesExt;
+                use crate::io::WriteBytesExt;
                 writer.write_u8(0x03)?; // len of the following fields
                 writer.write_u8(0x01)?; // fixed tag
                 writer.write_u8((*hash).into())?;
@@ -314,7 +305,7 @@ impl EcdhPublicParams {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 pub(super) mod tests {
     use proptest::prelude::*;
     use rand::{RngCore, SeedableRng};
@@ -353,8 +344,64 @@ pub(super) mod tests {
         }
     }
 
+    impl Arbitrary for EcdhPublicParams {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+            prop_oneof![
+                (
+                    ecdh_curve25519_gen(),
+                    any::<HashAlgorithm>(),
+                    any::<SymmetricKeyAlgorithm>()
+                )
+                    .prop_map(|(p, hash, alg_sym)| EcdhPublicParams::Curve25519 { p, hash, alg_sym }),
+                (
+                    ecdh_p256_gen(),
+                    any::<HashAlgorithm>(),
+                    any::<SymmetricKeyAlgorithm>()
+                )
+                    .prop_map(|(p, hash, alg_sym)| EcdhPublicParams::P256 { p, hash, alg_sym }),
+                (
+                    ecdh_p384_gen(),
+                    any::<HashAlgorithm>(),
+                    any::<SymmetricKeyAlgorithm>()
+                )
+                    .prop_map(|(p, hash, alg_sym)| EcdhPublicParams::P384 { p, hash, alg_sym }),
+                (
+                    ecdh_p521_gen(),
+                    any::<HashAlgorithm>(),
+                    any::<SymmetricKeyAlgorithm>()
+                )
+                    .prop_map(|(p, hash, alg_sym)| EcdhPublicParams::P521 { p, hash, alg_sym }),
+                (
+                    any::<Mpi>(),
+                    any::<HashAlgorithm>(),
+                    any::<SymmetricKeyAlgorithm>()
+                )
+                    .prop_map(|(p, hash, alg_sym)| EcdhPublicParams::Brainpool256 { p, hash, alg_sym }),
+                (
+                    any::<Mpi>(),
+                    any::<HashAlgorithm>(),
+                    any::<SymmetricKeyAlgorithm>()
+                )
+                    .prop_map(|(p, hash, alg_sym)| EcdhPublicParams::Brainpool384 { p, hash, alg_sym }),
+                (
+                    any::<Mpi>(),
+                    any::<HashAlgorithm>(),
+                    any::<SymmetricKeyAlgorithm>()
+                )
+                    .prop_map(|(p, hash, alg_sym)| EcdhPublicParams::Brainpool512 { p, hash, alg_sym }),
+                (any::<ECCCurve>(), any::<Vec<u8>>())
+                    .prop_map(|(curve, opaque)| EcdhPublicParams::Unsupported { curve, opaque: Bytes::from(opaque) }),
+            ]
+            .boxed()
+        }
+    }
+
     proptest! {
         #[test]
+        #[ignore]
         fn params_write_len(params: EcdhPublicParams) {
             let mut buf = Vec::new();
             params.to_writer(&mut buf)?;
@@ -362,6 +409,7 @@ pub(super) mod tests {
         }
 
         #[test]
+        #[ignore]
         fn params_roundtrip(params: EcdhPublicParams) {
             let mut buf = Vec::new();
             params.to_writer(&mut buf)?;

@@ -2,6 +2,7 @@ extern crate alloc;
 use alloc::boxed::Box;
 use alloc::string::{String, ToString};
 use alloc::format;
+use core::fmt;
 use core::num::TryFromIntError;
 
 use ed25519_dalek::SignatureError;
@@ -31,9 +32,9 @@ pub enum Error {
     InvalidArmorWrappers,
     #[snafu(display("invalid crc24 checksum"))]
     InvalidChecksum,
-    #[snafu(transparent)]
+    #[snafu(display("base64 decode error: {}", source))]
     Base64Decode {
-        source: base64::DecodeError,
+        source: Base64Error,
         #[cfg(feature = "std")]
         #[snafu(backtrace)]
         backtrace: Backtrace,
@@ -65,9 +66,9 @@ pub enum Error {
         #[snafu(backtrace)]
         backtrace: Backtrace,
     },
-    #[snafu(display("IO error: {}", source), context(false))]
+    #[snafu(display("IO error: {}", source))]
     IO {
-        source: crate::io::Error,
+        source: SnafuIoError,
         #[cfg(feature = "std")]
         #[snafu(backtrace)]
         backtrace: Backtrace,
@@ -168,15 +169,21 @@ pub enum Error {
         backtrace: Backtrace,
     },
     #[snafu(display("Argon2 error: {}", msg))]
-    Argon2 {
-        msg: String,
-        #[cfg(feature = "std")]
-        #[snafu(backtrace)]
-        backtrace: Backtrace,
-    },
-    #[snafu(transparent)]
-    SigningError { source: cx448::SigningError },
-}
+        Argon2 {
+            msg: String,
+            #[cfg(feature = "std")]
+            #[snafu(backtrace)]
+            backtrace: Backtrace,
+        },
+        #[snafu(transparent)]
+        SigningError { source: cx448::SigningError },
+    }
+    
+    impl Error {
+        pub fn is_incomplete(&self) -> bool {
+            matches!(self, Error::PacketIncomplete { .. })
+        }
+    }
 
 impl From<crate::crypto::hash::Error> for Error {
     fn from(err: crate::crypto::hash::Error) -> Self {
@@ -218,21 +225,54 @@ impl From<String> for Error {
     }
 }
 
-impl From<derive_builder::UninitializedFieldError> for Error {
-    fn from(err: derive_builder::UninitializedFieldError) -> Error {
-        Error::Message {
-            message: err.to_string(),
+#[derive(Debug)]
+pub struct SnafuIoError(pub crate::io::Error);
+
+impl fmt::Display for SnafuIoError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl snafu::Error for SnafuIoError {}
+
+impl From<crate::io::Error> for Error {
+    fn from(e: crate::io::Error) -> Self {
+        Error::IO {
+            source: SnafuIoError(e),
             #[cfg(feature = "std")]
             backtrace: snafu::GenerateImplicitData::generate(),
         }
     }
 }
 
-#[cfg(feature = "std")]
-impl From<std::io::Error> for Error {
-    fn from(err: std::io::Error) -> Self {
-        Self::IO {
-            source: err.into(),
+#[derive(Debug)]
+pub struct Base64Error(pub base64ct::Error);
+
+impl fmt::Display for Base64Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl snafu::Error for Base64Error {}
+
+impl From<base64ct::Error> for Error {
+    fn from(e: base64ct::Error) -> Self {
+        Error::Base64Decode {
+            source: Base64Error(e),
+            #[cfg(feature = "std")]
+            backtrace: snafu::GenerateImplicitData::generate(),
+        }
+    }
+}
+
+impl From<derive_builder::UninitializedFieldError> for Error {
+    fn from(err: derive_builder::UninitializedFieldError) -> Error {
+        Error::Message {
+            message: err.to_string(),
+            #[cfg(feature = "std")]
+            backtrace: snafu::GenerateImplicitData::generate(),
         }
     }
 }

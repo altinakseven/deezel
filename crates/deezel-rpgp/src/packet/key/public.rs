@@ -5,7 +5,7 @@ use alloc::vec::Vec;
 use alloc::format;
 extern crate alloc;
 
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, SubsecRound, TimeZone, Utc};
 use digest::generic_array::GenericArray;
 use md5::Md5;
 use rand::{CryptoRng, Rng};
@@ -354,12 +354,14 @@ impl PubKeyInner {
     fn to_writer_v2_v3<W: Write>(&self, writer: &mut W) -> Result<()> {
         use crate::ser::Serialize;
 
-        writer.write_be_u32(self.created_at)?;
-        writer.write_be_u16(
-            self.expiration
-                .expect("old key versions have an expiration"),
+        writer.write_all(&self.created_at.to_be_bytes())?;
+        writer.write_all(
+            &self
+                .expiration
+                .expect("old key versions have an expiration")
+                .to_be_bytes(),
         )?;
-        writer.write_u8(self.algorithm.into())?;
+        writer.write_all(&[self.algorithm.into()])?;
         self.public_params.to_writer(writer)?;
 
         Ok(())
@@ -374,11 +376,11 @@ impl PubKeyInner {
     fn to_writer_v4_v6<W: Write>(&self, writer: &mut W) -> Result<()> {
         use crate::ser::Serialize;
 
-        writer.write_be_u32(self.created_at)?;
-        writer.write_u8(self.algorithm.into())?;
+        writer.write_all(&self.created_at.to_be_bytes())?;
+        writer.write_all(&[self.algorithm.into()])?;
 
         if self.version == KeyVersion::V6 {
-            writer.write_be_u32(self.public_params.write_len().try_into()?)?;
+            writer.write_all(&(self.public_params.write_len() as u32).to_be_bytes())?;
         }
 
         self.public_params.to_writer(writer)?;
@@ -619,7 +621,7 @@ impl crate::ser::Serialize for PublicSubkey {
 
 impl crate::ser::Serialize for PubKeyInner {
     fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
-        writer.write_u8(self.version.into())?;
+        writer.write_all(&[self.version.into()])?;
 
         match self.version {
             KeyVersion::V2 | KeyVersion::V3 => self.to_writer_v2_v3(writer),
@@ -1036,9 +1038,8 @@ impl PublicKeyTrait for PublicSubkey {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
-    use chrono::TimeZone;
     use proptest::prelude::*;
 
     use super::*;

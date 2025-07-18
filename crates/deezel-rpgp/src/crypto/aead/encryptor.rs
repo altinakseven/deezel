@@ -1,4 +1,3 @@
-use alloc::vec;
 extern crate alloc;
 use alloc::vec::Vec;
 use bytes::{Buf, BytesMut};
@@ -93,45 +92,52 @@ impl<R: Read> StreamEncryptor<R> {
         Ok(())
     }
 
-    fn fill_buffer(&mut self) -> Result<(), Error> {
-        if self.buffer.has_remaining() {
-            return Ok(());
-        }
-
-        if self.is_source_done {
-            return Ok(());
-        }
-
-        // read a new chunk from the source
-        let mut chunk = vec![0; self.chunk_size_expanded];
-        let read = fill_buffer(&mut self.source, &mut chunk, Some(self.chunk_size_expanded))
-            .map_err(|e| crate::crypto::aead::Error::Io { source: e })?;
-        self.bytes_read += read as u64;
-
-        // Associated data is extended with chunk index.
-        let mut info = self.info.to_vec();
-        // chunk index: 8 octets as big endian
-        info.extend_from_slice(&self.chunk_index.to_be_bytes());
-
-        // encrypt the chunk
-        let mut encrypted_chunk = BytesMut::from(&chunk[..read]);
-        self.aead.encrypt_in_place(
-            &self.sym_alg,
-            &self.message_key,
-            &self.nonce,
-            &info,
-            &mut encrypted_chunk,
+    fn fill_buffer(&mut self) -> io::Result<()> {
+        self.buffer.resize(self.chunk_size_expanded, 0);
+        let read = fill_buffer(
+            &mut self.source,
+            &mut self.buffer,
+            Some(self.chunk_size_expanded),
         )?;
-
-        // copy the encrypted chunk into our buffer
-        self.buffer.extend_from_slice(&encrypted_chunk);
-
-        self.chunk_index += 1;
-
-        if read < self.chunk_size_expanded {
+        let read_u64 = read.try_into().map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "too much data read",
+            )
+        })?;
+        self.bytes_read = match self.bytes_read.checked_add(read_u64) {
+            Some(read) => read,
+            None => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "can not read more than u64::MAX data",
+                ));
+            }
+        };
+        if read == 0 {
             self.is_source_done = true;
-            self.create_final_auth_tag()?;
+            // time to write the final chunk
+            self.create_final_auth_tag()
+                .map_err(|_e| io::Error::new(io::ErrorKind::InvalidData, "aead error"))?;
+
+            return Ok(());
         }
+        self.buffer.truncate(read);
+
+        self.aead
+            .encrypt_in_place(
+                &self.sym_alg,
+                &self.message_key,
+                &self.nonce,
+                &self.info,
+                &mut self.buffer,
+            )
+            .map_err(|_e| io::Error::new(io::ErrorKind::InvalidData, "aead error"))?;
+
+        // Update nonce to include the next chunk index
+        self.chunk_index += 1;
+        let l = self.nonce.len() - 8;
+        self.nonce[l..].copy_from_slice(&self.chunk_index.to_be_bytes());
 
         Ok(())
     }
@@ -139,11 +145,19 @@ impl<R: Read> StreamEncryptor<R> {
 
 impl<R: Read> Read for StreamEncryptor<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.fill_buffer()
-            .map_err(|_e| io::Error::new(io::ErrorKind::Other, "fill_buffer failed"))?;
+        if !self.buffer.has_remaining() {
+            if !self.is_source_done {
+                // Still more to read and encrypt from the source.
+                self.fill_buffer()?;
+            } else {
+                // The final chunk was written, we have nothing left to give.
+                return Ok(0);
+            }
+        }
 
-        let amt = core::cmp::min(buf.len(), self.buffer.remaining());
-        self.buffer.copy_to_slice(&mut buf[..amt]);
-        Ok(amt)
+        let to_write = buf.len().min(self.buffer.remaining());
+        self.buffer.copy_to_slice(&mut buf[..to_write]);
+
+        Ok(to_write)
     }
 }

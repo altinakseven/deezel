@@ -131,7 +131,7 @@ impl SymEncryptedProtectedData {
         )?;
 
         let mut out = Vec::new();
-        io::copy(&mut encryptor, &mut out)?;
+        io::copy(&mut encryptor, &mut io::Cursor::new(&mut out[..]))?;
 
         let config = Config::V2 {
             sym_alg,
@@ -193,7 +193,7 @@ impl SymEncryptedProtectedData {
                 let sym_alg = sym_alg.expect("v1");
                 let mut decryptor = StreamDecryptor::v1(sym_alg, session_key, &self.data[..])?;
                 let mut out = Vec::new();
-                decryptor.read_to_end(&mut out)?;
+                io::copy(&mut decryptor, &mut io::Cursor::new(&mut out[..]))?;
                 Ok(out)
             }
             Config::V2 {
@@ -218,7 +218,7 @@ impl SymEncryptedProtectedData {
                     &self.data[..],
                 )?;
                 let mut out = Vec::new();
-                decryptor.read_to_end(&mut out)?;
+                io::copy(&mut decryptor, &mut io::Cursor::new(&mut out[..]))?;
                 Ok(out)
             }
         }
@@ -229,7 +229,7 @@ impl Serialize for Config {
     fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
         match self {
             Config::V1 => {
-                writer.write_u8(0x01)?;
+                writer.write_all(&[0x01])?;
             }
             Config::V2 {
                 sym_alg,
@@ -237,10 +237,10 @@ impl Serialize for Config {
                 chunk_size,
                 salt,
             } => {
-                writer.write_u8(0x02)?;
-                writer.write_u8((*sym_alg).into())?;
-                writer.write_u8((*aead).into())?;
-                writer.write_u8((*chunk_size).into())?;
+                writer.write_all(&[0x02])?;
+                writer.write_all(&[(*sym_alg).into()])?;
+                writer.write_all(&[(*aead).into()])?;
+                writer.write_all(&[(*chunk_size).into()])?;
                 writer.write_all(salt)?;
             }
         }

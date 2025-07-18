@@ -1,5 +1,7 @@
 use alloc::boxed::Box;
 use alloc::string::ToString;
+use alloc::vec;
+use core::str::FromStr;
 use alloc::vec::Vec;
 use alloc::format;
 extern crate alloc;
@@ -9,7 +11,7 @@ use crate::{
         message::Message, shared::is_binary, CompressedDataReader, Edata, Esk, LiteralDataReader,
         SignatureBodyReader, SignatureOnePassReader,
     },
-    errors::{bail, unimplemented_err, Result},
+    errors::{bail, Result},
     parsing_reader::BufReadParsing,
     types::{PkeskVersion, SkeskVersion, Tag},
 };
@@ -236,31 +238,17 @@ impl<'a> Message<'a> {
     pub fn from_armor(
         input: &'a [u8],
     ) -> Result<(Self, crate::armor::Headers)> {
-        let (typ, headers, decoded) = crate::armor::decode(input)?;
+        let armored = crate::armor::Armored::decode(input)?;
+        let (typ, headers, decoded) = (armored.message_type, armored.headers, armored.data);
 
-        match typ {
-            // Standard PGP types
-            BlockType::File | BlockType::Message | BlockType::MultiPartMessage(_, _) => {
-                if !Self::matches_block_type(typ) {
-                    bail!("unexpected block type: {}", typ);
-                }
-
-                let static_slice: &'static [u8] = Box::leak(decoded.into_boxed_slice());
-                Ok((Self::from_bytes(static_slice)?, headers))
-            }
-            BlockType::PublicKey
-            | BlockType::PrivateKey
-            | BlockType::Signature
-            | BlockType::CleartextMessage
-            | BlockType::PublicKeyPKCS1(_)
-            | BlockType::PublicKeyPKCS8
-            | BlockType::PublicKeyOpenssh
-            | BlockType::PrivateKeyPKCS1(_)
-            | BlockType::PrivateKeyPKCS8
-            | BlockType::PrivateKeyOpenssh => {
-                unimplemented_err!("key format {:?}", typ);
-            }
+        let block_type = BlockType::from_str(typ.as_str())?;
+        if !Self::matches_block_type(block_type) {
+            bail!("unexpected block type: {}", typ);
         }
+
+        let static_slice: &'static [u8] = Box::leak(decoded.into_boxed_slice());
+        let headers = headers.into_iter().map(|(k, v)| (k, vec![v])).collect();
+        Ok((Self::from_bytes(static_slice)?, headers))
     }
 
     /// Parse from a reader which might contain ASCII armored data or binary data.
@@ -279,7 +267,10 @@ impl<'a> Message<'a> {
     fn matches_block_type(typ: BlockType) -> bool {
         matches!(
             typ,
-            BlockType::Message | BlockType::MultiPartMessage(_, _) | BlockType::File
+            BlockType::Message
+                | BlockType::PgpMessage
+                | BlockType::MultiPartMessage(_, _)
+                | BlockType::File
         )
     }
 }

@@ -1,3 +1,4 @@
+use crate::alloc::string::ToString;
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -33,13 +34,20 @@ impl StandaloneSignature {
         writer: &mut impl Write,
         opts: ArmorOptions<'_>,
     ) -> Result<()> {
-        armor::write(
-            self,
-            armor::BlockType::Signature,
-            writer,
-            opts.headers,
-            opts.include_checksum,
-        )
+        let headers = opts
+            .headers
+            .map(|h| {
+                h.iter()
+                    .map(|(k, v)| (k.to_string(), v.join(", ")))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let armored = armor::Armored {
+            message_type: "SIGNATURE".to_string(),
+            headers,
+            data: self.to_bytes()?,
+        };
+        armored.to_writer(writer)
     }
 
     pub fn to_armored_bytes(&self, opts: ArmorOptions<'_>) -> Result<Vec<u8>> {

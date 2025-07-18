@@ -419,7 +419,7 @@ impl Serialize for PublicParams {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use alloc::{format, vec::Vec};
     use proptest::prelude::*;
@@ -450,12 +450,6 @@ mod tests {
         }
     }
 
-    impl Default for PublicKeyAlgorithm {
-        fn default() -> Self {
-            unreachable!("must not be used, only here for testing");
-        }
-    }
-
     impl Arbitrary for PublicParams {
         type Parameters = PublicKeyAlgorithm;
         type Strategy = BoxedStrategy<PublicParams>;
@@ -482,10 +476,11 @@ mod tests {
                 PublicKeyAlgorithm::ECDH => any::<EcdhPublicParams>()
                     .prop_map(PublicParams::ECDH)
                     .boxed(),
-                PublicKeyAlgorithm::Elgamal => any::<ElgamalPublicParams>()
-                    .boxed()
-                    .prop_map(PublicParams::Elgamal)
-                    .boxed(),
+                PublicKeyAlgorithm::Elgamal | PublicKeyAlgorithm::ElgamalEncrypt => {
+                    any::<ElgamalPublicParams>()
+                        .prop_map(PublicParams::Elgamal)
+                        .boxed()
+                }
                 PublicKeyAlgorithm::EdDSALegacy => any::<EddsaLegacyPublicParams>()
                     .prop_map(PublicParams::EdDSALegacy)
                     .boxed(),

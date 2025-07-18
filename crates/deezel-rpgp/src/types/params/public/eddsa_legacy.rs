@@ -76,7 +76,7 @@ impl Serialize for EddsaLegacyPublicParams {
                 let oid = ECCCurve::Ed25519.oid();
                 #[cfg(feature = "std")]
                 {
-                    use byteorder::WriteBytesExt;
+                    use crate::io::WriteBytesExt;
                     writer.write_u8(oid.len().try_into()?)?;
                 }
                 #[cfg(not(feature = "std"))]
@@ -92,7 +92,7 @@ impl Serialize for EddsaLegacyPublicParams {
                 let oid = curve.oid();
                 #[cfg(feature = "std")]
                 {
-                    use byteorder::WriteBytesExt;
+                    use crate::io::WriteBytesExt;
                     writer.write_u8(oid.len().try_into()?)?;
                 }
                 #[cfg(not(feature = "std"))]

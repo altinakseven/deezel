@@ -1,5 +1,7 @@
 extern crate alloc;
-use crate::types::Tag;
+
+
+
 use crate::io::{self, BufRead, Write};
 use bytes::Bytes;
 #[cfg(feature = "bzip2")]
@@ -207,7 +209,9 @@ impl CompressedData {
 
     /// Create the structure from the raw compressed data.
     #[cfg(test)]
+    #[allow(dead_code)]
     fn from_compressed(alg: CompressionAlgorithm, data: impl Into<Bytes>) -> Result<Self> {
+        use crate::types::Tag;
         let compressed_data = data.into();
         let len = 1 + compressed_data.len();
         let packet_header = PacketHeader::new_fixed(Tag::CompressedData, len.try_into()?);
@@ -249,7 +253,7 @@ impl CompressedData {
 
 impl Serialize for CompressedData {
     fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
-        writer.write_u8(self.compression_algorithm.into())?;
+        writer.write_all(&[self.compression_algorithm.into()])?;
         writer.write_all(&self.compressed_data)?;
 
         Ok(())

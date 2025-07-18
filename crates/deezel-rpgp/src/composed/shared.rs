@@ -1,5 +1,7 @@
 use alloc::boxed::Box;
 use alloc::string::ToString;
+use alloc::vec;
+use core::str::FromStr;
 use alloc::vec::Vec;
 use alloc::format;
 extern crate alloc;
@@ -8,7 +10,7 @@ use log::{debug, warn};
 
 use crate::{
     armor::{self, BlockType},
-    errors::{bail, unimplemented_err, Error, Result},
+    errors::{bail, Error, Result},
     packet::{Packet, PacketParser},
 };
 
@@ -64,40 +66,25 @@ pub trait Deserializable: Sized {
     fn from_armor_many<'a>(
         input: &'a [u8],
     ) -> Result<(Box<dyn Iterator<Item = Result<Self>> + 'a>, armor::Headers)> {
-        let (typ, headers, decoded) = armor::decode(input)?;
+        let armored = armor::Armored::decode(input)?;
+        let (typ, headers, decoded) = (armored.message_type, armored.headers, armored.data);
 
         // TODO: add typ information to the key possibly?
-        match typ {
-            // Standard PGP types
-            BlockType::PublicKey
-            | BlockType::PrivateKey
-            | BlockType::Message
-            | BlockType::MultiPartMessage(_, _)
-            | BlockType::Signature
-            | BlockType::CleartextMessage
-            | BlockType::File => {
-                if !Self::matches_block_type(typ) {
-                    bail!("unexpected block type: {}", typ);
-                }
-
-                // We need to own the decoded data to avoid lifetime issues
-                let owned_decoded = decoded.into_boxed_slice();
-                // We need to collect packets to avoid lifetime issues with the decoded buffer
-                let packets: Vec<_> = PacketParser::new(&*owned_decoded)
-                    .filter_map(crate::composed::shared::filter_parsed_packet_results)
-                    .collect::<Result<Vec<_>>>()?;
-
-                Ok((Self::from_packets(packets.into_iter().map(Ok).peekable()), headers))
-            }
-            BlockType::PublicKeyPKCS1(_)
-            | BlockType::PublicKeyPKCS8
-            | BlockType::PublicKeyOpenssh
-            | BlockType::PrivateKeyPKCS1(_)
-            | BlockType::PrivateKeyPKCS8
-            | BlockType::PrivateKeyOpenssh => {
-                unimplemented_err!("key format {:?}", typ);
-            }
+        let block_type = BlockType::from_str(typ.as_str())?;
+        if !Self::matches_block_type(block_type) {
+            bail!("unexpected block type: {}", typ);
         }
+
+        let packets: Vec<_> = PacketParser::new(decoded.as_slice())
+            .filter_map(crate::composed::shared::filter_parsed_packet_results)
+            .collect::<Result<Vec<_>>>()?;
+
+        let headers = headers.into_iter().map(|(k, v)| (k, vec![v])).collect();
+
+        Ok((
+            Self::from_packets(packets.into_iter().map(Ok).peekable()),
+            headers,
+        ))
     }
 
     #[allow(clippy::type_complexity)]

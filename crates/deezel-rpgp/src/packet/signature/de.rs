@@ -5,7 +5,6 @@ use alloc::vec;
 use alloc::format;
 use core::str;
 use alloc::vec::Vec;
-use bytes::Buf;
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use log::{debug, warn};
 use smallvec::SmallVec;
@@ -623,7 +622,12 @@ fn embedded_sig<B: BufReadParsing>(
         Tag::Signature,
         PacketLength::Fixed(signature_bytes.len().try_into()?),
     )?;
-    let sig = Signature::try_from_reader(header, signature_bytes.reader())?;
+    let sig = Signature::try_from_reader(
+        header,
+        crate::buf_reader::BufReader::new(crate::bytes_reader::BytesReader::new(
+            signature_bytes,
+        )),
+    )?;
 
     Ok(SubpacketData::EmbeddedSignature(Box::new(sig)))
 }

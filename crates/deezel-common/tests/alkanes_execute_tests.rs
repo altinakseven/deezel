@@ -187,7 +187,7 @@ async fn test_protostone_validation_error() {
     // Assert
     assert!(result.is_err());
     match result.err().unwrap() {
-        DeezelError::Validation(msg) => assert!(msg.contains("Edict in protostone 0 refers to protostone 0, which is not allowed")),
+        DeezelError::Validation(msg) => assert!(msg.contains("Protostone 0 refers to protostone 0 which is not allowed (must be > 0)")),
         e => panic!("Expected Validation error, got {:?}", e),
     }
 }
