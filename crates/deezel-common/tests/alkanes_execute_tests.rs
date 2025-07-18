@@ -33,10 +33,9 @@ async fn test_execute_single_transaction_success() {
     let _ = env_logger::builder().is_test(true).try_init();
     // Setup
     let mut provider = MockProvider::new(Network::Regtest);
-    let mut executor = EnhancedAlkanesExecutor::new(&mut provider);
-    
+    let address = { WalletProvider::get_address(&provider).await.unwrap() };
+    let to_addresses = vec![address.clone()];
     let funding_outpoint = OutPoint::from_str("a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1:0").unwrap();
-    let address = WalletProvider::get_address(&provider).await.unwrap();
     let funding_tx_out = TxOut {
         value: Amount::from_sat(100_000),
         script_pubkey: Address::from_str(&address).unwrap().require_network(Network::Regtest).unwrap().script_pubkey(),
@@ -45,7 +44,7 @@ async fn test_execute_single_transaction_success() {
 
     let params = EnhancedExecuteParams {
         fee_rate: Some(1.0),
-        to_addresses: vec![WalletProvider::get_address(&provider).await.unwrap()],
+        to_addresses,
         change_address: None,
         input_requirements: vec![InputRequirement::Bitcoin { amount: 10_000 }],
         protostones: vec![
@@ -63,6 +62,7 @@ async fn test_execute_single_transaction_success() {
     };
 
     // Execute
+    let mut executor = EnhancedAlkanesExecutor::new(&mut provider);
     let result = executor.execute(params).await;
 
     // Assert
@@ -78,10 +78,9 @@ async fn test_execute_commit_reveal_success() {
     let _ = env_logger::builder().is_test(true).try_init();
     // Setup
     let mut provider = MockProvider::new(Network::Regtest);
-    let mut executor = EnhancedAlkanesExecutor::new(&mut provider);
-
+    let address = { WalletProvider::get_address(&provider).await.unwrap() };
+    let to_addresses = vec![address.clone()];
     let funding_outpoint = OutPoint::from_str("b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1:0").unwrap();
-    let address = WalletProvider::get_address(&provider).await.unwrap();
     let funding_tx_out = TxOut {
         value: Amount::from_sat(200_000),
         script_pubkey: Address::from_str(&address).unwrap().require_network(Network::Regtest).unwrap().script_pubkey(),
@@ -90,7 +89,7 @@ async fn test_execute_commit_reveal_success() {
 
     let params = EnhancedExecuteParams {
         fee_rate: Some(1.0),
-        to_addresses: vec![WalletProvider::get_address(&provider).await.unwrap()],
+        to_addresses,
         change_address: None,
         input_requirements: vec![InputRequirement::Bitcoin { amount: 5_000 }],
         protostones: vec![
@@ -108,6 +107,7 @@ async fn test_execute_commit_reveal_success() {
     };
 
     // Execute
+    let mut executor = EnhancedAlkanesExecutor::new(&mut provider);
     let result = executor.execute(params).await;
 
     // Assert
@@ -122,13 +122,12 @@ async fn test_execute_commit_reveal_success() {
 async fn test_execute_insufficient_funds() {
     // Setup
     let mut provider = MockProvider::new(Network::Regtest);
-    let mut executor = EnhancedAlkanesExecutor::new(&mut provider);
-
     // No UTXOs added to the provider
+    let to_addresses = vec![{ WalletProvider::get_address(&provider).await.unwrap() }];
 
     let params = EnhancedExecuteParams {
         fee_rate: Some(1.0),
-        to_addresses: vec![WalletProvider::get_address(&provider).await.unwrap()],
+        to_addresses,
         change_address: None,
         input_requirements: vec![InputRequirement::Bitcoin { amount: 10_000 }],
         protostones: vec![],
@@ -140,6 +139,7 @@ async fn test_execute_insufficient_funds() {
     };
 
     // Execute
+    let mut executor = EnhancedAlkanesExecutor::new(&mut provider);
     let result = executor.execute(params).await;
 
     // Assert
@@ -204,11 +204,9 @@ async fn test_alkanes_execute_with_mock_provider_and_protostone() {
     
     // 1. Setup the provider
     let mut provider = MockProvider::new(Network::Regtest);
-    let mut executor = EnhancedAlkanesExecutor::new(&mut provider);
-
     // 2. Fund the wallet
+    let address = { WalletProvider::get_address(&provider).await.unwrap() };
     let funding_outpoint = OutPoint::from_str("c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1:0").unwrap();
-    let address = WalletProvider::get_address(&provider).await.unwrap();
     let funding_tx_out = TxOut {
         value: Amount::from_sat(500_000),
         script_pubkey: Address::from_str(&address).unwrap().require_network(Network::Regtest).unwrap().script_pubkey(),
@@ -263,6 +261,7 @@ async fn test_alkanes_execute_with_mock_provider_and_protostone() {
     };
 
     log::info!("Executing alkanes command...");
+    let mut executor = EnhancedAlkanesExecutor::new(&mut provider);
     let result = executor.execute(params).await;
     log::info!("Execution result: {:?}", result);
 
@@ -278,10 +277,9 @@ async fn test_execute_with_trace() {
     let _ = env_logger::builder().is_test(true).try_init();
     // Setup
     let mut provider = MockProvider::new(Network::Regtest);
-    let mut executor = EnhancedAlkanesExecutor::new(&mut provider);
-    
+    let address = { WalletProvider::get_address(&provider).await.unwrap() };
+    let to_addresses = vec![address.clone()];
     let funding_outpoint = OutPoint::from_str("d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1:0").unwrap();
-    let address = WalletProvider::get_address(&provider).await.unwrap();
     let funding_tx_out = TxOut {
         value: Amount::from_sat(100_000),
         script_pubkey: Address::from_str(&address).unwrap().require_network(Network::Regtest).unwrap().script_pubkey(),
@@ -290,7 +288,7 @@ async fn test_execute_with_trace() {
 
     let params = EnhancedExecuteParams {
         fee_rate: Some(1.0),
-        to_addresses: vec![WalletProvider::get_address(&provider).await.unwrap()],
+        to_addresses,
         change_address: None,
         input_requirements: vec![InputRequirement::Bitcoin { amount: 10_000 }],
         protostones: vec![
@@ -308,6 +306,7 @@ async fn test_execute_with_trace() {
     };
 
     // Execute
+    let mut executor = EnhancedAlkanesExecutor::new(&mut provider);
     let result = executor.execute(params).await;
 
     // Assert

@@ -4,7 +4,7 @@ use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use bitcoin::secp256k1::{Secp256k1, All, schnorr, SecretKey};
-use bitcoin::key::Keypair;
+use bitcoin::key::{Keypair, PrivateKey};
 use deezel_common::alkanes::{EnhancedExecuteParams, EnhancedExecuteResult, execute::EnhancedAlkanesExecutor};
 use bitcoin::{Address, Network, OutPoint, Transaction, TxOut, XOnlyPublicKey};
 use deezel_common::trace::SerializableTrace;
@@ -15,7 +15,7 @@ pub struct MockProvider {
     pub responses: HashMap<String, JsonValue>,
     pub network: Network,
     pub utxos: Arc<Mutex<Vec<(OutPoint, TxOut)>>>,
-    pub broadcasted_txs: Arc<Mutex<Vec<String>>>,
+    pub broadcasted_txs: Arc<Mutex<HashMap<String, String>>>,
     pub secp: Secp256k1<All>,
     pub secret_key: SecretKey,
     pub internal_key: XOnlyPublicKey,
@@ -36,7 +36,7 @@ impl MockProvider {
             responses: HashMap::new(),
             network,
             utxos: Arc::new(Mutex::new(vec![])),
-            broadcasted_txs: Arc::new(Mutex::new(vec![])),
+            broadcasted_txs: Arc::new(Mutex::new(HashMap::new())),
             secp,
             secret_key,
             internal_key,
@@ -265,7 +265,7 @@ impl WalletProvider for MockProvider {
             utxos.push((OutPoint::new(txid, i as u32), tx_out.clone()));
         }
 
-        self.broadcasted_txs.lock().unwrap().push(tx_hex);
+        self.broadcasted_txs.lock().unwrap().insert(txid.to_string(), tx_hex);
         Ok(txid.to_string())
     }
     
@@ -304,11 +304,13 @@ impl WalletProvider for MockProvider {
         Ok(self.internal_key)
     }
     
-    async fn sign_psbt(&mut self, psbt: &mut bitcoin::psbt::Psbt) -> Result<bitcoin::psbt::Psbt> {
+    async fn sign_psbt(&mut self, psbt: &bitcoin::psbt::Psbt) -> Result<bitcoin::psbt::Psbt> {
         let secp = self.secp();
         let mut psbt = psbt.clone();
-        let keypair = self.get_keypair().await?;
-        psbt.sign(&keypair, secp).map_err(|e| DeezelError::Other(format!("{:?}", e)))?;
+        let mut keys = HashMap::new();
+        let private_key = PrivateKey::new(self.secret_key, self.network);
+        keys.insert(self.internal_key, private_key);
+        psbt.sign(&keys, secp).map_err(|e| DeezelError::Other(format!("{:?}", e)))?;
         Ok(psbt)
     }
     
@@ -354,8 +356,13 @@ impl BitcoinRpcProvider for MockProvider {
         Ok(serde_json::json!("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"))
     }
     
-    async fn get_transaction_hex(&self, _txid: &str) -> Result<String> {
-        Ok("mock_tx_hex".to_string())
+    async fn get_transaction_hex(&self, txid: &str) -> Result<String> {
+        self.broadcasted_txs
+            .lock()
+            .unwrap()
+            .get(txid)
+            .cloned()
+            .ok_or_else(|| DeezelError::JsonRpc(format!("No mock tx hex for txid: {}", txid)))
     }
     
     async fn get_block(&self, _hash: &str, _raw: bool) -> Result<JsonValue> {
@@ -399,7 +406,7 @@ impl MetashrewRpcProvider for MockProvider {
     
     async fn trace_outpoint(&self, _txid: &str, _vout: u32) -> Result<SerializableTrace> {
         Ok(SerializableTrace {
-            calls: vec![],
+            events: vec![],
         })
     }
     
