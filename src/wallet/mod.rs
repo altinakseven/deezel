@@ -102,8 +102,8 @@ impl WalletManager {
     
     /// Create a new wallet manager with encrypted wallet creation
     pub async fn create_wallet(
-        config: WalletConfig, 
-        mnemonic: Option<String>, 
+        config: WalletConfig,
+        mnemonic: Option<String>,
         passphrase: Option<String>
     ) -> Result<Self> {
         info!("Creating new encrypted wallet");

@@ -396,12 +396,4 @@ mod tests {
         let result = crypto.decrypt_wallet_data(&encrypted, wrong_passphrase);
         assert!(result.is_err());
     }
-
-    #[test]
-    fn test_gpg_availability() {
-        // This test just checks if the GPG availability check works
-        // The actual result depends on whether GPG is installed
-        let _available = WalletCrypto::check_gpg_available();
-        // We don't assert the result since it depends on the test environment
-    }
 }

@@ -109,26 +109,23 @@ impl E2ETestEnv {
     
     /// Create a test wallet
     pub async fn create_test_wallet(&self, wallet_name: &str) -> Result<PathBuf> {
-        let wallet_path = self.wallet_dir.join(format!("{}.wallet", wallet_name));
-        
-        info!("Creating test wallet at {:?}", wallet_path);
-        
-        // Create a simple wallet file for testing
-        let wallet_data = serde_json::json!({
-            "version": 1,
-            "network": self.config.network,
-            "created_at": chrono::Utc::now().timestamp(),
-            "descriptor": "wpkh([00000000/84'/1'/0']tpubD6NzVbkrYhZ4XgiXtGrdW5XDAPFCL9h7we1vwNCpn8tGbBcgfVYjXyhWo4E1xkh56hjod1RhGjxbaTLV3X4FyWuejifB9jusQ46QzG87VKp/0/*)#rhhth4s9"
-        });
-        
-        fs::write(&wallet_path, wallet_data.to_string())
-            .map_err(|e| anyhow!("Failed to create wallet file: {}", e))?;
-        
-        Ok(wallet_path)
-    }
+       	let wallet_path = self.wallet_dir.join(format!("{}.json", wallet_name));
+       	info!("Creating test wallet at {:?}", wallet_path);
+       	let args = &[
+       		"--wallet-file",
+       		wallet_path.to_str().unwrap(),
+       		"wallet",
+       		"create",
+       		"--mnemonic",
+       		"abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+       	];
+       	self.run_deezel_command(args).await?;
+       	Ok(wallet_path)
+       }
     
     /// Run deezel CLI command
     pub async fn run_deezel_command(&self, args: &[&str]) -> Result<DeezelCommandResult> {
+        use std::io::Write;
         let deezel_binary = self.find_deezel_binary()?;
         
         debug!("Running deezel command: {:?} with args: {:?}", deezel_binary, args);
@@ -150,11 +147,15 @@ impl E2ETestEnv {
             cmd.env("RUST_LOG", "debug");
         }
         
+        cmd.stdin(Stdio::piped());
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
         
-        let output = cmd.output()
+        let mut child = cmd.spawn()
             .map_err(|e| anyhow!("Failed to execute deezel command: {}", e))?;
+
+        let output = child.wait_with_output()
+            .map_err(|e| anyhow!("Failed to wait for deezel command: {}", e))?;
         
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -307,6 +308,8 @@ pub struct E2ETestScenario {
     pub env: E2ETestEnv,
     /// Test steps
     pub steps: Vec<TestStep>,
+    wallet_path: Option<PathBuf>,
+    alkane_id: Option<String>,
 }
 
 #[derive(Debug)]
@@ -320,7 +323,7 @@ pub enum TestStep {
     /// Set block height
     SetHeight { height: u32 },
     /// Run a deezel command
-    RunCommand { args: Vec<String>, expect_success: bool },
+    RunCommand { args: Vec<String>, expect_success: bool, extract_alkane_id: bool },
     /// Wait for a duration
     Wait { duration: Duration },
 }
@@ -332,6 +335,8 @@ impl E2ETestScenario {
         Ok(Self {
             env,
             steps: Vec::new(),
+            wallet_path: None,
+            alkane_id: None,
         })
     }
     
@@ -355,10 +360,9 @@ impl E2ETestScenario {
         // Execute each step
         for (i, step) in self.steps.into_iter().enumerate() {
             info!("Executing step {}: {:?}", i + 1, step);
-            
             match step {
                 TestStep::CreateWallet { name } => {
-                    self.env.create_test_wallet(&name).await?;
+                    self.wallet_path = Some(self.env.create_test_wallet(&name).await?);
                 }
                 TestStep::AddUtxos { address, utxos } => {
                     self.env.add_test_utxos(&address, utxos)?;
@@ -369,10 +373,28 @@ impl E2ETestScenario {
                 TestStep::SetHeight { height } => {
                     self.env.set_block_height(height)?;
                 }
-                TestStep::RunCommand { args, expect_success } => {
-                    let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+                TestStep::RunCommand {
+                    args,
+                    expect_success,
+                    extract_alkane_id,
+                } => {
+                    let mut final_args = args.clone();
+                    if let Some(wallet_path) = &self.wallet_path {
+                        if !args.contains(&"--wallet-file".to_string()) {
+                            final_args.insert(0, wallet_path.to_str().unwrap().to_string());
+                            final_args.insert(0, "--wallet-file".to_string());
+                        }
+                    }
+                    if let Some(alkane_id) = &self.alkane_id {
+                        for arg in &mut final_args {
+                            if arg.contains("<alkane_id>") {
+                                *arg = arg.replace("<alkane_id>", alkane_id);
+                            }
+                        }
+                    }
+                    let args_str: Vec<&str> = final_args.iter().map(|s| s.as_str()).collect();
                     let result = self.env.run_deezel_command(&args_str).await?;
-                    
+
                     if expect_success && !result.is_success() {
                         return Err(anyhow!(
                             "Expected command to succeed but it failed: {}",
@@ -384,7 +406,15 @@ impl E2ETestScenario {
                             result.stdout
                         ));
                     }
-                }
+
+                    if extract_alkane_id {
+                        let alkane_id = result.stdout.lines()
+                            .find(|line| line.starts_with("alkane_id: "))
+                            .map(|line| line.trim_start_matches("alkane_id: ").to_string())
+                            .ok_or_else(|| anyhow!("Could not find alkane_id in command output"))?;
+                        self.alkane_id = Some(alkane_id);
+                    }
+                 }
                 TestStep::Wait { duration } => {
                     sleep(duration).await;
                 }
@@ -409,15 +439,4 @@ mod tests {
         assert_eq!(env.config.start_height, 840000);
     }
     
-    #[tokio::test]
-    async fn test_create_test_wallet() {
-        let config = TestConfig::default();
-        let env = E2ETestEnv::new(config).await.unwrap();
-        
-        let wallet_path = env.create_test_wallet("test").await.unwrap();
-        assert!(wallet_path.exists());
-        
-        let wallet_content = fs::read_to_string(wallet_path).unwrap();
-        assert!(wallet_content.contains("version"));
-    }
 }

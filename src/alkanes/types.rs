@@ -36,6 +36,7 @@ pub struct ContractDeployParams {
     pub wasm_file: String,
     pub calldata: Vec<String>,
     pub fee_rate: Option<f32>,
+    pub auto_confirm: bool,
 }
 
 /// Contract execution parameters

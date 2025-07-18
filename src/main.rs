@@ -610,7 +610,13 @@ enum EsploraCommands {
 #[derive(Subcommand)]
 enum DeployCommands {
     /// Deploy an AMM contract
-    Amm,
+    Amm {
+        /// Path to the wasm file to deploy
+        #[arg(long, default_value = "out/alkanes.wasm")]
+        wasm_file: String,
+        #[arg(short = 'y', long)]
+        yes: bool,
+    },
 }
 
 /// Block tag for monitoring
@@ -2020,10 +2026,10 @@ async fn main() -> Result<()> {
         },
         Commands::Deploy { command } => {
             match command {
-                DeployCommands::Amm => {
+                DeployCommands::Amm { wasm_file, yes } => {
                     let wm = wallet_manager.ok_or_else(|| anyhow!("Wallet required for deployment"))?;
                     let deployer = deezel::deploy::AmmDeployer::new(rpc_client.clone(), wm);
-                    deployer.deploy().await?;
+                    deployer.deploy(&wasm_file, yes).await?;
                 }
             }
         }

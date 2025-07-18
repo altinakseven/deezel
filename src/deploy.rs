@@ -1,4 +1,5 @@
 use anyhow::Result;
+use log::debug;
 use std::sync::Arc;
 use crate::alkanes::AlkanesManager;
 use crate::wallet::WalletManager;
@@ -15,22 +16,20 @@ impl AmmDeployer {
         }
     }
 
-    pub async fn deploy(&self) -> Result<()> {
-        println!("Deploying AMM contract...");
+    pub async fn deploy(&self, wasm_file: &str, auto_confirm: bool) -> Result<()> {
+        debug!("Deploying AMM contract from {}...", wasm_file);
 
         let params = ContractDeployParams {
-            wasm_file: "out/alkanes.wasm".to_string(),
+            wasm_file: wasm_file.to_string(),
             calldata: vec![],
             fee_rate: None,
+            auto_confirm,
         };
 
         // Deploy the contract
         let result = self.alkanes_manager.contract.deploy_contract(params).await?;
 
-        println!("✅ AMM contract deployed successfully!");
-        println!("🔗 Transaction ID: {}", result.txid);
-        println!("💰 Fee: {}", result.fee);
-        println!("🏷️  Alkane ID: {}:{}", result.contract_id.block, result.contract_id.tx);
+        println!("alkane_id: {}:{}", result.contract_id.block, result.contract_id.tx);
 
         Ok(())
     }

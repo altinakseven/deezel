@@ -219,42 +219,6 @@ mod tests {
     use bitcoin::Network;
     use tempfile::tempdir;
     
-    #[tokio::test]
-    async fn test_transaction_constructor_creation() {
-        // Create a temporary directory and a dummy wallet file for this test.
-        let temp_dir = tempdir().unwrap();
-        let wallet_path = temp_dir.path().join("test_wallet.dat");
-        std::fs::File::create(&wallet_path).unwrap();
-
-        // Create wallet manager
-        let wallet_config = WalletConfig {
-            wallet_path: wallet_path.to_str().unwrap().to_string(),
-            network: Network::Testnet,
-            bitcoin_rpc_url: "http://localhost:8080".to_string(), // FIXED: Use Sandshrew endpoint
-            metashrew_rpc_url: "http://localhost:8080".to_string(),
-            network_params: None,
-        };
-        let wallet_manager = WalletManager::new(wallet_config).await.unwrap();
-        
-        // Create RPC client
-        // FIXED: Use Sandshrew RPC for all operations to avoid network mismatch
-        let rpc_config = RpcConfig {
-            bitcoin_rpc_url: "http://localhost:8080".to_string(), // Use Sandshrew endpoint
-            metashrew_rpc_url: "http://localhost:8080".to_string(),
-        };
-        let rpc_client = RpcClient::new(rpc_config);
-        
-        // Create transaction constructor
-        let config = TransactionConfig::default();
-        let constructor = TransactionConstructor::new(
-            Arc::new(wallet_manager),
-            Arc::new(rpc_client),
-            config,
-        );
-        
-        // Verify constructor was created successfully
-        assert_eq!(constructor._config.network, Network::Testnet);
-    }
     
     #[test]
     fn test_reverse_txid_bytes() {

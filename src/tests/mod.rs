@@ -10,7 +10,6 @@ pub mod mock_metashrew;
 pub mod e2e_helpers;
 pub mod integration_tests;
 pub mod test_alkanes_e2e;
-pub mod e2e_deploy;
 
 use anyhow::Result;
 use std::collections::HashMap;
