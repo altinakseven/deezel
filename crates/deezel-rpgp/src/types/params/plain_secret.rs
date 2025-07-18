@@ -8,7 +8,7 @@ use alloc::vec::Vec;
 use core::hash::Hasher;
 
 use byteorder::{BigEndian, ByteOrder};
-use bytes::{BufMut, Bytes, BytesMut};
+use bytes::{Bytes, BytesMut};
 use hkdf::Hkdf;
 use log::debug;
 use sha2::Sha256;
@@ -291,7 +291,8 @@ impl PlainSecretParams {
     /// Uses sha1_checked
     pub fn checksum_sha1(&self) -> Result<[u8; 20]> {
         let mut buf = Vec::with_capacity(self.write_len_raw());
-        self.to_writer_raw(&mut buf).expect("known write target");
+        self.to_writer_raw(&mut io::Cursor::new(&mut buf[..]))
+            .expect("known write target");
         let checksum = checksum::calculate_sha1([&buf])?;
         Ok(checksum)
     }
@@ -339,7 +340,8 @@ impl PlainSecretParams {
                     }
                     KeyVersion::V4 | KeyVersion::V6 => {
                         let mut data = Vec::with_capacity(self.write_len_raw());
-                        self.to_writer_raw(&mut data).expect("preallocated vector");
+                        self.to_writer_raw(&mut io::Cursor::new(&mut data[..]))
+                            .expect("preallocated vector");
 
                         data.extend_from_slice(&self.checksum_sha1()?[..]);
                         sym_alg.encrypt_with_iv_regular(&key, iv, &mut data)?;
@@ -365,11 +367,10 @@ impl PlainSecretParams {
                         unimplemented_err!("Encryption for V2/V3 keys is not available")
                     }
                     KeyVersion::V4 | KeyVersion::V6 => {
-                        let data = BytesMut::with_capacity(self.write_len_raw());
-                        let mut writer = data.writer();
-                        self.to_writer_raw(&mut writer)
+                        let mut data = Vec::with_capacity(self.write_len_raw());
+                        self.to_writer_raw(&mut io::Cursor::new(&mut data[..]))
                             .expect("preallocated vector");
-                        let mut data = writer.into_inner();
+                        let mut data = BytesMut::from(&data[..]);
 
                         let Some(secret_tag) = secret_tag else {
                             bail!("no secret_tag provided");
@@ -800,7 +801,7 @@ pub(crate) fn s2k_usage_aead(
     // - the Packet Type ID in OpenPGP format encoding
     // - followed by the public key packet fields, starting with the packet version number
     let mut ad = vec![type_id];
-    pub_key.to_writer(&mut ad)?;
+    pub_key.to_writer(&mut io::Cursor::new(&mut ad[..]))?;
 
     Ok((okm, ad))
 }
@@ -913,7 +914,7 @@ mod tests {
         #[ignore]
         fn params_write_len_v3(params: PlainSecretParams) {
             let mut buf = Vec::new();
-            params.to_writer(&mut buf, KeyVersion::V3)?;
+            params.to_writer(&mut io::Cursor::new(&mut buf[..]), KeyVersion::V3)?;
             prop_assert_eq!(buf.len(), params.write_len(KeyVersion::V3));
         }
 
@@ -921,7 +922,7 @@ mod tests {
         #[ignore]
         fn params_write_len_v4(params: PlainSecretParams) {
             let mut buf = Vec::new();
-            params.to_writer(&mut buf, KeyVersion::V4)?;
+            params.to_writer(&mut io::Cursor::new(&mut buf[..]), KeyVersion::V4)?;
             prop_assert_eq!(buf.len(), params.write_len(KeyVersion::V4));
         }
 
@@ -929,7 +930,7 @@ mod tests {
         #[ignore]
         fn params_write_len_v6(params: PlainSecretParams) {
             let mut buf = Vec::new();
-            params.to_writer(&mut buf, KeyVersion::V6)?;
+            params.to_writer(&mut io::Cursor::new(&mut buf[..]), KeyVersion::V6)?;
             prop_assert_eq!(buf.len(), params.write_len(KeyVersion::V6));
         }
 
@@ -939,7 +940,7 @@ mod tests {
             (alg, secret_params) in any::<PublicKeyAlgorithm>().prop_flat_map(|alg| (Just(alg), any_with::<PlainSecretParams>(alg)))
         ) {
             let mut buf = Vec::new();
-            secret_params.to_writer(&mut buf, KeyVersion::V3)?;
+            secret_params.to_writer(&mut io::Cursor::new(&mut buf[..]), KeyVersion::V3)?;
             let public_params = PublicParams::try_from(&secret_params)?;
             let new_params = PlainSecretParams::try_from_reader(&mut &buf[..], KeyVersion::V3, alg, &public_params)?;
             prop_assert_eq!(secret_params, new_params);
@@ -950,7 +951,7 @@ mod tests {
             (alg, secret_params) in any::<PublicKeyAlgorithm>().prop_flat_map(|alg| (Just(alg), any_with::<PlainSecretParams>(alg)))
         ) {
             let mut buf = Vec::new();
-            secret_params.to_writer(&mut buf, KeyVersion::V4)?;
+            secret_params.to_writer(&mut io::Cursor::new(&mut buf[..]), KeyVersion::V4)?;
             let public_params = PublicParams::try_from(&secret_params)?;
             let new_params = PlainSecretParams::try_from_reader(&mut &buf[..], KeyVersion::V4, alg, &public_params)?;
             prop_assert_eq!(secret_params, new_params);
@@ -962,7 +963,7 @@ mod tests {
             (alg, secret_params) in any::<PublicKeyAlgorithm>().prop_flat_map(|alg| (Just(alg), any_with::<PlainSecretParams>(alg)))
         ) {
             let mut buf = Vec::new();
-            secret_params.to_writer(&mut buf, KeyVersion::V6)?;
+            secret_params.to_writer(&mut io::Cursor::new(&mut buf[..]), KeyVersion::V6)?;
             let public_params = PublicParams::try_from(&secret_params)?;
             let new_params = PlainSecretParams::try_from_reader(&mut &buf[..], KeyVersion::V6, alg, &public_params)?;
             prop_assert_eq!(secret_params, new_params);

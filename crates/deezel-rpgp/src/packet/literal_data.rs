@@ -5,9 +5,7 @@ use alloc::vec::Vec;
 extern crate alloc;
 use crate::io::{self, BufRead};
 use alloc::borrow::ToOwned;
-use crate::io::WriteBytesExt;
-use byteorder::BigEndian;
-use bytes::{Buf, BufMut, Bytes, BytesMut};
+use bytes::{Buf, Bytes, BytesMut};
 use chrono::{DateTime, TimeZone, Utc};
 use log::debug;
 use num_enum::{FromPrimitive, IntoPrimitive};
@@ -20,6 +18,19 @@ use crate::{
     types::{PacketHeaderVersion, PacketLength, Tag},
     util::fill_buffer,
 };
+
+struct BytesMutWriter<'a>(&'a mut BytesMut);
+
+impl<'a> io::Write for BytesMutWriter<'a> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0.extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
 
 #[cfg(feature = "std")]
 use crate::normalize_lines::{normalize_lines, LineBreak, NormalizedReader};
@@ -215,10 +226,10 @@ impl AsRef<[u8]> for LiteralData {
 impl Serialize for LiteralDataHeader {
     fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
         let name = &self.file_name;
-        writer.write_u8(self.mode.into())?;
-        writer.write_u8(name.len().try_into()?)?;
+        writer.write_all(&[self.mode.into()])?;
+        writer.write_all(&[name.len().try_into()?])?;
         writer.write_all(name)?;
-        writer.write_u32::<BigEndian>(self.created.timestamp() as u32)?;
+        writer.write_all(&u32::to_be_bytes(self.created.timestamp() as u32))?;
         Ok(())
     }
 
@@ -500,36 +511,38 @@ impl<R: io::Read> io::Read for LiteralDataPartialGenerator<R> {
                 PacketLength::Fixed(len)
             };
 
-            let mut writer = core::mem::take(&mut self.current_packet).writer();
-            if self.is_first {
-                // only the first packet needs the literal data header
-                let packet_header = PacketHeader::from_parts(
-                    PacketHeaderVersion::New,
-                    Tag::LiteralData,
-                    packet_length,
-                )
-                .expect("known construction");
-                packet_header
-                    .to_writer(&mut writer)
-                    .map_err(|_e| io::Error::new(io::ErrorKind::Other, "failed to write packet header"))?;
+            let mut current_packet = core::mem::take(&mut self.current_packet);
+            {
+                let mut writer = BytesMutWriter(&mut current_packet);
+                if self.is_first {
+                    // only the first packet needs the literal data header
+                    let packet_header = PacketHeader::from_parts(
+                        PacketHeaderVersion::New,
+                        Tag::LiteralData,
+                        packet_length,
+                    )
+                    .expect("known construction");
+                    packet_header.to_writer(&mut writer).map_err(|_e| {
+                        io::Error::new(io::ErrorKind::Other, "failed to write packet header")
+                    })?;
 
-                self.header
-                    .to_writer(&mut writer)
-                    .map_err(|_e| io::Error::new(io::ErrorKind::Other, "failed to write literal data header"))?;
+                    self.header.to_writer(&mut writer).map_err(|_e| {
+                        io::Error::new(io::ErrorKind::Other, "failed to write literal data header")
+                    })?;
 
-                debug!("first partial packet {:?}", packet_header);
-                self.is_first = false;
-            } else {
-                // only length
-                packet_length
-                    .to_writer_new(&mut writer)
-                    .map_err(|_e| io::Error::new(io::ErrorKind::Other, "failed to write packet length"))?;
-                debug!("partial packet {:?}", packet_length);
-};
+                    debug!("first partial packet {:?}", packet_header);
+                    self.is_first = false;
+                } else {
+                    // only length
+                    packet_length.to_writer_new(&mut writer).map_err(|_e| {
+                        io::Error::new(io::ErrorKind::Other, "failed to write packet length")
+                    })?;
+                    debug!("partial packet {:?}", packet_length);
+                };
+            }
 
-            let mut packet_ser = writer.into_inner();
-            packet_ser.extend_from_slice(data);
-            self.current_packet = packet_ser;
+            current_packet.extend_from_slice(data);
+            self.current_packet = current_packet;
         }
 
         let to_write = self.current_packet.remaining().min(buf.len());

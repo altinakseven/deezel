@@ -3,7 +3,7 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 use crate::errors::Result;
-use crate::io::Write;
+use crate::io::{self, Write};
 
 pub trait Serialize {
     fn to_writer<W: Write>(&self, _: &mut W) -> Result<()>;
@@ -11,7 +11,7 @@ pub trait Serialize {
 
     fn to_bytes(&self) -> Result<Vec<u8>> {
         let mut buf = Vec::with_capacity(self.write_len());
-        self.to_writer(&mut buf)?;
+        self.to_writer(&mut io::Cursor::new(&mut buf[..]))?;
 
         Ok(buf)
     }
@@ -51,3 +51,4 @@ impl<T: Serialize> Serialize for Vec<T> {
         self.iter().map(|w| w.write_len()).sum()
     }
 }
+

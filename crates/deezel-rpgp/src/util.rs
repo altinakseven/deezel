@@ -8,7 +8,7 @@ use digest::DynDigest;
 use nom::Input;
 use dyn_clone::DynClone;
 
-use crate::io::Read;
+use crate::io::{Read, Write};
 
 pub(crate) fn fill_buffer<R: Read>(
     source: &mut R,
@@ -89,15 +89,14 @@ impl<'a, A, B> TeeWriter<'a, A, B> {
 }
 
 
-#[cfg(feature = "std")]
-impl<A: hash::Hasher, B: Write> std::io::Write for TeeWriter<'_, A, B> {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+impl<A: hash::Hasher, B: Write> Write for TeeWriter<'_, A, B> {
+    fn write(&mut self, buf: &[u8]) -> crate::io::Result<usize> {
         self.a.write(buf);
-        self.b.write(buf).map_err(|_e| std::io::Error::new(std::io::ErrorKind::Other, "tee write failed"))
+        self.b.write(buf)
     }
 
-    fn flush(&mut self) -> std::io::Result<()> {
-        self.b.flush().map_err(|_e| std::io::Error::new(std::io::ErrorKind::Other, "tee flush failed"))
+    fn flush(&mut self) -> crate::io::Result<()> {
+        self.b.flush()
     }
 }
 

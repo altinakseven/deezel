@@ -15,8 +15,10 @@ use zeroize::Zeroizing;
 
 use super::ArmorOptions;
 use crate::{
-    armor_new,
+    armor,
+    bytes_reader::BytesReader,
     composed::Esk,
+    io::Cursor,
     crypto::{
         aead::{AeadAlgorithm, ChunkSize},
         hash::HashAlgorithm,
@@ -535,7 +537,7 @@ impl<'a, R: Read, E: Encryption> Builder<'a, R, E> {
                 // If the size is larger than u32::MAX switch to None, as
                 // fixed packets can only be at most u32::MAX size large
                 let len = bytes.len().try_into().ok();
-                let source = bytes.reader();
+                let source = BytesReader::new(bytes);
                 to_writer_inner(
                     rng,
                     name,
@@ -569,8 +571,8 @@ impl<'a, R: Read, E: Encryption> Builder<'a, R, E> {
         Ok(())
     }
 
-    /// Write the data not as binary, but ascii armor_new encoded.
-    pub fn to_armor_newed_writer<RAND, W>(
+    /// Write the data not as binary, but ascii armor encoded.
+    pub fn to_armored_writer<RAND, W>(
         self,
         rng: RAND,
         opts: ArmorOptions<'_>,
@@ -580,32 +582,39 @@ impl<'a, R: Read, E: Encryption> Builder<'a, R, E> {
         RAND: Rng + CryptoRng,
         W: Write,
     {
-        let typ = armor_new::BlockType::Message;
+        let typ = armor::BlockType::Message;
 
         // write header
-        armor_new::write_header(&mut out, typ, opts.headers)?;
+        let headers = opts
+            .headers
+            .map(|h| {
+                h.iter()
+                    .map(|(k, v)| (k.as_str(), v.get(0).map(|s| s.as_str()).unwrap_or("")))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let mut armor_writer = armor::ArmorWriter::new(&mut out, typ.to_str(), headers)?;
 
         // write body
         let mut crc_hasher = opts.include_checksum.then(Crc24Hasher::new);
-        {
+        
+        let body_writer = {
             let crc_hasher = crc_hasher.as_mut();
-            let mut line_wrapper = LineWriter::<_, U64>::new(&mut out, LineBreak::Lf);
-            let mut enc = armor_new::Base64Encoder::new(&mut line_wrapper);
+            let mut line_wrapper = LineWriter::<_, U64>::new(&mut armor_writer, LineBreak::Lf);
+            let mut enc = crate::base64::EncoderWriter::new(&mut line_wrapper);
 
             if let Some(crc_hasher) = crc_hasher {
                 let mut tee = TeeWriter::new(crc_hasher, &mut enc);
-                self.to_writer(rng, &mut tee)?;
+                self.to_writer(rng, &mut tee)
             } else {
-                self.to_writer(rng, &mut enc)?;
+                self.to_writer(rng, &mut enc)
             }
-            
-            // CRITICAL: Flush the base64 encoder to actually write the encoded data
-            enc.flush()?;
-        }
+        };
+
+        body_writer?;
 
         // write footer
-        armor_new::write_footer(&mut out, typ, crc_hasher)?;
-        out.flush()?;
+        armor_writer.finish()?;
 
         Ok(())
     }
@@ -616,18 +625,18 @@ impl<'a, R: Read, E: Encryption> Builder<'a, R, E> {
         RAND: Rng + CryptoRng,
     {
         let mut out = Vec::new();
-        self.to_writer(rng, &mut out)?;
+        self.to_writer(rng, &mut Cursor::new(&mut out[..]))?;
         Ok(out)
     }
 
-    /// Write the data as ascii armor_newed data, directly to a `String`.
-    pub fn to_armor_newed_string<RAND>(self, rng: RAND, opts: ArmorOptions<'_>) -> Result<String>
+    /// Write the data as ascii armored data, directly to a `String`.
+    pub fn to_armored_string<RAND>(self, rng: RAND, opts: ArmorOptions<'_>) -> Result<String>
     where
         RAND: Rng + CryptoRng,
     {
         let mut out = Vec::new();
-        self.to_armor_newed_writer(rng, opts, &mut out)?;
-        let out = String::from_utf8(out).expect("ascii armor_new is utf8");
+        self.to_armored_writer(rng, opts, &mut Cursor::new(&mut out[..]))?;
+        let out = String::from_utf8(out).expect("ascii armor is utf8");
         Ok(out)
     }
 }
@@ -1103,7 +1112,7 @@ impl<R: Read> Read for SignGenerator<'_, R> {
                     match ops.pop_front() {
                         Some(op) => {
                             let mut temp_buf = Vec::new();
-                            op.to_writer_with_header(&mut temp_buf)
+                            op.to_writer_with_header(&mut Cursor::new(&mut temp_buf[..]))
                                 .map_err(|_e| crate::io::Error::new(crate::io::ErrorKind::Other, "ops write failed"))?;
                             buffer.extend_from_slice(&temp_buf);
                             continue;
@@ -1150,7 +1159,7 @@ impl<R: Read> Read for SignGenerator<'_, R> {
                             let signature = hasher.sign(config.key, &config.key_pw)
                                 .map_err(|_e| crate::io::Error::new(crate::io::ErrorKind::Other, "signature creation failed"))?;
                             let mut temp_buf = Vec::new();
-                            signature.to_writer(&mut temp_buf)
+                            signature.to_writer(&mut Cursor::new(&mut temp_buf[..]))
                                 .map_err(|_e| crate::io::Error::new(crate::io::ErrorKind::Other, "signature write failed"))?;
                             buffer.extend_from_slice(&temp_buf);
                             continue;

@@ -2,7 +2,7 @@ use alloc::string::ToString;
 use alloc::vec::Vec;
 use alloc::format;
 extern crate alloc;
-use crate::io::{self, BufRead, WriteBytesExt};
+use crate::io::{BufRead, Write};
 use bytes::Bytes;
 use rand::{CryptoRng, Rng};
 use zeroize::Zeroizing;
@@ -290,8 +290,8 @@ impl PublicKeyEncryptedSessionKey {
 }
 
 impl Serialize for PublicKeyEncryptedSessionKey {
-    fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
-        writer.write_u8(self.version().into())?;
+    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
+        writer.write_all(&[self.version().into()])?;
 
         let algorithm = match self {
             PublicKeyEncryptedSessionKey::V3 { id, pk_algo, .. } => {
@@ -309,11 +309,11 @@ impl Serialize for PublicKeyEncryptedSessionKey {
                 match fingerprint {
                     Some(fingerprint) => {
                         let len = fingerprint.len() + 1;
-                        writer.write_u8(len.try_into()?)?;
+                        writer.write_all(&[len.try_into()?])?;
 
                         // A one octet key version number.
                         match fingerprint.version() {
-                            Some(version) => writer.write_u8(version.into())?,
+                            Some(version) => writer.write_all(&[version.into()])?,
                             None => {
                                 bail!("Fingerprint without version information {:?}", fingerprint)
                             }
@@ -324,18 +324,18 @@ impl Serialize for PublicKeyEncryptedSessionKey {
                         // for a version 6 key N is 32.
                         writer.write_all(fingerprint.as_bytes())?;
                     }
-                    _ => writer.write_u8(0)?,
+                    _ => writer.write_all(&[0])?,
                 }
                 *pk_algo
             }
             PublicKeyEncryptedSessionKey::Other { version, data, .. } => {
-                writer.write_u8(*version)?;
+                writer.write_all(&[*version])?;
                 writer.write_all(data)?;
                 return Ok(());
             }
         };
 
-        writer.write_u8(algorithm.into())?;
+        writer.write_all(&[algorithm.into()])?;
         self.values()?.to_writer(writer)?;
 
         Ok(())

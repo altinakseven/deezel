@@ -13,8 +13,7 @@ use rsa::traits::PublicKeyParts;
 use sha1_checked::Sha1;
 use sha2::Sha256;
 
-use crate::io::{BufRead, Write, WriteBytesExt};
-use byteorder::BigEndian;
+use crate::io::{BufRead, Write};
 
 use crate::{
     crypto::{
@@ -355,12 +354,14 @@ impl PubKeyInner {
     fn to_writer_v2_v3<W: Write>(&self, writer: &mut W) -> Result<()> {
         use crate::ser::Serialize;
 
-        writer.write_u32::<BigEndian>(self.created_at)?;
-        writer.write_u16::<BigEndian>(
-            self.expiration
-                .expect("old key versions have an expiration"),
+        writer.write_all(&self.created_at.to_be_bytes())?;
+        writer.write_all(
+            &self
+                .expiration
+                .expect("old key versions have an expiration")
+                .to_be_bytes(),
         )?;
-        writer.write_u8(self.algorithm.into())?;
+        writer.write_all(&[self.algorithm.into()])?;
         self.public_params.to_writer(writer)?;
 
         Ok(())
@@ -375,11 +376,11 @@ impl PubKeyInner {
     fn to_writer_v4_v6<W: Write>(&self, writer: &mut W) -> Result<()> {
         use crate::ser::Serialize;
 
-        writer.write_u32::<BigEndian>(self.created_at)?;
-        writer.write_u8(self.algorithm.into())?;
+        writer.write_all(&self.created_at.to_be_bytes())?;
+        writer.write_all(&[self.algorithm.into()])?;
 
         if self.version == KeyVersion::V6 {
-            writer.write_u32::<BigEndian>(self.public_params.write_len().try_into()?)?;
+            writer.write_all(&(self.public_params.write_len() as u32).to_be_bytes())?;
         }
 
         self.public_params.to_writer(writer)?;
@@ -620,7 +621,7 @@ impl crate::ser::Serialize for PublicSubkey {
 
 impl crate::ser::Serialize for PubKeyInner {
     fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
-        writer.write_u8(self.version.into())?;
+        writer.write_all(&[self.version.into()])?;
 
         match self.version {
             KeyVersion::V2 | KeyVersion::V3 => self.to_writer_v2_v3(writer),

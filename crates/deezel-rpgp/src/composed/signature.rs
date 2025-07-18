@@ -1,3 +1,4 @@
+use crate::alloc::string::ToString;
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -6,7 +7,7 @@ extern crate alloc;
 use core::iter::Peekable;
 
 use crate::{
-    armor_new,
+    armor,
     composed::{ArmorOptions, Deserializable},
     errors::{format_err, Result},
     packet::{Packet, PacketTrait, Signature},
@@ -28,30 +29,37 @@ impl StandaloneSignature {
         StandaloneSignature { signature }
     }
 
-    pub fn to_armor_newed_writer(
+    pub fn to_armored_writer(
         &self,
         writer: &mut impl Write,
         opts: ArmorOptions<'_>,
     ) -> Result<()> {
-        armor_new::write(
-            self,
-            armor_new::BlockType::Signature,
-            writer,
-            opts.headers,
-            opts.include_checksum,
-        )
+        let headers = opts
+            .headers
+            .map(|h| {
+                h.iter()
+                    .map(|(k, v)| (k.to_string(), v.join(", ")))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let armored = armor::Armored {
+            message_type: "SIGNATURE".to_string(),
+            headers,
+            data: self.to_bytes()?,
+        };
+        armored.to_writer(writer)
     }
 
-    pub fn to_armor_newed_bytes(&self, opts: ArmorOptions<'_>) -> Result<Vec<u8>> {
+    pub fn to_armored_bytes(&self, opts: ArmorOptions<'_>) -> Result<Vec<u8>> {
         let mut buf = Vec::new();
 
-        self.to_armor_newed_writer(&mut buf, opts)?;
+        self.to_armored_writer(&mut buf, opts)?;
 
         Ok(buf)
     }
 
-    pub fn to_armor_newed_string(&self, opts: ArmorOptions<'_>) -> Result<String> {
-        let res = String::from_utf8(self.to_armor_newed_bytes(opts)?).map_err(|e| e.utf8_error())?;
+    pub fn to_armored_string(&self, opts: ArmorOptions<'_>) -> Result<String> {
+        let res = String::from_utf8(self.to_armored_bytes(opts)?).map_err(|e| e.utf8_error())?;
         Ok(res)
     }
 
@@ -80,8 +88,8 @@ impl Deserializable for StandaloneSignature {
         Box::new(SignatureParser { source: packets })
     }
 
-    fn matches_block_type(typ: armor_new::BlockType) -> bool {
-        matches!(typ, armor_new::BlockType::Signature)
+    fn matches_block_type(typ: armor::BlockType) -> bool {
+        matches!(typ, armor::BlockType::Signature)
     }
 }
 

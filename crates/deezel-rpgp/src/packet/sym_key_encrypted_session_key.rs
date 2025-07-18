@@ -2,7 +2,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use alloc::format;
 extern crate alloc;
-use crate::io::{self, BufRead, WriteBytesExt};
+use crate::io::{self, BufRead};
 
 use bytes::{Bytes, BytesMut};
 use log::debug;
@@ -495,8 +495,8 @@ impl Serialize for SymKeyEncryptedSessionKey {
                 s2k,
                 encrypted_key,
             } => {
-                writer.write_u8(0x04)?;
-                writer.write_u8((*sym_algorithm).into())?;
+                writer.write_all(&[0x04])?;
+                writer.write_all(&[(*sym_algorithm).into()])?;
                 s2k.to_writer(writer)?;
                 writer.write_all(encrypted_key)?;
             }
@@ -507,16 +507,16 @@ impl Serialize for SymKeyEncryptedSessionKey {
                 aead,
                 encrypted_key,
             } => {
-                writer.write_u8(0x05)?;
+                writer.write_all(&[0x05])?;
                 let s2k_len = s2k.write_len();
                 let first_len = 1 + 1 + 1 + s2k_len + aead.iv().len();
 
                 // length
-                writer.write_u8(first_len.try_into()?)?;
+                writer.write_all(&[first_len.try_into()?])?;
 
-                writer.write_u8((*sym_algorithm).into())?;
-                writer.write_u8(AeadAlgorithm::from(aead).into())?;
-                writer.write_u8(s2k_len.try_into()?)?;
+                writer.write_all(&[(*sym_algorithm).into()])?;
+                writer.write_all(&[AeadAlgorithm::from(aead).into()])?;
+                writer.write_all(&[s2k_len.try_into()?])?;
                 s2k.to_writer(writer)?;
                 writer.write_all(aead.iv())?;
 
@@ -529,17 +529,17 @@ impl Serialize for SymKeyEncryptedSessionKey {
                 aead,
                 encrypted_key,
             } => {
-                writer.write_u8(0x06)?;
+                writer.write_all(&[0x06])?;
 
                 let s2k_len = s2k.write_len();
                 let first_len = 1 + 1 + 1 + s2k_len + aead.iv().len();
 
                 // length
-                writer.write_u8(first_len.try_into()?)?;
+                writer.write_all(&[first_len.try_into()?])?;
 
-                writer.write_u8((*sym_algorithm).into())?;
-                writer.write_u8(AeadAlgorithm::from(aead).into())?;
-                writer.write_u8(s2k_len.try_into()?)?;
+                writer.write_all(&[(*sym_algorithm).into()])?;
+                writer.write_all(&[AeadAlgorithm::from(aead).into()])?;
+                writer.write_all(&[s2k_len.try_into()?])?;
                 s2k.to_writer(writer)?;
                 writer.write_all(aead.iv())?;
 
@@ -550,7 +550,7 @@ impl Serialize for SymKeyEncryptedSessionKey {
                 version,
                 data,
             } => {
-                writer.write_u8(*version)?;
+                writer.write_all(&[*version])?;
                 writer.write_all(data)?;
             }
         }

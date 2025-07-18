@@ -129,9 +129,9 @@ mod tests {
     #[test]
     fn test_split_key() {
         let pub_bytes = fs::read("./tests/autocrypt/alice@autocrypt.example.pub.asc").unwrap();
-        let (public, _) = SignedPublicKey::from_armor_new_single(&pub_bytes).unwrap();
+        let (public, _) = SignedPublicKey::from_armor_single(&pub_bytes).unwrap();
         let sec_bytes = fs::read("./tests/autocrypt/alice@autocrypt.example.sec.asc").unwrap();
-        let (secret, _) = SignedSecretKey::from_armor_new_single(&sec_bytes).unwrap();
+        let (secret, _) = SignedSecretKey::from_armor_single(&sec_bytes).unwrap();
 
         secret.verify().unwrap();
         public.verify().unwrap();

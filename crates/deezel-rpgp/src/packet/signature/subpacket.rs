@@ -1,8 +1,7 @@
 use alloc::boxed::Box;
 use alloc::string::String;
 extern crate alloc;
-use crate::io::{BufRead, WriteBytesExt};
-use byteorder::BigEndian;
+use crate::io::BufRead;
 
 use bytes::Bytes;
 use chrono::{DateTime, Duration, Utc};
@@ -205,7 +204,7 @@ impl Serialize for SubpacketLength {
         match self {
             Self::One(l) => {
                 debug_assert!(*l < 192, "Inconsistent SubpacketLength::One");
-                writer.write_u8(*l)?;
+                writer.write_all(&[*l])?;
             }
             Self::Two(l) => {
                 let one = (((l - 192) / 256) + 192) as u8;
@@ -216,12 +215,12 @@ impl Serialize for SubpacketLength {
                     "Inconsistent SubpacketLength::Two"
                 );
 
-                writer.write_u8(one)?;
-                writer.write_u8(two)?;
+                writer.write_all(&[one])?;
+                writer.write_all(&[two])?;
             }
             Self::Five(l) => {
-                writer.write_u8(0xFF)?;
-                writer.write_u32::<BigEndian>(*l)?
+                writer.write_all(&[0xFF])?;
+                writer.write_all(&l.to_be_bytes())?
             }
         }
         Ok(())

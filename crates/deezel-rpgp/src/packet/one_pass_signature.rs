@@ -1,7 +1,7 @@
 use alloc::string::ToString;
 use alloc::vec::Vec;
 extern crate alloc;
-use crate::io::{self, BufRead, WriteBytesExt};
+use crate::io::{BufRead, Write};
 use bytes::Bytes;
 #[cfg(all(test, feature = "std"))]
 use proptest::prelude::*;
@@ -65,10 +65,10 @@ pub enum OpsVersionSpecific {
 }
 
 impl Serialize for OpsVersionSpecific {
-    fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
+    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
         // salt, if v6
         if let OpsVersionSpecific::V6 { salt, .. } = self {
-            writer.write_u8(salt.len().try_into()?)?;
+            writer.write_all(&[salt.len().try_into()?])?;
             writer.write_all(salt)?;
         }
 
@@ -261,14 +261,14 @@ impl OnePassSignature {
 const WRITE_LEN_OVERHEAD: usize = 5;
 
 impl Serialize for OnePassSignature {
-    fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
-        writer.write_u8(self.version())?;
-        writer.write_u8(self.typ.into())?;
-        writer.write_u8(self.hash_algorithm.into())?;
-        writer.write_u8(self.pub_algorithm.into())?;
+    fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
+        writer.write_all(&[self.version()])?;
+        writer.write_all(&[self.typ.into()])?;
+        writer.write_all(&[self.hash_algorithm.into()])?;
+        writer.write_all(&[self.pub_algorithm.into()])?;
 
         self.version_specific.to_writer(writer)?;
-        writer.write_u8(self.last)?;
+        writer.write_all(&[self.last])?;
 
         Ok(())
     }

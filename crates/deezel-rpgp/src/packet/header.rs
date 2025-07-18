@@ -5,8 +5,6 @@ use crate::io::{BufRead, Write};
 use core::fmt;
 
 use bitfields::bitfield;
-use crate::io::{ReadBytesExt, WriteBytesExt};
-use byteorder::BigEndian;
 use log::debug;
 
 use crate::{
@@ -37,7 +35,7 @@ const MAX_PARTIAL_LEN: u32 = 2u32.pow(30);
 impl PacketHeader {
     /// Parse a single packet header from the given reader.
     pub fn try_from_reader<R: BufRead>(mut r: R) -> Result<Self, crate::io::Error> {
-        let header = ReadBytesExt::read_u8(&mut r)?;
+        let header = BufReadParsing::read_u8(&mut r)?;
 
         let first_two_bits = header & 0b1100_0000;
         match first_two_bits {
@@ -53,7 +51,7 @@ impl PacketHeader {
                 let header = OldPacketHeader::from_bits(header);
                 let length = match header.length_type() {
                     // One-Octet Lengths
-                    0 => PacketLength::Fixed(ReadBytesExt::read_u8(&mut r)?.into()),
+                    0 => PacketLength::Fixed(BufReadParsing::read_u8(&mut r)?.into()),
                     // Two-Octet Lengths
                     1 => PacketLength::Fixed(r.read_be_u16()?.into()),
                     // Four-Octet Lengths
@@ -169,25 +167,25 @@ impl Serialize for PacketHeader {
 
         match self {
             Self::New { header, length } => {
-                writer.write_u8(header.into_bits())?;
+                writer.write_all(&[header.into_bits()])?;
                 length.to_writer_new(writer)?;
             }
             Self::Old { header, length } => match length {
                 PacketLength::Fixed(len) => {
-                    writer.write_u8(header.into_bits())?;
+                    writer.write_all(&[header.into_bits()])?;
                     if *len < 256 {
                         // one octet
-                        writer.write_u8(*len as u8)?;
+                        writer.write_all(&[*len as u8])?;
                     } else if *len < 65536 {
                         // two octets
-                        writer.write_u16::<BigEndian>(*len as u16)?;
+                        writer.write_all(&u16::to_be_bytes(*len as u16))?;
                     } else {
                         // four octets
-                        writer.write_u32::<BigEndian>(*len)?;
+                        writer.write_all(&u32::to_be_bytes(*len))?;
                     }
                 }
                 PacketLength::Indeterminate => {
-                    writer.write_u8(header.into_bits())?;
+                    writer.write_all(&[header.into_bits()])?;
                 }
                 PacketLength::Partial(_) => {
                     unreachable!("invalid state: partial lengths for old style packet header");

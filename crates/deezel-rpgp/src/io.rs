@@ -16,7 +16,6 @@ pub use self::std_io::*;
 
 #[cfg(not(feature = "std"))]
 mod no_std_io_imports {
-    pub use byteorder::{ReadBytesExt, WriteBytesExt};
     pub use no_std_io::io::{self, BufRead, Cursor, Error, ErrorKind, Read, Result, Write};
 
     // copy from https://github.com/Rust-for-Linux/linux/blob/6b5453589998a88d01c18746163351b49c54344c/rust/kernel/lib.rs#L373
@@ -35,6 +34,7 @@ mod no_std_io_imports {
         }
     }
 }
+
 
 #[cfg(not(feature = "std"))]
 pub use self::no_std_io_imports::*;

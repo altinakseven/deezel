@@ -4,8 +4,7 @@ use alloc::string::ToString;
 use alloc::vec;
 use alloc::format;
 extern crate alloc;
-use crate::io::{BufRead, Write, WriteBytesExt};
-use byteorder::LittleEndian;
+use crate::io::{BufRead, Write};
 
 use bytes::Bytes;
 #[cfg(feature = "std")]
@@ -138,19 +137,19 @@ impl Serialize for ImageHeader {
                     writer.write_all(data)?;
                 }
                 ImageHeaderV1::Unknown { format, data } => {
-                    let len = (4 + data.len()).try_into()?;
-                    writer.write_u16::<LittleEndian>(len)?;
+                    let len: u16 = (4 + data.len()).try_into()?;
+                    writer.write_all(&len.to_le_bytes())?;
 
-                    writer.write_u8(0x01)?; // Version
-                    writer.write_u8(*format)?;
+                    writer.write_all(&[0x01])?; // Version
+                    writer.write_all(&[*format])?;
                     writer.write_all(data)?;
                 }
             },
             Self::Unknown { version, data } => {
-                let len = (1 + data.len()).try_into()?;
-                writer.write_u16::<LittleEndian>(len)?;
+                let len: u16 = (1 + data.len()).try_into()?;
+                writer.write_all(&len.to_le_bytes())?;
 
-                writer.write_u8(*version)?;
+                writer.write_all(&[*version])?;
                 writer.write_all(data)?;
             }
         }
@@ -319,7 +318,7 @@ impl Serialize for UserAttribute {
             } => {
                 subpacket_len.to_writer(writer)?;
                 // Type Image Attribute Subpacket
-                writer.write_u8(0x01)?;
+                writer.write_all(&[0x01])?;
                 header.to_writer(writer)?;
 
                 // actual data
@@ -334,7 +333,7 @@ impl Serialize for UserAttribute {
                 subpacket_len.to_writer(writer)?;
 
                 // Type Attribute Subpacket
-                writer.write_u8((*typ).into())?;
+                writer.write_all(&[(*typ).into()])?;
                 writer.write_all(data)?;
             }
         }

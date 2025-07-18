@@ -1,8 +1,7 @@
 extern crate alloc;
 use crate::io::BufRead;
 
-use crate::io::{Write, WriteBytesExt};
-use byteorder::BigEndian;
+use crate::io::Write;
 use log::debug;
 use num_enum::{FromPrimitive, IntoPrimitive, TryFromPrimitive};
 
@@ -63,13 +62,13 @@ impl PacketLength {
         match self {
             PacketLength::Fixed(len) => {
                 if *len < 192 {
-                    writer.write_u8(*len as u8)?;
+                    writer.write_all(&[*len as u8])?;
                 } else if *len < 8384 {
-                    writer.write_u8((((len - 192) >> 8) + 192) as u8)?;
-                    writer.write_u8(((len - 192) & 0xFF) as u8)?;
+                    writer.write_all(&[(((len - 192) >> 8) + 192) as u8])?;
+                    writer.write_all(&[((len - 192) & 0xFF) as u8])?;
                 } else {
-                    writer.write_u8(255)?;
-                    writer.write_u32::<BigEndian>(*len)?;
+                    writer.write_all(&[255])?;
+                    writer.write_all(&len.to_be_bytes())?;
                 }
             }
             PacketLength::Indeterminate => {
@@ -81,7 +80,7 @@ impl PacketLength {
                 // y & 0x1F
                 let n = len.trailing_zeros();
                 let n = (224 + n) as u8;
-                writer.write_u8(n)?;
+                writer.write_all(&[n])?;
             }
         }
         Ok(())
@@ -220,28 +219,28 @@ impl PacketHeaderVersion {
             PacketHeaderVersion::Old => {
                 if len < 256 {
                     // one octet
-                    writer.write_u8(0b1000_0000 | (tag << 2))?;
-                    writer.write_u8(len.try_into()?)?;
+                    writer.write_all(&[0b1000_0000 | (tag << 2)])?;
+                    writer.write_all(&[len.try_into()?])?;
                 } else if len < 65536 {
                     // two octets
-                    writer.write_u8(0b1000_0001 | (tag << 2))?;
+                    writer.write_all(&[0b1000_0001 | (tag << 2)])?;
                     writer.write_all(&(len as u16).to_be_bytes())?;
                 } else {
                     // four octets
-                    writer.write_u8(0b1000_0010 | (tag << 2))?;
-                    writer.write_u32::<BigEndian>(len as u32)?;
+                    writer.write_all(&[0b1000_0010 | (tag << 2)])?;
+                    writer.write_all(&(len as u32).to_be_bytes())?;
                 }
             }
             PacketHeaderVersion::New => {
-                writer.write_u8(0b1100_0000 | tag)?;
+                writer.write_all(&[0b1100_0000 | tag])?;
                 if len < 192 {
-                    writer.write_u8(len.try_into()?)?;
+                    writer.write_all(&[len.try_into()?])?;
                 } else if len < 8384 {
-                    writer.write_u8((((len - 192) >> 8) + 192) as u8)?;
-                    writer.write_u8(((len - 192) & 0xFF) as u8)?;
+                    writer.write_all(&[(((len - 192) >> 8) + 192) as u8])?;
+                    writer.write_all(&[((len - 192) & 0xFF) as u8])?;
                 } else {
-                    writer.write_u8(255)?;
-                    writer.write_u32::<BigEndian>(len as u32)?;
+                    writer.write_all(&[255])?;
+                    writer.write_all(&(len as u32).to_be_bytes())?;
                 }
             }
         }

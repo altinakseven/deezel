@@ -2,9 +2,9 @@ extern crate alloc;
 use alloc::string::ToString;
 use alloc::vec;
 use alloc::format;
-use crate::io::{self, Write};
+use crate::io::{self, Cursor, Write};
 use alloc::vec::Vec;
-use bytes::{Buf, Bytes, BytesMut};
+use bytes::{Bytes, BytesMut};
 use digest::Digest;
 use zeroize::ZeroizeOnDrop;
 
@@ -14,6 +14,19 @@ use crate::{
     ser::Serialize,
     types::*,
 };
+
+struct VecWriter<'a>(&'a mut Vec<u8>);
+
+impl<'a> io::Write for VecWriter<'a> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0.extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
 
 #[derive(Clone, PartialEq, Eq, derive_more::Debug)]
 pub struct EncryptedSecretParams {
@@ -131,7 +144,7 @@ impl EncryptedSecretParams {
                 }
 
                 PlainSecretParams::try_from_reader(
-                    &mut plaintext.reader(),
+                    &mut Cursor::new(&plaintext),
                     pub_key.version(),
                     alg,
                     params,
@@ -169,7 +182,7 @@ impl EncryptedSecretParams {
 
                         // "decrypt" now contains the decrypted key material
                         PlainSecretParams::try_from_reader_no_checksum(
-                            &mut ciphertext.reader(),
+                            &mut Cursor::new(&ciphertext),
                             pub_key.version(),
                             alg,
                             pub_key.public_params(),
@@ -200,7 +213,7 @@ impl EncryptedSecretParams {
                     return Err(InvalidInputSnafu.build());
                 }
                 PlainSecretParams::try_from_reader_no_checksum(
-                    &mut plaintext.reader(),
+                    &mut Cursor::new(plaintext),
                     pub_key.version(),
                     alg,
                     params,
@@ -217,7 +230,7 @@ impl EncryptedSecretParams {
                 }
 
                 PlainSecretParams::try_from_reader(
-                    &mut plaintext.reader(),
+                    &mut Cursor::new(&plaintext),
                     pub_key.version(),
                     alg,
                     params,
@@ -231,89 +244,58 @@ impl EncryptedSecretParams {
         writer: &mut W,
         version: KeyVersion,
     ) -> Result<()> {
-        #[cfg(feature = "std")]
-        {
-            use crate::io::WriteBytesExt;
-            writer.write_u8((&self.s2k_params).into())?;
-        }
-        #[cfg(not(feature = "std"))]
         writer.write_all(&[(&self.s2k_params).into()])?;
 
         let mut s2k_params = vec![];
+        {
+            let mut s2k_writer = VecWriter(&mut s2k_params);
 
-        let s2k_writer = &mut s2k_params;
-
-        match &self.s2k_params {
-            S2kParams::Unprotected => {
-                panic!("encrypted secret params should not have an unencrypted identifier")
-            }
-            S2kParams::LegacyCfb { ref iv, .. } => {
-                s2k_writer.write_all(iv)?;
-            }
-            S2kParams::Aead {
-                sym_alg,
-                aead_mode,
-                s2k,
-                ref nonce,
-            } => {
-                #[cfg(feature = "std")]
-                {
-                    use crate::io::WriteBytesExt;
-                    s2k_writer.write_u8((*sym_alg).into())?;
-                    s2k_writer.write_u8((*aead_mode).into())?;
+            match &self.s2k_params {
+                S2kParams::Unprotected => {
+                    panic!("encrypted secret params should not have an unencrypted identifier")
                 }
-                #[cfg(not(feature = "std"))]
-                {
+                S2kParams::LegacyCfb { ref iv, .. } => {
+                    s2k_writer.write_all(iv)?;
+                }
+                S2kParams::Aead {
+                    sym_alg,
+                    aead_mode,
+                    s2k,
+                    ref nonce,
+                } => {
                     s2k_writer.write_all(&[(*sym_alg).into()])?;
                     s2k_writer.write_all(&[(*aead_mode).into()])?;
-                }
 
-                if version == KeyVersion::V6 {
-                    #[cfg(feature = "std")]
-                    {
-                        use crate::io::WriteBytesExt;
-                        s2k_writer.write_u8(s2k.len()?)?;
+                    if version == KeyVersion::V6 {
+                        s2k_writer.write_all(&[s2k.len()? as u8])?;
+                        // length of S2K Specifier Type
                     }
-                    #[cfg(not(feature = "std"))]
-                    s2k_writer.write_all(&[s2k.len()?])?;
-                    // length of S2K Specifier Type
-                }
-                s2k.to_writer(s2k_writer)?;
+                    s2k.to_writer(&mut s2k_writer)?;
 
-                s2k_writer.write_all(nonce)?;
-            }
-            S2kParams::Cfb {
-                sym_alg,
-                s2k,
-                ref iv,
-            }
-            | S2kParams::MalleableCfb {
-                sym_alg,
-                s2k,
-                ref iv,
-            } => {
-                #[cfg(feature = "std")]
-                {
-                    use crate::io::WriteBytesExt;
-                    s2k_writer.write_u8((*sym_alg).into())?;
+                    s2k_writer.write_all(nonce)?;
                 }
-                #[cfg(not(feature = "std"))]
-                s2k_writer.write_all(&[(*sym_alg).into()])?;
+                S2kParams::Cfb {
+                    sym_alg,
+                    s2k,
+                    ref iv,
+                }
+                | S2kParams::MalleableCfb {
+                    sym_alg,
+                    s2k,
+                    ref iv,
+                } => {
+                    s2k_writer.write_all(&[(*sym_alg).into()])?;
 
-                if version == KeyVersion::V6 && matches!(self.s2k_params, S2kParams::Cfb { .. }) {
-                    #[cfg(feature = "std")]
+                    if version == KeyVersion::V6 && matches!(self.s2k_params, S2kParams::Cfb { .. })
                     {
-                        use crate::io::WriteBytesExt;
-                        s2k_writer.write_u8(s2k.len()?)?;
+                        s2k_writer.write_all(&[s2k.len()? as u8])?;
+                        // length of S2K Specifier Type
                     }
-                    #[cfg(not(feature = "std"))]
-                    s2k_writer.write_all(&[s2k.len()?])?;
-                    // length of S2K Specifier Type
+
+                    s2k.to_writer(&mut s2k_writer)?;
+
+                    s2k_writer.write_all(iv)?;
                 }
-
-                s2k.to_writer(s2k_writer)?;
-
-                s2k_writer.write_all(iv)?;
             }
         }
 
@@ -322,12 +304,6 @@ impl EncryptedSecretParams {
                 let len = s2k_params.len();
                 ensure!(len <= 255, "unexpected s2k_params length {}", len);
 
-                #[cfg(feature = "std")]
-                {
-                    use crate::io::WriteBytesExt;
-                    writer.write_u8(len.try_into()?)?;
-                }
-                #[cfg(not(feature = "std"))]
                 writer.write_all(&[len.try_into()?])?;
             }
             writer.write_all(&s2k_params)?;

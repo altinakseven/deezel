@@ -2,15 +2,21 @@
 // Deezel is a part of the Deezel project.
 // Deezel is a free software, licensed under the MIT license.
 
-use crate::io::Write;
-use crate::{Result, Sha1};
-
-const LINE_LENGTH: usize = 64;
+use crate::io::{self, Write};
+use crate::errors::Result;
+use sha1_checked::Sha1;
+use digest::Digest;
+use base64ct::{Base64, Encoding};
+use alloc::collections::BTreeMap;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
+use core::fmt;
+use core::str::FromStr;
 
 /// A writer that armors PGP data.
 pub struct ArmorWriter<W: Write> {
     /// The underlying writer.
-    inner: W,
+    pub inner: W,
     /// The message type.
     message_type: String,
     /// The headers.
@@ -27,12 +33,12 @@ pub struct ArmorWriter<W: Write> {
 
 impl<W: Write> ArmorWriter<W> {
     /// Creates a new armoring writer.
-    pub fn new(
-        writer: W,
-        message_type: &str,
-        headers: Vec<(&str, &str)>,
-    ) -> Result<Self> {
-        Ok(Self {
+    pub fn new<'a>(
+        writer: &'a mut W,
+        message_type: &'a str,
+        headers: Vec<(&'a str, &'a str)>,
+    ) -> Result<ArmorWriter<&'a mut W>> {
+        Ok(ArmorWriter {
             inner: writer,
             message_type: message_type.to_string(),
             headers: headers
@@ -54,9 +60,10 @@ impl<W: Write> ArmorWriter<W> {
 
         self.flush()?;
 
-        let checksum = self.checksum.digest();
+        let checksum = self.checksum.clone().finalize();
         let checksum = crc24(&checksum);
-        let checksum = base64::encode(checksum);
+        let mut enc_buf = [0u8; 4];
+        let checksum = Base64::encode(&checksum, &mut enc_buf).unwrap();
 
         self.inner.write_all(b"=")?;
         self.inner.write_all(checksum.as_bytes())?;
@@ -73,7 +80,7 @@ impl<W: Write> ArmorWriter<W> {
 }
 
 impl<W: Write> Write for ArmorWriter<W> {
-    fn write(&mut self, buf: &[u8]) -> Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         if !self.header_written {
             self.inner.write_all(b"-----BEGIN ")?;
             self.inner.write_all(self.message_type.as_bytes())?;
@@ -94,20 +101,22 @@ impl<W: Write> Write for ArmorWriter<W> {
         self.buffer.extend_from_slice(buf);
         self.checksum.update(buf);
 
-        while self.buffer.len() >= LINE_LENGTH {
-            let line = self.buffer.drain(..LINE_LENGTH).collect::<Vec<u8>>();
-            let line = base64::encode(&line);
-            self.inner.write_all(line.as_bytes())?;
+        while self.buffer.len() >= 48 {
+            let line = self.buffer.drain(..48).collect::<Vec<u8>>();
+            let mut enc_buf = [0u8; 64];
+            let encoded = Base64::encode(&line, &mut enc_buf).unwrap();
+            self.inner.write_all(encoded.as_bytes())?;
             self.inner.write_all(b"\n")?;
         }
 
         Ok(buf.len())
     }
 
-    fn flush(&mut self) -> Result<()> {
+    fn flush(&mut self) -> io::Result<()> {
         if !self.buffer.is_empty() {
-            let line = base64::encode(&self.buffer);
-            self.inner.write_all(line.as_bytes())?;
+            let mut enc_buf = [0u8; 64];
+            let encoded = Base64::encode(&self.buffer, &mut enc_buf).unwrap();
+            self.inner.write_all(encoded.as_bytes())?;
             self.inner.write_all(b"\n")?;
             self.buffer.clear();
         }
@@ -135,3 +144,72 @@ fn crc24(data: &[u8]) -> [u8; 3] {
     }
     (crc & 0x00FF_FFFF).to_be_bytes()[1..].try_into().unwrap()
 }
+
+/// The type of the armored message.
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+pub enum BlockType {
+    PublicKey,
+    PrivateKey,
+    Message,
+    PgpMessage,
+    MultiPartMessage(usize, usize),
+    Signature,
+    CleartextMessage,
+    File,
+    PublicKeyPKCS1(&'static str),
+    PublicKeyPKCS8,
+    PublicKeyOpenssh,
+    PrivateKeyPKCS1(&'static str),
+    PrivateKeyPKCS8,
+    PrivateKeyOpenssh,
+}
+
+impl BlockType {
+    pub fn to_str(&self) -> &str {
+        match self {
+            BlockType::PublicKey => "PUBLIC KEY",
+            BlockType::PrivateKey => "PRIVATE KEY",
+            BlockType::Message => "MESSAGE",
+            BlockType::PgpMessage => "PGP MESSAGE",
+            BlockType::MultiPartMessage(_, _) => "MESSAGE",
+            BlockType::Signature => "SIGNATURE",
+            BlockType::CleartextMessage => "SIGNED MESSAGE",
+            BlockType::File => "FILE",
+            BlockType::PublicKeyPKCS1(_) => "PUBLIC KEY",
+            BlockType::PublicKeyPKCS8 => "PUBLIC KEY",
+            BlockType::PublicKeyOpenssh => "OPENSSH PUBLIC KEY",
+            BlockType::PrivateKeyPKCS1(_) => "PRIVATE KEY",
+            BlockType::PrivateKeyPKCS8 => "PRIVATE KEY",
+            BlockType::PrivateKeyOpenssh => "OPENSSH PRIVATE KEY",
+        }
+    }
+}
+
+impl fmt::Display for BlockType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.to_str())
+    }
+}
+
+impl FromStr for BlockType {
+    type Err = crate::errors::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "PUBLIC KEY" => Ok(BlockType::PublicKey),
+            "PRIVATE KEY" => Ok(BlockType::PrivateKey),
+            "MESSAGE" => Ok(BlockType::Message),
+            "PGP MESSAGE" => Ok(BlockType::PgpMessage),
+            "SIGNATURE" => Ok(BlockType::Signature),
+            "SIGNED MESSAGE" => Ok(BlockType::CleartextMessage),
+            "FILE" => Ok(BlockType::File),
+            _ => Err(crate::errors::Error::InvalidInput {
+                #[cfg(feature = "std")]
+                backtrace: snafu::GenerateImplicitData::generate(),
+            }),
+        }
+    }
+}
+
+/// A list of headers.
+pub type Headers = BTreeMap<String, Vec<String>>;

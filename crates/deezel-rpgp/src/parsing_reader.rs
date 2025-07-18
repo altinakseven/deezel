@@ -118,7 +118,15 @@ pub trait BufReadParsing: BufRead + Read + Sized {
 
     fn rest(&mut self) -> Result<BytesMut> {
         let mut buffer = Vec::new();
-        self.read_to_end(&mut buffer)?;
+        loop {
+            let mut buf = [0u8; 4096];
+            match self.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => buffer.extend_from_slice(&buf[..n]),
+                Err(ref e) if e.kind() == crate::io::ErrorKind::Interrupted => continue,
+                Err(e) => return Err(e),
+            }
+        }
         Ok(Bytes::from(buffer).into())
     }
 

@@ -12,7 +12,7 @@ use log::{debug, warn};
 use rand::{CryptoRng, Rng};
 
 use crate::{
-    armor_new,
+    armor,
     composed::{
         key::{PublicKey, PublicSubkey},
         signed_key::{SignedKeyDetails, SignedPublicSubKey},
@@ -78,8 +78,15 @@ impl crate::composed::Deserializable for SignedSecretKey {
         Box::new(SignedSecretKeyParser::from_packets(packets))
     }
 
-    fn matches_block_type(typ: armor_new::BlockType) -> bool {
-        matches!(typ, armor_new::BlockType::PrivateKey | armor_new::BlockType::File)
+    fn matches_block_type(typ: armor::BlockType) -> bool {
+        matches!(
+            typ,
+            armor::BlockType::PrivateKey
+                | armor::BlockType::File
+                | armor::BlockType::PrivateKeyPKCS1(_)
+                | armor::BlockType::PrivateKeyPKCS8
+                | armor::BlockType::PrivateKeyOpenssh
+        )
     }
 
 }
@@ -147,30 +154,37 @@ impl SignedSecretKey {
         Ok(())
     }
 
-    pub fn to_armor_newed_writer(
+    pub fn to_armored_writer(
         &self,
         writer: &mut impl io::Write,
         opts: ArmorOptions<'_>,
     ) -> Result<()> {
-        armor_new::write(
-            self,
-            armor_new::BlockType::PrivateKey,
-            writer,
-            opts.headers,
-            opts.include_checksum,
-        )
+        let headers = opts
+            .headers
+            .map(|h| {
+                h.iter()
+                    .map(|(k, v)| (k.to_string(), v.join(", ")))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let armored = armor::Armored {
+            message_type: "PRIVATE KEY".to_string(),
+            headers,
+            data: self.to_bytes()?,
+        };
+        armored.to_writer(writer)
     }
 
-    pub fn to_armor_newed_bytes(&self, opts: ArmorOptions<'_>) -> Result<Vec<u8>> {
+    pub fn to_armored_bytes(&self, opts: ArmorOptions<'_>) -> Result<Vec<u8>> {
         let mut buf = Vec::new();
 
-        self.to_armor_newed_writer(&mut buf, opts)?;
+        self.to_armored_writer(&mut buf, opts)?;
 
         Ok(buf)
     }
 
-    pub fn to_armor_newed_string(&self, opts: ArmorOptions<'_>) -> Result<String> {
-        let res = String::from_utf8(self.to_armor_newed_bytes(opts)?).map_err(|e| e.utf8_error())?;
+    pub fn to_armored_string(&self, opts: ArmorOptions<'_>) -> Result<String> {
+        let res = String::from_utf8(self.to_armored_bytes(opts)?).map_err(|e| e.utf8_error())?;
         Ok(res)
     }
 
@@ -444,7 +458,7 @@ M0g12vYxoWM8Y81W+bHBw805I8kWVkXU6vFOi+HWvv/ira7ofJu16NnoUkhclkUr
 k0mXubZvyl4GBg==
 -----END PGP PRIVATE KEY BLOCK-----";
 
-        let (ssk, _) = SignedSecretKey::from_armor_new_single(tsk.as_bytes())?;
+        let (ssk, _) = SignedSecretKey::from_armor_single(tsk.as_bytes())?;
 
         // eprintln!("ssk: {:#02x?}", ssk);
 
@@ -455,11 +469,11 @@ k0mXubZvyl4GBg==
 
         let mut builder = crate::composed::MessageBuilder::from_bytes("", &b"Hello world"[..]);
         builder.sign(pri, Password::empty(), HashAlgorithm::Sha256);
-        let signed = builder.to_armor_newed_string(&mut rng, ArmorOptions::default())?;
+        let signed = builder.to_armored_string(&mut rng, ArmorOptions::default())?;
 
         eprintln!("{}", signed);
 
-        let (mut message, _) = Message::from_armor_new(signed.as_bytes())?;
+        let (mut message, _) = Message::from_armor(signed.as_bytes())?;
         message.verify_read(&pri.public_key())?;
 
         Ok(())
@@ -490,7 +504,7 @@ ruh8m7Xo2ehSSFyWRSuTSZe5tm/KXgYG
     fn test_v6_annex_a_5() -> Result<()> {
         let _ = pretty_env_logger::try_init();
 
-        let (ssk, _) = SignedSecretKey::from_armor_new_single(ANNEX_A_5.as_bytes())?;
+        let (ssk, _) = SignedSecretKey::from_armor_single(ANNEX_A_5.as_bytes())?;
         ssk.verify()?;
 
         let mut rng = ChaCha8Rng::seed_from_u64(0);
@@ -515,7 +529,7 @@ ruh8m7Xo2ehSSFyWRSuTSZe5tm/KXgYG
         let text = b"Hello world";
         let mut rng = ChaCha8Rng::seed_from_u64(0);
 
-        let (ssk, _) = SignedSecretKey::from_armor_new_single(ANNEX_A_5.as_bytes())?;
+        let (ssk, _) = SignedSecretKey::from_armor_single(ANNEX_A_5.as_bytes())?;
         ssk.verify()?;
 
         // we will test unlock/lock on the primary key

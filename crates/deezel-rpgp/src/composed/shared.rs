@@ -1,5 +1,7 @@
 use alloc::boxed::Box;
 use alloc::string::ToString;
+use alloc::vec;
+use core::str::FromStr;
 use alloc::vec::Vec;
 use alloc::format;
 extern crate alloc;
@@ -7,8 +9,8 @@ use core::iter::Peekable;
 use log::{debug, warn};
 
 use crate::{
-    armor_new::{self, BlockType},
-    errors::{bail, unimplemented_err, Error, Result},
+    armor::{self, BlockType},
+    errors::{bail, Error, Result},
     packet::{Packet, PacketParser},
 };
 
@@ -21,8 +23,8 @@ pub trait Deserializable: Sized {
             .ok_or_else(|| crate::errors::NoMatchingPacketSnafu.build())?
     }
 
-    /// Parse a single armor_new encoded composition.
-    fn from_string(input: &str) -> Result<(Self, armor_new::Headers)> {
+    /// Parse a single armor encoded composition.
+    fn from_string(input: &str) -> Result<(Self, armor::Headers)> {
         let (mut el, headers) = Self::from_string_many(input)?;
         Ok((
             el.next()
@@ -31,17 +33,17 @@ pub trait Deserializable: Sized {
         ))
     }
 
-    /// Parse an armor_new encoded list of compositions.
+    /// Parse an armor encoded list of compositions.
     #[allow(clippy::type_complexity)]
     fn from_string_many<'a>(
         input: &'a str,
-    ) -> Result<(Box<dyn Iterator<Item = Result<Self>> + 'a>, armor_new::Headers)> {
-        Self::from_armor_new_many(input.as_bytes())
+    ) -> Result<(Box<dyn Iterator<Item = Result<Self>> + 'a>, armor::Headers)> {
+        Self::from_armor_many(input.as_bytes())
     }
 
     /// Armored ascii data.
-    fn from_armor_new_single(input: &[u8]) -> Result<(Self, armor_new::Headers)> {
-        let (mut el, headers) = Self::from_armor_new_many(input)?;
+    fn from_armor_single(input: &[u8]) -> Result<(Self, armor::Headers)> {
+        let (mut el, headers) = Self::from_armor_many(input)?;
         Ok((
             el.next()
                 .ok_or_else(|| crate::errors::NoMatchingPacketSnafu.build())??,
@@ -50,8 +52,8 @@ pub trait Deserializable: Sized {
     }
 
     /// Armored ascii data.
-    fn from_armor_new_single_buf(input: &[u8]) -> Result<(Self, armor_new::Headers)> {
-        let (mut el, headers) = Self::from_armor_new_many(input)?;
+    fn from_armor_single_buf(input: &[u8]) -> Result<(Self, armor::Headers)> {
+        let (mut el, headers) = Self::from_armor_many(input)?;
         Ok((
             el.next()
                 .ok_or_else(|| crate::errors::NoMatchingPacketSnafu.build())??,
@@ -61,51 +63,36 @@ pub trait Deserializable: Sized {
 
     /// Armored ascii data.
     #[allow(clippy::type_complexity)]
-    fn from_armor_new_many<'a>(
+    fn from_armor_many<'a>(
         input: &'a [u8],
-    ) -> Result<(Box<dyn Iterator<Item = Result<Self>> + 'a>, armor_new::Headers)> {
-        let (typ, headers, decoded) = armor_new::decode(input)?;
+    ) -> Result<(Box<dyn Iterator<Item = Result<Self>> + 'a>, armor::Headers)> {
+        let armored = armor::Armored::decode(input)?;
+        let (typ, headers, decoded) = (armored.message_type, armored.headers, armored.data);
 
         // TODO: add typ information to the key possibly?
-        match typ {
-            // Standard PGP types
-            BlockType::PublicKey
-            | BlockType::PrivateKey
-            | BlockType::Message
-            | BlockType::MultiPartMessage(_, _)
-            | BlockType::Signature
-            | BlockType::CleartextMessage
-            | BlockType::File => {
-                if !Self::matches_block_type(typ) {
-                    bail!("unexpected block type: {}", typ);
-                }
-
-                // We need to own the decoded data to avoid lifetime issues
-                let owned_decoded = decoded.into_boxed_slice();
-                // We need to collect packets to avoid lifetime issues with the decoded buffer
-                let packets: Vec<_> = PacketParser::new(&*owned_decoded)
-                    .filter_map(crate::composed::shared::filter_parsed_packet_results)
-                    .collect::<Result<Vec<_>>>()?;
-
-                Ok((Self::from_packets(packets.into_iter().map(Ok).peekable()), headers))
-            }
-            BlockType::PublicKeyPKCS1(_)
-            | BlockType::PublicKeyPKCS8
-            | BlockType::PublicKeyOpenssh
-            | BlockType::PrivateKeyPKCS1(_)
-            | BlockType::PrivateKeyPKCS8
-            | BlockType::PrivateKeyOpenssh => {
-                unimplemented_err!("key format {:?}", typ);
-            }
+        let block_type = BlockType::from_str(typ.as_str())?;
+        if !Self::matches_block_type(block_type) {
+            bail!("unexpected block type: {}", typ);
         }
+
+        let packets: Vec<_> = PacketParser::new(decoded.as_slice())
+            .filter_map(crate::composed::shared::filter_parsed_packet_results)
+            .collect::<Result<Vec<_>>>()?;
+
+        let headers = headers.into_iter().map(|(k, v)| (k, vec![v])).collect();
+
+        Ok((
+            Self::from_packets(packets.into_iter().map(Ok).peekable()),
+            headers,
+        ))
     }
 
     #[allow(clippy::type_complexity)]
     // TODO: re-enable this
-    // fn from_armor_new_many_buf<'a>(
+    // fn from_armor_many_buf<'a>(
     //     input: &'a [u8],
-    // ) -> Result<(Box<dyn Iterator<Item = Result<Self>> + 'a>, armor_new::Headers)> {
-    //     let (typ, headers, decoded) = armor_new::parse(input)?;
+    // ) -> Result<(Box<dyn Iterator<Item = Result<Self>> + 'a>, armor::Headers)> {
+    //     let (typ, headers, decoded) = armor::parse(input)?;
 
     //     // TODO: add typ information to the key possibly?
     //     match typ {
@@ -153,21 +140,21 @@ pub trait Deserializable: Sized {
     /// Check if the given typ is a valid block type for this type.
     fn matches_block_type(typ: BlockType) -> bool;
 
-    /// Parses a single composition, from either ASCII-armor_newed or binary OpenPGP data.
+    /// Parses a single composition, from either ASCII-armored or binary OpenPGP data.
     ///
-    /// Returns a composition and a BTreeMap containing armor_new headers
-    /// (None, if the data was unarmor_newed)
+    /// Returns a composition and a BTreeMap containing armor headers
+    /// (None, if the data was unarmored)
     #[allow(clippy::type_complexity)]
-    fn from_reader_single(input: &[u8]) -> Result<(Self, Option<armor_new::Headers>)> {
+    fn from_reader_single(input: &[u8]) -> Result<(Self, Option<armor::Headers>)> {
         Self::from_reader_single_buf(input)
     }
 
     #[allow(clippy::type_complexity)]
     fn from_reader_single_buf(
         mut input: &[u8],
-    ) -> Result<(Self, Option<armor_new::Headers>)> {
+    ) -> Result<(Self, Option<armor::Headers>)> {
         if !is_binary(&mut input)? {
-            let (keys, headers) = Self::from_armor_new_single(input)?;
+            let (keys, headers) = Self::from_armor_single(input)?;
             Ok((keys, Some(headers)))
         } else {
             let (mut el, headers) = Self::from_reader_many_buf(input)?;
@@ -178,33 +165,33 @@ pub trait Deserializable: Sized {
         }
     }
 
-    /// Parses a list of compositions, from either ASCII-armor_newed or binary OpenPGP data.
+    /// Parses a list of compositions, from either ASCII-armored or binary OpenPGP data.
     ///
-    /// Returns an iterator of compositions and a BTreeMap containing armor_new headers
-    /// (None, if the data was unarmor_newed)
+    /// Returns an iterator of compositions and a BTreeMap containing armor headers
+    /// (None, if the data was unarmored)
     #[allow(clippy::type_complexity)]
     fn from_reader_many<'a>(
         input: &'a [u8],
     ) -> Result<(
         Box<dyn Iterator<Item = Result<Self>> + 'a>,
-        Option<armor_new::Headers>,
+        Option<armor::Headers>,
     )> {
         Self::from_reader_many_buf(input)
     }
 
-    /// Parses a list of compositions, from either ASCII-armor_newed or binary OpenPGP data.
+    /// Parses a list of compositions, from either ASCII-armored or binary OpenPGP data.
     ///
-    /// Returns an iterator of compositions and a BTreeMap containing armor_new headers
-    /// (None, if the data was unarmor_newed)
+    /// Returns an iterator of compositions and a BTreeMap containing armor headers
+    /// (None, if the data was unarmored)
     #[allow(clippy::type_complexity)]
     fn from_reader_many_buf<'a>(
         mut input: &'a [u8],
     ) -> Result<(
         Box<dyn Iterator<Item = Result<Self>> + 'a>,
-        Option<armor_new::Headers>,
+        Option<armor::Headers>,
     )> {
         if !is_binary(&mut input)? {
-            let (keys, headers) = Self::from_armor_new_many(input)?;
+            let (keys, headers) = Self::from_armor_many(input)?;
             Ok((keys, Some(headers)))
         } else {
             Ok((Self::from_bytes_many(input)?, None))
@@ -273,7 +260,7 @@ pub(crate) fn filter_parsed_packet_results(p: Result<Packet>) -> Option<Result<P
     }
 }
 
-/// Check if the OpenPGP data in `input` seems to be ASCII-armor_newed or binary (by looking at the
+/// Check if the OpenPGP data in `input` seems to be ASCII-armored or binary (by looking at the
 /// highest bit of the first byte)
 pub(crate) fn is_binary(input: &mut &[u8]) -> Result<bool> {
     if input.is_empty() {
@@ -281,7 +268,7 @@ pub(crate) fn is_binary(input: &mut &[u8]) -> Result<bool> {
     }
 
     // If the first bit of the first byte is set, we assume this is binary OpenPGP data, otherwise
-    // we assume it is ASCII-armor_newed.
+    // we assume it is ASCII-armored.
     let binary = input[0] & 0x80 != 0;
 
     Ok(binary)

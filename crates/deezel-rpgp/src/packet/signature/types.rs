@@ -7,8 +7,7 @@ use alloc::format;
 use core::{
     cmp::Ordering,
 };
-use crate::io::{BufRead, Read, WriteBytesExt};
-use byteorder::BigEndian;
+use crate::io::{BufRead, Read, Write};
 
 use bitfields::bitfield;
 use bytes::Bytes;
@@ -1270,10 +1269,10 @@ impl Serialize for KeyFlags {
         }
 
         let [a, b] = self.known.into_bits().to_le_bytes();
-        writer.write_u8(a)?;
+        writer.write_all(&[a])?;
 
         if self.original_len > 1 || b != 0 {
-            writer.write_u8(b)?;
+            writer.write_all(&[b])?;
         }
 
         if let Some(ref rest) = self.rest {
@@ -1433,7 +1432,7 @@ impl Features {
 impl Serialize for Features {
     fn to_writer<W: crate::io::Write>(&self, writer: &mut W) -> Result<()> {
         if let Some(k) = self.first {
-            writer.write_u8(k.0)?;
+            writer.write_all(&[k.0])?;
             writer.write_all(&self.rest)?;
         }
 
@@ -1536,8 +1535,8 @@ pub(super) fn serialize_for_hashing<K: KeyDetails + Serialize>(
         KeyVersion::V2 | KeyVersion::V3 | KeyVersion::V4 => {
             // When a v4 signature is made over a key, the hash data starts with the octet 0x99,
             // followed by a two-octet length of the key, and then the body of the key packet.
-            writer.write_u8(0x99)?;
-            writer.write_u16::<BigEndian>(key_len.try_into()?)?;
+            writer.write_all(&[0x99])?;
+            writer.write_all(&(key_len as u16).to_be_bytes())?;
         }
 
         KeyVersion::V6 => {
@@ -1546,8 +1545,8 @@ pub(super) fn serialize_for_hashing<K: KeyDetails + Serialize>(
 
             // then octet 0x9B, followed by a four-octet length of the key,
             // and then the body of the key packet.
-            writer.write_u8(0x9b)?;
-            writer.write_u32::<BigEndian>(key_len.try_into()?)?;
+            writer.write_all(&[0x9b])?;
+            writer.write_all(&(key_len as u32).to_be_bytes())?;
         }
 
         v => unimplemented_err!("key version {:?}", v),

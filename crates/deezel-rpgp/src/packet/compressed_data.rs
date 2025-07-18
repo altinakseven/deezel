@@ -2,7 +2,7 @@ extern crate alloc;
 
 
 
-use crate::io::{self, BufRead, Write, WriteBytesExt};
+use crate::io::{self, BufRead, Write};
 use bytes::Bytes;
 #[cfg(feature = "bzip2")]
 use bzip2::{self, Action, Compression as BzCompression, Status as BzStatus};
@@ -253,7 +253,7 @@ impl CompressedData {
 
 impl Serialize for CompressedData {
     fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
-        writer.write_u8(self.compression_algorithm.into())?;
+        writer.write_all(&[self.compression_algorithm.into()])?;
         writer.write_all(&self.compressed_data)?;
 
         Ok(())

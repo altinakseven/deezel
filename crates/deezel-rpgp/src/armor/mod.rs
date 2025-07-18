@@ -4,3 +4,6 @@
 
 pub mod reader;
 pub mod writer;
+
+pub use reader::{Armored, Dearmor};
+pub use writer::{ArmorWriter, BlockType, Headers};

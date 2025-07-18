@@ -1,3 +1,4 @@
-mod decoder;
+pub mod decoder;
+pub mod encoder;
 
-pub use self::decoder::Base64Decoder;
+pub use self::encoder::*;

@@ -39,13 +39,13 @@ Jb6gvjPbwXdPQYdqDfxZ5bIAnjl3t3HjPQbGFObZv0NyUuiZtj6f
 -----END PGP PUBLIC KEY BLOCK-----"#;
 
     println!("Testing armor decode...");
-    match armor::decode(test_key.as_bytes()) {
-        Ok((typ, headers, decoded)) => {
+    match armor::reader::Armored::decode(test_key.as_bytes()) {
+        Ok(armored) => {
             println!("Success!");
-            println!("Type: {:?}", typ);
-            println!("Headers: {:?}", headers);
-            println!("Decoded length: {}", decoded.len());
-            println!("First 50 bytes: {:?}", &decoded[..50.min(decoded.len())]);
+            println!("Type: {:?}", armored.message_type);
+            println!("Headers: {:?}", armored.headers);
+            println!("Decoded length: {}", armored.data.len());
+            println!("First 50 bytes: {:?}", &armored.data[..50.min(armored.data.len())]);
         }
         Err(e) => {
             println!("Error: {:?}", e);

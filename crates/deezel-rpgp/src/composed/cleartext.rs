@@ -8,8 +8,9 @@ use chrono::TimeZone;
 use log::debug;
 
 use crate::{
-    armor_new::{self, Headers},
+    armor::Headers,
     composed::{ArmorOptions, StandaloneSignature},
+    io::Cursor,
     crypto::hash::HashAlgorithm,
     errors::{bail, ensure_eq, format_err, InvalidInputSnafu, Result},
     packet::{Signature, SignatureConfig, SignatureType, Subpacket, SubpacketData},
@@ -180,26 +181,26 @@ impl CleartextSignedMessage {
     }
 
     /// Parse from an arbitrary reader, containing the text of the message.
-    pub fn from_armor_new(bytes: &[u8]) -> Result<(Self, Headers)> {
-        Self::from_armor_new_buf(bytes, MAX_BUFFER_SIZE)
+    pub fn from_armor(bytes: &[u8]) -> Result<(Self, Headers)> {
+        Self::from_armor_buf(bytes, MAX_BUFFER_SIZE)
     }
 
     /// Parse from string, containing the text of the message.
     pub fn from_string(input: &str) -> Result<(Self, Headers)> {
-        Self::from_armor_new_buf(input.as_bytes(), MAX_BUFFER_SIZE)
+        Self::from_armor_buf(input.as_bytes(), MAX_BUFFER_SIZE)
     }
 
     /// Parse from a buffered reader, containing the text of the message.
-    pub fn from_armor_new_buf(b: &[u8], limit: usize) -> Result<(Self, Headers)> {
+    pub fn from_armor_buf(b: &[u8], limit: usize) -> Result<(Self, Headers)> {
         debug!("parsing cleartext message");
         // Headers
         // This is a placeholder implementation
         let headers = Headers::new();
 
-        Self::from_armor_new_after_header(b, headers, limit)
+        Self::from_armor_after_header(b, headers, limit)
     }
 
-    pub fn from_armor_new_after_header(
+    pub fn from_armor_after_header(
         mut b: &[u8],
         headers: Headers,
         _limit: usize,
@@ -228,7 +229,7 @@ impl CleartextSignedMessage {
         ))
     }
 
-    pub fn to_armor_newed_writer(
+    pub fn to_armored_writer(
         &self,
         writer: &mut impl crate::io::Write,
         opts: ArmorOptions<'_>,
@@ -249,25 +250,21 @@ impl CleartextSignedMessage {
         writer.write_all(self.csf_encoded_text.as_bytes())?;
         writer.write_all(b"\n")?;
 
-        armor_new::write(
-            &self.signatures,
-            armor_new::BlockType::Signature,
-            writer,
-            opts.headers,
-            opts.include_checksum,
-        )?;
+        for sig in &self.signatures {
+            sig.to_armored_writer(writer, opts.clone())?;
+        }
 
         Ok(())
     }
 
-    pub fn to_armor_newed_bytes(&self, opts: ArmorOptions<'_>) -> Result<Vec<u8>> {
+    pub fn to_armored_bytes(&self, opts: ArmorOptions<'_>) -> Result<Vec<u8>> {
         let mut buf = Vec::new();
-        self.to_armor_newed_writer(&mut buf, opts)?;
+        self.to_armored_writer(&mut Cursor::new(&mut buf[..]), opts)?;
         Ok(buf)
     }
 
-    pub fn to_armor_newed_string(&self, opts: ArmorOptions<'_>) -> Result<String> {
-        let res = String::from_utf8(self.to_armor_newed_bytes(opts)?).map_err(|e| e.utf8_error())?;
+    pub fn to_armored_string(&self, opts: ArmorOptions<'_>) -> Result<String> {
+        let res = String::from_utf8(self.to_armored_bytes(opts)?).map_err(|e| e.utf8_error())?;
         Ok(res)
     }
 }
