@@ -31,7 +31,7 @@ bitcoin = { workspace = true }
 bitcoin_hashes = { workspace = true, package = "bitcoin-hashes" }
 ordinals = { workspace = true }
 protorune-support = { workspace = true }
-deezel-rpgp = { path = "../deezel-rpgp", default-features = false, features = ["std"] }
+deezel-rpgp = { path = "../deezel-rpgp", default-features = false, features = ["std", "create"] }
  
 # Cryptography and wallet functionality
 secp256k1 = { workspace = true }
@@ -117,3 +117,8 @@ gloo-timers = { version = "0.3.0", features = ["futures"] }
 [target.'cfg(target_arch = "wasm32")'.dependencies.getrandom]
 version = "0.2"
 features = ["js"]
+
+
+[[test]]
+name = "keystore_tests"
+path = "tests/keystore_tests.rs"

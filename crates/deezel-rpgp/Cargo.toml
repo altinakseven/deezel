@@ -166,6 +166,9 @@ asm = ["dep:sha1-asm", "sha1/asm", "sha2/asm", "md-5/asm"]
 # DO NOT USE IN PRODUCTION!
 draft-pqc = ["dep:ml-kem", "dep:ml-dsa", "dep:slh-dsa"]
 
+# Enable message creation
+create = ["std"]
+
 # Enable std support (for tests)
 std = ["alloc", "chrono/clock", "regex", "regex/std", "byteorder/std", "no_std_io/std", "dep:rand", "dep:getrandom"]
 
