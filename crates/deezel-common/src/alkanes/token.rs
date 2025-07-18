@@ -206,6 +206,10 @@ impl<P: crate::traits::DeezelProvider> TokenManager<P> {
 /// Parse token amounts from string format "block:tx:amount,block:tx:amount,..."
 pub fn parse_token_amounts(tokens_str: &str) -> Result<Vec<TokenAmount>> {
     let mut token_amounts = Vec::new();
+
+    if tokens_str.is_empty() {
+        return Ok(token_amounts);
+    }
     
     if tokens_str.trim().is_empty() {
         return Ok(token_amounts);

@@ -7,12 +7,17 @@
 //! - Validation of correct usage patterns
 
 
+use anyhow::Result;
+use crate::alkanes::execute::{EnhancedExecuteParams, InputRequirement, parse_input_requirements, parse_protostones};
+use alkanes_support::cellpack::Cellpack;
+
+
 // Note: create_test_executor function removed since tests now focus on
 // parameter validation rather than full executor instantiation
-
+ 
 /// Test contract deployment with envelope + cellpack
 #[tokio::test]
-async fn test_contract_deployment_envelope_cellpack() -> Result<()> {
+async fn test_contract_deployment_envelope_cellpack() -> anyhow::Result<()> {
     // Test the corrected pattern: envelope + cellpack for deployment
     let envelope_data = include_bytes!("../../examples/free_mint.wasm.gz").to_vec();
     
@@ -40,7 +45,7 @@ async fn test_contract_deployment_envelope_cellpack() -> Result<()> {
 
 /// Test contract execution with cellpack only
 #[tokio::test]
-async fn test_contract_execution_cellpack_only() -> Result<()> {
+async fn test_contract_execution_cellpack_only() -> anyhow::Result<()> {
     // Test execution pattern: cellpack without envelope
     let params = EnhancedExecuteParams {
         fee_rate: Some(1.0),
@@ -66,7 +71,7 @@ async fn test_contract_execution_cellpack_only() -> Result<()> {
 
 /// Test various cellpack compositions
 #[tokio::test]
-async fn test_cellpack_compositions() -> Result<()> {
+async fn test_cellpack_compositions() -> anyhow::Result<()> {
     // Test different cellpack formats
     let test_cases = vec![
         // Basic deployment trigger
@@ -99,7 +104,7 @@ async fn test_cellpack_compositions() -> Result<()> {
 
 /// Test input requirement parsing
 #[tokio::test]
-async fn test_input_requirement_parsing() -> Result<()> {
+async fn test_input_requirement_parsing() -> anyhow::Result<()> {
     let test_cases = vec![
         // Bitcoin only
         ("B:1000", 1),
@@ -135,7 +140,7 @@ async fn test_input_requirement_parsing() -> Result<()> {
 
 /// Test validation error cases
 #[tokio::test]
-async fn test_validation_error_cases() -> Result<()> {
+async fn test_validation_error_cases() -> anyhow::Result<()> {
     // Test case 1: Envelope without cellpack (incomplete deployment)
     let params_incomplete = EnhancedExecuteParams {
         fee_rate: Some(1.0),
@@ -179,7 +184,7 @@ async fn test_validation_error_cases() -> Result<()> {
 
 /// Test complex protostone parsing with edicts
 #[tokio::test]
-async fn test_complex_protostone_parsing() -> Result<()> {
+async fn test_complex_protostone_parsing() -> anyhow::Result<()> {
     // Test the complex format that was originally failing
     let complex_format = "[3,797,101]:v0:v0:[4:797:1:p1]:[4:797:2:p2]";
     
@@ -216,7 +221,7 @@ async fn test_complex_protostone_parsing() -> Result<()> {
 
 /// Test cellpack encoding/decoding roundtrip
 #[tokio::test]
-async fn test_cellpack_roundtrip() -> Result<()> {
+async fn test_cellpack_roundtrip() -> anyhow::Result<()> {
     // Test that cellpacks can be properly encoded and decoded
     let test_values = vec![3u128, 797u128, 101u128];
     
@@ -239,7 +244,7 @@ async fn test_cellpack_roundtrip() -> Result<()> {
 
 /// Integration test for the working deployment command
 #[tokio::test]
-async fn test_working_deployment_command() -> Result<()> {
+async fn test_working_deployment_command() -> anyhow::Result<()> {
     // Test the exact command that now works:
     // deezel alkanes execute --envelope ./examples/free_mint.wasm.gz --to [addr] '[3,1000,101]:v0:v0'
     
@@ -279,7 +284,7 @@ async fn test_working_deployment_command() -> Result<()> {
 
 /// Test various output target formats
 #[tokio::test]
-async fn test_output_target_formats() -> Result<()> {
+async fn test_output_target_formats() -> anyhow::Result<()> {
     let test_cases = vec![
         // Output targets
         ("[3,1000,101]:v0:v0", "output target v0"),
