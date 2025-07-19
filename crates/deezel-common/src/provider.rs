@@ -225,7 +225,8 @@ impl ConcreteProvider {
 
                 if derived_address == *address {
                     // We found the address!
-                    let full_path = format!("m/86'/1'/0'/{}", address_path_str);
+                    let base_path = keystore.hd_paths.get("p2tr").map(|s| s.as_str()).unwrap_or("m/86'/0'/0'");
+                    let full_path = format!("{}/{}", base_path.strip_suffix('/').unwrap_or(base_path), address_path_str.strip_prefix("m/").unwrap_or(&address_path_str));
                     return Ok(crate::keystore::AddressInfo {
                         path: full_path,
                         address: address.to_string(),
