@@ -201,21 +201,12 @@ impl ConcreteProvider {
 }
 
 impl ConcreteProvider {
-    fn find_address_info<'a>(
-        keystore: &'a mut Keystore,
+    fn find_address_info(
+        keystore: &Keystore,
         address: &Address,
         network: Network,
     ) -> Result<crate::keystore::AddressInfo> {
-        // First, check the existing cache.
-        if let Some(info) = keystore
-            .addresses
-            .get(&network.to_string())
-            .and_then(|addrs| addrs.iter().find(|a| a.address == address.to_string()))
-        {
-            return Ok(info.clone());
-        }
-
-        // If not found, attempt to derive it on-the-fly.
+        // Since we removed the address cache, we derive on-the-fly.
         // This is necessary for signing transactions for addresses that haven't been explicitly
         // listed or used before. We search a reasonable gap limit.
         let secp = Secp256k1::<All>::new();
@@ -225,7 +216,7 @@ impl ConcreteProvider {
         // Standard gap limit is 20, but we'll search a bit more to be safe.
         // We need to check both the receive (0) and change (1) branches.
         for branch in 0..=1 {
-            for i in 0..101 {
+            for i in 0..101 { // Gap limit of 100
                 let address_path_str = format!("{}/{}", branch, i);
                 let address_path = DerivationPath::from_str(&address_path_str)?;
                 let derived_xpub = account_xpub.derive_pub(&secp, &address_path)?;
@@ -233,22 +224,13 @@ impl ConcreteProvider {
                 let derived_address = Address::p2tr(&secp, internal_key, None, network);
 
                 if derived_address == *address {
-                    // We found the address! Now we can construct its info and cache it.
+                    // We found the address!
                     let full_path = format!("m/86'/1'/0'/{}", address_path_str);
-                    let new_info = crate::keystore::AddressInfo {
+                    return Ok(crate::keystore::AddressInfo {
                         path: full_path,
                         address: address.to_string(),
                         address_type: "p2tr".to_string(),
-                    };
-
-                    // Add to cache for future lookups.
-                    keystore
-                        .addresses
-                        .entry(network.to_string())
-                        .or_default()
-                        .push(new_info.clone());
-
-                    return Ok(new_info);
+                    });
                 }
             }
         }
@@ -494,7 +476,7 @@ impl WalletProvider for ConcreteProvider {
         };
 
         let pass = passphrase.clone().unwrap_or_default();
-        let keystore = Keystore::new(&mnemonic, config.network, &pass)?;
+        let keystore = Keystore::new(&mnemonic, config.network, &pass, None)?;
 
         #[cfg(feature = "native-deps")]
         if let Some(path) = &self.wallet_path {
@@ -870,7 +852,7 @@ impl WalletProvider for ConcreteProvider {
                 .map_err(|e| DeezelError::Wallet(format!("Failed to parse address from script: {}", e)))?;
             
             // This call now takes a mutable keystore and may cache the derived address info.
-            let addr_info = Self::find_address_info(keystore, &address, network)?;
+            let addr_info = Self::find_address_info(&keystore, &address, network)?;
             let path = DerivationPath::from_str(&addr_info.path)?;
 
             // Derive the private key for this input

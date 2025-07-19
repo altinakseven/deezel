@@ -19,7 +19,7 @@ fn test_address_derivation_consistency() {
     let network = Network::Regtest;
 
     // 2. Create a Keystore, which will generate the account_xpub internally
-    let keystore = Keystore::new(&mnemonic, network, "test-password").unwrap();
+    let keystore = Keystore::new(&mnemonic, network, "test-password", None).unwrap();
     let account_xpub = &keystore.account_xpub;
 
     // 3. Define script types and derivation paths to test
@@ -61,7 +61,7 @@ fn test_keystore_encryption_decryption_roundtrip() {
     let network = Network::Regtest;
 
     // 2. Create a new keystore, which encrypts the mnemonic
-    let keystore = Keystore::new(&mnemonic, network, passphrase).unwrap();
+    let keystore = Keystore::new(&mnemonic, network, passphrase, None).unwrap();
 
     // 3. Decrypt the mnemonic from the keystore
     let decrypted_mnemonic_phrase = keystore.decrypt_mnemonic(passphrase).unwrap();

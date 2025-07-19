@@ -27,11 +27,9 @@ pub struct Keystore {
     /// Account-level extended public key (xpub) for deriving addresses without the private key.
     #[serde(default)]
     pub account_xpub: String,
-    /// A map of network type to a list of pre-derived addresses.
-    /// This is kept for potential compatibility but new logic should
-    /// prefer dynamic derivation.
+    /// Derivation paths for different address types.
     #[serde(default)]
-    pub addresses: BTreeMap<String, Vec<AddressInfo>>,
+    pub hd_paths: BTreeMap<String, String>,
 }
 
 /// Parameters for the PBKDF2/S2K key derivation function.
@@ -55,7 +53,12 @@ use std::path::Path;
 
 impl Keystore {
     // TODO: This is a temporary, insecure implementation. The seed is not encrypted.
-    pub fn new(mnemonic: &Mnemonic, network: Network, passphrase: &str) -> Result<Self> {
+    pub fn new(
+        mnemonic: &Mnemonic,
+        network: Network,
+        passphrase: &str,
+        hd_path: Option<&str>,
+    ) -> Result<Self> {
         // 1. Encrypt the mnemonic phrase
         let (encrypted_mnemonic_bytes, salt, nonce) =
             crate::crypto::encrypt(mnemonic.phrase().as_bytes(), passphrase)?;
@@ -74,8 +77,18 @@ impl Keystore {
         let seed = Seed::new(mnemonic, "");
         let secp = Secp256k1::new();
         let root = Xpriv::new_master(network, seed.as_bytes())?;
-        let path = DerivationPath::from_str("m/86'/0'/0'")?;
-        let xpub = Xpub::from_priv(&secp, &root.derive_priv(&secp, &path)?);
+
+        // Use provided HD path or default to BIP-86 for the main account xpub
+        let primary_path_str = hd_path.unwrap_or("m/86'/0'/0'");
+        let primary_path = DerivationPath::from_str(primary_path_str)?;
+        let xpub = Xpub::from_priv(&secp, &root.derive_priv(&secp, &primary_path)?);
+
+        // 4. Populate standard HD paths
+        let mut hd_paths = BTreeMap::new();
+        hd_paths.insert("p2tr".to_string(), "m/86'/0'/0'".to_string());
+        hd_paths.insert("p2wpkh".to_string(), "m/84'/0'/0'".to_string());
+        hd_paths.insert("p2sh-p2wpkh".to_string(), "m/49'/0'/0'".to_string());
+        hd_paths.insert("p2pkh".to_string(), "m/44'/0'/0'".to_string());
 
         Ok(Self {
             encrypted_mnemonic: String::from_utf8(armored_mnemonic)?,
@@ -92,7 +105,7 @@ impl Keystore {
                 algorithm: Some("aes-256-gcm".to_string()),
             },
             account_xpub: xpub.to_string(),
-            addresses: BTreeMap::new(),
+            hd_paths,
         })
     }
 

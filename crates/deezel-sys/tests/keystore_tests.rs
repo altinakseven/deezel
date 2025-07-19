@@ -18,6 +18,7 @@ async fn test_keystore_creation() -> AnyhowResult<()> {
         passphrase: Some("test_password".to_string()),
         network: Network::Regtest,
         address_count: 5,
+        hd_path: None,
     };
 
     let (keystore, mnemonic) = manager.create_keystore(params).await?;

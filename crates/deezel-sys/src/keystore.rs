@@ -31,6 +31,8 @@ pub struct KeystoreCreateParams {
     pub network: Network,
     /// Number of addresses to derive for each script type
     pub address_count: u32,
+    /// Optional HD derivation path
+    pub hd_path: Option<String>,
 }
 
 /// Keystore manager that handles creation and management
@@ -66,8 +68,13 @@ impl KeystoreManager {
         let mnemonic_str = mnemonic.to_string();
 
         // 3. Create the encrypted keystore
-        let keystore = Keystore::new(&mnemonic, params.network, &passphrase)
-            .context("Failed to create and encrypt keystore")?;
+        let keystore = Keystore::new(
+            &mnemonic,
+            params.network,
+            &passphrase,
+            params.hd_path.as_deref(),
+        )
+        .context("Failed to create and encrypt keystore")?;
 
         Ok((keystore, mnemonic_str))
     }
@@ -166,20 +173,17 @@ impl KeystoreManager {
                 let internal_key = bitcoin::key::UntweakedPublicKey::from(derived_key.public_key);
                 let address = Address::p2tr(secp, internal_key, None, network);
                 (full_path, address.to_string())
-            },
-            // NOTE: The following are non-standard derivations. They use a BIP-86 account key
-            // to derive other address types. This is for consistency within the tool, but
-            // these paths are not what other wallets would typically generate.
+            }
             "p2wpkh" => {
-                let full_path = format!("m/86'/{}'/0'/0/{} (p2wpkh from p2tr account)", coin_type, index);
+                let full_path = format!("m/84'/{}'/0'/0/{}", coin_type, index);
                 let bitcoin_pubkey = PublicKey::new(derived_key.public_key);
                 let compressed_pubkey = CompressedPublicKey::try_from(bitcoin_pubkey)
                     .context("Failed to create compressed public key")?;
                 let address = Address::p2wpkh(&compressed_pubkey, network);
                 (full_path, address.to_string())
-            },
+            }
             "p2sh" => {
-                let full_path = format!("m/86'/{}'/0'/0/{} (p2sh from p2tr account)", coin_type, index);
+                let full_path = format!("m/49'/{}'/0'/0/{}", coin_type, index);
                 let bitcoin_pubkey = PublicKey::new(derived_key.public_key);
                 let compressed_pubkey = CompressedPublicKey::try_from(bitcoin_pubkey)
                     .context("Failed to create compressed public key")?;
@@ -187,16 +191,16 @@ impl KeystoreManager {
                 let address = Address::p2sh(&wpkh_script, network)
                     .context("Failed to create P2SH address")?;
                 (full_path, address.to_string())
-            },
+            }
             "p2pkh" => {
-                let full_path = format!("m/86'/{}'/0'/0/{} (p2pkh from p2tr account)", coin_type, index);
+                let full_path = format!("m/44'/{}'/0'/0/{}", coin_type, index);
                 let bitcoin_pubkey = PublicKey::new(derived_key.public_key);
                 let compressed_pubkey = CompressedPublicKey::try_from(bitcoin_pubkey)
                     .context("Failed to create compressed public key")?;
                 let address = Address::p2pkh(compressed_pubkey, network);
                 (full_path, address.to_string())
-            },
-             "p2wsh" => {
+            }
+            "p2wsh" => {
                 let full_path = format!("m/86'/{}'/0'/0/{} (p2wsh from p2tr account)", coin_type, index);
                 let bitcoin_pubkey = PublicKey::new(derived_key.public_key);
                 let compressed_pubkey = CompressedPublicKey::try_from(bitcoin_pubkey)
@@ -204,7 +208,7 @@ impl KeystoreManager {
                 let script = ScriptBuf::new_p2wpkh(&compressed_pubkey.wpubkey_hash());
                 let address = Address::p2wsh(&script, network);
                 (full_path, address.to_string())
-            },
+            }
             _ => return Err(anyhow!("Unsupported script type: {}", script_type)),
         };
         

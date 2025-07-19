@@ -167,6 +167,7 @@ impl SystemWallet for SystemDeezel {
                    passphrase: self.args.passphrase.clone(),
                    network: provider.get_network(),
                    address_count: 5, // This parameter is now unused but kept for compatibility
+                   hd_path: None,
                };
 
                // Create the keystore
@@ -224,6 +225,7 @@ impl SystemWallet for SystemDeezel {
                     passphrase: self.args.passphrase.clone(),
                     network: provider.get_network(),
                     address_count: 5, // This parameter is now unused but kept for compatibility
+                    hd_path: None,
                 };
 
                 // Create the keystore
