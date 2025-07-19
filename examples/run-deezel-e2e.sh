@@ -24,8 +24,7 @@ echo "Deriving address for block generation..."
 echo "Generating blocks to address [self:p2tr:0]..."
 $DEEZEL --wallet-file ~/.deezel/regtest.json.asc -p regtest --sandshrew-rpc-url http://localhost:18888 --passphrase testtesttest bitcoind generatetoaddress 201 [self:p2tr:0]
 
-echo "Syncing wallet with blockchain..."
-$DEEZEL --wallet-file ~/.deezel/regtest.json.asc -p regtest --sandshrew-rpc-url http://localhost:18888 --passphrase testtesttest wallet sync
+echo "Wallet is now funded. UTXOs will be synced on demand by the next command."
 
 echo "Checking for matured UTXOs..."
 for i in {1..30}; do

@@ -1191,10 +1191,11 @@ impl MetashrewRpcProvider for ConcreteProvider {
     
     async fn trace_outpoint(&self, txid: &str, vout: u32) -> Result<crate::trace::types::SerializableTrace> {
         let txid = bitcoin::Txid::from_str(txid)?;
-        let outpoint = bitcoin::OutPoint { txid, vout };
-        let key_bytes = consensus::encode::serialize(&outpoint);
-        let hex_input = format!("0x{}", hex::encode(key_bytes));
-        log::debug!("CHADSON_DEBUG: trace_outpoint hex_input: {}", hex_input);
+        let mut outpoint_pb = alkanes_pb::Outpoint::new();
+        outpoint_pb.txid = txid.to_raw_hash().to_byte_array().to_vec().into_iter().rev().collect::<Vec<u8>>();
+        outpoint_pb.vout = vout;
+
+        let hex_input = format!("0x{}", hex::encode(outpoint_pb.write_to_bytes()?));
         let response_bytes = self.metashrew_view_call("trace", &hex_input).await?;
         if response_bytes.is_empty() {
             return Ok(Default::default());

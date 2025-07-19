@@ -295,7 +295,6 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
 
     /// Execute single transaction (no envelope)
     async fn execute_single_transaction(&mut self, params: &EnhancedExecuteParams) -> Result<EnhancedExecuteResult> {
-        log::info!("[CHADSON_DEBUG] Entered execute_single_transaction");
         log::info!("Executing single transaction (no envelope)");
         
         // Step 1: Validate protostone specifications
@@ -308,9 +307,7 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
         let outputs = self.create_outputs(&params.to_addresses, &params.change_address).await?;
         
         // Step 4: Construct runestone with protostones
-        log::info!("[CHADSON_DEBUG] Constructing runestone with protostones: {:?}", params.protostones);
         let runestone_script = self.construct_runestone(&params.protostones, outputs.len())?;
-        log::info!("[CHADSON_DEBUG] Constructed runestone script (is_empty: {})", runestone_script.is_empty());
         
         // Step 5: Build and sign transaction
         let (tx, fee) = self.build_transaction(selected_utxos.clone(), outputs, runestone_script, params.fee_rate).await?;
@@ -325,11 +322,9 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
         }
         
         // Step 7: Handle tracing if enabled
-        log::info!("[CHADSON_DEBUG] Checking trace_enabled flag: {}", params.trace_enabled);
         let traces = if params.trace_enabled {
             self.trace_reveal_transaction(&txid, params).await?
         } else {
-            log::info!("[CHADSON_DEBUG] Tracing is disabled.");
             None
         };
         
@@ -486,6 +481,7 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
         let mut all_protostones = Vec::new();
 
         for spec in protostones {
+            let mut current_edicts = Vec::new();
             for edict_spec in &spec.edicts {
                 let id = ordinals::RuneId {
                     block: edict_spec.alkane_id.block,
@@ -496,11 +492,11 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
                     OutputTarget::Output(v) => v,
                     _ => 0, // Other cases not handled yet
                 };
-                edicts.push(ordinals::Edict { id, amount, output });
+                current_edicts.push(ordinals::Edict { id, amount, output });
             }
+            edicts.extend(current_edicts.clone());
 
             let message = if let Some(cellpack) = &spec.cellpack {
-                // Use the real cellpack enciphering logic
                 let cellpack_bytes = cellpack.encipher();
                 log::info!("Encoded cellpack to {} bytes", cellpack_bytes.len());
                 cellpack_bytes
@@ -508,19 +504,10 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
                 Vec::new()
             };
 
-            let edicts_clone = edicts.iter().map(|e| ordinals::Edict {
-                id: ordinals::RuneId {
-                    block: e.id.block,
-                    tx: e.id.tx,
-                },
-                amount: e.amount,
-                output: e.output,
-            }).collect();
-
             all_protostones.push(Protostone {
                 protocol_tag: 1, // ALKANES protocol tag
                 message,
-                edicts: into_protostone_edicts(edicts_clone),
+                edicts: into_protostone_edicts(current_edicts),
                 burn: None,
                 refund: None,
                 pointer: None,
@@ -530,6 +517,7 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
 
         let protocol_payload = if !all_protostones.is_empty() {
             let enciphered = all_protostones.encipher()?;
+            log::info!("Enciphered protostones into payload: {:?}", enciphered);
             Some(enciphered)
         } else {
             None
@@ -572,13 +560,10 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
     
         // Add OP_RETURN output if a runestone is present
         if !runestone_script.is_empty() {
-            log::info!("[CHADSON_DEBUG] Adding OP_RETURN output to transaction.");
             outputs.push(TxOut {
                 value: bitcoin::Amount::ZERO,
                 script_pubkey: runestone_script,
             });
-        } else {
-            log::info!("[CHADSON_DEBUG] No OP_RETURN output added because runestone script is empty.");
         }
     
         // --- Fee Calculation and Output Adjustment (BEFORE SIGNING) ---
@@ -1038,7 +1023,6 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
     /// on regtest, waiting for synchronization with various services, and then
     /// calling the `trace_outpoint` provider method for each protostone.
     async fn trace_reveal_transaction(&self, txid: &str, params: &EnhancedExecuteParams) -> Result<Option<Vec<crate::trace::types::SerializableTrace>>> {
-        log::info!("[CHADSON_DEBUG] Entered trace_reveal_transaction for txid: {}", txid);
         log::info!("Starting enhanced transaction tracing for reveal transaction: {}", txid);
         
         if params.mine_enabled {
