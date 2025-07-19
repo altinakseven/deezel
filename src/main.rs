@@ -52,7 +52,7 @@ struct Args {
 
     /// Wallet passphrase for encrypted wallets
     #[arg(long)]
-    passphrase: Option<String>,
+    wallet_passphrase: Option<String>,
 
     /// Log level
     #[arg(long, default_value = "info")]
@@ -145,6 +145,9 @@ enum WalletCommands {
         /// Show raw JSON output
         #[arg(long)]
         raw: bool,
+        /// Wallet passphrase
+        #[arg(long)]
+        wallet_passphrase: Option<String>,
     },
     /// Show wallet balance
     Balance {
@@ -831,15 +834,20 @@ async fn resolve_address_identifiers(input: &str, wallet_manager: Option<&Arc<de
     
     // Check if input is a shorthand address identifier like "p2tr:0"
     if is_shorthand_address_identifier(input) {
-        let resolver = if let Some(wm) = wallet_manager {
-            AddressResolver::with_wallet(Arc::clone(wm))
-        } else {
-            return Err(anyhow!("Address identifier found but no wallet manager available. Please ensure wallet is loaded."));
-        };
+        let wallet_manager = wallet_manager.ok_or_else(|| {
+            anyhow!("Address identifier found but no wallet manager available. Please ensure wallet is loaded.")
+        })?;
         
-        // Convert shorthand to full format and resolve
-        let full_identifier = format!("[self:{}]", input);
-        return resolver.resolve_all_identifiers(&full_identifier).await;
+        // Directly parse and resolve the shorthand identifier
+        let parts: Vec<&str> = input.split(':').collect();
+        let address_type_str = parts[0];
+        let index = if parts.len() > 1 {
+            parts[1].parse::<u32>().context("Invalid index in shorthand identifier")?
+        } else {
+            0
+        };
+
+        return wallet_manager.get_address_of_type_at_index(address_type_str, index, false).await;
     }
     
     // No identifiers found, return as-is
@@ -974,7 +982,7 @@ async fn main() -> Result<()> {
     let wallet_manager = if matches!(args.command, Commands::Walletinfo { .. }) ||
         matches!(args.command, Commands::Wallet { command: WalletCommands::Restore { .. } |
                                                             WalletCommands::Info |
-                                                            WalletCommands::Addresses { .. } |
+                                                            WalletCommands::Addresses { wallet_passphrase: _, .. } |
                                                             WalletCommands::Balance { .. } |
                                                             WalletCommands::Send { .. } |
                                                             WalletCommands::SendAll { .. } |
@@ -992,14 +1000,15 @@ async fn main() -> Result<()> {
                                                             WalletCommands::Backup |
                                                             WalletCommands::ListIdentifiers }) ||
         matches!(args.command, Commands::Alkanes { command: AlkanesCommands::Execute { .. } |
-                                                             AlkanesCommands::Balance { .. } }) {
+                                                             AlkanesCommands::Balance { .. } }) ||
+       matches!(args.command, Commands::Deploy { .. }) {
         // FIXED: Only load wallet for alkanes commands that actually need it (Execute and Balance)
         // Commands like TokenInfo, Trace, Inspect, Getbytecode, and Simulate work with RPC client only
         let wallet_manager = load_wallet_manager(
             &wallet_file,
             &network_params,
             &sandshrew_rpc_url,
-            args.passphrase.as_deref()
+            args.wallet_passphrase.as_deref()
         ).await?;
         
         Some(wallet_manager)
@@ -1020,30 +1029,19 @@ async fn main() -> Result<()> {
                 println!("{}", count);
             },
             BitcoindCommands::Generatetoaddress { nblocks, address } => {
-                // Resolve address identifiers if wallet is available
-                let resolved_address = if AddressResolver::contains_identifiers(&address) {
-                    if let Some(wm) = &wallet_manager {
-                        resolve_address_identifiers(&address, Some(wm)).await?
-                    } else {
-                        // Try to load wallet manager for address resolution
-                        match load_wallet_manager(
-                            &wallet_file,
-                            &network_params,
-                            &sandshrew_rpc_url,
-                            args.passphrase.as_deref()
-                        ).await {
-                            Ok(temp_wallet_manager) => {
-                                resolve_address_identifiers(&address, Some(&temp_wallet_manager)).await?
-                            },
-                            Err(_) => {
-                                return Err(anyhow!("Address identifiers found but wallet could not be loaded. Please ensure wallet exists or use a raw address."));
-                            }
-                        }
-                    }
-                } else {
-                    address.clone()
-                };
-                
+                // Load the wallet manager to resolve the address
+                let wm = load_wallet_manager(
+                    &wallet_file,
+                    &network_params,
+                    &sandshrew_rpc_url,
+                    args.wallet_passphrase.as_deref(),
+                )
+                .await
+                .context("Failed to load wallet for generatetoaddress")?;
+
+                // Resolve address identifiers
+                let resolved_address = resolve_address_identifiers(&address, Some(&wm)).await?;
+
                 let result = rpc_client.generate_to_address(nblocks, &resolved_address).await?;
                 println!("Generated {} blocks to address {}", nblocks, resolved_address);
                 if let Some(block_hashes) = result.as_array() {
@@ -1073,7 +1071,7 @@ async fn main() -> Result<()> {
                     
                     // Determine encryption mode based on file extension and passphrase
                     let use_gpg = wallet_file.ends_with(".asc");
-                    let interactive_mode = args.passphrase.is_none();
+                    let interactive_mode = args.wallet_passphrase.is_none();
                     
                     if use_gpg && interactive_mode {
                         println!("🔐 Creating GPG-encrypted wallet (interactive mode)...");
@@ -1087,7 +1085,7 @@ async fn main() -> Result<()> {
                     let new_wallet = deezel::wallet::WalletManager::create_wallet(
                         wallet_config,
                         mnemonic.clone(),
-                        args.passphrase.clone()
+                        args.wallet_passphrase.clone()
                     ).await?;
                     
                     println!("✅ Wallet created successfully!");

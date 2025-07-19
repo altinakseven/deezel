@@ -122,6 +122,7 @@ impl MockMetashrewServer {
             "alkanes_simulate" => Self::handle_simulate(params, state).await,
             "alkanes_meta" => Self::handle_meta(params, state).await,
             "esplora_gettransaction" => Self::handle_get_transaction(params, state).await,
+            "generatetoaddress" => Self::handle_generate_to_address(params, state).await,
             _ => Err(anyhow!("Unknown method: {}", method)),
         };
 
@@ -426,6 +427,35 @@ impl MockMetashrewServer {
             },
             "id": id
         })
+    }
+
+    /// Handle generatetoaddress method
+    async fn handle_generate_to_address(params: &Value, state: Arc<Mutex<TestState>>) -> Result<Value> {
+        let params_array = params.as_array()
+            .ok_or_else(|| anyhow!("generatetoaddress params must be an array"))?;
+
+        if params_array.len() < 2 {
+            return Err(anyhow!("generatetoaddress requires nblocks and address parameters"));
+        }
+
+        let nblocks = params_array[0].as_u64().unwrap_or(0) as u32;
+        let address = params_array[1].as_str()
+            .ok_or_else(|| anyhow!("Address must be a string"))?;
+
+        debug!("Mock generating {} blocks to address {}", nblocks, address);
+
+        // Add mock UTXOs to the state to simulate funding
+        let new_utxos = create_test_utxos(address, nblocks);
+        let mut state_guard = state.lock().unwrap();
+        let utxos = state_guard.utxos.entry(address.to_string()).or_insert_with(Vec::new);
+        utxos.extend(new_utxos);
+
+        // Generate fake block hashes
+        let block_hashes: Vec<String> = (0..nblocks)
+            .map(|i| format!("mock_block_hash_{}_{}", address, i))
+            .collect();
+
+        Ok(json!(block_hashes))
     }
 }
 

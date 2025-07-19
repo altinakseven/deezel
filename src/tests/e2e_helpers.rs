@@ -108,20 +108,27 @@ impl E2ETestEnv {
     }
     
     /// Create a test wallet
-    pub async fn create_test_wallet(&self, wallet_name: &str) -> Result<PathBuf> {
-       	let wallet_path = self.wallet_dir.join(format!("{}.json", wallet_name));
-       	info!("Creating test wallet at {:?}", wallet_path);
-       	let args = &[
-       		"--wallet-file",
-       		wallet_path.to_str().unwrap(),
-       		"wallet",
-       		"create",
-       		"--mnemonic",
-       		"abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
-       	];
-       	self.run_deezel_command(args).await?;
-       	Ok(wallet_path)
-       }
+    pub async fn create_test_wallet(&self, wallet_name: &str, passphrase: Option<&str>) -> Result<PathBuf> {
+        let wallet_path = self.wallet_dir.join(format!("{}.json", wallet_name));
+        info!("Creating test wallet at {:?}", wallet_path);
+        let mut args_vec = vec![
+            "--wallet-file".to_string(),
+            wallet_path.to_str().unwrap().to_string(),
+        ];
+        if let Some(p) = passphrase {
+            args_vec.push("--wallet-passphrase".to_string());
+            args_vec.push(p.to_string());
+        }
+        args_vec.extend(vec![
+            "wallet".to_string(),
+            "create".to_string(),
+            "--mnemonic".to_string(),
+            "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about".to_string(),
+        ]);
+        let args_str: Vec<&str> = args_vec.iter().map(|s| s.as_str()).collect();
+        self.run_deezel_command(&args_str).await?;
+        Ok(wallet_path)
+    }
     
     /// Run deezel CLI command
     pub async fn run_deezel_command(&self, args: &[&str]) -> Result<DeezelCommandResult> {
@@ -309,13 +316,17 @@ pub struct E2ETestScenario {
     /// Test steps
     pub steps: Vec<TestStep>,
     wallet_path: Option<PathBuf>,
+    wallet_passphrase: Option<String>,
     alkane_id: Option<String>,
+    generated_address: Option<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TestStep {
     /// Create a wallet
-    CreateWallet { name: String },
+    CreateWallet { name: String, passphrase: Option<String> },
+    /// Get a new address
+    GetNewAddress,
     /// Add UTXOs to an address
     AddUtxos { address: String, utxos: Vec<MockUtxo> },
     /// Add DIESEL balance to an address
@@ -336,7 +347,9 @@ impl E2ETestScenario {
             env,
             steps: Vec::new(),
             wallet_path: None,
+            wallet_passphrase: None,
             alkane_id: None,
+            generated_address: None,
         })
     }
     
@@ -358,11 +371,25 @@ impl E2ETestScenario {
         self.env.setup_blockchain(10).await?;
         
         // Execute each step
-        for (i, step) in self.steps.into_iter().enumerate() {
+        for (i, step) in self.steps.iter().enumerate() {
             info!("Executing step {}: {:?}", i + 1, step);
-            match step {
-                TestStep::CreateWallet { name } => {
-                    self.wallet_path = Some(self.env.create_test_wallet(&name).await?);
+            match step.clone() {
+                TestStep::CreateWallet { name, passphrase } => {
+                    self.wallet_path = Some(self.env.create_test_wallet(&name, passphrase.as_deref()).await?);
+                    self.wallet_passphrase = passphrase;
+                }
+                TestStep::GetNewAddress => {
+                    let args = vec!["wallet".to_string(), "addresses".to_string(), "--count".to_string(), "1".to_string(), "--raw".to_string()];
+                    let final_args = self.build_final_args(args);
+                    let result = self.env.run_deezel_command(&final_args.iter().map(|s| s.as_str()).collect::<Vec<_>>()).await?;
+                    result.assert_success()?;
+                    let addresses: Vec<serde_json::Value> = serde_json::from_str(&result.stdout)?;
+                    let address = addresses.get(0)
+                        .and_then(|v| v.get("address"))
+                        .and_then(|a| a.as_str())
+                        .ok_or_else(|| anyhow!("Could not parse address from wallet addresses command"))?
+                        .to_string();
+                    self.generated_address = Some(address);
                 }
                 TestStep::AddUtxos { address, utxos } => {
                     self.env.add_test_utxos(&address, utxos)?;
@@ -378,20 +405,7 @@ impl E2ETestScenario {
                     expect_success,
                     extract_alkane_id,
                 } => {
-                    let mut final_args = args.clone();
-                    if let Some(wallet_path) = &self.wallet_path {
-                        if !args.contains(&"--wallet-file".to_string()) {
-                            final_args.insert(0, wallet_path.to_str().unwrap().to_string());
-                            final_args.insert(0, "--wallet-file".to_string());
-                        }
-                    }
-                    if let Some(alkane_id) = &self.alkane_id {
-                        for arg in &mut final_args {
-                            if arg.contains("<alkane_id>") {
-                                *arg = arg.replace("<alkane_id>", alkane_id);
-                            }
-                        }
-                    }
+                    let final_args = self.build_final_args(args);
                     let args_str: Vec<&str> = final_args.iter().map(|s| s.as_str()).collect();
                     let result = self.env.run_deezel_command(&args_str).await?;
 
@@ -423,6 +437,43 @@ impl E2ETestScenario {
         
         info!("E2E test scenario completed successfully");
         Ok(())
+    }
+
+    fn build_final_args(&self, args: Vec<String>) -> Vec<String> {
+        let mut final_args = Vec::new();
+
+        // Add global options first
+        if let Some(wallet_path) = &self.wallet_path {
+            if !args.contains(&"--wallet-file".to_string()) {
+                final_args.push("--wallet-file".to_string());
+                final_args.push(wallet_path.to_str().unwrap().to_string());
+            }
+        }
+        if let Some(passphrase) = &self.wallet_passphrase {
+            if !args.contains(&"--wallet-passphrase".to_string()) {
+                final_args.push("--wallet-passphrase".to_string());
+                final_args.push(passphrase.clone());
+            }
+        }
+
+        // Add command-specific args
+        let mut processed_args = args.clone();
+        if let Some(alkane_id) = &self.alkane_id {
+            for arg in &mut processed_args {
+                if arg.contains("<alkane_id>") {
+                    *arg = arg.replace("<alkane_id>", alkane_id);
+                }
+            }
+        }
+        if let Some(address) = &self.generated_address {
+            for arg in &mut processed_args {
+                if arg.contains("<generated_address>") {
+                    *arg = arg.replace("<generated_address>", address);
+                }
+            }
+        }
+        final_args.extend(processed_args);
+        final_args
     }
 }
 

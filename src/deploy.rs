@@ -21,7 +21,7 @@ impl AmmDeployer {
 
         let params = ContractDeployParams {
             wasm_file: wasm_file.to_string(),
-            calldata: vec![],
+            calldata: vec!["2".to_string(), "0".to_string()],
             fee_rate: None,
             auto_confirm,
         };
