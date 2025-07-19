@@ -5,15 +5,14 @@
 
 use anyhow::Result as AnyhowResult;
 use bitcoin::Network;
-use deezel_sys::keystore::{
-    KeystoreManager, KeystoreCreateParams
-};
+use deezel_common::DEEZEL_COMMON_VERSION;
+use deezel_sys::keystore::{KeystoreManager, KeystoreCreateParams};
 
 /// Test keystore creation with default parameters
 #[tokio::test]
 async fn test_keystore_creation() -> AnyhowResult<()> {
     let manager = KeystoreManager::new();
-    
+
     let params = KeystoreCreateParams {
         mnemonic: None, // Generate new mnemonic
         passphrase: Some("test_password".to_string()),
@@ -24,7 +23,7 @@ async fn test_keystore_creation() -> AnyhowResult<()> {
     let (keystore, mnemonic) = manager.create_keystore(params).await?;
 
     // Verify keystore structure
-    assert_eq!(keystore.version, "1.0");
+    assert_eq!(keystore.version, DEEZEL_COMMON_VERSION);
     assert!(!keystore.encrypted_mnemonic.is_empty());
     assert!(keystore.created_at > 0);
     

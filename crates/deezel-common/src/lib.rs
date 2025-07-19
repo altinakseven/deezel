@@ -304,7 +304,7 @@ impl From<alloc::string::FromUtf8Error> for DeezelError {
 }
 
 /// Version information
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const DEEZEL_COMMON_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const NAME: &str = env!("CARGO_PKG_NAME");
 
 /// Initialize the library (for WASM compatibility)

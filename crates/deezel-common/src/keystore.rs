@@ -84,7 +84,7 @@ impl Keystore {
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs(),
-            version: "1.0".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
             pbkdf2_params: PbkdfParams {
                 salt: hex::encode(salt),
                 nonce: hex::encode(nonce),
