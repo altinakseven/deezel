@@ -5,6 +5,7 @@ pub mod trace;
 // Deezel is licensed under the MIT license.
 // See LICENSE file in the project root for full license information.
 
+pub mod analyze;
 pub mod execute;
 pub mod parsing;
 pub mod types;

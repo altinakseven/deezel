@@ -1253,25 +1253,51 @@ impl SystemAlkanes for SystemDeezel {
     }
 }
 
+use deezel_common::alkanes::analyze::analyze_runestone;
+use bitcoin::Transaction;
+use bitcoin::consensus::deserialize;
+
+fn decode_transaction_hex(hex_str: &str) -> anyhow::Result<Transaction> {
+    let tx_bytes = hex::decode(hex_str.trim_start_matches("0x"))
+        .context("Failed to decode transaction hex")?;
+    
+    let tx: Transaction = deserialize(&tx_bytes)
+        .context("Failed to deserialize transaction")?;
+    
+    Ok(tx)
+}
+
 #[async_trait(?Send)]
 impl SystemRunestone for SystemDeezel {
-   async fn execute_runestone_command(&self, command: RunestoneCommands) -> deezel_common::Result<()> {
-       let provider = &self.provider;
-       let res: anyhow::Result<()> = match command {
+    async fn execute_runestone_command(&self, command: RunestoneCommands) -> deezel_common::Result<()> {
+        let provider = &self.provider;
+        let res: anyhow::Result<()> = match command {
             RunestoneCommands::Decode { tx_hex, raw } => {
                 let tx = decode_transaction_hex(&tx_hex)?;
-                analyze_runestone_tx(&tx, raw, provider).await?;
+                let analysis = analyze_runestone(&tx)?;
+                if raw {
+                    println!("{}", serde_json::to_string_pretty(&analysis)?);
+                } else {
+                    // TODO: Add a pretty printer
+                    println!("{}", serde_json::to_string_pretty(&analysis)?);
+                }
                 Ok(())
             },
-           RunestoneCommands::Analyze { txid, raw } => {
-               let tx_hex = provider.get_transaction_hex(&txid).await?;
-               let tx = decode_transaction_hex(&tx_hex)?;
-               analyze_runestone_tx(&tx, raw, provider).await?;
-               Ok(())
-           },
-       };
-       res.map_err(|e| DeezelError::Wallet(e.to_string()))
-   }
+            RunestoneCommands::Analyze { txid, raw } => {
+                let tx_hex = provider.get_transaction_hex(&txid).await?;
+                let tx = decode_transaction_hex(&tx_hex)?;
+                let analysis = analyze_runestone(&tx)?;
+                if raw {
+                    println!("{}", serde_json::to_string_pretty(&analysis)?);
+                } else {
+                    // TODO: Add a pretty printer
+                    println!("{}", serde_json::to_string_pretty(&analysis)?);
+                }
+                Ok(())
+            },
+        };
+        res.map_err(|e| DeezelError::Wallet(e.to_string()))
+    }
 }
 
 #[async_trait(?Send)]

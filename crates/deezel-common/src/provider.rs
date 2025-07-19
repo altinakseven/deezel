@@ -58,6 +58,7 @@ use bitcoin::{
     taproot,
 };
 use bitcoin_hashes::Hash;
+use bitcoin::consensus;
 use ordinals::{Runestone, Artifact};
 
 #[cfg(feature = "native-deps")]
@@ -1438,12 +1439,15 @@ impl MetashrewRpcProvider for ConcreteProvider {
     }
     
     async fn trace_outpoint(&self, txid: &str, vout: u32) -> Result<crate::trace::types::SerializableTrace> {
-        let mut request = alkanes_pb::Outpoint::new();
-        let reversed_txid_hex = reverse_txid_bytes(txid)?;
-        request.txid = hex::decode(reversed_txid_hex)?;
-        request.vout = vout;
-        let hex_input = format!("0x{}", hex::encode(request.write_to_bytes()?));
+        let txid = bitcoin::Txid::from_str(txid)?;
+        let outpoint = bitcoin::OutPoint { txid, vout };
+        let key_bytes = consensus::encode::serialize(&outpoint);
+        let hex_input = format!("0x{}", hex::encode(key_bytes));
+        log::debug!("CHADSON_DEBUG: trace_outpoint hex_input: {}", hex_input);
         let response_bytes = self.metashrew_view_call("trace", &hex_input).await?;
+        if response_bytes.is_empty() {
+            return Ok(Default::default());
+        }
         let trace_pb = alkanes_pb::AlkanesTrace::parse_from_bytes(&response_bytes)?;
         let trace: alkanes_support::trace::Trace = trace_pb.into();
         Ok(trace.into())
@@ -1914,17 +1918,16 @@ impl AlkanesProvider for ConcreteProvider {
   txid: &str,
   vout: u32,
  ) -> Result<protorune_pb::OutpointResponse> {
-  let mut request = protorune_pb::Outpoint::new();
-  let reversed_txid_hex = reverse_txid_bytes(txid)?;
-  request.txid = hex::decode(reversed_txid_hex)?;
-  request.vout = vout;
-  let hex_input = format!("0x{}", hex::encode(request.write_to_bytes()?));
-  let response_bytes = self.metashrew_view_call("protorunesbyoutpoint", &hex_input).await?;
-  if response_bytes.is_empty() {
-   return Ok(protorune_pb::OutpointResponse::new());
-  }
-  let proto_response = protorune_pb::OutpointResponse::parse_from_bytes(&response_bytes)?;
-  Ok(proto_response)
+       let txid = bitcoin::Txid::from_str(txid)?;
+       let outpoint = bitcoin::OutPoint { txid, vout };
+       let key_bytes = consensus::encode::serialize(&outpoint);
+       let hex_input = format!("0x{}", hex::encode(key_bytes));
+       let response_bytes = self.metashrew_view_call("protorunesbyoutpoint", &hex_input).await?;
+       if response_bytes.is_empty() {
+           return Ok(protorune_pb::OutpointResponse::new());
+       }
+       let proto_response = protorune_pb::OutpointResponse::parse_from_bytes(&response_bytes)?;
+       Ok(proto_response)
  }
 
     async fn simulate(&self, contract_id: &str, params: Option<&str>) -> Result<JsonValue> {

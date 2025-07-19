@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use alkanes_support::trace::{self as alkanes_trace};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SerializableTrace {
     pub events: Vec<SerializableTraceEvent>,
 }

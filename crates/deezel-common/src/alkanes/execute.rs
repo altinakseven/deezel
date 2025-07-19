@@ -480,6 +480,7 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
 
     fn construct_runestone(&self, protostones: &[ProtostoneSpec], _num_outputs: usize) -> Result<ScriptBuf> {
         log::info!("Constructing runestone with {} protostones", protostones.len());
+        log::debug!("Protostone Specs: {:#?}", protostones);
 
         let mut edicts = Vec::new();
         let mut all_protostones = Vec::new();
@@ -542,6 +543,18 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
             protocol: protocol_payload,
         };
 
+        log::debug!("Constructed Runestone: {:#?}", runestone);
+        if let Ok(decoded) = crate::alkanes::analyze::analyze_runestone(&Transaction {
+            version: bitcoin::transaction::Version(2),
+            lock_time: bitcoin::absolute::LockTime::ZERO,
+            input: vec![],
+            output: vec![TxOut {
+                value: bitcoin::Amount::ZERO,
+                script_pubkey: runestone.encipher(),
+            }],
+        }) {
+            log::debug!("Decoded Runestone for logging: {:#?}", decoded);
+        }
         Ok(runestone.encipher())
     }
 
@@ -1040,23 +1053,29 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
         let tx_bytes = hex::decode(&tx_hex).map_err(|e| DeezelError::Hex(e.to_string()))?;
         let tx: Transaction = bitcoin::consensus::deserialize(&tx_bytes).map_err(|e| DeezelError::Serialization(e.to_string()))?;
         
-        let mut traces = Vec::new();
-        let mut protostone_count = 0;
-        
-        for (vout, output) in tx.output.iter().enumerate() {
-            if output.script_pubkey.is_op_return() {
-                protostone_count += 1;
-                let trace_vout = vout as u32;
-                log::info!("Found OP_RETURN at vout {}, tracing protostone #{}", trace_vout, protostone_count);
+        if let Ok(decoded) = crate::alkanes::analyze::analyze_runestone(&tx) {
+            log::info!("Decoded Runestone for debugging:\n{:#?}", decoded);
+        }
 
-                match self.provider.trace_outpoint(txid, trace_vout).await {
-                    Ok(trace_result) => {
-                        log::debug!("Trace result for vout {}: {:?}", trace_vout, trace_result);
-                        traces.push(trace_result);
-                    },
-                    Err(e) => {
-                        log::warn!("Failed to trace protostone #{} at vout {}: {}", protostone_count, trace_vout, e);
+        let mut traces = Vec::new();
+        // Correctly trace each protostone based on its virtual output index.
+        // The virtual outputs for protostones start after the real transaction outputs.
+        for (protostone_idx, _) in params.protostones.iter().enumerate() {
+            // The vout to trace is the number of real outputs + the protostone's index.
+            let trace_vout = (tx.output.len() + protostone_idx) as u32;
+            
+            log::info!("Tracing protostone #{} at virtual outpoint: {}:{}", protostone_idx, txid, trace_vout);
+
+            match self.provider.trace_outpoint(txid, trace_vout).await {
+                Ok(trace_result) => {
+                    if trace_result.events.is_empty() {
+                        log::warn!("Trace for {}:{} came back empty.", txid, trace_vout);
                     }
+                    log::debug!("Trace result for protostone #{}: {:?}", protostone_idx, trace_result);
+                    traces.push(trace_result);
+                },
+                Err(e) => {
+                    log::warn!("Failed to trace protostone #{} at vout {}: {}", protostone_idx, trace_vout, e);
                 }
             }
         }

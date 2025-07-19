@@ -43,3 +43,11 @@ done
     -y \
     --trace \
     --protostones '[3,797,101]:v0:v0'
+
+echo "Syncing with metashrew indexer..."
+/data/metashrew/deezel/target/release/deezel \
+    --sandshrew-rpc-url http://localhost:18888 \
+    -p regtest \
+    --wallet-file ~/.deezel/regtest.json.asc \
+    --passphrase testtesttest \
+    sync
