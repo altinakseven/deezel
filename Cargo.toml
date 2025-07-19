@@ -11,10 +11,9 @@
 members = [
   "crates/deezel",
   "crates/deezel-common",
-  "crates/deezel-rpgp",
   "crates/deezel-web",
   "crates/deezel-sys"
-]
+, "crates/deezel-asc"]
 exclude = []
 resolver = "2"
 
@@ -74,8 +73,8 @@ mockall = "0.13.0"
 # Alkanes-rs crates
 alkanes-support = { git = "https://github.com/kungfuflex/alkanes-rs", branch = "kungfuflex/serde" }
 metashrew-support = { git = "https://github.com/sandshrewmetaprotocols/metashrew" }
-protobuf = "=3.7.1"
-protobuf-json-mapping = "3.7.1"
+protobuf = "3.7.2"
+protobuf-json-mapping = "3.7.2"
 
 # WASM runtime for alkane inspection
 wasmi = "0.47.0"

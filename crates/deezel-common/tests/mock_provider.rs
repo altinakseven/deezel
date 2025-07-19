@@ -151,7 +151,7 @@ impl LogProvider for MockProvider {
 
 #[async_trait(?Send)]
 impl WalletProvider for MockProvider {
-    async fn create_wallet(&self, _config: WalletConfig, _mnemonic: Option<String>, _passphrase: Option<String>) -> Result<WalletInfo> {
+    async fn create_wallet(&mut self, _config: WalletConfig, _mnemonic: Option<String>, _passphrase: Option<String>) -> Result<WalletInfo> {
         Ok(WalletInfo {
             address: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4".to_string(),
             network: self.network,
@@ -159,7 +159,7 @@ impl WalletProvider for MockProvider {
         })
     }
     
-    async fn load_wallet(&self, _config: WalletConfig, _passphrase: Option<String>) -> Result<WalletInfo> {
+    async fn load_wallet(&mut self, _config: WalletConfig, _passphrase: Option<String>) -> Result<WalletInfo> {
         self.create_wallet(WalletConfig {
             wallet_path: "test".to_string(),
             network: self.network,
@@ -618,100 +618,6 @@ impl MonitorProvider for MockProvider {
             txid: "mock_txid".to_string(),
             data: serde_json::json!({"amount": 100000}),
         }])
-    }
-}
-
-#[async_trait(?Send)]
-impl PgpProvider for MockProvider {
-    async fn generate_keypair(&self, _user_id: &str, _passphrase: Option<&str>) -> Result<PgpKeyPair> {
-        let key = PgpKey {
-            key_data: b"mock_key_data".to_vec(),
-            is_private: false,
-            fingerprint: "mock_fingerprint".to_string(),
-            key_id: "mock_key_id".to_string(),
-            user_ids: vec!["mock_user_id".to_string()],
-            creation_time: 0,
-            expiration_time: None,
-            algorithm: PgpAlgorithm {
-                public_key_algorithm: "RSA".to_string(),
-                symmetric_algorithm: None,
-                hash_algorithm: None,
-                compression_algorithm: None,
-            },
-        };
-        Ok(PgpKeyPair {
-            public_key: key.clone(),
-            private_key: key,
-            fingerprint: "mock_fingerprint".to_string(),
-            key_id: "mock_key_id".to_string(),
-        })
-    }
-
-    async fn import_key(&self, _armored_key: &str) -> Result<PgpKey> {
-        Ok(PgpKey {
-            key_data: b"mock_key_data".to_vec(),
-            is_private: false,
-            fingerprint: "mock_fingerprint".to_string(),
-            key_id: "mock_key_id".to_string(),
-            user_ids: vec!["mock_user_id".to_string()],
-            creation_time: 0,
-            expiration_time: None,
-            algorithm: PgpAlgorithm {
-                public_key_algorithm: "RSA".to_string(),
-                symmetric_algorithm: None,
-                hash_algorithm: None,
-                compression_algorithm: None,
-            },
-        })
-    }
-
-    async fn export_key(&self, _key: &PgpKey, _include_private: bool) -> Result<String> {
-        Ok("mock_exported_key".to_string())
-    }
-
-    async fn encrypt(&self, data: &[u8], _recipient_keys: &[PgpKey], _armor: bool) -> Result<Vec<u8>> {
-        Ok(data.to_vec())
-    }
-
-    async fn decrypt(&self, encrypted_data: &[u8], _private_key: &PgpKey, _passphrase: Option<&str>) -> Result<Vec<u8>> {
-        Ok(encrypted_data.to_vec())
-    }
-
-    async fn sign(&self, _data: &[u8], _private_key: &PgpKey, _passphrase: Option<&str>, _armor: bool) -> Result<Vec<u8>> {
-        Ok(b"mock_signature".to_vec())
-    }
-
-    async fn verify(&self, _data: &[u8], _signature: &[u8], _public_key: &PgpKey) -> Result<bool> {
-        Ok(true)
-    }
-
-    async fn encrypt_and_sign(&self, data: &[u8], _recipient_keys: &[PgpKey], _signing_key: &PgpKey, _passphrase: Option<&str>, _armor: bool) -> Result<Vec<u8>> {
-        Ok(data.to_vec())
-    }
-
-    async fn decrypt_and_verify(&self, encrypted_data: &[u8], _private_key: &PgpKey, _sender_public_key: &PgpKey, _passphrase: Option<&str>) -> Result<PgpDecryptResult> {
-        Ok(PgpDecryptResult {
-            data: encrypted_data.to_vec(),
-            signature_valid: true,
-            signer_key_id: Some("mock_key_id".to_string()),
-            signature_time: None,
-        })
-    }
-
-    async fn list_pgp_keys(&self) -> Result<Vec<PgpKeyInfo>> {
-        Ok(vec![])
-    }
-
-    async fn get_key(&self, _identifier: &str) -> Result<Option<PgpKey>> {
-        Ok(None)
-    }
-
-    async fn delete_key(&self, _identifier: &str) -> Result<()> {
-        Ok(())
-    }
-
-    async fn change_passphrase(&self, key: &PgpKey, _old_passphrase: Option<&str>, _new_passphrase: Option<&str>) -> Result<PgpKey> {
-        Ok(key.clone())
     }
 }
 

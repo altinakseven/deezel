@@ -62,7 +62,6 @@ pub mod monitor;
 pub mod utils;
 pub mod trace;
 pub mod keystore;
-pub mod pgp_rpgp;
 pub mod esplora;
 pub mod bitcoind;
 pub mod ord;
@@ -288,6 +287,18 @@ impl From<bitcoin::hashes::hex::HexToArrayError> for DeezelError {
 impl From<reqwest::Error> for DeezelError {
     fn from(err: reqwest::Error) -> Self {
         DeezelError::Network(format!("{:?}", err))
+    }
+}
+
+impl From<deezel_asc::errors::Error> for DeezelError {
+    fn from(err: deezel_asc::errors::Error) -> Self {
+        DeezelError::Pgp(err.to_string())
+    }
+}
+
+impl From<alloc::string::FromUtf8Error> for DeezelError {
+    fn from(err: alloc::string::FromUtf8Error) -> Self {
+        DeezelError::Parse(err.to_string())
     }
 }
 

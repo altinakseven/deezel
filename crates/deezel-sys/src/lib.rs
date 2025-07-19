@@ -11,19 +11,15 @@ use async_trait::async_trait;
 use deezel_common::provider::ConcreteProvider;
 use deezel_common::traits::*;
 use deezel_common::commands::*;
-use std::io::Read;
 
 pub mod utils;
-pub mod pgp;
 pub mod keystore;
 use deezel_common::alkanes::AlkanesInspectConfig;
 use utils::*;
-use pgp::DeezelPgpProvider;
 use keystore::{KeystoreManager, KeystoreCreateParams};
 
 pub struct SystemDeezel {
     provider: ConcreteProvider,
-    pgp_provider: DeezelPgpProvider,
     keystore_manager: KeystoreManager,
     args: Args,
 }
@@ -120,14 +116,12 @@ impl SystemDeezel {
         provider.initialize().await?;
 
         // Create PGP provider
-        let pgp_provider = DeezelPgpProvider::new();
 
         // Create keystore manager
         let keystore_manager = KeystoreManager::new();
 
         Ok(Self {
             provider,
-            pgp_provider,
             keystore_manager,
             args: args.clone(),
         })
@@ -154,7 +148,7 @@ impl SystemWallet for SystemDeezel {
                 let passphrase = if let Some(ref pass) = self.args.passphrase {
                     pass.clone()
                 } else {
-                    KeystoreManager::prompt_for_passphrase("Enter passphrase to unlock keystore for signing", false)
+                    rpassword::prompt_password("Enter passphrase to unlock keystore for signing: ")
                         .map_err(|e| DeezelError::Wallet(format!("Failed to get passphrase: {}", e)))?
                 };
                 provider.unlock_wallet(&passphrase).await?;
@@ -168,17 +162,10 @@ impl SystemWallet for SystemDeezel {
                println!("🔐 Creating wallet with PGP-encrypted keystore...");
                
                // FIXED: Get passphrase securely from user input or CLI argument
-               let passphrase = if let Some(ref pass) = self.args.passphrase {
-                   pass.clone()
-               } else {
-                   // Prompt for passphrase securely using TUI
-                   KeystoreManager::prompt_for_passphrase("Enter passphrase for keystore encryption", true)?
-               };
                
                // Create keystore parameters
                let keystore_params = KeystoreCreateParams {
                    mnemonic: mnemonic.clone(),
-                   passphrase: passphrase.clone(),
                    network: provider.get_network(),
                    address_count: 5, // This parameter is now unused but kept for compatibility
                };
@@ -216,7 +203,7 @@ impl SystemWallet for SystemDeezel {
                 println!("🔑 Mnemonic: {}", mnemonic_phrase);
                 println!("⚠️  IMPORTANT: Save this mnemonic phrase in a secure location!");
                 println!("🏠 First {} P2WPKH address: {}", network_name, first_p2wpkh);
-                println!("🔐 Keystore is encrypted with PGP using your passphrase");
+                println!("🔐 Keystore is armored");
                 
                 // Show keystore info
                 let info = self.keystore_manager.get_keystore_info(&keystore);
@@ -231,21 +218,64 @@ impl SystemWallet for SystemDeezel {
                 Ok(())
             },
            WalletCommands::Restore { mnemonic } => {
-               let wallet_config = WalletConfig {
-                   wallet_path: "default".to_string(),
-                   network: provider.get_network(),
-                   bitcoin_rpc_url: "".to_string(),
-                   metashrew_rpc_url: "".to_string(),
-                   network_params: None,
-               };
-               
-               println!("🔐 Restoring wallet from mnemonic...");
-               let wallet_info = provider.create_wallet(wallet_config, Some(mnemonic), None).await?;
-               
-               println!("✅ Wallet restored successfully!");
-               println!("🏠 First address: {}", wallet_info.address);
-               Ok(())
-           },
+                println!("🔐 Restoring wallet with PGP-encrypted keystore...");
+                
+                // Get passphrase securely from user input or CLI argument
+                
+                // Create keystore parameters
+                let keystore_params = KeystoreCreateParams {
+                    mnemonic: Some(mnemonic),
+                    network: provider.get_network(),
+                    address_count: 5, // This parameter is now unused but kept for compatibility
+                };
+                
+                // Create the keystore
+                let (keystore, mnemonic_phrase) = self.keystore_manager.create_keystore(keystore_params).await?;
+                
+                // Use the wallet file path from provider (which respects --wallet-file argument)
+                let wallet_file = provider.get_wallet_path()
+                    .ok_or_else(|| anyhow!("No wallet file path configured"))?
+                    .to_string_lossy()
+                    .to_string();
+                
+                // Save keystore to file
+                self.keystore_manager.save_keystore(&keystore, &wallet_file).await?;
+                
+                // Get first P2WPKH address for display using dynamic derivation
+                let default_addresses = KeystoreManager::get_default_addresses(&self.keystore_manager, &keystore, provider.get_network())?;
+                let first_p2wpkh = default_addresses.iter()
+                    .find(|addr| addr.script_type == "p2wpkh" && addr.index == 0)
+                    .map(|addr| addr.address.clone())
+                    .unwrap_or_else(|| "No P2WPKH address generated".to_string());
+                
+                // Get network name for display
+                let network_name = match provider.get_network() {
+                    bitcoin::Network::Bitcoin => "mainnet",
+                    bitcoin::Network::Testnet => "testnet",
+                    bitcoin::Network::Signet => "signet",
+                    bitcoin::Network::Regtest => "regtest",
+                    _ => "custom",
+                };
+                
+                println!("✅ Wallet keystore restored successfully!");
+                println!("📁 Keystore saved to: {}", wallet_file);
+                println!("🔑 Mnemonic: {}", mnemonic_phrase);
+                println!("⚠️  IMPORTANT: Save this mnemonic phrase in a secure location!");
+                println!("🏠 First {} P2WPKH address: {}", network_name, first_p2wpkh);
+                println!("🔐 Keystore is armored");
+                
+                // Show keystore info
+                let info = self.keystore_manager.get_keystore_info(&keystore);
+                println!("🔑 Master Public Key: {}", info.master_public_key);
+                println!("🔍 Master Fingerprint: {}", info.master_fingerprint);
+                println!("📅 Created: {}", info.created_at);
+                println!("🏷️  Version: {}", info.version);
+                
+                println!("\n💡 Use 'deezel wallet addresses' to see all address types");
+                println!("💡 Use 'deezel wallet addresses p2tr:0-10' for specific ranges");
+                
+                Ok(())
+            },
            WalletCommands::Info => {
                 // Use the wallet file path from provider
                 let wallet_file = provider.get_wallet_path()
@@ -957,7 +987,7 @@ impl SystemAlkanes for SystemDeezel {
                 let passphrase = if let Some(ref pass) = self.args.passphrase {
                     pass.clone()
                 } else {
-                    KeystoreManager::prompt_for_passphrase("Enter passphrase to unlock keystore for signing", false)
+                    rpassword::prompt_password("Enter passphrase to unlock keystore for signing: ")
                         .map_err(|e| DeezelError::Wallet(format!("Failed to get passphrase: {}", e)))?
                 };
                 provider.unlock_wallet(&passphrase).await?;
@@ -1734,186 +1764,6 @@ impl SystemEsplora for SystemDeezel {
     }
 }
 
-#[async_trait(?Send)]
-impl SystemPgp for SystemDeezel {
-   async fn execute_pgp_command(&self, command: deezel_common::commands::PgpCommands) -> deezel_common::Result<()> {
-       let pgp_provider = &self.pgp_provider;
-       let res: anyhow::Result<()> = match command {
-            deezel_common::commands::PgpCommands::GenerateKey { user_id, passphrase, raw } => {
-                println!("🔐 Generating PGP key pair...");
-                let keypair = pgp_provider.generate_keypair(&user_id, passphrase.as_deref()).await?;
-                
-                if raw {
-                    let keypair_json = serde_json::json!({
-                        "fingerprint": keypair.fingerprint,
-                        "key_id": keypair.key_id,
-                        "user_ids": keypair.public_key.user_ids,
-                        "creation_time": keypair.public_key.creation_time,
-                        "algorithm": keypair.public_key.algorithm
-                    });
-                    println!("{}", serde_json::to_string_pretty(&keypair_json)?);
-                } else {
-                    println!("✅ PGP key pair generated successfully!");
-                    println!("🔑 Fingerprint: {}", keypair.fingerprint);
-                    println!("🆔 Key ID: {}", keypair.key_id);
-                    println!("👤 User ID: {}", keypair.public_key.user_ids.join(", "));
-                    println!("📅 Created: {}", keypair.public_key.creation_time);
-                }
-                Ok(())
-            },
-            deezel_common::commands::PgpCommands::ImportKey { key_file, raw } => {
-                let key_data = if key_file == "-" {
-                    // Read from stdin
-                    let mut buffer = String::new();
-                    std::io::stdin().read_to_string(&mut buffer)?;
-                    buffer
-                } else {
-                    // Read from file
-                    let expanded_path = expand_tilde(&key_file)?;
-                    std::fs::read_to_string(&expanded_path)
-                        .with_context(|| format!("Failed to read key file: {}", expanded_path))?
-                };
-                
-                println!("📥 Importing PGP key...");
-                let key = pgp_provider.import_key(&key_data).await?;
-                
-                if raw {
-                    let key_json = serde_json::json!({
-                        "fingerprint": key.fingerprint,
-                        "key_id": key.key_id,
-                        "user_ids": key.user_ids,
-                        "is_private": key.is_private,
-                        "creation_time": key.creation_time,
-                        "algorithm": key.algorithm
-                    });
-                    println!("{}", serde_json::to_string_pretty(&key_json)?);
-                } else {
-                    println!("✅ PGP key imported successfully!");
-                    println!("🔑 Fingerprint: {}", key.fingerprint);
-                    println!("🆔 Key ID: {}", key.key_id);
-                    println!("👤 User IDs: {}", key.user_ids.join(", "));
-                    println!("🔒 Type: {}", if key.is_private { "Private" } else { "Public" });
-                }
-                Ok(())
-            },
-            deezel_common::commands::PgpCommands::ExportKey { identifier, private, output, raw: _ } => {
-                // For now, this is a placeholder since we don't have key storage
-                println!("📤 Export key functionality not yet implemented");
-                println!("🔍 Would export key: {}", identifier);
-                println!("🔒 Include private: {}", private);
-                if let Some(output_file) = output {
-                    println!("📁 Output to: {}", output_file);
-                }
-                Ok(())
-            },
-            deezel_common::commands::PgpCommands::ListKeys { private, public, raw } => {
-                println!("📋 Listing PGP keys...");
-                let keys = pgp_provider.list_pgp_keys().await?;
-                
-                let filtered_keys: Vec<_> = keys.iter().filter(|key| {
-                    if private && public {
-                        true // Show all keys
-                    } else if private {
-                        key.is_private
-                    } else if public {
-                        !key.is_private
-                    } else {
-                        true // Show all keys by default
-                    }
-                }).collect();
-                
-                if raw {
-                    println!("{}", serde_json::to_string_pretty(&filtered_keys)?);
-                } else {
-                    if filtered_keys.is_empty() {
-                        println!("No keys found");
-                    } else {
-                        println!("Found {} key(s):", filtered_keys.len());
-                        for (i, key) in filtered_keys.iter().enumerate() {
-                            println!("{}. 🔑 {}", i + 1, key.fingerprint);
-                            println!("   🆔 Key ID: {}", key.key_id);
-                            println!("   👤 User IDs: {}", key.user_ids.join(", "));
-                            println!("   🔒 Type: {}", if key.is_private { "Private" } else { "Public" });
-                            println!("   📅 Created: {}", key.creation_time);
-                            if let Some(exp) = key.expiration_time {
-                                println!("   ⏰ Expires: {}", exp);
-                            }
-                            if i < filtered_keys.len() - 1 {
-                                println!();
-                            }
-                        }
-                    }
-                }
-                Ok(())
-            },
-            deezel_common::commands::PgpCommands::DeleteKey { identifier, yes } => {
-                if !yes {
-                    println!("⚠️  About to delete key: {}", identifier);
-                    println!("Do you want to continue? (y/N)");
-                    
-                    let mut input = String::new();
-                    std::io::stdin().read_line(&mut input)?;
-                    
-                    if !input.trim().to_lowercase().starts_with('y') {
-                        println!("❌ Key deletion cancelled");
-                        return Ok(());
-                    }
-                }
-                
-                pgp_provider.delete_key(&identifier).await?;
-                println!("✅ Key deleted successfully: {}", identifier);
-                Ok(())
-            },
-            deezel_common::commands::PgpCommands::Encrypt { input, output, recipients, armor, sign, sign_key: _, passphrase: _ } => {
-                println!("🔐 PGP encrypt functionality not yet fully implemented");
-                println!("📥 Input: {}", input);
-                if let Some(output_file) = output {
-                    println!("📤 Output: {}", output_file);
-                }
-                println!("👥 Recipients: {}", recipients);
-                println!("🛡️  Armor: {}", armor);
-                println!("✍️  Sign: {}", sign);
-                Ok(())
-            },
-            deezel_common::commands::PgpCommands::Decrypt { input, output, key, passphrase: _, verify, signer: _ } => {
-                println!("🔓 PGP decrypt functionality not yet fully implemented");
-                println!("📥 Input: {}", input);
-                if let Some(output_file) = output {
-                    println!("📤 Output: {}", output_file);
-                }
-                println!("🔑 Key: {}", key);
-                println!("✅ Verify: {}", verify);
-                Ok(())
-            },
-            deezel_common::commands::PgpCommands::Sign { input, output, key, passphrase: _, armor, detached } => {
-                println!("✍️  PGP sign functionality not yet fully implemented");
-                println!("📥 Input: {}", input);
-                if let Some(output_file) = output {
-                    println!("📤 Output: {}", output_file);
-                }
-                println!("🔑 Key: {}", key);
-                println!("🛡️  Armor: {}", armor);
-                println!("📎 Detached: {}", detached);
-                Ok(())
-            },
-            deezel_common::commands::PgpCommands::Verify { input, signature, key, raw: _ } => {
-                println!("✅ PGP verify functionality not yet fully implemented");
-                println!("📥 Input: {}", input);
-                if let Some(sig_file) = signature {
-                    println!("📝 Signature: {}", sig_file);
-                }
-                println!("🔑 Key: {}", key);
-                Ok(())
-            },
-            deezel_common::commands::PgpCommands::ChangePassphrase { identifier, old_passphrase: _, new_passphrase: _ } => {
-                println!("🔐 Change passphrase functionality not yet fully implemented");
-                println!("🔑 Key: {}", identifier);
-                Ok(())
-            },
-        };
-        res.map_err(|e| DeezelError::Wallet(e.to_string()))
-   }
-}
 
 #[async_trait(?Send)]
 pub trait SystemOrd {

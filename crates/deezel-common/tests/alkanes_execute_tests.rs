@@ -19,7 +19,7 @@ use deezel_common::{
         OutputTarget, ProtostoneEdict, ProtostoneSpec,
     },
     DeezelError,
-    traits::{WalletProvider, BitcoinRpcProvider},
+    traits::WalletProvider,
 };
 
 use mock_provider::MockProvider;

@@ -16,7 +16,6 @@ async fn test_keystore_creation() -> AnyhowResult<()> {
     
     let params = KeystoreCreateParams {
         mnemonic: None, // Generate new mnemonic
-        passphrase: "test-passphrase".to_string(),
         network: Network::Regtest,
         address_count: 5,
     };

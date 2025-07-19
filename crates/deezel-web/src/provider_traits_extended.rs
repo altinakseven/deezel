@@ -217,61 +217,6 @@ impl KeystoreProvider for WebProvider {
 }
 
 #[async_trait(?Send)]
-impl PgpProvider for WebProvider {
-    async fn generate_keypair(&self, _user_id: &str, _passphrase: Option<&str>) -> Result<PgpKeyPair> {
-        Err(DeezelError::NotImplemented("PGP operations not implemented for web provider".to_string()))
-    }
-    
-    async fn import_key(&self, _armored_key: &str) -> Result<PgpKey> {
-        Err(DeezelError::NotImplemented("PGP operations not implemented for web provider".to_string()))
-    }
-    
-    async fn export_key(&self, _key: &PgpKey, _include_private: bool) -> Result<String> {
-        Err(DeezelError::NotImplemented("PGP operations not implemented for web provider".to_string()))
-    }
-    
-    async fn encrypt(&self, _data: &[u8], _recipient_keys: &[PgpKey], _armor: bool) -> Result<Vec<u8>> {
-        Err(DeezelError::NotImplemented("PGP operations not implemented for web provider".to_string()))
-    }
-    
-    async fn decrypt(&self, _encrypted_data: &[u8], _private_key: &PgpKey, _passphrase: Option<&str>) -> Result<Vec<u8>> {
-        Err(DeezelError::NotImplemented("PGP operations not implemented for web provider".to_string()))
-    }
-    
-    async fn sign(&self, _data: &[u8], _private_key: &PgpKey, _passphrase: Option<&str>, _armor: bool) -> Result<Vec<u8>> {
-        Err(DeezelError::NotImplemented("PGP operations not implemented for web provider".to_string()))
-    }
-    
-    async fn verify(&self, _data: &[u8], _signature: &[u8], _public_key: &PgpKey) -> Result<bool> {
-        Err(DeezelError::NotImplemented("PGP operations not implemented for web provider".to_string()))
-    }
-    
-    async fn encrypt_and_sign(&self, _data: &[u8], _recipient_keys: &[PgpKey], _signing_key: &PgpKey, _passphrase: Option<&str>, _armor: bool) -> Result<Vec<u8>> {
-        Err(DeezelError::NotImplemented("PGP operations not implemented for web provider".to_string()))
-    }
-    
-    async fn decrypt_and_verify(&self, _encrypted_data: &[u8], _private_key: &PgpKey, _sender_public_key: &PgpKey, _passphrase: Option<&str>) -> Result<PgpDecryptResult> {
-        Err(DeezelError::NotImplemented("PGP operations not implemented for web provider".to_string()))
-    }
-    
-    async fn list_pgp_keys(&self) -> Result<Vec<PgpKeyInfo>> {
-        Err(DeezelError::NotImplemented("PGP operations not implemented for web provider".to_string()))
-    }
-    
-    async fn get_key(&self, _identifier: &str) -> Result<Option<PgpKey>> {
-        Err(DeezelError::NotImplemented("PGP operations not implemented for web provider".to_string()))
-    }
-    
-    async fn delete_key(&self, _identifier: &str) -> Result<()> {
-        Err(DeezelError::NotImplemented("PGP operations not implemented for web provider".to_string()))
-    }
-    
-    async fn change_passphrase(&self, _key: &PgpKey, _old_passphrase: Option<&str>, _new_passphrase: Option<&str>) -> Result<PgpKey> {
-        Err(DeezelError::NotImplemented("PGP operations not implemented for web provider".to_string()))
-    }
-}
-
-#[async_trait(?Send)]
 impl DeezelProvider for WebProvider {
     fn provider_name(&self) -> &str {
         "WebProvider"

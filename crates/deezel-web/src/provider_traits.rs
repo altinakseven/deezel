@@ -32,7 +32,7 @@ use crate::provider::WebProvider;
 // WalletProvider implementation
 #[async_trait(?Send)]
 impl WalletProvider for WebProvider {
-    async fn create_wallet(&self, config: WalletConfig, mnemonic: Option<String>, _passphrase: Option<String>) -> Result<WalletInfo> {
+    async fn create_wallet(&mut self, config: WalletConfig, mnemonic: Option<String>, _passphrase: Option<String>) -> Result<WalletInfo> {
         // Store wallet configuration in localStorage
         let wallet_key = format!("wallet:{}", config.wallet_path);
         let wallet_data = serde_json::json!({
@@ -59,7 +59,7 @@ impl WalletProvider for WebProvider {
         })
     }
 
-    async fn load_wallet(&self, config: WalletConfig, passphrase: Option<String>) -> Result<WalletInfo> {
+    async fn load_wallet(&mut self, config: WalletConfig, passphrase: Option<String>) -> Result<WalletInfo> {
         let wallet_key = format!("wallet:{}", config.wallet_path);
         
         // Try to load existing wallet data

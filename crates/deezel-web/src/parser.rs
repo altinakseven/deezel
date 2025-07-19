@@ -14,7 +14,7 @@ use bitcoin::{
     block::Header as BlockHeader,
     Transaction,
 };
-use crate::alloc::{vec::Vec, string::ToString, format};
+use crate::alloc::{vec::Vec, format};
 use ordinals::Artifact;
 use protorune_support::protostone::Protostone;
 

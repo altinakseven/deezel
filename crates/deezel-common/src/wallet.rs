@@ -45,7 +45,7 @@ impl<P: DeezelProvider> WalletManager<P> {
     
     /// Create a new wallet
     pub async fn create_wallet(
-        provider: P,
+        mut provider: P,
         config: WalletConfig,
         mnemonic: Option<String>,
         passphrase: Option<String>,
@@ -94,7 +94,7 @@ impl<P: DeezelProvider> WalletManager<P> {
     }
     
     /// Load an existing wallet
-    pub async fn load(provider: P, config: WalletConfig, passphrase: Option<String>) -> Result<Self> {
+    pub async fn load(mut provider: P, config: WalletConfig, passphrase: Option<String>) -> Result<Self> {
         let trait_config = crate::traits::WalletConfig {
             wallet_path: config.wallet_path.clone(),
             bitcoin_rpc_url: config.bitcoin_rpc_url.clone(),

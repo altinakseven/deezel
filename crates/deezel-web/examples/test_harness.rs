@@ -13,7 +13,6 @@
 #![allow(dead_code)]
 
 use wasm_bindgen::prelude::*;
-use wasm_bindgen_futures::spawn_local;
 
 // Import test modules from the `tests` directory.
 // The `#[path]` attribute allows us to include files from outside the conventional

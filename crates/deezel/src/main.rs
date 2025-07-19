@@ -9,13 +9,10 @@ use clap::Parser;
 use deezel_common::commands::Args;
 use deezel_sys::SystemDeezel;
 use deezel_common::traits::*;
-use std::str::FromStr;
-use hex;
 use futures::future::join_all;
 
 mod commands;
 mod pretty_print;
-use commands::pretty_print_json;
 use deezel_common::commands::{BitcoindCommands, OrdCommands};
 use pretty_print::*;
 
@@ -50,7 +47,6 @@ async fn execute_command(system: &SystemDeezel, args: Args) -> Result<()> {
         deezel_common::commands::Commands::Protorunes { command } => system.execute_protorunes_command(command).await.map_err(anyhow::Error::from),
         deezel_common::commands::Commands::Monitor { command } => system.execute_monitor_command(command).await.map_err(anyhow::Error::from),
         deezel_common::commands::Commands::Esplora { command } => system.execute_esplora_command(command).await.map_err(anyhow::Error::from),
-        deezel_common::commands::Commands::Pgp { command } => system.execute_pgp_command(command).await.map_err(anyhow::Error::from),
         deezel_common::commands::Commands::Ord(command) => execute_ord_command(system.provider(), command).await,
     };
 

@@ -37,7 +37,7 @@ pub struct Keystore {
 }
 
 /// Parameters for the PBKDF2/S2K key derivation function.
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct PbkdfParams {
     /// The salt used in the S2K derivation (hex encoded).
     pub salt: String,
@@ -50,12 +50,43 @@ pub struct PbkdfParams {
 
 use crate::{DeezelError, Result};
 use bip39::{Mnemonic, Seed};
-use deezel_rpgp::composed::Message;
-use deezel_rpgp::types::Password;
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
 
 impl Keystore {
+    // TODO: This is a temporary, insecure implementation. The seed is not encrypted.
+    pub fn new(mnemonic: &Mnemonic, network: Network) -> Result<Self> {
+        let seed = Seed::new(mnemonic, "");
+        let secp = Secp256k1::new();
+        let root = Xpriv::new_master(network, seed.as_bytes())?;
+        let path = DerivationPath::from_str("m/86'/0'/0'")?;
+        let xpub = Xpub::from_priv(&secp, &root.derive_priv(&secp, &path)?);
+
+        let mut armored_seed = Vec::new();
+        deezel_asc::armor::writer::write(
+            mnemonic.phrase().as_bytes(),
+            deezel_asc::armor::reader::BlockType::PrivateKey,
+            &mut armored_seed,
+            None,
+            true,
+        )?;
+
+        Ok(Self {
+            encrypted_seed: String::from_utf8(armored_seed)?,
+            master_public_key: Xpub::from_priv(&secp, &root).to_string(),
+            master_fingerprint: root.fingerprint(&secp).to_string(),
+            created_at: 0, // TODO
+            version: "1.0".to_string(),
+            pbkdf2_params: PbkdfParams {
+                salt: "".to_string(),
+                iterations: 0,
+                algorithm: None,
+            },
+            account_xpub: xpub.to_string(),
+            addresses: BTreeMap::new(),
+        })
+    }
+
     /// Load keystore from a file path.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn from_file(path: &Path) -> Result<Self> {
@@ -65,26 +96,52 @@ impl Keystore {
             .map_err(|e| DeezelError::Wallet(format!("Failed to parse keystore: {}", e)))
     }
 
-    /// Decrypts the seed from a keystore using the provided passphrase.
-    pub fn decrypt_seed(&self, passphrase: &str) -> Result<String> {
-        let (message, _headers) = Message::from_armor(self.encrypted_seed.as_bytes())
-            .map_err(|e| DeezelError::Crypto(format!("Failed to parse armored message: {}", e)))?;
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn save_to_file(&self, path: &Path) -> Result<()> {
+        let data = serde_json::to_string_pretty(self)?;
+        std::fs::write(path, data)?;
+        Ok(())
+    }
 
-        let mut decryptor = message.decrypt_with_password(&Password::from(passphrase))
-            .map_err(|e| DeezelError::Crypto(format!("Failed to create decryptor: {}", e)))?;
+    /// Decodes the armored seed from the keystore.
+    /// Note: This does not perform any decryption.
+    pub fn get_seed_from_armor(&self) -> Result<String> {
+        let (_, _, data) = deezel_asc::armor::reader::decode(self.encrypted_seed.as_bytes())
+            .map_err(|e| DeezelError::Crypto(format!("Failed to decode armored seed: {}", e)))?;
 
-        let decrypted_bytes = decryptor.as_data_vec()
-            .map_err(|e| DeezelError::Crypto(format!("Failed to get decrypted data: {}", e)))?;
-        
-        // The encrypted data is the mnemonic phrase itself, so we convert it to a string.
-        let mnemonic_str = String::from_utf8(decrypted_bytes)
-            .map_err(|e| DeezelError::Wallet(format!("Failed to convert decrypted data to mnemonic string: {}", e)))?;
+        let mnemonic_str = String::from_utf8(data)
+            .map_err(|e| DeezelError::Wallet(format!("Failed to convert decoded data to mnemonic string: {}", e)))?;
 
         // Validate that it's a valid mnemonic, but we return the string.
         Mnemonic::from_phrase(&mnemonic_str, bip39::Language::English)
             .map_err(|e| DeezelError::Wallet(format!("Invalid mnemonic phrase: {}", e)))?;
 
         Ok(mnemonic_str)
+    }
+    pub fn get_addresses(
+        &self,
+        network: Network,
+        address_type: &str,
+        start_index: u32,
+        count: u32,
+    ) -> Result<Vec<crate::traits::AddressInfo>> {
+        let secp = Secp256k1::new();
+        let xpub = Xpub::from_str(&self.account_xpub)?;
+        let mut addresses = Vec::new();
+        for i in start_index..start_index + count {
+            let path = DerivationPath::from_str(&format!("m/0/{}", i))?;
+            let derived_xpub = xpub.derive_pub(&secp, &path)?;
+            let (internal_key, _) = derived_xpub.public_key.x_only_public_key();
+            let address = Address::p2tr(&secp, internal_key, None, network);
+            addresses.push(crate::traits::AddressInfo {
+                derivation_path: path.to_string(),
+                address: address.to_string(),
+                script_type: address_type.to_string(),
+                index: i,
+                used: false,
+            });
+        }
+        Ok(addresses)
     }
 }
 
