@@ -16,15 +16,16 @@ async fn test_keystore_creation() -> AnyhowResult<()> {
     
     let params = KeystoreCreateParams {
         mnemonic: None, // Generate new mnemonic
+        passphrase: Some("test_password".to_string()),
         network: Network::Regtest,
         address_count: 5,
     };
-    
+
     let (keystore, mnemonic) = manager.create_keystore(params).await?;
-    
+
     // Verify keystore structure
-    assert_eq!(keystore.version, env!("CARGO_PKG_VERSION"));
-    assert!(!keystore.encrypted_seed.is_empty());
+    assert_eq!(keystore.version, "1.0");
+    assert!(!keystore.encrypted_mnemonic.is_empty());
     assert!(keystore.created_at > 0);
     
     // Verify mnemonic is valid (24 words)

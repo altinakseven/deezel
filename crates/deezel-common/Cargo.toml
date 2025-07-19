@@ -39,6 +39,7 @@ bip39 = { workspace = true }
 pbkdf2 = { workspace = true }
 aes-gcm = { workspace = true }
 rand = { workspace = true }
+rand_core = { workspace = true, features = ["getrandom"] }
 sha2 = { workspace = true }
  
 psbt-v2 = { workspace = true }

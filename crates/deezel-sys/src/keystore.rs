@@ -6,34 +6,28 @@
 extern crate alloc;
 use anyhow::{anyhow, Context, Result as AnyhowResult};
 use bitcoin::{
-    Network,
-    bip32::{DerivationPath, Xpriv},
+    bip32::{DerivationPath, Xpub},
     secp256k1::Secp256k1,
-    Address,
-    bip32::Xpub,
-    CompressedPublicKey,
-    PublicKey,
-    ScriptBuf,
+    Address, CompressedPublicKey, Network, PublicKey, ScriptBuf,
 };
-use bip39::{Mnemonic, MnemonicType, Seed};
+use bip39::{Mnemonic, MnemonicType};
 use std::str::FromStr;
 
 use deezel_common::{
-    traits::KeystoreProvider,
+    keystore::{AddressInfo, Keystore, PbkdfParams},
+    traits::{KeystoreAddress, KeystoreInfo, KeystoreProvider},
     DeezelError, Result as CommonResult,
 };
-pub use deezel_common::keystore::{AddressInfo, Keystore, PbkdfParams};
-pub use deezel_common::traits::{KeystoreAddress, KeystoreInfo};
 use async_trait::async_trait;
-use alloc::collections::BTreeMap;
 
 
 /// Parameters for creating a new keystore
 pub struct KeystoreCreateParams {
     /// Optional mnemonic (if None, a new one will be generated)
     pub mnemonic: Option<String>,
-    /// Passphrase for PGP encryption
-    /// Bitcoin network
+    /// Passphrase for keystore encryption.
+    pub passphrase: Option<String>,
+    /// Bitcoin network.
     pub network: Network,
     /// Number of addresses to derive for each script type
     pub address_count: u32,
@@ -54,76 +48,40 @@ impl KeystoreManager {
 
     /// Create a new keystore with PGP-encrypted seed and master public key
     pub async fn create_keystore(&self, params: KeystoreCreateParams) -> AnyhowResult<(Keystore, String)> {
-        // Generate or use provided mnemonic
+        // 1. Get passphrase, prompting if necessary
+        let passphrase = if let Some(p) = params.passphrase {
+            p
+        } else {
+            rpassword::prompt_password("Enter a new passphrase for the keystore: ")
+                .context("Failed to read passphrase")?
+        };
+
+        // 2. Generate or use provided mnemonic
         let mnemonic = if let Some(mnemonic_str) = params.mnemonic {
             Mnemonic::from_phrase(&mnemonic_str, bip39::Language::English)
                 .context("Invalid mnemonic provided")?
         } else {
             Mnemonic::new(MnemonicType::Words24, bip39::Language::English)
         };
-
         let mnemonic_str = mnemonic.to_string();
 
-        // Generate seed from mnemonic
-        let seed = Seed::new(&mnemonic, "");
-        let secp = Secp256k1::new();
-        
-        // Encrypt the mnemonic using PGP with ASCII armoring
-        let mut armored_seed = Vec::new();
-        deezel_asc::armor::writer::write(
-            mnemonic_str.as_bytes(),
-            deezel_asc::armor::reader::BlockType::PrivateKey,
-            &mut armored_seed,
-            None,
-            true,
-        ).context("Failed to armor seed")?;
-        let encrypted_seed = String::from_utf8(armored_seed).context("Failed to convert armored seed to string")?;
-        let pbkdf2_params = PbkdfParams {
-            salt: "".to_string(),
-            iterations: 0,
-            algorithm: None,
-        };
-
-        // Create master key (always use Bitcoin mainnet for the master key to ensure compatibility)
-        let master_key = Xpriv::new_master(Network::Bitcoin, seed.as_bytes())
-            .context("Failed to create master key from seed")?;
-        
-        // Get master fingerprint
-        let master_fingerprint = master_key.fingerprint(&secp);
-
-        // Derive the account-level key for Taproot (BIP 86).
-        // We use a hardened path, which requires the private key. This is done once at creation.
-        // The resulting account xpub can then be used for non-hardened address derivation.
-        // Using testnet coin type '1' as per standard practice for multi-network wallets.
-        let account_derivation_path = DerivationPath::from_str("m/86'/1'/0'")
-            .context("Failed to create account derivation path")?;
-        let account_xpriv = master_key.derive_priv(&secp, &account_derivation_path)
-            .context("Failed to derive account private key")?;
-        let account_xpub = Xpub::from_priv(&secp, &account_xpriv);
-
-        let keystore = Keystore {
-            encrypted_seed,
-            master_fingerprint: master_fingerprint.to_string(),
-            created_at: chrono::Utc::now().timestamp() as u64,
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            pbkdf2_params,
-            account_xpub: account_xpub.to_string(),
-            addresses: BTreeMap::new(),
-        };
+        // 3. Create the encrypted keystore
+        let keystore = Keystore::new(&mnemonic, params.network, &passphrase)
+            .context("Failed to create and encrypt keystore")?;
 
         Ok((keystore, mnemonic_str))
     }
 
 
     /// Load and decrypt a keystore
-    pub async fn load_keystore(&self, keystore_data: &str) -> AnyhowResult<(Keystore, String)> {
+    pub async fn load_keystore(&self, keystore_data: &str, passphrase: &str) -> AnyhowResult<(Keystore, String)> {
         // Parse the keystore JSON
         let keystore: Keystore = serde_json::from_str(keystore_data)
             .context("Failed to parse keystore JSON")?;
 
-        // Decrypt the mnemonic using PGP
-        let (_, _, data) = deezel_asc::armor::reader::decode(keystore.encrypted_seed.as_bytes()).context("Failed to decode armored seed")?;
-        let mnemonic = String::from_utf8(data).context("Failed to convert seed to string")?;
+        // Decrypt the mnemonic using the new crypto module
+        let mnemonic = keystore.decrypt_mnemonic(passphrase)
+            .context("Failed to decrypt mnemonic. Is the passphrase correct?")?;
         
         Ok((keystore, mnemonic))
     }
@@ -141,11 +99,11 @@ impl KeystoreManager {
     }
 
     /// Load keystore from file
-    pub async fn load_keystore_from_file(&self, file_path: &str) -> AnyhowResult<(Keystore, String)> {
+    pub async fn load_keystore_from_file(&self, file_path: &str, passphrase: &str) -> AnyhowResult<(Keystore, String)> {
         let keystore_data = std::fs::read_to_string(file_path)
             .with_context(|| format!("Failed to read keystore file: {}", file_path))?;
 
-        self.load_keystore(&keystore_data).await
+        self.load_keystore(&keystore_data, passphrase).await
     }
 
     /// Load keystore metadata (master public key, fingerprint, etc.) without decryption
@@ -420,9 +378,9 @@ pub async fn create_keystore(params: KeystoreCreateParams) -> AnyhowResult<(Keys
 }
 
 /// Load a keystore from file
-pub async fn load_keystore_from_file(file_path: &str) -> AnyhowResult<(Keystore, String)> {
+pub async fn load_keystore_from_file(file_path: &str, passphrase: &str) -> AnyhowResult<(Keystore, String)> {
     let manager = KeystoreManager::new();
-    manager.load_keystore_from_file(file_path).await
+    manager.load_keystore_from_file(file_path, passphrase).await
 }
 
 /// Save a keystore to file

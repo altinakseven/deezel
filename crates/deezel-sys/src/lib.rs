@@ -159,17 +159,16 @@ impl SystemWallet for SystemDeezel {
 
        let res: anyhow::Result<()> = match command {
            WalletCommands::Create { mnemonic } => {
-               println!("🔐 Creating wallet with PGP-encrypted keystore...");
-               
-               // FIXED: Get passphrase securely from user input or CLI argument
-               
-               // Create keystore parameters
+               println!("🔐 Creating encrypted keystore...");
+
+               // Create keystore parameters, including the passphrase from CLI args
                let keystore_params = KeystoreCreateParams {
                    mnemonic: mnemonic.clone(),
+                   passphrase: self.args.passphrase.clone(),
                    network: provider.get_network(),
                    address_count: 5, // This parameter is now unused but kept for compatibility
                };
-               
+
                // Create the keystore
                let (keystore, mnemonic_phrase) = self.keystore_manager.create_keystore(keystore_params).await?;
                
@@ -203,7 +202,7 @@ impl SystemWallet for SystemDeezel {
                 println!("🔑 Mnemonic: {}", mnemonic_phrase);
                 println!("⚠️  IMPORTANT: Save this mnemonic phrase in a secure location!");
                 println!("🏠 First {} P2WPKH address: {}", network_name, first_p2wpkh);
-                println!("🔐 Keystore is armored");
+                println!("🔐 Keystore is encrypted and armored");
                 
                 // Show keystore info
                 let info = self.keystore_manager.get_keystore_info(&keystore);
@@ -217,17 +216,16 @@ impl SystemWallet for SystemDeezel {
                 Ok(())
             },
            WalletCommands::Restore { mnemonic } => {
-                println!("🔐 Restoring wallet with PGP-encrypted keystore...");
-                
-                // Get passphrase securely from user input or CLI argument
-                
-                // Create keystore parameters
+                println!("🔐 Restoring wallet from mnemonic...");
+
+                // Create keystore parameters, including the passphrase from CLI args
                 let keystore_params = KeystoreCreateParams {
                     mnemonic: Some(mnemonic),
+                    passphrase: self.args.passphrase.clone(),
                     network: provider.get_network(),
                     address_count: 5, // This parameter is now unused but kept for compatibility
                 };
-                
+
                 // Create the keystore
                 let (keystore, mnemonic_phrase) = self.keystore_manager.create_keystore(keystore_params).await?;
                 
@@ -261,7 +259,7 @@ impl SystemWallet for SystemDeezel {
                 println!("🔑 Mnemonic: {}", mnemonic_phrase);
                 println!("⚠️  IMPORTANT: Save this mnemonic phrase in a secure location!");
                 println!("🏠 First {} P2WPKH address: {}", network_name, first_p2wpkh);
-                println!("🔐 Keystore is armored");
+                println!("🔐 Keystore is encrypted and armored");
                 
                 // Show keystore info
                 let info = self.keystore_manager.get_keystore_info(&keystore);

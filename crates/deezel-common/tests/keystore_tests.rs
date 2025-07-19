@@ -6,12 +6,10 @@
 //! Keystore encryption and decryption tests for deezel-common.
 
 use deezel_common::keystore::Keystore;
-use bip39::{Mnemonic, Seed};
-use bitcoin::bip32::{DerivationPath, Xpriv};
+use bip39::{Mnemonic, MnemonicType};
+use bitcoin::bip32::DerivationPath;
 use bitcoin::network::Network;
-use bip39::MnemonicType;
 use std::str::FromStr;
-use bitcoin::Address;
 use deezel_common::keystore::{derive_address, derive_address_from_public_key};
 
 #[test]
@@ -21,7 +19,7 @@ fn test_address_derivation_consistency() {
     let network = Network::Regtest;
 
     // 2. Create a Keystore, which will generate the account_xpub internally
-    let keystore = Keystore::new(&mnemonic, network).unwrap();
+    let keystore = Keystore::new(&mnemonic, network, "test-password").unwrap();
     let account_xpub = &keystore.account_xpub;
 
     // 3. Define script types and derivation paths to test
@@ -55,55 +53,23 @@ fn test_address_derivation_consistency() {
 }
 
 #[test]
-fn test_keystore_armoring_dearmoring_roundtrip() {
-    // 1. Generate a new mnemonic
+fn test_keystore_encryption_decryption_roundtrip() {
+    // 1. Generate a new mnemonic and passphrase
     let mnemonic = Mnemonic::new(MnemonicType::Words12, bip39::Language::English);
     let mnemonic_phrase = mnemonic.to_string();
+    let passphrase = "supersecretpassword";
+    let network = Network::Regtest;
 
-    // 2. Armor the mnemonic
-    let mut armored_seed = Vec::new();
-    deezel_asc::armor::writer::write(
-        mnemonic_phrase.as_bytes(),
-        deezel_asc::armor::reader::BlockType::PrivateKey,
-        &mut armored_seed,
-        None,
-        true,
-    )
-    .unwrap();
-    let armored_seed_str = String::from_utf8(armored_seed).unwrap();
+    // 2. Create a new keystore, which encrypts the mnemonic
+    let keystore = Keystore::new(&mnemonic, network, passphrase).unwrap();
 
-    // 3. Create a Keystore instance
-    let keystore = Keystore {
-        encrypted_seed: armored_seed_str,
-        master_fingerprint: "mock_fingerprint".to_string(),
-        created_at: 0,
-        version: "1.0".to_string(),
-        pbkdf2_params: Default::default(),
-        account_xpub: "mock_xpub".to_string(),
-        addresses: Default::default(),
-    };
+    // 3. Decrypt the mnemonic from the keystore
+    let decrypted_mnemonic_phrase = keystore.decrypt_mnemonic(passphrase).unwrap();
 
-    // 4. Dearmor the seed from the keystore
-    let dearmored_seed_bytes = keystore.get_seed_from_armor().unwrap();
-    let dearmored_mnemonic_phrase = dearmored_seed_bytes;
+    // 4. Verify that the decrypted mnemonic is the same as the original
+    assert_eq!(mnemonic_phrase, decrypted_mnemonic_phrase);
 
-    // 5. Verify that the dearmored mnemonic is the same as the original
-    assert_eq!(mnemonic_phrase, dearmored_mnemonic_phrase);
-
-    // 6. Derive a private key from the original mnemonic
-    let seed = Seed::new(&mnemonic, "");
-    let root = Xpriv::new_master(Network::Regtest, seed.as_bytes()).unwrap();
-    let path = DerivationPath::from_str("m/86'/0'/0'/0/0").unwrap();
-    let original_xpriv = root.derive_priv(&bitcoin::secp256k1::Secp256k1::new(), &path).unwrap();
-
-    // 7. Derive a private key from the dearmored mnemonic
-    let dearmored_mnemonic =
-        Mnemonic::from_phrase(&dearmored_mnemonic_phrase, bip39::Language::English).unwrap();
-    let dearmored_seed = Seed::new(&dearmored_mnemonic, "");
-    let dearmored_root = Xpriv::new_master(Network::Regtest, dearmored_seed.as_bytes()).unwrap();
-    let dearmored_xpriv =
-        dearmored_root.derive_priv(&bitcoin::secp256k1::Secp256k1::new(), &path).unwrap();
-
-    // 8. Verify that the derived private keys are identical
-    assert_eq!(original_xpriv, dearmored_xpriv);
+    // 5. Verify that decryption fails with the wrong password
+    let wrong_passphrase = "wrongpassword";
+    assert!(keystore.decrypt_mnemonic(wrong_passphrase).is_err());
 }

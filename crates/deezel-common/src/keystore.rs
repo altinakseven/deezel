@@ -14,8 +14,8 @@ use alloc::vec::Vec;
 /// encrypted using PGP.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Keystore {
-    /// PGP ASCII armored encrypted seed data.
-    pub encrypted_seed: String,
+    /// ASCII armored, encrypted mnemonic phrase.
+    pub encrypted_mnemonic: String,
     /// Master fingerprint for identification.
     pub master_fingerprint: String,
     /// Creation timestamp (Unix epoch).
@@ -37,11 +37,13 @@ pub struct Keystore {
 /// Parameters for the PBKDF2/S2K key derivation function.
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct PbkdfParams {
-    /// The salt used in the S2K derivation (hex encoded).
+    /// The salt used for PBKDF2 (hex encoded).
     pub salt: String,
-    /// The number of iterations for the S2K function.
+    /// The nonce used for AES-GCM (hex encoded).
+    pub nonce: String,
+    /// The number of iterations for the PBKDF2 function.
     pub iterations: u32,
-    /// The symmetric key algorithm used.
+    /// The symmetric key algorithm used (e.g., "aes-256-gcm").
     #[serde(default)]
     pub algorithm: Option<String>,
 }
@@ -53,31 +55,41 @@ use std::path::Path;
 
 impl Keystore {
     // TODO: This is a temporary, insecure implementation. The seed is not encrypted.
-    pub fn new(mnemonic: &Mnemonic, network: Network) -> Result<Self> {
+    pub fn new(mnemonic: &Mnemonic, network: Network, passphrase: &str) -> Result<Self> {
+        // 1. Encrypt the mnemonic phrase
+        let (encrypted_mnemonic_bytes, salt, nonce) =
+            crate::crypto::encrypt(mnemonic.phrase().as_bytes(), passphrase)?;
+
+        // 2. Armor the encrypted mnemonic
+        let mut armored_mnemonic = Vec::new();
+        deezel_asc::armor::writer::write(
+            &encrypted_mnemonic_bytes,
+            deezel_asc::armor::reader::BlockType::EncryptedMnemonic,
+            &mut armored_mnemonic,
+            None,
+            true,
+        )?;
+
+        // 3. Derive keys and fingerprint
         let seed = Seed::new(mnemonic, "");
         let secp = Secp256k1::new();
         let root = Xpriv::new_master(network, seed.as_bytes())?;
         let path = DerivationPath::from_str("m/86'/0'/0'")?;
         let xpub = Xpub::from_priv(&secp, &root.derive_priv(&secp, &path)?);
 
-        let mut armored_seed = Vec::new();
-        deezel_asc::armor::writer::write(
-            mnemonic.phrase().as_bytes(),
-            deezel_asc::armor::reader::BlockType::PrivateKey,
-            &mut armored_seed,
-            None,
-            true,
-        )?;
-
         Ok(Self {
-            encrypted_seed: String::from_utf8(armored_seed)?,
+            encrypted_mnemonic: String::from_utf8(armored_mnemonic)?,
             master_fingerprint: root.fingerprint(&secp).to_string(),
-            created_at: 0, // TODO
+            created_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
             version: "1.0".to_string(),
             pbkdf2_params: PbkdfParams {
-                salt: "".to_string(),
-                iterations: 0,
-                algorithm: None,
+                salt: hex::encode(salt),
+                nonce: hex::encode(nonce),
+                iterations: 600_000,
+                algorithm: Some("aes-256-gcm".to_string()),
             },
             account_xpub: xpub.to_string(),
             addresses: BTreeMap::new(),
@@ -102,16 +114,25 @@ impl Keystore {
 
     /// Decodes the armored seed from the keystore.
     /// Note: This does not perform any decryption.
-    pub fn get_seed_from_armor(&self) -> Result<String> {
-        let (_, _, data) = deezel_asc::armor::reader::decode(self.encrypted_seed.as_bytes())
-            .map_err(|e| DeezelError::Crypto(format!("Failed to decode armored seed: {}", e)))?;
+    /// Decrypts the mnemonic from the keystore using the provided passphrase.
+    pub fn decrypt_mnemonic(&self, passphrase: &str) -> Result<String> {
+        // 1. Dearmor the encrypted mnemonic
+        let (_, _, encrypted_bytes) = deezel_asc::armor::reader::decode(self.encrypted_mnemonic.as_bytes())
+            .map_err(|e| DeezelError::Crypto(format!("Failed to dearmor mnemonic: {}", e)))?;
 
-        let mnemonic_str = String::from_utf8(data)
-            .map_err(|e| DeezelError::Wallet(format!("Failed to convert decoded data to mnemonic string: {}", e)))?;
+        // 2. Decode salt and nonce from hex
+        let salt = hex::decode(&self.pbkdf2_params.salt)?;
+        let nonce = hex::decode(&self.pbkdf2_params.nonce)?;
 
-        // Validate that it's a valid mnemonic, but we return the string.
+        // 3. Decrypt using the crypto module
+        let decrypted_bytes = crate::crypto::decrypt(&encrypted_bytes, passphrase, &salt, &nonce)?;
+
+        let mnemonic_str = String::from_utf8(decrypted_bytes)
+            .map_err(|e| DeezelError::Wallet(format!("Failed to convert decrypted data to string: {}", e)))?;
+
+        // 4. Validate that it's a valid mnemonic before returning
         Mnemonic::from_phrase(&mnemonic_str, bip39::Language::English)
-            .map_err(|e| DeezelError::Wallet(format!("Invalid mnemonic phrase: {}", e)))?;
+            .map_err(|e| DeezelError::Wallet(format!("Decrypted data is not a valid mnemonic: {}", e)))?;
 
         Ok(mnemonic_str)
     }

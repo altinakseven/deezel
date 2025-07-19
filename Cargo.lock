@@ -1230,6 +1230,7 @@ dependencies = [
  "protorune-support",
  "psbt-v2",
  "rand 0.8.5",
+ "rand_core 0.6.4",
  "regex",
  "reqwest",
  "secp256k1 0.29.1",

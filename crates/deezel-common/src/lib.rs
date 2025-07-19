@@ -17,13 +17,14 @@
 //! - `traits`: Core trait abstractions for platform independence
 //! - `wallet`: Bitcoin wallet functionality with BDK integration
 //! - `alkanes`: Smart contract operations and inspection
-//! - `runestone`: Runestone analysis and decoding
-//! - `network`: Network parameter management
-//! - `rpc`: RPC client abstractions
-//! - `address_resolver`: Address identifier resolution
-//! - `monitor`: Blockchain monitoring
-//! - `transaction`: Transaction construction and signing
-//! - `utils`: Common utilities
+pub mod crypto;
+/// - `runestone`: Runestone analysis and decoding
+/// - `network`: Network parameter management
+/// - `rpc`: RPC client abstractions
+/// - `address_resolver`: Address identifier resolution
+/// - `monitor`: Blockchain monitoring
+/// - `transaction`: Transaction construction and signing
+/// - `utils`: Common utilities
 pub mod provider;
 extern crate alloc;
 

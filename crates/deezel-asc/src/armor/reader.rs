@@ -46,6 +46,8 @@ pub enum BlockType {
     File,
     /// Cleartext Framework message
     CleartextMessage,
+    /// Encrypted Mnemonic
+    EncryptedMnemonic,
 }
 
 impl fmt::Display for BlockType {
@@ -53,6 +55,7 @@ impl fmt::Display for BlockType {
         match self {
             BlockType::PublicKey => f.write_str("PGP PUBLIC KEY BLOCK"),
             BlockType::PrivateKey => f.write_str("PGP PRIVATE KEY BLOCK"),
+            BlockType::EncryptedMnemonic => f.write_str("ENCRYPTED MNEMONIC"),
             BlockType::MultiPartMessage(x, y) => write!(f, "PGP MESSAGE, PART {x}/{y}"),
             BlockType::Message => f.write_str("PGP MESSAGE"),
             BlockType::Signature => f.write_str("PGP SIGNATURE"),
@@ -121,6 +124,7 @@ fn armor_header_type(i: &[u8]) -> IResult<&[u8], BlockType> {
         value(BlockType::Signature, tag("PGP SIGNATURE")),
         value(BlockType::File, tag("PGP ARMORED FILE")),
         value(BlockType::CleartextMessage, tag("PGP SIGNED MESSAGE")),
+        value(BlockType::EncryptedMnemonic, tag("ENCRYPTED MNEMONIC")),
         // OpenSSL formats
         // Public Key File PKCS#1
         value(

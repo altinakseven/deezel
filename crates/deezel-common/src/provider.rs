@@ -128,7 +128,7 @@ impl ConcreteProvider {
    /// Unlock the wallet by decrypting the seed
    pub async fn unlock_wallet(&mut self, passphrase: &str) -> Result<()> {
        if let WalletState::Locked(keystore) = &self.wallet_state {
-           let mnemonic = keystore.get_seed_from_armor()?;
+           let mnemonic = keystore.decrypt_mnemonic(passphrase)?;
            self.wallet_state = WalletState::Unlocked {
                keystore: keystore.clone(),
                mnemonic,
@@ -493,8 +493,8 @@ impl WalletProvider for ConcreteProvider {
             Mnemonic::new(MnemonicType::Words24, bip39::Language::English)
         };
 
-        let _pass = passphrase.clone().unwrap_or_default();
-        let keystore = Keystore::new(&mnemonic, config.network)?;
+        let pass = passphrase.clone().unwrap_or_default();
+        let keystore = Keystore::new(&mnemonic, config.network, &pass)?;
 
         #[cfg(feature = "native-deps")]
         if let Some(path) = &self.wallet_path {
@@ -522,7 +522,8 @@ impl WalletProvider for ConcreteProvider {
         {
             let path = PathBuf::from(config.wallet_path);
             let keystore = Keystore::from_file(&path)?;
-            let mnemonic = keystore.get_seed_from_armor()?;
+            let pass = passphrase.as_deref().ok_or_else(|| DeezelError::Wallet("Passphrase required to load wallet".to_string()))?;
+            let mnemonic = keystore.decrypt_mnemonic(pass)?;
             let addresses = keystore.get_addresses(config.network, "p2tr", 0, 1)?;
             let address = addresses.get(0).map(|a| a.address.clone()).unwrap_or_default();
 
