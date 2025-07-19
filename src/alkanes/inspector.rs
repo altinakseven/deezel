@@ -1715,7 +1715,6 @@ impl AlkaneInspector {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     #[test]
     fn test_alkane_inspector_creation() {

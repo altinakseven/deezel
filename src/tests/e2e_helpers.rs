@@ -132,7 +132,6 @@ impl E2ETestEnv {
     
     /// Run deezel CLI command
     pub async fn run_deezel_command(&self, args: &[&str]) -> Result<DeezelCommandResult> {
-        use std::io::Write;
         let deezel_binary = self.find_deezel_binary()?;
         
         debug!("Running deezel command: {:?} with args: {:?}", deezel_binary, args);
@@ -158,7 +157,7 @@ impl E2ETestEnv {
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
         
-        let mut child = cmd.spawn()
+        let child = cmd.spawn()
             .map_err(|e| anyhow!("Failed to execute deezel command: {}", e))?;
 
         let output = child.wait_with_output()
@@ -179,23 +178,16 @@ impl E2ETestEnv {
     
     /// Find the deezel binary
     fn find_deezel_binary(&self) -> Result<PathBuf> {
-        // Try to find the binary in target directory
-        let possible_paths = [
-            "target/debug/deezel",
-            "target/release/deezel",
-            "./target/debug/deezel",
-            "./target/release/deezel",
-            "deezel", // In PATH
-        ];
-        
-        for path in &possible_paths {
-            let path_buf = PathBuf::from(path);
-            if path_buf.exists() || path == &"deezel" {
-                return Ok(path_buf);
-            }
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let deezel_binary = manifest_dir.join("target/debug/deezel");
+
+        if !deezel_binary.exists() {
+            return Err(anyhow!(
+                "Could not find deezel binary at {:?}. Make sure it's built with 'cargo build'",
+                deezel_binary
+            ));
         }
-        
-        Err(anyhow!("Could not find deezel binary. Make sure it's built with 'cargo build'"))
+        Ok(deezel_binary)
     }
     
     /// Wait for metashrew server to be ready (polls indefinitely)
@@ -221,12 +213,16 @@ impl E2ETestEnv {
                 .send()
                 .await
             {
-                Ok(response) if response.status().is_success() => {
-                    info!("Metashrew server is ready after {} attempts", attempt);
-                    return Ok(());
-                }
-                Ok(_) => {
-                    debug!("Metashrew server returned error status");
+                Ok(response) => {
+                    let status = response.status();
+                    let text = response.text().await.unwrap_or_else(|_| "failed to get response text".to_string());
+                    debug!("Metashrew server response: status={}, body={}", status, text);
+                    if status.is_success() {
+                        info!("Metashrew server is ready after {} attempts", attempt);
+                        return Ok(());
+                    } else {
+                        debug!("Metashrew server returned error status");
+                    }
                 }
                 Err(e) => {
                     debug!("Failed to connect to metashrew server: {}", e);
@@ -335,6 +331,10 @@ pub enum TestStep {
     SetHeight { height: u32 },
     /// Run a deezel command
     RunCommand { args: Vec<String>, expect_success: bool, extract_alkane_id: bool },
+    /// Deploy a contract
+    DeployContract { name: String, calldata: Option<Vec<String>> },
+    /// Initialize the free mint contract
+    InitFreeMint,
     /// Wait for a duration
     Wait { duration: Duration },
 }
@@ -372,7 +372,7 @@ impl E2ETestScenario {
         
         // Execute each step
         for (i, step) in self.steps.iter().enumerate() {
-            info!("Executing step {}: {:?}", i + 1, step);
+            info!("[E2E TRACE] Executing step {} of {}: {:?}", i + 1, self.steps.len(), step);
             match step.clone() {
                 TestStep::CreateWallet { name, passphrase } => {
                     self.wallet_path = Some(self.env.create_test_wallet(&name, passphrase.as_deref()).await?);
@@ -428,7 +428,60 @@ impl E2ETestScenario {
                             .ok_or_else(|| anyhow!("Could not find alkane_id in command output"))?;
                         self.alkane_id = Some(alkane_id);
                     }
-                 }
+                }
+                TestStep::DeployContract { name, calldata } => {
+                    let wasm_file_name = match name.as_str() {
+                        "free-mint" => "free_mint.wasm",
+                        "vault-factory" => "vault_factory.wasm",
+                        "amm" => "amm.wasm",
+                        _ => return Err(anyhow!("Unsupported contract type: {}", name)),
+                    };
+                    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+                    let wasm_path = manifest_dir.join("out").join(wasm_file_name);
+
+                    // Explicitly check if the wasm file exists before deploying
+                    if !wasm_path.exists() {
+                        return Err(anyhow!(
+                            "WASM file for contract '{}' not found at expected path: {:?}",
+                            name,
+                            wasm_path
+                        ));
+                    }
+
+                    let mut args = vec![
+                        "deploy".to_string(),
+                        name.clone(),
+                        "--yes".to_string(),
+                    ];
+                    if let Some(calldata) = calldata {
+                        args.extend(calldata);
+                    }
+                    let final_args = self.build_final_args(args);
+                    let result = self.env.run_deezel_command(&final_args.iter().map(|s| s.as_str()).collect::<Vec<_>>()).await?;
+                    result.assert_success()?;
+                    let alkane_id = result.stdout.lines()
+                        .find(|line| line.starts_with("alkane_id: "))
+                        .map(|line| line.trim_start_matches("alkane_id: ").to_string())
+                        .ok_or_else(|| anyhow!("Could not find alkane_id in command output"))?;
+                    self.alkane_id = Some(alkane_id);
+                }
+                TestStep::InitFreeMint => {
+                    let args = vec![
+                        "alkanes".to_string(),
+                        "call".to_string(),
+                        self.alkane_id.as_ref().unwrap().clone(),
+                        "0".to_string(), // initialize opcode
+                        "1000000".to_string(), // token_units
+                        "100000".to_string(), // value_per_mint
+                        "1000000000".to_string(), // cap
+                        "0x54455354".to_string(), // name_part1
+                        "0x434f494e".to_string(), // name_part2
+                        "0x545354".to_string(), // symbol
+                    ];
+                    let final_args = self.build_final_args(args);
+                    let result = self.env.run_deezel_command(&final_args.iter().map(|s| s.as_str()).collect::<Vec<_>>()).await?;
+                    result.assert_success()?;
+                }
                 TestStep::Wait { duration } => {
                     sleep(duration).await;
                 }

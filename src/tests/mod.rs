@@ -8,6 +8,7 @@
 
 pub mod mock_metashrew;
 pub mod e2e_helpers;
+#[cfg(test)]
 pub mod integration_tests;
 pub mod test_alkanes_e2e;
 

@@ -5,23 +5,23 @@ use crate::alkanes::AlkanesManager;
 use crate::wallet::WalletManager;
 use crate::alkanes::types::ContractDeployParams;
 
-pub struct AmmDeployer {
+pub struct ContractDeployer {
     alkanes_manager: AlkanesManager,
 }
 
-impl AmmDeployer {
+impl ContractDeployer {
     pub fn new(rpc_client: Arc<crate::rpc::RpcClient>, wallet_manager: Arc<WalletManager>) -> Self {
         Self {
             alkanes_manager: AlkanesManager::new(rpc_client, wallet_manager),
         }
     }
 
-    pub async fn deploy(&self, wasm_file: &str, auto_confirm: bool) -> Result<()> {
-        debug!("Deploying AMM contract from {}...", wasm_file);
+    pub async fn deploy(&self, wasm_file: &str, calldata: Vec<String>, auto_confirm: bool) -> Result<()> {
+        debug!("Deploying contract from {} with calldata: {:?}", wasm_file, calldata);
 
         let params = ContractDeployParams {
             wasm_file: wasm_file.to_string(),
-            calldata: vec!["2".to_string(), "0".to_string()],
+            calldata,
             fee_rate: None,
             auto_confirm,
         };

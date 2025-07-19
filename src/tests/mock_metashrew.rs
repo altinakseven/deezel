@@ -296,18 +296,24 @@ impl MockMetashrewServer {
             return Err(anyhow!("alkanes_meta requires block and tx parameters"));
         }
 
-        let _block = params_array[0].as_str()
+        let block = params_array[0].as_str()
             .ok_or_else(|| anyhow!("Block must be a string"))?;
-        let _tx = params_array[1].as_str()
+        let tx = params_array[1].as_str()
             .ok_or_else(|| anyhow!("Tx must be a string"))?;
 
-        // Return mock contract metadata
-        Ok(json!({
-            "name": "DIESEL Token",
-            "symbol": "DIESEL",
-            "decimals": 8,
-            "total_supply": "21000000000000000"
-        }))
+        if block == "2" && tx == "0" {
+            // Return mock contract metadata
+            Ok(json!({
+                "result": {
+                    "name": "Test Token",
+                    "symbol": "TST",
+                    "decimals": 18,
+                    "total_supply": "1000000000000000000000000"
+                }
+            }))
+        } else {
+            Err(anyhow!("Contract not found"))
+        }
     }
 
     /// Handle get transaction
@@ -422,7 +428,7 @@ impl MockMetashrewServer {
         json!({
             "jsonrpc": "2.0",
             "error": {
-                "code": -1,
+                "code": -32000,
                 "message": message
             },
             "id": id

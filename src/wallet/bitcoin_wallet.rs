@@ -352,6 +352,21 @@ impl BitcoinWallet {
         Ok(addresses)
     }
     
+    /// Get multiple addresses as JSON objects
+    pub async fn get_addresses_as_json(&self, count: u32) -> Result<Vec<serde_json::Value>> {
+        let mut addresses = Vec::new();
+        for i in 0..count {
+            let address_str = self.get_address_at_index(i, false).await?;
+            let address_json = serde_json::json!({
+                "address": address_str,
+                "index": i,
+                "type": "p2wpkh" // Assuming default address type
+            });
+            addresses.push(address_json);
+        }
+        Ok(addresses)
+    }
+    
     /// Get address at specific index
     pub async fn get_address_at_index(&self, index: u32, is_change: bool) -> Result<String> {
         // BIP44 derivation path: m/84'/coin_type'/0'/change/address_index

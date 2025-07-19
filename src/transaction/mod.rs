@@ -214,10 +214,6 @@ fn reverse_txid_bytes(txid: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rpc::{RpcClient, RpcConfig};
-    use crate::wallet::{WalletManager, WalletConfig};
-    use bitcoin::Network;
-    use tempfile::tempdir;
     
     
     #[test]

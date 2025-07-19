@@ -268,8 +268,8 @@ impl WalletManager {
     }
     
     /// Get multiple addresses from the wallet
-    pub async fn get_addresses(&self, count: u32) -> Result<Vec<String>> {
-        self.wallet.get_addresses(count).await
+    pub async fn get_addresses(&self, count: u32) -> Result<Vec<serde_json::Value>> {
+        self.wallet.get_addresses_as_json(count).await
     }
     
     /// Get address of specific type at specific index
@@ -573,7 +573,7 @@ mod tests {
     
     #[tokio::test]
     async fn test_mnemonic_generation() {
-        use bip39::{Mnemonic, Language};
+        use bip39::Mnemonic;
         
         // Test mnemonic generation
         let entropy = [0u8; 16]; // 128 bits for 12 words

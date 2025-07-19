@@ -23,6 +23,7 @@ use deezel::{
     },
 };
 use deezel::rpc::RpcConfig;
+mod build_contracts;
 
 /// Main CLI arguments
 #[derive(Parser)]
@@ -615,10 +616,32 @@ enum DeployCommands {
     /// Deploy an AMM contract
     Amm {
         /// Path to the wasm file to deploy
-        #[arg(long, default_value = "out/alkanes.wasm")]
+        #[arg(long, default_value = "out/amm.wasm")]
         wasm_file: String,
         #[arg(short = 'y', long)]
         yes: bool,
+        /// Calldata for the deployment
+        calldata: Vec<String>,
+    },
+    /// Deploy a Free Mint contract
+    FreeMint {
+        /// Path to the wasm file to deploy
+        #[arg(long, default_value = "out/free_mint.wasm")]
+        wasm_file: String,
+        #[arg(short = 'y', long)]
+        yes: bool,
+        /// Calldata for the deployment
+        calldata: Vec<String>,
+    },
+    /// Deploy a Vault Factory contract
+    VaultFactory {
+        /// Path to the wasm file to deploy
+        #[arg(long, default_value = "out/vault_factory.wasm")]
+        wasm_file: String,
+        #[arg(short = 'y', long)]
+        yes: bool,
+        /// Calldata for the deployment
+        calldata: Vec<String>,
     },
 }
 
@@ -1381,6 +1404,20 @@ async fn main() -> Result<()> {
                         }
                     }
                 },
+                WalletCommands::Addresses { count, raw, .. } => {
+                    if let Some(wm) = &wallet_manager {
+                        let addresses = wm.get_addresses(count).await?;
+                        if raw {
+                            println!("{}", serde_json::to_string_pretty(&addresses)?);
+                        } else {
+                            println!("🏠 Wallet Addresses");
+                            println!("══════════════════");
+                            for (i, address) in addresses.iter().enumerate() {
+                                println!("{}. {}", i, address.get("address").unwrap());
+                            }
+                        }
+                    }
+                },
                 _ => {
                     println!("Other wallet commands not yet implemented");
                 }
@@ -2020,14 +2057,24 @@ async fn main() -> Result<()> {
             }
         },
         Commands::BuildContracts => {
-            deezel::build::build_contracts()?;
+            build_contracts::build()?;
         },
         Commands::Deploy { command } => {
             match command {
-                DeployCommands::Amm { wasm_file, yes } => {
+                DeployCommands::Amm { wasm_file, yes, calldata } => {
                     let wm = wallet_manager.ok_or_else(|| anyhow!("Wallet required for deployment"))?;
-                    let deployer = deezel::deploy::AmmDeployer::new(rpc_client.clone(), wm);
-                    deployer.deploy(&wasm_file, yes).await?;
+                    let deployer = deezel::deploy::ContractDeployer::new(rpc_client.clone(), wm);
+                    deployer.deploy(&wasm_file, calldata, yes).await?;
+                }
+                DeployCommands::FreeMint { wasm_file, yes, calldata } => {
+                    let wm = wallet_manager.ok_or_else(|| anyhow!("Wallet required for deployment"))?;
+                    let deployer = deezel::deploy::ContractDeployer::new(rpc_client.clone(), wm);
+                    deployer.deploy(&wasm_file, calldata, yes).await?;
+                }
+                DeployCommands::VaultFactory { wasm_file, yes, calldata } => {
+                    let wm = wallet_manager.ok_or_else(|| anyhow!("Wallet required for deployment"))?;
+                    let deployer = deezel::deploy::ContractDeployer::new(rpc_client.clone(), wm);
+                    deployer.deploy(&wasm_file, calldata, yes).await?;
                 }
             }
         }
