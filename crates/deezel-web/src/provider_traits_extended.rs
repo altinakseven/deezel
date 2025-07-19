@@ -211,7 +211,7 @@ impl KeystoreProvider for WebProvider {
         Err(DeezelError::NotImplemented("Keystore operations not implemented for web provider".to_string()))
     }
     
-    async fn get_keystore_info(&self, _master_public_key: &str, _master_fingerprint: &str, _created_at: u64, _version: &str) -> Result<KeystoreInfo> {
+    async fn get_keystore_info(&self, _master_fingerprint: &str, _created_at: u64, _version: &str) -> Result<KeystoreInfo> {
         Err(DeezelError::NotImplemented("Keystore operations not implemented for web provider".to_string()))
     }
 }

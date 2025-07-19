@@ -1518,7 +1518,7 @@ impl KeystoreProvider for BrowserWalletProvider {
         Err(DeezelError::NotImplemented("Keystore operations not implemented for browser wallet provider".to_string()))
     }
     
-    async fn get_keystore_info(&self, _master_public_key: &str, _master_fingerprint: &str, _created_at: u64, _version: &str) -> Result<KeystoreInfo> {
+    async fn get_keystore_info(&self, _master_fingerprint: &str, _created_at: u64, _version: &str) -> Result<KeystoreInfo> {
         Err(DeezelError::NotImplemented("Keystore operations not implemented for browser wallet provider".to_string()))
     }
 }

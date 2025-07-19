@@ -388,7 +388,7 @@ pub trait KeystoreProvider {
     fn parse_address_range(&self, range_spec: &str) -> Result<(String, u32, u32)>;
     
     /// Get keystore info from master public key
-    async fn get_keystore_info(&self, master_public_key: &str, master_fingerprint: &str, created_at: u64, version: &str) -> Result<KeystoreInfo>;
+    async fn get_keystore_info(&self, master_fingerprint: &str, created_at: u64, version: &str) -> Result<KeystoreInfo>;
 }
 
 /// Address information for keystore operations
@@ -409,7 +409,6 @@ pub struct KeystoreAddress {
 /// Summary information about a keystore
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct KeystoreInfo {
-    pub master_public_key: String,
     pub master_fingerprint: String,
     pub created_at: u64,
     pub version: String,
@@ -1172,8 +1171,8 @@ impl<T: DeezelProvider + ?Sized> KeystoreProvider for Box<T> {
    fn parse_address_range(&self, range_spec: &str) -> Result<(String, u32, u32)> {
        (**self).parse_address_range(range_spec)
    }
-   async fn get_keystore_info(&self, master_public_key: &str, master_fingerprint: &str, created_at: u64, version: &str) -> Result<KeystoreInfo> {
-       (**self).get_keystore_info(master_public_key, master_fingerprint, created_at, version).await
+   async fn get_keystore_info(&self, master_fingerprint: &str, created_at: u64, version: &str) -> Result<KeystoreInfo> {
+       (**self).get_keystore_info(master_fingerprint, created_at, version).await
    }
 }
 

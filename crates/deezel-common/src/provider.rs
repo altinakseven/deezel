@@ -2009,7 +2009,7 @@ impl KeystoreProvider for ConcreteProvider {
         Err(DeezelError::NotImplemented("KeystoreProvider parse_address_range not yet implemented".to_string()))
     }
 
-    async fn get_keystore_info(&self, _master_public_key: &str, _master_fingerprint: &str, _created_at: u64, _version: &str) -> Result<KeystoreInfo> {
+    async fn get_keystore_info(&self, _master_fingerprint: &str, _created_at: u64, _version: &str) -> Result<KeystoreInfo> {
         Err(DeezelError::NotImplemented("KeystoreProvider get_keystore_info not yet implemented".to_string()))
     }
 }

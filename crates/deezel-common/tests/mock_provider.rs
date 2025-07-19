@@ -635,9 +635,8 @@ impl KeystoreProvider for MockProvider {
         Ok(("p2tr".to_string(), 0, 10))
     }
     
-    async fn get_keystore_info(&self, _master_public_key: &str, _master_fingerprint: &str, _created_at: u64, _version: &str) -> Result<KeystoreInfo> {
+    async fn get_keystore_info(&self, _master_fingerprint: &str, _created_at: u64, _version: &str) -> Result<KeystoreInfo> {
         Ok(KeystoreInfo {
-            master_public_key: "mock_mpk".to_string(),
             master_fingerprint: "mock_fingerprint".to_string(),
             created_at: 0,
             version: "1".to_string(),

@@ -88,9 +88,6 @@ impl KeystoreManager {
         let master_key = Xpriv::new_master(Network::Bitcoin, seed.as_bytes())
             .context("Failed to create master key from seed")?;
         
-        // Get master public key
-        let master_public_key = Xpub::from_priv(&secp, &master_key);
-        
         // Get master fingerprint
         let master_fingerprint = master_key.fingerprint(&secp);
 
@@ -106,7 +103,6 @@ impl KeystoreManager {
 
         let keystore = Keystore {
             encrypted_seed,
-            master_public_key: master_public_key.to_string(),
             master_fingerprint: master_fingerprint.to_string(),
             created_at: chrono::Utc::now().timestamp() as u64,
             version: env!("CARGO_PKG_VERSION").to_string(),
@@ -166,7 +162,7 @@ impl KeystoreManager {
 
     /// Derive addresses dynamically from master public key
     pub fn derive_addresses(&self, keystore: &Keystore, network: Network, script_types: &[&str], start_index: u32, count: u32) -> AnyhowResult<Vec<KeystoreAddress>> {
-        let master_xpub = Xpub::from_str(&keystore.master_public_key)
+        let master_xpub = Xpub::from_str(&keystore.account_xpub)
             .context("Failed to parse master public key")?;
         
         let secp = Secp256k1::new();
@@ -279,7 +275,6 @@ impl KeystoreManager {
     /// Create a keystore info summary
     pub fn get_keystore_info(&self, keystore: &Keystore) -> KeystoreInfo {
         KeystoreInfo {
-            master_public_key: keystore.master_public_key.clone(),
             master_fingerprint: keystore.master_fingerprint.clone(),
             created_at: keystore.created_at,
             version: keystore.version.clone(),
@@ -323,7 +318,7 @@ impl KeystoreManager {
     
     /// Derive addresses from keystore metadata without requiring decryption
     pub fn derive_addresses_from_metadata(&self, keystore_metadata: &Keystore, network: Network, script_types: &[&str], start_index: u32, count: u32, custom_network_params: Option<&deezel_common::network::NetworkParams>) -> AnyhowResult<Vec<KeystoreAddress>> {
-        let master_xpub = Xpub::from_str(&keystore_metadata.master_public_key)
+        let master_xpub = Xpub::from_str(&keystore_metadata.account_xpub)
             .context("Failed to parse master public key")?;
         
         let secp = Secp256k1::new();
@@ -416,9 +411,8 @@ impl KeystoreProvider for KeystoreManager {
             .map_err(|e| DeezelError::Parse(format!("Failed to parse address range: {}", e)))
     }
     
-    async fn get_keystore_info(&self, master_public_key: &str, master_fingerprint: &str, created_at: u64, version: &str) -> CommonResult<KeystoreInfo> {
+    async fn get_keystore_info(&self, master_fingerprint: &str, created_at: u64, version: &str) -> CommonResult<KeystoreInfo> {
         Ok(KeystoreInfo {
-            master_public_key: master_public_key.to_string(),
             master_fingerprint: master_fingerprint.to_string(),
             created_at,
             version: version.to_string(),

@@ -207,7 +207,6 @@ impl SystemWallet for SystemDeezel {
                 
                 // Show keystore info
                 let info = self.keystore_manager.get_keystore_info(&keystore);
-                println!("🔑 Master Public Key: {}", info.master_public_key);
                 println!("🔍 Master Fingerprint: {}", info.master_fingerprint);
                 println!("📅 Created: {}", info.created_at);
                 println!("🏷️  Version: {}", info.version);
@@ -266,7 +265,6 @@ impl SystemWallet for SystemDeezel {
                 
                 // Show keystore info
                 let info = self.keystore_manager.get_keystore_info(&keystore);
-                println!("🔑 Master Public Key: {}", info.master_public_key);
                 println!("🔍 Master Fingerprint: {}", info.master_fingerprint);
                 println!("📅 Created: {}", info.created_at);
                 println!("🏷️  Version: {}", info.version);
@@ -295,7 +293,6 @@ impl SystemWallet for SystemDeezel {
 
                 println!("💼 Wallet Information (Locked)");
                 println!("═════════════════════════════");
-                println!("🔑 Master Public Key: {}", info.master_public_key);
                 println!("🔍 Master Fingerprint: {}", info.master_fingerprint);
                 println!("📅 Created: {}", chrono::DateTime::from_timestamp(info.created_at as i64, 0).map(|dt| dt.to_rfc2822()).unwrap_or_else(|| "Invalid date".to_string()));
                 println!("🏷️  Version: {}", info.version);

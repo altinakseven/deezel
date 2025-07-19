@@ -33,7 +33,6 @@ fn test_keystore_armoring_dearmoring_roundtrip() {
     // 3. Create a Keystore instance
     let keystore = Keystore {
         encrypted_seed: armored_seed_str,
-        master_public_key: "mock_mpk".to_string(),
         master_fingerprint: "mock_fingerprint".to_string(),
         created_at: 0,
         version: "1.0".to_string(),
@@ -52,7 +51,7 @@ fn test_keystore_armoring_dearmoring_roundtrip() {
     // 6. Derive a private key from the original mnemonic
     let seed = Seed::new(&mnemonic, "");
     let root = Xpriv::new_master(Network::Regtest, seed.as_bytes()).unwrap();
-    let path = DerivationPath::from_str("m/84'/1'/0'/0/0").unwrap();
+    let path = DerivationPath::from_str("m/86'/0'/0'/0/0").unwrap();
     let original_xpriv = root.derive_priv(&bitcoin::secp256k1::Secp256k1::new(), &path).unwrap();
 
     // 7. Derive a private key from the dearmored mnemonic

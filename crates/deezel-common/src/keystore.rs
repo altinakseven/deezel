@@ -16,8 +16,6 @@ use alloc::vec::Vec;
 pub struct Keystore {
     /// PGP ASCII armored encrypted seed data.
     pub encrypted_seed: String,
-    /// Master public key for address derivation (hex encoded).
-    pub master_public_key: String,
     /// Master fingerprint for identification.
     pub master_fingerprint: String,
     /// Creation timestamp (Unix epoch).
@@ -73,7 +71,6 @@ impl Keystore {
 
         Ok(Self {
             encrypted_seed: String::from_utf8(armored_seed)?,
-            master_public_key: Xpub::from_priv(&secp, &root).to_string(),
             master_fingerprint: root.fingerprint(&secp).to_string(),
             created_at: 0, // TODO
             version: "1.0".to_string(),

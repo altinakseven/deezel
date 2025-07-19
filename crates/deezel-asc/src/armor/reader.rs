@@ -3,14 +3,10 @@ use alloc::{
     collections::BTreeMap,
     string::{String, ToString},
     vec::Vec,
+    format,
 };
 use core::{fmt, str};
 use crate::errors::Result;
-#[cfg(feature = "std")]
-use crate::base64::reader::Base64Reader;
-
-#[cfg(feature = "std")]
-use std::io::{BufReader, Cursor, Read};
 
 use nom::{
     branch::alt,
@@ -281,7 +277,6 @@ fn hash_header_line(i: &[u8]) -> IResult<&[u8], Vec<String>> {
     Ok((i, values))
 }
 
-#[cfg(feature = "std")]
 pub fn decode(i: &[u8]) -> Result<(BlockType, Headers, Vec<u8>)> {
     let (remaining, (typ, headers)) = armor_header(i)?;
 
@@ -310,10 +305,10 @@ pub fn decode(i: &[u8]) -> Result<(BlockType, Headers, Vec<u8>)> {
         .copied()
         .collect();
 
-    // Decode the base64 content
-    let mut reader = Base64Reader::new(BufReader::new(Cursor::new(&cleaned_base64)));
-    let mut decoded = Vec::new();
-    reader.read_to_end(&mut decoded)?;
+    // Decode the base64 content directly
+    use base64::Engine;
+    let decoded = base64::engine::general_purpose::STANDARD.decode(&cleaned_base64)
+        .map_err(|e| crate::errors::Error::from(format!("base64 decode error: {}", e)))?;
 
     Ok((typ, headers, decoded))
 }
