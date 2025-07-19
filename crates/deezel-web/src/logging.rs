@@ -42,7 +42,7 @@
 //! # Convenience Macros
 //!
 //! ```rust,no_run
-//! use deezel_web::logging::{web_log, web_debug, web_info, web_warn, web_error};
+//! use deezel_web::{web_log, web_debug, web_info, web_warn, web_error};
 //!
 //! web_debug!("Debug message with formatting: {}", 42);
 //! web_info!("Info: {}", "important information");

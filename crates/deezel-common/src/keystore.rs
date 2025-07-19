@@ -125,13 +125,26 @@ impl Keystore {
         let secp = Secp256k1::new();
         let xpub = Xpub::from_str(&self.account_xpub)?;
         let mut addresses = Vec::new();
+
+        // We'll derive from the receive path (0) for now.
+        let branch = 0;
+
         for i in start_index..start_index + count {
-            let path = DerivationPath::from_str(&format!("m/0/{}", i))?;
+            let path_str = format!("m/{}/{}", branch, i);
+            let path = DerivationPath::from_str(&path_str)?;
             let derived_xpub = xpub.derive_pub(&secp, &path)?;
             let (internal_key, _) = derived_xpub.public_key.x_only_public_key();
             let address = Address::p2tr(&secp, internal_key, None, network);
+            
+            // Construct the full path for display, assuming a BIP-86 structure.
+            let coin_type = match network {
+                Network::Bitcoin => "0",
+                _ => "1",
+            };
+            let full_path_str = format!("m/86'/{}'/0'/{}", coin_type, path_str.strip_prefix("m/").unwrap());
+
             addresses.push(crate::traits::AddressInfo {
-                derivation_path: path.to_string(),
+                derivation_path: full_path_str,
                 address: address.to_string(),
                 script_type: address_type.to_string(),
                 index: i,
