@@ -88,7 +88,6 @@ tokio = { workspace = true, features = ["sync", "time"], optional = true }
 reqwest = { workspace = true, features = ["json", "rustls-tls"], optional = true, default-features = false }
 url = { version = "2.5.0", optional = true }
 clap = { workspace = true, features = ["derive"], default-features = false }
-ord = { workspace = true, optional = true }
 bitcoincore-rpc = { workspace = true, optional = true }
 tabled = { workspace = true, optional = true }
 
@@ -96,7 +95,7 @@ tabled = { workspace = true, optional = true }
 default = ["wasm-inspection", "native-deps", "std"]
 std = []
 wasm-inspection = ["wasmi", "wasmprinter", "wat", "spin"]
-native-deps = ["dirs", "tempfile", "tokio", "reqwest", "url", "ord", "bitcoincore-rpc", "tabled", "std"]
+native-deps = ["dirs", "tempfile", "tokio", "reqwest", "url", "bitcoincore-rpc", "tabled", "std"]
 web-compat = ["spin"]
 
 [dev-dependencies]
