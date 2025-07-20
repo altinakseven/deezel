@@ -12,8 +12,9 @@ use crate::Result;
 use alloc::{
     string::{String},
 };
-use bitcoin::{Network, Transaction};
+use bitcoin::{Network, Transaction, TxIn, TxOut, OutPoint, ScriptBuf, Witness, Amount};
 use serde_json::{Value as JsonValue};
+use std::str::FromStr;
 
 /// Analyzes a transaction and any embedded runestone, producing a detailed JSON object.
 ///
@@ -51,17 +52,51 @@ pub fn analyze_transaction_with_runestone(
 /// A `Result` containing the formatted `String`.
 pub fn pretty_print_transaction_analysis(analysis: &JsonValue) -> Result<String> {
     let output = String::new();
-    
-    // Create a dummy transaction for printing, as the required info is in the analysis JSON
-    let txid_hex = analysis["transaction_id"].as_str().unwrap_or_default();
-    let tx_bytes = hex::decode(txid_hex).unwrap_or_default();
-    let tx: Transaction = bitcoin::consensus::deserialize(&tx_bytes).unwrap_or_else(|_| Transaction {
-        version: bitcoin::transaction::Version(2),
-        lock_time: bitcoin::absolute::LockTime::from_consensus(0),
-        input: vec![],
-        output: vec![],
-    });
 
+    // Reconstruct the transaction from the analysis JSON
+    let version = analysis["version"].as_i64().unwrap_or(2) as i32;
+    let lock_time = analysis["lock_time"].as_u64().unwrap_or(0) as u32;
+
+    let inputs: Vec<TxIn> = analysis["inputs"]
+        .as_array()
+        .unwrap_or(&vec![])
+        .iter()
+        .map(|input_json| {
+            let txid_str = input_json["previous_output"]["txid"].as_str().unwrap_or_default();
+            let txid = bitcoin::Txid::from_str(txid_str).unwrap_or(bitcoin::Txid::from_str("0000000000000000000000000000000000000000000000000000000000000000").unwrap());
+            let vout = input_json["previous_output"]["vout"].as_u64().unwrap_or(0) as u32;
+            let sequence = input_json["sequence"].as_u64().unwrap_or(0) as u32;
+
+            TxIn {
+                previous_output: OutPoint { txid, vout },
+                script_sig: ScriptBuf::new(), // Not available in analysis
+                sequence: bitcoin::Sequence(sequence),
+                witness: Witness::new(), // Not available in analysis
+            }
+        })
+        .collect();
+
+    let outputs: Vec<TxOut> = analysis["outputs"]
+        .as_array()
+        .unwrap_or(&vec![])
+        .iter()
+        .map(|output_json| {
+            let value = output_json["value"].as_u64().unwrap_or(0);
+            // script_pubkey is not fully available, but we can create a dummy one
+            // as it's not used by the pretty printer directly.
+            TxOut {
+                value: Amount::from_sat(value),
+                script_pubkey: ScriptBuf::new(),
+            }
+        })
+        .collect();
+
+    let tx = Transaction {
+        version: bitcoin::transaction::Version(version),
+        lock_time: bitcoin::absolute::LockTime::from_consensus(lock_time),
+        input: inputs,
+        output: outputs,
+    };
 
     runestone_enhanced::print_human_readable_runestone(&tx, analysis);
 
