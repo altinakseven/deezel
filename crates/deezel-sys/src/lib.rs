@@ -1173,6 +1173,7 @@ impl SystemAlkanes for SystemDeezel {
                         "bytecode_length": result.bytecode_length,
                         "disassembly": result.disassembly,
                         "metadata": result.metadata,
+                        "metadata_error": result.metadata_error,
                         "codehash": result.codehash,
                         "fuzzing_results": result.fuzzing_results
                     });
@@ -1929,6 +1930,11 @@ fn pretty_print_inspection_result(result: &AlkanesInspectResult) -> anyhow::Resu
 
     if let Some(metadata) = &result.metadata {
         pretty_print_metadata(metadata);
+    } else if let Some(error) = &result.metadata_error {
+        println!("=== ALKANE METADATA ===");
+        println!("Note: Failed to extract metadata from __meta export");
+        println!("Error: {}", error);
+        println!("========================");
     }
 
     if let Some(disassembly) = &result.disassembly {

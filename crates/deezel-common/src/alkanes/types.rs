@@ -263,6 +263,7 @@ pub struct AlkanesInspectResult {
     pub bytecode_length: usize,
     pub disassembly: Option<String>,
     pub metadata: Option<AlkaneMetadata>,
+    pub metadata_error: Option<String>,
     pub codehash: Option<String>,
     pub fuzzing_results: Option<FuzzingResults>,
 }

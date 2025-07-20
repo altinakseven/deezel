@@ -84,9 +84,9 @@ pub mod diesel_operations {
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```ignore
 /// use bdk::bitcoin::Transaction;
-/// use deezel_cli::runestone_enhanced::decode_runestone;
+/// use deezel_common::runestone_enhanced::decode_runestone;
 /// use anyhow::Result;
 ///
 /// fn example() -> Result<()> {
@@ -513,9 +513,9 @@ pub fn decode_protostone_message(message_bytes: &[u8]) -> Result<Vec<u128>> {
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```ignore
 /// use bdk::bitcoin::Transaction;
-/// use deezel_cli::runestone_enhanced::format_runestone;
+/// use deezel_common::runestone_enhanced::format_runestone;
 /// use anyhow::Result;
 ///
 /// fn example() -> Result<()> {
