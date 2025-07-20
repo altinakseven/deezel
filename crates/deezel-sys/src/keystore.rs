@@ -14,7 +14,7 @@ use bip39::{Mnemonic, MnemonicType};
 use std::str::FromStr;
 
 use deezel_common::{
-    keystore::{AddressInfo, Keystore, PbkdfParams},
+    keystore::{Keystore},
     traits::{KeystoreAddress, KeystoreInfo, KeystoreProvider},
     DeezelError, Result as CommonResult,
 };

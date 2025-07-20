@@ -771,26 +771,19 @@ impl WalletProvider for ConcreteProvider {
         });
 
         // 5. Calculate fee and add change output if necessary
-        // 5. Iteratively calculate fee and change
-        // Start with an initial fee estimate without a change output
-        let mut estimated_vsize = self.estimate_tx_vsize(&tx, selected_utxos.len());
-        let mut fee = Amount::from_sat((estimated_vsize as f32 * fee_rate).ceil() as u64);
-
-        // Determine if a change output is needed
+        // Start with an initial fee estimate. We add a placeholder change output to get a more
+        // accurate size, then calculate the fee, then the actual change.
         let change_address = Address::from_str(&all_addresses[0].address)?.require_network(network)?;
         let change_script = change_address.script_pubkey();
-        let change_output = TxOut { value: Amount::ZERO, script_pubkey: change_script.clone() };
+        let placeholder_change = TxOut { value: Amount::ZERO, script_pubkey: change_script.clone() };
+        tx.output.push(placeholder_change);
 
-        // Add a placeholder change output to get a more accurate size estimate
-        tx.output.push(change_output);
-        estimated_vsize = self.estimate_tx_vsize(&tx, selected_utxos.len());
-        fee = Amount::from_sat((estimated_vsize as f32 * fee_rate).ceil() as u64);
+        let estimated_vsize = self.estimate_tx_vsize(&tx, selected_utxos.len());
+        let fee = Amount::from_sat((estimated_vsize as f32 * fee_rate).ceil() as u64);
 
-        // Now calculate the final change amount with the more accurate fee
-        let change_amount = total_input_amount.checked_sub(target_amount).and_then(|a| a.checked_sub(fee));
-        
-        // Remove the placeholder change output
+        // Now that we have a good fee estimate, remove the placeholder and calculate the real change.
         tx.output.pop();
+        let change_amount = total_input_amount.checked_sub(target_amount).and_then(|a| a.checked_sub(fee));
 
         if let Some(change) = change_amount {
             if change > bitcoin::Amount::from_sat(546) { // Dust limit
@@ -798,14 +791,8 @@ impl WalletProvider for ConcreteProvider {
                     value: change,
                     script_pubkey: change_script,
                 });
-            } else {
-                // If change is dust, it goes to the miners. We need to recalculate the fee
-                // without the change output.
-                estimated_vsize = self.estimate_tx_vsize(&tx, selected_utxos.len());
-                fee = Amount::from_sat((estimated_vsize as f32 * fee_rate).ceil() as u64);
-                // We need to ensure the main output is still funded correctly.
-                // This logic can get complex. For now, we'll proceed with the slightly higher fee.
             }
+            // If change is dust, it's not added, effectively becoming part of the fee.
         }
 
         // 6. Serialize the unsigned transaction to hex
@@ -874,7 +861,10 @@ impl WalletProvider for ConcreteProvider {
 
             // Sign the sighash
             let msg = bitcoin::secp256k1::Message::from(sighash);
-            let signature = secp.sign_schnorr(&msg, &tweaked_keypair.to_keypair());
+            #[cfg(not(target_arch = "wasm32"))]
+            let signature = secp.sign_schnorr_with_rng(&msg, &tweaked_keypair.to_keypair(), &mut thread_rng());
+            #[cfg(target_arch = "wasm32")]
+            let signature = secp.sign_schnorr_with_rng(&msg, &tweaked_keypair.to_keypair(), &mut OsRng);
             
             let taproot_signature = taproot::Signature {
                 signature,
@@ -1065,7 +1055,10 @@ impl WalletProvider for ConcreteProvider {
 
             // Sign the sighash
             let msg = bitcoin::secp256k1::Message::from(sighash);
-            let signature = secp.sign_schnorr(&msg, &tweaked_keypair.to_keypair());
+            #[cfg(not(target_arch = "wasm32"))]
+            let signature = secp.sign_schnorr_with_rng(&msg, &tweaked_keypair.to_keypair(), &mut thread_rng());
+            #[cfg(target_arch = "wasm32")]
+            let signature = secp.sign_schnorr_with_rng(&msg, &tweaked_keypair.to_keypair(), &mut OsRng);
             
             let taproot_signature = taproot::Signature {
                 signature,

@@ -6,7 +6,6 @@
 
 use clap::Subcommand;
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
 
 /// Bitcoin Core RPC subcommands
 #[derive(Subcommand, Debug, Clone, Serialize, Deserialize)]
@@ -228,56 +227,4 @@ pub enum OrdCommands {
         #[arg(long)]
         raw: bool,
     },
-}
-
-/// Pretty-prints a JSON value as a stylized tree.
-pub fn pretty_print_json(value: &JsonValue) -> String {
-    let mut output = String::new();
-    print_value(&mut output, value, "", true, true);
-    output
-}
-
-fn print_value(output: &mut String, value: &JsonValue, prefix: &str, is_last: bool, is_root: bool) {
-    let (marker, new_prefix) = if is_root {
-        ("", "".to_string())
-    } else if is_last {
-        ("└── ", format!("{}    ", prefix))
-    } else {
-        ("├── ", format!("{}│   ", prefix))
-    };
-
-    match value {
-        JsonValue::Object(map) => {
-            if !is_root {
-                output.push_str(&format!("{}{}\n", marker, "Object"));
-            }
-            let len = map.len();
-            for (i, (k, v)) in map.iter().enumerate() {
-                let key_marker = if i == len - 1 { "└── " } else { "├── " };
-                output.push_str(&format!("{}{}{}: ", new_prefix, key_marker, k));
-                print_value(output, v, &new_prefix, i == len - 1, false);
-            }
-        }
-        JsonValue::Array(arr) => {
-            if !is_root {
-                output.push_str(&format!("{}{}\n", marker, "Array"));
-            }
-            let len = arr.len();
-            for (i, v) in arr.iter().enumerate() {
-                print_value(output, v, &new_prefix, i == len - 1, false);
-            }
-        }
-        JsonValue::String(s) => {
-            output.push_str(&format!("{}{}\n", if is_root { "" } else { "📝 " }, s));
-        }
-        JsonValue::Number(n) => {
-            output.push_str(&format!("{}{}\n", if is_root { "" } else { "🔢 " }, n));
-        }
-        JsonValue::Bool(b) => {
-            output.push_str(&format!("{}{}\n", if is_root { "" } else { "✅ " }, b));
-        }
-        JsonValue::Null => {
-            output.push_str(&format!("{}\n", if is_root { "" } else { "❌ null" }));
-        }
-    }
 }
