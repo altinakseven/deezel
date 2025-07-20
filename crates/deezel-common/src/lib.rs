@@ -57,6 +57,7 @@ pub mod alkanes;
 pub mod wallet;
 pub mod address_resolver;
 pub mod runestone;
+pub mod runestone_analysis;
 pub mod runestone_enhanced;
 pub mod transaction;
 pub mod monitor;

@@ -1293,7 +1293,9 @@ impl SystemAlkanes for SystemDeezel {
     }
 }
 
-use deezel_common::alkanes::analyze::analyze_runestone;
+use deezel_common::runestone_analysis::{
+    analyze_transaction_with_runestone, pretty_print_transaction_analysis,
+};
 use bitcoin::Transaction;
 use bitcoin::consensus::deserialize;
 
@@ -1314,24 +1316,28 @@ impl SystemRunestone for SystemDeezel {
         let res: anyhow::Result<()> = match command {
             RunestoneCommands::Decode { tx_hex, raw } => {
                 let tx = decode_transaction_hex(&tx_hex)?;
-                let analysis = analyze_runestone(&tx)?;
+                let network = provider.get_network();
+                let analysis = analyze_transaction_with_runestone(&tx, network)?;
+
                 if raw {
                     println!("{}", serde_json::to_string_pretty(&analysis)?);
                 } else {
-                    // TODO: Add a pretty printer
-                    println!("{}", serde_json::to_string_pretty(&analysis)?);
+                    let pretty_output = pretty_print_transaction_analysis(&analysis)?;
+                    println!("{}", pretty_output);
                 }
                 Ok(())
             },
             RunestoneCommands::Analyze { txid, raw } => {
                 let tx_hex = provider.get_transaction_hex(&txid).await?;
                 let tx = decode_transaction_hex(&tx_hex)?;
-                let analysis = analyze_runestone(&tx)?;
+                let network = provider.get_network();
+                let analysis = analyze_transaction_with_runestone(&tx, network)?;
+
                 if raw {
                     println!("{}", serde_json::to_string_pretty(&analysis)?);
                 } else {
-                    // TODO: Add a pretty printer
-                    println!("{}", serde_json::to_string_pretty(&analysis)?);
+                    let pretty_output = pretty_print_transaction_analysis(&analysis)?;
+                    println!("{}", pretty_output);
                 }
                 Ok(())
             },
