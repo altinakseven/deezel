@@ -1,0 +1,16 @@
+=== ALKANE METADATA ===
+Note: Failed to extract metadata from __meta export
+Error: Failed to compile WASM module
+========================
+=== FUZZING ANALYSIS ===
+Alkane: 0:0
+WASM size: 0 bytes
+
+Testing 1000 opcodes...
+
+=== FUZZING RESULTS ===
+📊 Total opcodes tested: 0
+✅ Successful executions: 0
+❌ Failed executions: 0
+🎯 Implemented opcodes: 0 total
+========================

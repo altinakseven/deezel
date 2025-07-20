@@ -1,0 +1,13 @@
+=== ALKANE METADATA ===
+Note: Failed to extract metadata from __meta export
+Error: Failed to compile WASM module
+========================
+{
+  "alkane_id": "0:0",
+  "failed_executions": 0,
+  "implemented_opcodes": [],
+  "opcode_results": [],
+  "opcodes_filtered_out": 0,
+  "successful_executions": 0,
+  "total_opcodes_tested": 0
+}

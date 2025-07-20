@@ -863,6 +863,13 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
                     bytes.extend_from_slice(&200u128.to_le_bytes()); // tx
                     bytes
                 },
+                 _ if key_str.starts_with("/positions/") => {
+                    // Simulate a position struct
+                    let mut bytes = Vec::new();
+                    bytes.extend_from_slice(&1000u128.to_le_bytes()); // liquidity
+                    bytes.extend_from_slice(&5000u128.to_le_bytes()); // reward_debt
+                    bytes
+                },
                 _ if key_str.starts_with("/registered_children/") => {
                     vec![1u8] // Simulate registered child
                 },

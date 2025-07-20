@@ -54,3 +54,8 @@ serde_json = "1.0"
 name = "runestone_e2e"
 path = "../../tests/runestone_e2e.rs"
 harness = true
+
+[[test]]
+name = "test_alkanes_inspect"
+path = "../../tests/test_alkanes_inspect.rs"
+harness = true
