@@ -137,3 +137,46 @@ async fn test_alkanes_execute_without_from_address() -> Result<()> {
         .execute()
         .await
 }
+
+
+/// Test case for the user-reported dust error in a commit/reveal transaction.
+#[tokio::test]
+async fn test_alkanes_execute_commit_reveal_dust_error() -> Result<()> {
+    let config = TestConfig {
+        rpc_port: 18095,
+        ..Default::default()
+    };
+
+    let mut scenario = E2ETestScenario::new(config).await?
+        .step(TestStep::CreateWallet { name: "commit_reveal_dust_wallet".to_string() });
+
+    let from_address = scenario.get_new_address().await?;
+    let to_address = scenario.get_new_address().await?;
+    let change_address = scenario.get_new_address().await?;
+    let test_utxos = create_test_utxos(&from_address, 5); // 5 UTXOs of 100,000 sats
+
+    scenario
+        .step(TestStep::AddUtxos { address: from_address.clone(), utxos: test_utxos })
+        .step(TestStep::RunCommand {
+            args: vec![
+                "alkanes".to_string(),
+                "execute".to_string(),
+                "--envelope".to_string(),
+                "tests/dummy_envelope.wasm".to_string(),
+                "--to-addresses".to_string(),
+                to_address,
+                "--change-address".to_string(),
+                change_address,
+                "--protostones".to_string(),
+                "'[3,797,101]:v0:v0,B:9000:v0'".to_string(),
+                "--input-requirements".to_string(),
+                "'B:10000'".to_string(),
+                "--from-addresses".to_string(),
+                from_address,
+                "--auto-confirm".to_string(),
+            ],
+            expect_success: true, // This should now succeed
+        })
+        .execute()
+        .await
+}

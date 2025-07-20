@@ -956,6 +956,14 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
         log::info!("✅ Successfully built script-path reveal transaction with proper signing separation");
         log::info!("Transaction: {} inputs, {} outputs, fee: {} sats", tx.input.len(), tx.output.len(), capped_fee);
 
+        // Final dust check
+        for output in &mut tx.output {
+            if !output.script_pubkey.is_op_return() && output.value.to_sat() < DUST_LIMIT {
+                log::warn!("Output value {} is below dust limit, adjusting to {}", output.value.to_sat(), DUST_LIMIT);
+                output.value = bitcoin::Amount::from_sat(DUST_LIMIT);
+            }
+        }
+
         Ok((tx, capped_fee))
     }
 
