@@ -82,11 +82,11 @@ pub fn pretty_print_transaction_analysis(analysis: &JsonValue) -> Result<String>
         .iter()
         .map(|output_json| {
             let value = output_json["value"].as_u64().unwrap_or(0);
-            // script_pubkey is not fully available, but we can create a dummy one
-            // as it's not used by the pretty printer directly.
+            let script_pubkey_hex = output_json["script_pubkey"].as_str().unwrap_or_default();
+            let script_pubkey_bytes = hex::decode(script_pubkey_hex).unwrap_or_default();
             TxOut {
                 value: Amount::from_sat(value),
-                script_pubkey: ScriptBuf::new(),
+                script_pubkey: ScriptBuf::from(script_pubkey_bytes),
             }
         })
         .collect();

@@ -611,6 +611,7 @@ pub fn format_runestone_with_decoded_messages(tx: &Transaction) -> Result<Value>
         let mut output_info = json!({
             "index": i,
             "value": output.value,
+            "script_pubkey": hex::encode(output.script_pubkey.as_bytes()),
             "script_pubkey_size": output.script_pubkey.len(),
             "script_type": "Unknown"
         });
