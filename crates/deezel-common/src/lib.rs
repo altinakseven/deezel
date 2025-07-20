@@ -333,7 +333,10 @@ pub mod prelude {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests;
+
+#[cfg(test)]
+mod unit_tests {
     use super::*;
     
     #[test]

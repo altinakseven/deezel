@@ -30,6 +30,7 @@ use protorune_support::protostone::{Protostone, into_protostone_edicts};
 use crate::utils::protostone::Protostones;
 
 const MAX_FEE_SATS: u64 = 100_000; // 0.001 BTC. Cap to avoid "absurdly high fee rate" errors.
+const DUST_LIMIT: u64 = 546;
 
 
 /// Enhanced alkanes executor
@@ -137,7 +138,7 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
         required_bitcoin += params.to_addresses.len() as u64 * 546;
 
         // Select UTXOs to fund the commit transaction
-        let funding_utxos = self.select_utxos(&[InputRequirement::Bitcoin { amount: required_bitcoin }]).await?;
+        let funding_utxos = self.select_utxos(&[InputRequirement::Bitcoin { amount: required_bitcoin }], &params.from_addresses).await?;
 
         let commit_output = TxOut {
             value: bitcoin::Amount::from_sat(required_bitcoin),
@@ -236,7 +237,7 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
                 }
                 
                 // Select additional UTXOs to meet the requirements
-                let additional_utxos = self.select_utxos(&additional_requirements).await?;
+                let additional_utxos = self.select_utxos(&additional_requirements, &params.from_addresses).await?;
                 
                 // Add additional UTXOs to our selection (commit is already first)
                 for utxo in additional_utxos {
@@ -251,7 +252,7 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
 
         log::info!("🎯 Total inputs for reveal transaction: {}", selected_utxos.len());
 
-        let outputs = self.create_outputs(&params.to_addresses, &params.change_address).await?;
+        let outputs = self.create_outputs(&params.to_addresses, &params.change_address, &params.input_requirements).await?;
 
         let runestone_script = self.construct_runestone(&params.protostones, outputs.len())?;
 
@@ -296,20 +297,30 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
     /// Execute single transaction (no envelope)
     async fn execute_single_transaction(&mut self, params: &EnhancedExecuteParams) -> Result<EnhancedExecuteResult> {
         log::info!("Executing single transaction (no envelope)");
-        
+
         // Step 1: Validate protostone specifications
         self.validate_protostones(&params.protostones, params.to_addresses.len())?;
-        
-        // Step 2: Find UTXOs that meet input requirements
-        let selected_utxos = self.select_utxos(&params.input_requirements).await?;
-        
-        // Step 3: Create transaction with outputs for each address
-        let outputs = self.create_outputs(&params.to_addresses, &params.change_address).await?;
-        
-        // Step 4: Construct runestone with protostones
+
+        // Step 2: Create transaction outputs to determine value needed
+        let outputs = self.create_outputs(&params.to_addresses, &params.change_address, &params.input_requirements).await?;
+
+        // Step 3: Calculate total bitcoin requirement from outputs and other requirements
+        let total_bitcoin_needed: u64 = outputs.iter().filter(|o| o.value.to_sat() > 0).map(|o| o.value.to_sat()).sum();
+        let mut final_requirements = params.input_requirements.iter().filter(|req| !matches!(req, InputRequirement::Bitcoin {..})).cloned().collect::<Vec<_>>();
+
+        // The `create_outputs` function now determines the output values. We just need to
+        // ensure we gather enough funds to cover them.
+        if total_bitcoin_needed > 0 {
+            final_requirements.push(InputRequirement::Bitcoin { amount: total_bitcoin_needed });
+        }
+
+        // Step 4: Find UTXOs that meet the calculated requirements
+        let selected_utxos = self.select_utxos(&final_requirements, &params.from_addresses).await?;
+
+        // Step 5: Construct runestone with protostones
         let runestone_script = self.construct_runestone(&params.protostones, outputs.len())?;
-        
-        // Step 5: Build and sign transaction
+
+        // Step 6: Build and sign transaction
         let (tx, fee) = self.build_transaction(selected_utxos.clone(), outputs, runestone_script, params.fee_rate).await?;
         
         // Step 6: Broadcast transaction
@@ -394,11 +405,14 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
         Ok(())
     }
 
-    async fn select_utxos(&self, requirements: &[InputRequirement]) -> Result<Vec<OutPoint>> {
+    async fn select_utxos(&self, requirements: &[InputRequirement], from_addresses: &Option<Vec<String>>) -> Result<Vec<OutPoint>> {
         log::info!("Selecting UTXOs for {} requirements", requirements.len());
+        if let Some(addrs) = from_addresses {
+            log::info!("Sourcing UTXOs from: {:?}", addrs);
+        }
 
-        let utxos = self.provider.get_utxos(true, None).await?; // Include frozen to check reasons
-        log::debug!("Found {} total wallet UTXOs", utxos.len());
+        let utxos = self.provider.get_utxos(true, from_addresses.clone()).await?; // Include frozen to check reasons
+        log::debug!("Found {} total wallet UTXOs from specified sources", utxos.len());
 
         let spendable_utxos: Vec<(OutPoint, UtxoInfo)> = utxos.into_iter()
             .filter(|(_, info)| !info.frozen)
@@ -448,15 +462,37 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
         Ok(selected_outpoints)
     }
 
-    async fn create_outputs(&self, to_addresses: &[String], change_address: &Option<String>) -> Result<Vec<TxOut>> {
+    async fn create_outputs(
+        &self,
+        to_addresses: &[String],
+        change_address: &Option<String>,
+        input_requirements: &[InputRequirement],
+    ) -> Result<Vec<TxOut>> {
         let mut outputs = Vec::new();
         let network = self.provider.get_network();
+
+        let total_explicit_bitcoin: u64 = input_requirements.iter().filter_map(|req| {
+            if let InputRequirement::Bitcoin { amount } = req { Some(*amount) } else { None }
+        }).sum();
+
+        if total_explicit_bitcoin > 0 && to_addresses.is_empty() {
+            return Err(DeezelError::Validation("Bitcoin input requirement provided but no recipient addresses.".to_string()));
+        }
+
+        let amount_per_recipient = if total_explicit_bitcoin > 0 {
+            // Distribute the explicit amount among recipients
+            total_explicit_bitcoin / to_addresses.len() as u64
+        } else {
+            // No explicit amount, use dust
+            DUST_LIMIT
+        };
 
         for addr_str in to_addresses {
             log::debug!("Parsing to_address in create_outputs: '{}'", addr_str);
             let address = Address::from_str(addr_str)?.require_network(network)?;
             outputs.push(TxOut {
-                value: bitcoin::Amount::from_sat(546), // Dust
+                // Ensure each output is at least DUST_LIMIT
+                value: bitcoin::Amount::from_sat(amount_per_recipient.max(DUST_LIMIT)),
                 script_pubkey: address.script_pubkey(),
             });
         }
@@ -1159,6 +1195,47 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
                 return Ok(());
             }
             self.provider.sleep_ms(1000).await;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::alkanes::execute::EnhancedAlkanesExecutor;
+    use crate::tests::mock_provider::MockProvider;
+    use bitcoin::{Amount, Network};
+
+    #[tokio::test]
+    async fn test_create_outputs_dust_limit() {
+        let mut provider = MockProvider::new(Network::Regtest);
+        let addr1 = WalletProvider::get_address(&provider).await.unwrap();
+        let executor = EnhancedAlkanesExecutor::new(&mut provider);
+        let to_addresses = vec![addr1.clone(), addr1];
+        let input_requirements = vec![]; // No explicit bitcoin requirement
+
+        let outputs = executor.create_outputs(&to_addresses, &None, &input_requirements).await.unwrap();
+
+        assert_eq!(outputs.len(), 2);
+        for output in outputs {
+            assert_eq!(output.value, Amount::from_sat(546)); // DUST_LIMIT
+        }
+    }
+
+    #[tokio::test]
+    async fn test_create_outputs_with_explicit_bitcoin() {
+        let mut provider = MockProvider::new(Network::Regtest);
+        let addr1 = WalletProvider::get_address(&provider).await.unwrap();
+        let executor = EnhancedAlkanesExecutor::new(&mut provider);
+        let to_addresses = vec![addr1.clone(), addr1];
+        let input_requirements = vec![InputRequirement::Bitcoin { amount: 20000 }];
+
+        let outputs = executor.create_outputs(&to_addresses, &None, &input_requirements).await.unwrap();
+
+        assert_eq!(outputs.len(), 2);
+        // 20000 sats / 2 addresses = 10000 sats each
+        for output in outputs {
+            assert_eq!(output.value, Amount::from_sat(10000));
         }
     }
 }

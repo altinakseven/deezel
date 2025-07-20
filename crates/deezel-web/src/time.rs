@@ -96,7 +96,7 @@ impl deezel_common::TimeProvider for WebTime {
         self.get_date_now() as u64
     }
 
-    async fn sleep_ms(&self, ms: u64) {
+    async fn sleep_ms(&self, _ms: u64) {
         #[cfg(not(target_arch = "wasm32"))]
         {
             // For non-WASM targets, this is tricky without a proper async runtime.
@@ -106,7 +106,7 @@ impl deezel_common::TimeProvider for WebTime {
         }
         #[cfg(target_arch = "wasm32")]
         {
-            WebSleep::new(ms).await;
+            WebSleep::new(_ms).await;
         }
     }
 }

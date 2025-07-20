@@ -222,6 +222,7 @@ pub struct TransactionResult {
 pub struct EnhancedExecuteParams {
     pub fee_rate: Option<f32>,
     pub to_addresses: Vec<String>,
+    pub from_addresses: Option<Vec<String>>,
     pub change_address: Option<String>,
     pub input_requirements: Vec<InputRequirement>,
     pub protostones: Vec<ProtostoneSpec>,

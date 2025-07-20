@@ -394,6 +394,9 @@ pub enum AlkanesCommands {
         /// Recipient addresses
         #[arg(long, value_delimiter = ',')]
         to_addresses: Vec<String>,
+        /// Addresses to source UTXOs from
+        #[arg(long, value_delimiter = ',')]
+        from_addresses: Option<Vec<String>>,
         /// Change address
         #[arg(long)]
         change_address: Option<String>,

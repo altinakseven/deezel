@@ -119,6 +119,3 @@ version = "0.2"
 features = ["js"]
 
 
-[[test]]
-name = "keystore_tests"
-path = "tests/keystore_tests.rs"

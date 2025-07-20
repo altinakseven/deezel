@@ -1,13 +1,14 @@
-use deezel_common::*;
+use crate::*;
+use crate::{Result, DeezelError};
 use async_trait::async_trait;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use bitcoin::secp256k1::{Secp256k1, All, schnorr, SecretKey};
 use bitcoin::key::{Keypair, PrivateKey};
-use deezel_common::alkanes::{EnhancedExecuteParams, EnhancedExecuteResult, execute::EnhancedAlkanesExecutor};
+use crate::alkanes::{EnhancedExecuteParams, EnhancedExecuteResult, execute::EnhancedAlkanesExecutor};
 use bitcoin::{Address, Network, OutPoint, Transaction, TxOut, XOnlyPublicKey};
-use deezel_common::trace::SerializableTrace;
+use crate::trace::SerializableTrace;
 
 /// Mock provider for testing
 #[derive(Clone)]
@@ -597,10 +598,10 @@ impl AlkanesProvider for MockProvider {
     async fn get_bytecode(&self, _alkane_id: &str) -> Result<String> {
         todo!()
     }
-    async fn inspect(&self, _target: &str, _config: deezel_common::alkanes::AlkanesInspectConfig) -> Result<deezel_common::alkanes::AlkanesInspectResult> {
+    async fn inspect(&self, _target: &str, _config: crate::alkanes::AlkanesInspectConfig) -> Result<crate::alkanes::AlkanesInspectResult> {
         todo!()
     }
-    async fn get_balance(&self, _address: Option<&str>) -> Result<Vec<deezel_common::alkanes::AlkaneBalance>> {
+    async fn get_balance(&self, _address: Option<&str>) -> Result<Vec<crate::alkanes::AlkaneBalance>> {
         todo!()
     }
 }
@@ -644,7 +645,7 @@ impl KeystoreProvider for MockProvider {
     }
 }
 
-use deezel_common::ord::{
+use crate::ord::{
     AddressInfo as OrdAddressInfo, Block as OrdBlock, Blocks as OrdBlocks, Children as OrdChildren,
     Inscription as OrdInscription, Inscriptions as OrdInscriptions, Output as OrdOutput,
     ParentInscriptions as OrdParents, SatResponse as OrdSat, RuneInfo as OrdRuneInfo,
@@ -732,6 +733,6 @@ impl DeezelProvider for MockProvider {
         sighash: bitcoin::secp256k1::Message,
     ) -> Result<schnorr::Signature> {
         let keypair = Keypair::from_secret_key(&self.secp, &self.secret_key);
-        Ok(self.secp.sign_schnorr(&sighash, &keypair))
+        Ok(self.secp.sign_schnorr_with_rng(&sighash, &keypair, &mut rand::thread_rng()))
     }
 }

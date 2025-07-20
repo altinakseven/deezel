@@ -997,6 +997,7 @@ impl SystemAlkanes for SystemDeezel {
             AlkanesCommands::Execute {
                 fee_rate,
                 to_addresses,
+                from_addresses,
                 change_address,
                 input_requirements,
                 protostones,
@@ -1056,13 +1057,25 @@ impl SystemAlkanes for SystemDeezel {
                     resolved_to_addresses.push(provider.resolve_all_identifiers(addr).await?);
                 }
 
-                // Create enhanced execute parameters
-                let execute_params = deezel_common::alkanes::types::EnhancedExecuteParams {
-                    fee_rate,
-                    to_addresses: resolved_to_addresses,
-                    change_address: resolved_change,
-                    input_requirements: parsed_input_requirements,
-                    protostones: parsed_protostones,
+                // Resolve 'from' addresses if provided
+                let resolved_from_addresses = if let Some(from_addrs) = from_addresses {
+                    let mut resolved = Vec::new();
+                    for addr in from_addrs {
+                        resolved.push(provider.resolve_all_identifiers(&addr).await?);
+                    }
+                    Some(resolved)
+                } else {
+                    None
+                };
+ 
+                 // Create enhanced execute parameters
+                 let execute_params = deezel_common::alkanes::types::EnhancedExecuteParams {
+                     fee_rate,
+                     to_addresses: resolved_to_addresses,
+                     from_addresses: resolved_from_addresses,
+                     change_address: resolved_change,
+                     input_requirements: parsed_input_requirements,
+                     protostones: parsed_protostones,
                     envelope_data,
                     raw_output: raw,
                     trace_enabled: trace,
