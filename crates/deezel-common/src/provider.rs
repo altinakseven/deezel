@@ -342,10 +342,25 @@ impl JsonRpcProvider for ConcreteProvider {
         }
     }
     
-    async fn get_bytecode(&self, _block: &str, _tx: &str) -> Result<String> {
-        Err(DeezelError::NotImplemented(
-            "get_bytecode is part of AlkanesProvider, not JsonRpcProvider".to_string(),
-        ))
+    async fn get_bytecode(&self, block: &str, tx: &str) -> Result<String> {
+        let block = block.parse::<u64>()?;
+        let tx = tx.parse::<u64>()?;
+
+        let mut alkane_id_pb = alkanes_pb::AlkaneId::new();
+        let mut block_uint128 = alkanes_pb::Uint128::new();
+        block_uint128.lo = block;
+        let mut tx_uint128 = alkanes_pb::Uint128::new();
+        tx_uint128.lo = tx;
+        alkane_id_pb.block = ::protobuf::MessageField::some(block_uint128);
+        alkane_id_pb.tx = ::protobuf::MessageField::some(tx_uint128);
+
+        let mut request = alkanes_pb::BytecodeRequest::new();
+        request.id = ::protobuf::MessageField::some(alkane_id_pb);
+
+        let hex_input = format!("0x{}", hex::encode(request.write_to_bytes()?));
+        let response_bytes = self.metashrew_view_call("getbytecode", &hex_input).await?;
+
+        Ok(format!("0x{}", hex::encode(response_bytes)))
     }
 }
 
