@@ -51,6 +51,10 @@ pub struct Args {
     #[arg(long)]
     pub passphrase: Option<String>,
 
+    /// Keystore file path (alternative to wallet-file and passphrase)
+    #[arg(long)]
+    pub keystore: Option<String>,
+
     /// Log level
     #[arg(long, default_value = "info")]
     pub log_level: String,

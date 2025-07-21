@@ -6,105 +6,84 @@
 // blockchain backend.
 
 use anyhow::Result;
-use std::env;
+use std::{env, fs::File, io::Write, path::PathBuf};
 use assert_cmd::Command;
 use bitcoind::bitcoincore_rpc::{Auth, Client, RpcApi};
 use bitcoind::BitcoinD;
-use predicates::prelude::*;
+use deezel_common::keystore::DeezelWallet;
+use serde_json::json;
 use tempfile::tempdir;
 
 use bitcoin::address::{Address, NetworkUnchecked};
 
-/// Sets up a regtest environment with a funded wallet.
-fn setup_regtest() -> Result<(BitcoinD, Client, tempfile::TempDir)> {
+/// Sets up a regtest environment with a funded deezel wallet.
+///
+/// This function initializes a `bitcoind` regtest instance, creates a new
+/// `deezel` wallet, saves it to a temporary keystore file, and funds the
+/// wallet's first address with some regtest coins.
+///
+/// Returns a tuple containing the `BitcoinD` instance, the RPC client,
+/// the temporary directory, the path to the keystore file, and the funded
+/// address string.
+fn setup_regtest() -> Result<(BitcoinD, Client, tempfile::TempDir, PathBuf, String)> {
     let bitcoind_path = bitcoind::exe_path()?;
     let bitcoind = BitcoinD::new(bitcoind_path)?;
     let client = Client::new(&bitcoind.rpc_url(), Auth::CookieFile(bitcoind.params.cookie_file.clone()))?;
 
-    // Generate blocks to activate regtest and get some funds
+    // Generate blocks to activate regtest
     let address = client.get_new_address(None, None)?.require_network(bitcoin::Network::Regtest)?;
     client.generate_to_address(101, &address)?;
 
     let temp_dir = tempdir()?;
-    Ok((bitcoind, client, temp_dir))
+    let keystore_path = temp_dir.path().join("keystore.json");
+    let passphrase = "testpass";
+
+    // Create a new deezel wallet and save it to the keystore
+    let wallet = DeezelWallet::new(passphrase)?;
+    let mnemonic_phrase = wallet.mnemonic_phrase();
+    let keystore_content = json!({
+        "mnemonic": mnemonic_phrase,
+        "passphrase": passphrase
+    });
+    let mut file = File::create(&keystore_path)?;
+    file.write_all(keystore_content.to_string().as_bytes())?;
+
+    // Get the first address to fund
+    let deezel_address_str = wallet.get_address(0)?.to_string();
+    let deezel_address: Address = deezel_address_str.parse::<Address<NetworkUnchecked>>()?.require_network(bitcoin::Network::Regtest)?;
+
+    // Fund the deezel wallet
+    client.send_to_address(
+        &deezel_address,
+        bitcoin::Amount::from_sat(50_000),
+        None, None, None, None, None, None,
+    )?;
+    client.generate_to_address(1, &address)?;
+
+    Ok((bitcoind, client, temp_dir, keystore_path, deezel_address_str))
 }
 
 #[test]
 fn test_alkanes_execute_regtest_preview() -> Result<()> {
     env::set_var("BITCOIND_EXE", "/home/ubuntu/alkanes/system/submodules/bitcoin/build/bin/bitcoind");
-    let (bitcoind, client, temp_dir) = setup_regtest()?;
-    let wallet_path = temp_dir.path().join("test_wallet.json");
-    let wallet_path_str = wallet_path.to_str().unwrap();
-
-    // Create a deezel wallet
-    Command::cargo_bin("deezel")?
-        .args(&[
-            "--wallet-file",
-            wallet_path_str,
-            "--passphrase",
-            "testpass",
-            "wallet",
-            "create",
-        ])
-        .assert()
-        .success();
-
-    // Get a new address from the deezel wallet to fund
-    let output = Command::cargo_bin("deezel")?
-        .args(&[
-            "--wallet-file",
-            wallet_path_str,
-            "wallet",
-            "addresses",
-            "--raw",
-        ])
-        .output()?;
-    let addresses: serde_json::Value = serde_json::from_slice(&output.stdout)?;
-    let deezel_address_str = addresses[0]["address"].as_str().unwrap();
-    let deezel_address: Address = deezel_address_str.parse::<Address<NetworkUnchecked>>()?.require_network(bitcoin::Network::Regtest)?;
-
-    // Fund the deezel wallet
-    let txid = client.send_to_address(
-        &deezel_address,
-        bitcoin::Amount::from_sat(50_000),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-    )?;
-    let new_address = client.get_new_address(None, None)?.require_network(bitcoin::Network::Regtest)?;
-    client.generate_to_address(1, &new_address)?;
-
-    // Get the UTXO for the funding transaction
-    let tx_info = client.get_transaction(&txid, None)?;
-    let vout = tx_info.decode()?.vout.iter().position(|out| {
-        out.script_pubkey.address.as_ref() == Some(&deezel_address)
-    }).unwrap() as u32;
-    let utxo = format!("{}:{}", txid, vout);
+    let (bitcoind, _client, _temp_dir, keystore_path, deezel_address_str) = setup_regtest()?;
+    let keystore_path_str = keystore_path.to_str().unwrap();
 
     // Now, run the alkanes execute command
     let mut cmd = Command::cargo_bin("deezel")?;
     cmd.args(&[
-        "--wallet-file",
-        wallet_path_str,
-        "--passphrase",
-        "testpass",
+        "--keystore",
+        keystore_path_str,
         "--bitcoin-rpc-url",
         &bitcoind.rpc_url(),
         "alkanes",
         "execute",
-        "--inputs",
-        &utxo,
         "--to",
         "bcrt1qsdn4y2n5z2u0p82j22827z2q9gqgqgqgqgqgqgqg",
-        "--protostones",
-        "B:1000:v0",
         "--fee-rate",
         "1.0",
         "--change",
-        deezel_address_str,
+        &deezel_address_str,
     ]);
 
     cmd.write_stdin("y\n");
@@ -123,81 +102,26 @@ fn test_alkanes_execute_regtest_preview() -> Result<()> {
 #[test]
 fn test_alkanes_execute_with_mine_and_trace() -> Result<()> {
     env::set_var("BITCOIND_EXE", "/home/ubuntu/alkanes/system/submodules/bitcoin/build/bin/bitcoind");
-    let (bitcoind, client, temp_dir) = setup_regtest()?;
-    let wallet_path = temp_dir.path().join("test_wallet_mine_trace.json");
-    let wallet_path_str = wallet_path.to_str().unwrap();
-
-    // Create a deezel wallet
-    Command::cargo_bin("deezel")?
-        .args(&[
-            "--wallet-file",
-            wallet_path_str,
-            "--passphrase",
-            "testpass",
-            "wallet",
-            "create",
-        ])
-        .assert()
-        .success();
-
-    // Get a new address from the deezel wallet to fund
-    let output = Command::cargo_bin("deezel")?
-        .args(&[
-            "--wallet-file",
-            wallet_path_str,
-            "wallet",
-            "addresses",
-            "--raw",
-        ])
-        .output()?;
-    let addresses: serde_json::Value = serde_json::from_slice(&output.stdout)?;
-    let deezel_address_str = addresses[0]["address"].as_str().unwrap();
-    let deezel_address: Address = deezel_address_str.parse::<Address<NetworkUnchecked>>()?.require_network(bitcoin::Network::Regtest)?;
-
-    // Fund the deezel wallet
-    let txid = client.send_to_address(
-        &deezel_address,
-        bitcoin::Amount::from_sat(50_000),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-    )?;
-    let new_address = client.get_new_address(None, None)?.require_network(bitcoin::Network::Regtest)?;
-    client.generate_to_address(1, &new_address)?;
-
-    // Get the UTXO for the funding transaction
-    let tx_info = client.get_transaction(&txid, None)?;
-    let vout = tx_info.decode()?.vout.iter().position(|out| {
-        out.script_pubkey.address.as_ref() == Some(&deezel_address)
-    }).unwrap() as u32;
-    let utxo = format!("{}:{}", txid, vout);
+    let (bitcoind, client, _temp_dir, keystore_path, deezel_address_str) = setup_regtest()?;
+    let keystore_path_str = keystore_path.to_str().unwrap();
 
     let initial_block_count = client.get_block_count()?;
 
     // Now, run the alkanes execute command with --mine and --trace
     let mut cmd = Command::cargo_bin("deezel")?;
     cmd.args(&[
-        "--wallet-file",
-        wallet_path_str,
-        "--passphrase",
-        "testpass",
+        "--keystore",
+        keystore_path_str,
         "--bitcoin-rpc-url",
         &bitcoind.rpc_url(),
         "alkanes",
         "execute",
-        "--inputs",
-        &utxo,
         "--to",
         "bcrt1qsdn4y2n5z2u0p82j22827z2q9gqgqgqgqgqgqgqg",
-        "--protostones",
-        "B:1000:v0",
         "--fee-rate",
         "1.0",
         "--change",
-        deezel_address_str,
+        &deezel_address_str,
         "--mine",
         "--trace",
     ]);
@@ -225,6 +149,49 @@ fn test_alkanes_execute_with_mine_and_trace() -> Result<()> {
 
     let final_block_count = client.get_block_count()?;
     assert_eq!(final_block_count, initial_block_count + 1);
+
+    Ok(())
+}
+
+#[test]
+fn test_alkanes_execute_regtest_simulation_preview() -> Result<()> {
+    env::set_var("BITCOIND_EXE", "/home/ubuntu/alkanes/system/submodules/bitcoin/build/bin/bitcoind");
+    let (bitcoind, _client, _temp_dir, keystore_path, deezel_address_str) = setup_regtest()?;
+    let keystore_path_str = keystore_path.to_str().unwrap();
+
+    // Now, run the alkanes execute command with an envelope
+    let mut cmd = Command::cargo_bin("deezel")?;
+    cmd.args(&[
+        "--keystore",
+        keystore_path_str,
+        "--bitcoin-rpc-url",
+        &bitcoind.rpc_url(),
+        "alkanes",
+        "execute",
+        "--to",
+        "bcrt1qsdn4y2n5z2u0p82j22827z2q9gqgqgqgqgqgqgqg",
+        "--fee-rate",
+        "1.0",
+        "--change",
+        &deezel_address_str,
+        "--envelope",
+        "../../tests/dummy_envelope.wasm",
+        "[1,2,3]",
+    ]);
+
+    cmd.write_stdin("y\n");
+
+    let output = cmd.output()?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    if !output.status.success() {
+        println!("stdout: {}", stdout);
+        println!("stderr: {}", stderr);
+    }
+    assert!(output.status.success());
+    assert!(stdout.contains("--- Transaction Preview ---"));
+    assert!(stdout.contains("--- Inspection Preview ---"));
 
     Ok(())
 }

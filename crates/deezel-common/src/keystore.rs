@@ -47,7 +47,7 @@ pub struct PbkdfParams {
 }
 
 use crate::{DeezelError, Result};
-use bip39::{Mnemonic, Seed};
+use bip39::{Mnemonic, MnemonicType, Seed};
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
 
@@ -227,6 +227,38 @@ pub fn derive_address_from_public_key(master_public_key: &str, path: &Derivation
     let (internal_key, _parity) = derived_xpub.public_key.x_only_public_key();
     
     Ok(Address::p2tr(&secp, internal_key, None, network))
+}
+
+/// A simple wallet structure for managing mnemonics and deriving addresses.
+/// This is primarily used for testing purposes.
+pub struct DeezelWallet {
+    mnemonic: Mnemonic,
+    network: Network,
+}
+
+impl DeezelWallet {
+    /// Creates a new wallet with a fresh mnemonic.
+    /// The passphrase is not used for generation but is kept for API consistency.
+    pub fn new(_passphrase: &str) -> Result<Self> {
+        let mnemonic = Mnemonic::new(MnemonicType::Words12, bip39::Language::English);
+        Ok(Self {
+            mnemonic,
+            network: Network::Regtest, // Default to regtest for testing
+        })
+    }
+
+    /// Returns the mnemonic phrase as a string slice.
+    pub fn mnemonic_phrase(&self) -> &str {
+        self.mnemonic.phrase()
+    }
+
+    /// Derives and returns a P2TR address for a given index.
+    pub fn get_address(&self, index: u32) -> Result<Address> {
+        // Using a standard P2TR derivation path for regtest (coin_type = 1)
+        let path_str = format!("m/86'/1'/0'/0/{}", index);
+        let path = DerivationPath::from_str(&path_str)?;
+        derive_address(self.mnemonic.phrase(), &path, self.network)
+    }
 }
 
 /// Information about a derived address.

@@ -264,6 +264,7 @@ pub struct ReadyToSignTx {
     pub psbt: bitcoin::psbt::Psbt,
     pub analysis: crate::transaction::TransactionAnalysis,
     pub fee: u64,
+    pub inspection_result: Option<AlkanesInspectResult>,
 }
 
 /// Contains the necessary information for signing a commit transaction.
@@ -285,6 +286,7 @@ pub struct ReadyToSignRevealTx {
     pub commit_txid: String,
     pub commit_fee: u64,
     pub params: EnhancedExecuteParams,
+    pub inspection_result: Option<AlkanesInspectResult>,
 }
 
 

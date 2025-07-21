@@ -79,6 +79,7 @@ wasmprinter = { workspace = true, optional = true }
 wat = { workspace = true, optional = true }
 sha3 = { workspace = true }
 spin = { workspace = true, optional = true }
+wasmparser = { workspace = true, optional = true }
 
 # Additional dependencies for comprehensive functionality
 dirs = { workspace = true, optional = true }
@@ -94,7 +95,7 @@ tabled = { workspace = true, optional = true }
 [features]
 default = ["wasm-inspection", "native-deps", "std"]
 std = []
-wasm-inspection = ["wasmi", "wasmprinter", "wat", "spin"]
+wasm-inspection = ["wasmi", "wasmprinter", "wat", "spin", "wasmparser"]
 native-deps = ["dirs", "tempfile", "tokio", "reqwest", "url", "bitcoincore-rpc", "tabled", "std"]
 web-compat = ["spin"]
 

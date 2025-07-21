@@ -120,6 +120,8 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
         let analysis =
             crate::transaction::analysis::analyze_transaction(&reveal_psbt.unsigned_tx);
 
+        let inspection_result = self.inspect_from_envelope(&state.envelope).await.ok();
+
         // 4. Return the next state
         Ok(ExecutionState::ReadyToSignReveal(ReadyToSignRevealTx {
             psbt: reveal_psbt,
@@ -128,6 +130,7 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
             commit_txid,
             commit_fee: state.fee,
             params: state.params,
+            inspection_result,
         }))
     }
 
@@ -255,11 +258,13 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
 
         let unsigned_tx = &psbt.unsigned_tx;
         let analysis = crate::transaction::analysis::analyze_transaction(unsigned_tx);
+        let inspection_result = self.inspect_from_protostones(&params.protostones).await.ok();
 
         Ok(ExecutionState::ReadyToSign(ReadyToSignTx {
             psbt,
             analysis,
             fee,
+            inspection_result,
         }))
     }
 
@@ -891,6 +896,69 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
             }
             self.provider.sleep_ms(1000).await;
         }
+    }
+    async fn inspect_from_protostones(&self, protostones: &[ProtostoneSpec]) -> Result<super::types::AlkanesInspectResult> {
+        use super::types::{AlkaneId, AlkanesInspectConfig};
+        use crate::utils::u128_from_slice;
+
+        let cellpack_data = protostones
+            .iter()
+            .find_map(|p| p.cellpack.as_ref())
+            .map(|c| c.encipher())
+            .ok_or_else(|| DeezelError::Other("No cellpack found in protostones for inspection.".to_string()))?;
+
+        if cellpack_data.len() < 48 {
+            return Err(DeezelError::Other("Cellpack data is too short for inspection.".to_string()));
+        }
+
+        let alkane_id = AlkaneId {
+            block: u128_from_slice(&cellpack_data[0..16]) as u64,
+            tx: u128_from_slice(&cellpack_data[16..32]) as u64,
+        };
+        let opcode = u128_from_slice(&cellpack_data[32..48]);
+
+        let config = AlkanesInspectConfig {
+            disasm: false,
+            fuzz: true,
+            fuzz_ranges: Some(opcode.to_string()),
+            meta: true,
+            codehash: false,
+            raw: false,
+        };
+
+        self.provider.inspect(&format!("{}:{}", alkane_id.block, alkane_id.tx), config).await
+    }
+
+    async fn inspect_from_envelope(&self, envelope: &AlkanesEnvelope) -> Result<super::types::AlkanesInspectResult> {
+        use super::types::{AlkaneId, AlkanesInspectResult};
+        use wasmparser::{Parser, Payload};
+
+        let wasm = &envelope.payload;
+        let mut metadata = None;
+        let mut metadata_error = None;
+
+        let parser = Parser::new(0);
+        for payload in parser.parse_all(wasm) {
+            if let Ok(Payload::CustomSection(reader)) = payload {
+                if reader.name() == "__meta" {
+                    match serde_json::from_slice(reader.data()) {
+                        Ok(m) => metadata = Some(m),
+                        Err(e) => metadata_error = Some(e.to_string()),
+                    }
+                    break;
+                }
+            }
+        }
+
+        Ok(AlkanesInspectResult {
+            alkane_id: AlkaneId { block: 0, tx: 0 }, // Not applicable for pre-deployment inspection
+            bytecode_length: wasm.len(),
+            disassembly: None,
+            metadata,
+            metadata_error,
+            codehash: None,
+            fuzzing_results: None,
+        })
     }
 }
 

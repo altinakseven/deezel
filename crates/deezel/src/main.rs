@@ -6,10 +6,11 @@
 
 use anyhow::Result;
 use clap::Parser;
-use deezel_common::commands::Args;
+use deezel_common::{commands::Args, keystore::Keystore};
 use deezel_sys::SystemDeezel;
 use deezel_common::traits::*;
 use futures::future::join_all;
+use std::path::Path;
 
 mod commands;
 mod pretty_print;
@@ -20,11 +21,40 @@ use pretty_print::*;
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
     // Parse command-line arguments
-    let args = Args::parse();
+    let mut args = Args::parse();
 
     // Initialize logger
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(&args.log_level))
         .init();
+
+    // Handle keystore logic
+    if let Some(keystore_path) = &args.keystore {
+        if args.wallet_file.is_some() {
+            anyhow::bail!("--keystore cannot be used with --wallet-file");
+        }
+        let keystore = Keystore::from_file(Path::new(keystore_path))?;
+        let passphrase = rpassword::prompt_password("Enter passphrase: ")?;
+        let mnemonic = keystore.decrypt_mnemonic(&passphrase)?;
+
+        // We need to re-configure the provider with the decrypted mnemonic.
+        // For now, we'll create a temporary wallet file from the mnemonic.
+        // This is a workaround until deezel-sys supports direct mnemonic injection.
+        let temp_wallet_dir = tempfile::tempdir()?;
+        let temp_wallet_path = temp_wallet_dir.path().join("temp_wallet.json");
+        
+        let mut temp_args = args.clone();
+        temp_args.wallet_file = Some(temp_wallet_path.to_str().unwrap().to_string());
+        temp_args.passphrase = Some(passphrase);
+        
+        // Create a temporary wallet with the decrypted mnemonic
+        let temp_system = SystemDeezel::new(&temp_args).await?;
+        temp_system.execute_wallet_command(deezel_common::commands::WalletCommands::Create { mnemonic: Some(mnemonic) }).await?;
+
+        // Now, use this temporary wallet for the actual command execution
+        args.wallet_file = temp_args.wallet_file;
+        args.passphrase = temp_args.passphrase;
+    }
+
 
     // Create a new SystemDeezel instance
     let system = SystemDeezel::new(&args).await?;
