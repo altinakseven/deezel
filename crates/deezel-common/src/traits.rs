@@ -26,7 +26,10 @@ use crate::ord::{
     ParentInscriptions as OrdParents, SatResponse as OrdSat, RuneInfo as OrdRuneInfo,
     Runes as OrdRunes, TxInfo as OrdTxInfo,
 };
-use crate::alkanes::types::{EnhancedExecuteParams, EnhancedExecuteResult};
+use crate::alkanes::types::{
+    EnhancedExecuteParams, EnhancedExecuteResult, ExecutionState, ReadyToSignCommitTx,
+    ReadyToSignRevealTx, ReadyToSignTx,
+};
 use alkanes_support::proto::alkanes as alkanes_pb;
 use protorune_support::proto::protorune as protorune_pb;
 
@@ -235,6 +238,9 @@ pub trait WalletProvider {
 
     /// Set the passphrase for the wallet
     fn set_passphrase(&mut self, passphrase: Option<String>);
+
+    /// Get the index of the last used address.
+    async fn get_last_used_address_index(&self) -> Result<u32>;
 }
 
 /// Wallet configuration
@@ -634,7 +640,27 @@ pub trait OrdProvider {
 #[async_trait(?Send)]
 pub trait AlkanesProvider {
     /// Execute alkanes smart contract
-    async fn execute(&mut self, params: EnhancedExecuteParams) -> Result<EnhancedExecuteResult>;
+    async fn execute(&mut self, params: EnhancedExecuteParams) -> Result<ExecutionState>;
+
+    /// Resume execution after user confirmation (for simple transactions)
+    async fn resume_execution(
+        &mut self,
+        state: ReadyToSignTx,
+        params: &EnhancedExecuteParams,
+    ) -> Result<EnhancedExecuteResult>;
+
+    /// Resume execution after commit transaction confirmation
+    async fn resume_commit_execution(
+        &mut self,
+        state: ReadyToSignCommitTx,
+    ) -> Result<ExecutionState>;
+
+    /// Resume execution after reveal transaction confirmation
+    async fn resume_reveal_execution(
+        &mut self,
+        state: ReadyToSignRevealTx,
+    ) -> Result<EnhancedExecuteResult>;
+    
     async fn protorunes_by_address(&self, address: &str) -> Result<JsonValue>;
     async fn protorunes_by_outpoint(&self, txid: &str, vout: u32) -> Result<protorune_pb::OutpointResponse>;
     async fn simulate(&self, contract_id: &str, params: Option<&str>) -> Result<JsonValue>;
@@ -883,6 +909,10 @@ impl<T: DeezelProvider + ?Sized> WalletProvider for Box<T> {
    fn set_passphrase(&mut self, passphrase: Option<String>) {
        (**self).set_passphrase(passphrase)
    }
+
+   async fn get_last_used_address_index(&self) -> Result<u32> {
+       (**self).get_last_used_address_index().await
+   }
 }
 
 #[async_trait(?Send)]
@@ -1123,8 +1153,27 @@ impl<T: DeezelProvider + ?Sized> OrdProvider for Box<T> {
 
 #[async_trait(?Send)]
 impl<T: DeezelProvider + ?Sized> AlkanesProvider for Box<T> {
-    async fn execute(&mut self, params: EnhancedExecuteParams) -> Result<EnhancedExecuteResult> {
+    async fn execute(&mut self, params: EnhancedExecuteParams) -> Result<ExecutionState> {
         (**self).execute(params).await
+    }
+    async fn resume_execution(
+        &mut self,
+        state: ReadyToSignTx,
+        params: &EnhancedExecuteParams,
+    ) -> Result<EnhancedExecuteResult> {
+        (**self).resume_execution(state, params).await
+    }
+    async fn resume_commit_execution(
+        &mut self,
+        state: ReadyToSignCommitTx,
+    ) -> Result<ExecutionState> {
+        (**self).resume_commit_execution(state).await
+    }
+    async fn resume_reveal_execution(
+        &mut self,
+        state: ReadyToSignRevealTx,
+    ) -> Result<EnhancedExecuteResult> {
+        (**self).resume_reveal_execution(state).await
     }
     async fn protorunes_by_address(&self, address: &str) -> Result<JsonValue> {
         (**self).protorunes_by_address(address).await

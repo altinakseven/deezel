@@ -24,3 +24,4 @@ bip39 = { workspace = true }
 chrono = { workspace = true }
 smallvec = { workspace = true }
 rpassword = "7.3"
+tabled = { workspace = true }

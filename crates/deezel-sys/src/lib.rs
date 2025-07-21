@@ -6,6 +6,7 @@
 //! utilize alkanes on the backend.
 
 use anyhow::{anyhow, Context};
+use std::str::FromStr;
 use deezel_common::{Result, DeezelError};
 use async_trait::async_trait;
 use deezel_common::provider::ConcreteProvider;
@@ -14,6 +15,7 @@ use deezel_common::commands::*;
 
 pub mod utils;
 pub mod keystore;
+pub mod pretty_print;
 use deezel_common::alkanes::types::{AlkanesInspectResult, AlkaneMetadata, FuzzingResults};
 use deezel_common::alkanes::AlkanesInspectConfig;
 use utils::*;
@@ -899,23 +901,11 @@ async fn resolve_addresses(
 
     for part in addr_str.split(',') {
         let trimmed_part = part.trim();
-        if trimmed_part.starts_with("[self:") {
-            // It's an identifier with a range, e.g., [self:p2tr:0-10]
-            let inner = trimmed_part.strip_prefix("[self:").and_then(|s| s.strip_suffix("]")).ok_or_else(|| anyhow!("Invalid identifier format: {}", trimmed_part))?;
-            let (script_type, start, count) = KeystoreManager::parse_address_range(&KeystoreManager::new(), inner)?;
+        if trimmed_part.contains(':') && !trimmed_part.starts_with("bc1") && !trimmed_part.starts_with("tb1") && !trimmed_part.starts_with("bcrt1") {
+            // It's an identifier, e.g., p2tr:0-10 or p2wpkh:5
+            let (script_type, start, count) = KeystoreManager::parse_address_range(&KeystoreManager::new(), trimmed_part)?;
             let derived = KeystoreManager::derive_addresses(&KeystoreManager::new(), keystore, provider.get_network(), &[&script_type], start, count)?;
             resolved_addresses.extend(derived.into_iter().map(|a| a.address));
-        } else if trimmed_part.starts_with("self:") {
-            // It's a single identifier, e.g., self:p2tr:50
-            let inner = trimmed_part.strip_prefix("self:").ok_or_else(|| anyhow!("Invalid identifier format: {}", trimmed_part))?;
-             let (script_type, start, count) = KeystoreManager::parse_address_range(&KeystoreManager::new(), inner)?;
-             if count != 1 {
-                 return Err(anyhow!("Single identifier format should not contain a range: {}", trimmed_part));
-             }
-            let derived = KeystoreManager::derive_addresses(&KeystoreManager::new(), keystore, provider.get_network(), &[&script_type], start, count)?;
-            if let Some(addr) = derived.into_iter().next() {
-                resolved_addresses.push(addr.address);
-            }
         } else {
             // It's a concrete address
             resolved_addresses.push(trimmed_part.to_string());
@@ -1065,35 +1055,112 @@ impl SystemAlkanes for SystemDeezel {
                     auto_confirm: yes, // Use the new field name
                 };
 
-                match provider.execute(execute_params).await {
-                    Ok(result) => {
-                        if raw {
-                            println!("{}", serde_json::to_string_pretty(&result)?);
-                        } else {
-                            println!("✅ Alkanes execution completed successfully!");
-                            if let Some(commit_txid) = result.commit_txid {
-                                println!("🔗 Commit TXID: {}", commit_txid);
-                            }
-                            println!("🔗 Reveal TXID: {}", result.reveal_txid);
-                            if let Some(commit_fee) = result.commit_fee {
-                                println!("💰 Commit Fee: {} sats", commit_fee);
-                            }
-                            println!("💰 Reveal Fee: {} sats", result.reveal_fee);
-                            if let Some(traces) = result.traces {
-                                for (i, trace) in traces.iter().enumerate() {
-                                    println!("\n📊 Trace for protostone #{}:", i + 1);
-                                    println!("{}", serde_json::to_string_pretty(&trace).unwrap_or_else(|_| format!("{:#?}", trace)));
+                let mut current_state = provider.execute(execute_params.clone()).await?;
+
+                loop {
+                    match current_state {
+                        deezel_common::alkanes::types::ExecutionState::ReadyToSign(state) => {
+                            if !yes {
+                                // The old pretty_print took analysis, this one takes the whole state
+                                // pretty_print::pretty_print_analysis(&state.analysis);
+                                println!("Do you want to sign and broadcast this transaction? (y/N)");
+                                let mut input = String::new();
+                                std::io::stdin().read_line(&mut input)?;
+                                if !input.trim().to_lowercase().starts_with('y') {
+                                    println!("❌ Transaction cancelled.");
+                                    return Ok(());
                                 }
                             }
+                            let result = provider.resume_execution(state, &execute_params).await?;
+                            current_state = deezel_common::alkanes::types::ExecutionState::Complete(result);
                         }
-                    }
-                    Err(e) => {
-                        if raw {
-                            eprintln!("Error: {}", e);
-                        } else {
-                            println!("❌ Alkanes execution failed: {}", e);
+                        deezel_common::alkanes::types::ExecutionState::ReadyToSignCommit(state) => {
+                             if !yes {
+                                println!("A commit transaction is ready to be signed and broadcast.");
+                                println!("Do you want to proceed? (y/N)");
+                                let mut input = String::new();
+                                std::io::stdin().read_line(&mut input)?;
+                                if !input.trim().to_lowercase().starts_with('y') {
+                                    println!("❌ Transaction cancelled.");
+                                    return Ok(());
+                                }
+                            }
+                            current_state = provider.resume_commit_execution(state).await?;
                         }
-                        return Err(e.into());
+                        deezel_common::alkanes::types::ExecutionState::ReadyToSignReveal(state) => {
+                            if !yes {
+                                pretty_print::pretty_print_analysis(&state);
+                                println!("A reveal transaction is ready to be signed and broadcast.");
+                                println!("Do you want to proceed? (y/N)");
+                                let mut input = String::new();
+                                std::io::stdin().read_line(&mut input)?;
+                                if !input.trim().to_lowercase().starts_with('y') {
+                                    println!("❌ Transaction cancelled.");
+                                    return Ok(());
+                                }
+                            }
+                            let result = provider.resume_reveal_execution(state).await?;
+                            current_state = deezel_common::alkanes::types::ExecutionState::Complete(result);
+                        }
+                        deezel_common::alkanes::types::ExecutionState::Complete(result) => {
+                            if raw {
+                                println!("{}", serde_json::to_string_pretty(&result)?);
+                            } else {
+                                println!("✅ Alkanes execution completed successfully!");
+                                if let Some(commit_txid) = result.commit_txid {
+                                    println!("🔗 Commit TXID: {}", commit_txid);
+                                }
+                                println!("🔗 Reveal TXID: {}", result.reveal_txid);
+                                if let Some(commit_fee) = result.commit_fee {
+                                    println!("💰 Commit Fee: {} sats", commit_fee);
+                                }
+                                println!("💰 Reveal Fee: {} sats", result.reveal_fee);
+                                if let Some(traces) = result.traces {
+                                    for (i, trace) in traces.iter().enumerate() {
+                                        println!("\n📊 Trace for protostone #{}:", i + 1);
+                                        println!("{}", serde_json::to_string_pretty(&trace).unwrap_or_else(|_| format!("{:#?}", trace)));
+                                    }
+                                }
+                            }
+
+                            // After successful broadcast, check if we need to mine
+                            if execute_params.mine_enabled {
+                                println!("⛏️  Mining a new block to confirm the transaction...");
+                                let mine_to_address = get_new_address(&provider).await?;
+                                provider.generate_to_address(1, &mine_to_address).await?;
+                                println!("✅ Block mined successfully to address: {}", mine_to_address);
+                            }
+
+                            println!("🔄 Synchronizing backends...");
+                            provider.sync().await?;
+                            println!("✅ Backends synchronized.");
+
+                            if execute_params.trace_enabled {
+                                println!("🔎 Tracing protostone execution results...");
+
+                                // 1. Get the reveal transaction to find out the number of outputs
+                                let reveal_tx_hex = provider.get_tx_hex(&result.reveal_txid).await?;
+                                let reveal_tx: bitcoin::Transaction = bitcoin::consensus::deserialize(&hex::decode(reveal_tx_hex)?)?;
+                                let vout_offset = reveal_tx.output.len();
+
+                                // 2. Iterate through protostones and trace each one
+                                for (i, _) in execute_params.protostones.iter().enumerate() {
+                                    let vout = (vout_offset + i) as u32;
+                                    println!("\n📊 Tracing protostone #{} (outpoint: {}:{})", i, result.reveal_txid, vout);
+                                    
+                                    match provider.trace_outpoint(&result.reveal_txid, vout).await {
+                                        Ok(trace_result) => {
+                                            println!("{}", serde_json::to_string_pretty(&trace_result)?);
+                                        }
+                                        Err(e) => {
+                                            println!("❌ Error tracing protostone at vout {}: {}", vout, e);
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            break;
+                        }
                     }
                 }
                 Ok(())
@@ -2099,4 +2166,34 @@ fn compress_opcode_ranges(opcodes: &[u128]) -> String {
     }
     
     ranges.join(", ")
+}
+
+/// Derives a new, unused address from the keystore.
+/// This is useful for mining rewards to avoid address reuse.
+async fn get_new_address(provider: &ConcreteProvider) -> anyhow::Result<String> {
+    let keystore = provider.get_keystore().ok_or_else(|| anyhow!("Keystore not loaded"))?;
+    let network = provider.get_network();
+    
+    // For simplicity, we'll just derive a new P2TR address from the receive chain.
+    // A more robust implementation might track used addresses.
+    // We'll derive from a high, likely unused index. A better way would be to track the last used index.
+    let last_used_index = provider.get_last_used_address_index().await.unwrap_or(0);
+    let new_index = last_used_index + 1;
+
+    let master_xpub_str = &keystore.account_xpub;
+    let master_xpub = bitcoin::bip32::Xpub::from_str(master_xpub_str)
+        .context("Failed to parse master xpub")?;
+    
+    let secp = bitcoin::secp256k1::Secp256k1::new();
+    
+    let new_address = KeystoreManager::new().derive_single_address(
+        &master_xpub,
+        &secp,
+        network,
+        "p2tr", // Default to P2TR for mining rewards
+        0,      // Receive chain
+        new_index,
+    )?;
+
+    Ok(new_address.address)
 }

@@ -135,7 +135,7 @@ impl KeystoreManager {
         
         for script_type in script_types {
             for index in start_index..(start_index + count) {
-                let address = self.derive_single_address(&master_xpub, &secp, network, script_type, index)?;
+                let address = self.derive_single_address(&master_xpub, &secp, network, script_type, 0, index)?;
                 addresses.push(address);
             }
         }
@@ -146,7 +146,7 @@ impl KeystoreManager {
     /// Derive a single address from master public key
     /// Derive a single address from the account public key.
     /// The `master_xpub` parameter is the account-level xpub (e.g., from m/86'/1'/0').
-    fn derive_single_address(&self, master_xpub: &Xpub, secp: &Secp256k1<bitcoin::secp256k1::All>, network: Network, script_type: &str, index: u32) -> AnyhowResult<KeystoreAddress> {
+    pub fn derive_single_address(&self, master_xpub: &Xpub, secp: &Secp256k1<bitcoin::secp256k1::All>, network: Network, script_type: &str, chain: u32, index: u32) -> AnyhowResult<KeystoreAddress> {
         // Get the correct coin type for the network for display purposes.
         let coin_type = match network {
             Network::Bitcoin => "0",
@@ -155,8 +155,7 @@ impl KeystoreManager {
         };
 
         // BIP-86 standard derivation from an account xpub uses m/0/* for receive and m/1/* for change.
-        // This command currently only shows receive addresses.
-        let relative_path_str = format!("m/0/{}", index);
+        let relative_path_str = format!("m/{}/{}", chain, index);
         let relative_path = DerivationPath::from_str(&relative_path_str)
             .with_context(|| format!("Failed to create relative derivation path: {}", relative_path_str))?;
 
@@ -169,13 +168,13 @@ impl KeystoreManager {
         // For other types, we'll show a non-standard path to indicate what's happening.
         let (derivation_path, address) = match script_type {
             "p2tr" => {
-                let full_path = format!("m/86'/{}'/0'/0/{}", coin_type, index);
+                let full_path = format!("m/86'/{}'/0'/{}/{}", coin_type, chain, index);
                 let internal_key = bitcoin::key::UntweakedPublicKey::from(derived_key.public_key);
                 let address = Address::p2tr(secp, internal_key, None, network);
                 (full_path, address.to_string())
             }
             "p2wpkh" => {
-                let full_path = format!("m/84'/{}'/0'/0/{}", coin_type, index);
+                let full_path = format!("m/84'/{}'/0'/{}/{}", coin_type, chain, index);
                 let bitcoin_pubkey = PublicKey::new(derived_key.public_key);
                 let compressed_pubkey = CompressedPublicKey::try_from(bitcoin_pubkey)
                     .context("Failed to create compressed public key")?;
@@ -183,7 +182,7 @@ impl KeystoreManager {
                 (full_path, address.to_string())
             }
             "p2sh" => {
-                let full_path = format!("m/49'/{}'/0'/0/{}", coin_type, index);
+                let full_path = format!("m/49'/{}'/0'/{}/{}", coin_type, chain, index);
                 let bitcoin_pubkey = PublicKey::new(derived_key.public_key);
                 let compressed_pubkey = CompressedPublicKey::try_from(bitcoin_pubkey)
                     .context("Failed to create compressed public key")?;
@@ -193,7 +192,7 @@ impl KeystoreManager {
                 (full_path, address.to_string())
             }
             "p2pkh" => {
-                let full_path = format!("m/44'/{}'/0'/0/{}", coin_type, index);
+                let full_path = format!("m/44'/{}'/0'/{}/{}", coin_type, chain, index);
                 let bitcoin_pubkey = PublicKey::new(derived_key.public_key);
                 let compressed_pubkey = CompressedPublicKey::try_from(bitcoin_pubkey)
                     .context("Failed to create compressed public key")?;
@@ -201,7 +200,7 @@ impl KeystoreManager {
                 (full_path, address.to_string())
             }
             "p2wsh" => {
-                let full_path = format!("m/86'/{}'/0'/0/{} (p2wsh from p2tr account)", coin_type, index);
+                let full_path = format!("m/86'/{}'/0'/{}/{} (p2wsh from p2tr account)", coin_type, chain, index);
                 let bitcoin_pubkey = PublicKey::new(derived_key.public_key);
                 let compressed_pubkey = CompressedPublicKey::try_from(bitcoin_pubkey)
                     .context("Failed to create compressed public key")?;
@@ -281,7 +280,7 @@ impl KeystoreManager {
         
         for script_type in script_types {
             for index in start_index..(start_index + count) {
-                let mut address = self.derive_single_address(&master_xpub, &secp, network, script_type, index)?;
+                let mut address = self.derive_single_address(&master_xpub, &secp, network, script_type, 0, index)?;
                 
                 // Apply custom network parameters if provided
                 if let Some(network_params) = custom_network_params {
@@ -345,7 +344,7 @@ impl KeystoreProvider for KeystoreManager {
         
         for script_type in script_types {
             for index in start_index..(start_index + count) {
-                let address = self.derive_single_address(&master_xpub, &secp, network, script_type, index)
+                let address = self.derive_single_address(&master_xpub, &secp, network, script_type, 0, index)
                     .map_err(|e| DeezelError::Crypto(format!("Failed to derive address: {}", e)))?;
                 addresses.push(address);
             }

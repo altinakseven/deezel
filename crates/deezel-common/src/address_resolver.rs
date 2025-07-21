@@ -541,6 +541,9 @@ impl WalletProvider for StandaloneAddressResolver {
     fn set_passphrase(&mut self, _passphrase: Option<String>) {
         // No-op for StandaloneAddressResolver
     }
+    async fn get_last_used_address_index(&self) -> Result<u32> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support get_last_used_address_index".to_string()))
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -819,8 +822,41 @@ impl KeystoreProvider for StandaloneAddressResolver {
 #[cfg(not(target_arch = "wasm32"))]
 #[async_trait(?Send)]
 impl AlkanesProvider for StandaloneAddressResolver {
-    async fn execute(&mut self, _params: crate::alkanes::types::EnhancedExecuteParams) -> Result<crate::alkanes::types::EnhancedExecuteResult> {
-        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
+    async fn execute(
+        &mut self,
+        _params: crate::alkanes::types::EnhancedExecuteParams,
+    ) -> Result<crate::alkanes::types::ExecutionState> {
+        Err(DeezelError::NotImplemented(
+            "StandaloneAddressResolver does not support alkanes operations".to_string(),
+        ))
+    }
+
+    async fn resume_execution(
+        &mut self,
+        _state: crate::alkanes::types::ReadyToSignTx,
+        _params: &crate::alkanes::types::EnhancedExecuteParams,
+    ) -> Result<crate::alkanes::types::EnhancedExecuteResult> {
+        Err(DeezelError::NotImplemented(
+            "StandaloneAddressResolver does not support alkanes operations".to_string(),
+        ))
+    }
+
+    async fn resume_commit_execution(
+        &mut self,
+        _state: crate::alkanes::types::ReadyToSignCommitTx,
+    ) -> Result<crate::alkanes::types::ExecutionState> {
+        Err(DeezelError::NotImplemented(
+            "StandaloneAddressResolver does not support alkanes operations".to_string(),
+        ))
+    }
+
+    async fn resume_reveal_execution(
+        &mut self,
+        _state: crate::alkanes::types::ReadyToSignRevealTx,
+    ) -> Result<crate::alkanes::types::EnhancedExecuteResult> {
+        Err(DeezelError::NotImplemented(
+            "StandaloneAddressResolver does not support alkanes operations".to_string(),
+        ))
     }
 
     async fn protorunes_by_address(&self, _address: &str) -> Result<crate::JsonValue> {

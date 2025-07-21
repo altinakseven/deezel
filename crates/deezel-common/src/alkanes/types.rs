@@ -245,6 +245,49 @@ pub struct EnhancedExecuteResult {
     pub traces: Option<Vec<JsonValue>>,
 }
 
+/// Represents the state of a pausable transaction execution.
+#[derive(Debug, Clone)]
+pub enum ExecutionState {
+    /// The transaction is ready to be signed and broadcast.
+    ReadyToSign(ReadyToSignTx),
+    /// The commit transaction for a commit/reveal pattern is ready to be signed.
+    ReadyToSignCommit(ReadyToSignCommitTx),
+    /// The reveal transaction for a commit/reveal pattern is ready to be signed.
+    ReadyToSignReveal(ReadyToSignRevealTx),
+    /// The execution is complete.
+    Complete(EnhancedExecuteResult),
+}
+
+/// Contains the PSBT and analysis for a transaction that is ready to be signed.
+#[derive(Debug, Clone)]
+pub struct ReadyToSignTx {
+    pub psbt: bitcoin::psbt::Psbt,
+    pub analysis: crate::transaction::TransactionAnalysis,
+    pub fee: u64,
+}
+
+/// Contains the necessary information for signing a commit transaction.
+#[derive(Debug, Clone)]
+pub struct ReadyToSignCommitTx {
+    pub psbt: bitcoin::psbt::Psbt,
+    pub fee: u64,
+    pub required_reveal_amount: u64,
+    pub params: EnhancedExecuteParams,
+    pub envelope: super::envelope::AlkanesEnvelope,
+}
+
+/// Contains the necessary information for signing a reveal transaction.
+#[derive(Debug, Clone)]
+pub struct ReadyToSignRevealTx {
+    pub psbt: bitcoin::psbt::Psbt,
+    pub fee: u64,
+    pub analysis: crate::transaction::TransactionAnalysis,
+    pub commit_txid: String,
+    pub commit_fee: u64,
+    pub params: EnhancedExecuteParams,
+}
+
+
 /// Alkanes inspect configuration
 #[derive(Debug, Clone, serde::Serialize, Deserialize)]
 pub struct AlkanesInspectConfig {

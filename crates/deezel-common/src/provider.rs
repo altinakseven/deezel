@@ -4,7 +4,10 @@
 //! using deezel-rpgp for PGP operations and other concrete implementations.
 
 use crate::traits::*;
-use crate::{Result, DeezelError, JsonValue};
+use crate::{
+    alkanes::types::{ExecutionState, ReadyToSignCommitTx, ReadyToSignRevealTx, ReadyToSignTx},
+    DeezelError, JsonValue, Result,
+};
 use crate::ord;
 use crate::alkanes::execute::EnhancedAlkanesExecutor;
 #[cfg(feature = "wasm-inspection")]
@@ -499,7 +502,7 @@ impl WalletProvider for ConcreteProvider {
             keystore.save_to_file(path)?;
         }
 
-        let addresses = keystore.get_addresses(config.network, "p2tr", 0, 1)?;
+        let addresses = keystore.get_addresses(config.network, "p2tr", 0, 0, 1)?;
         let address = addresses.get(0).map(|a| a.address.clone()).unwrap_or_default();
         
         self.wallet_state = WalletState::Unlocked {
@@ -522,7 +525,7 @@ impl WalletProvider for ConcreteProvider {
             let keystore = Keystore::from_file(&path)?;
             let pass = passphrase.as_deref().ok_or_else(|| DeezelError::Wallet("Passphrase required to load wallet".to_string()))?;
             let mnemonic = keystore.decrypt_mnemonic(pass)?;
-            let addresses = keystore.get_addresses(config.network, "p2tr", 0, 1)?;
+            let addresses = keystore.get_addresses(config.network, "p2tr", 0, 0, 1)?;
             let address = addresses.get(0).map(|a| a.address.clone()).unwrap_or_default();
 
             self.wallet_state = WalletState::Unlocked {
@@ -595,7 +598,7 @@ impl WalletProvider for ConcreteProvider {
     
     async fn get_addresses(&self, count: u32) -> Result<Vec<AddressInfo>> {
         let keystore = self.get_keystore().ok_or_else(|| DeezelError::Wallet("Keystore not loaded".to_string()))?;
-        let addresses = keystore.get_addresses(self.get_network(), "p2tr", 0, count)?;
+        let addresses = keystore.get_addresses(self.get_network(), "p2tr", 0, 0, count)?;
         Ok(addresses)
     }
     
@@ -1099,6 +1102,39 @@ impl WalletProvider for ConcreteProvider {
 
     fn set_passphrase(&mut self, passphrase: Option<String>) {
         self.passphrase = passphrase;
+    }
+
+    async fn get_last_used_address_index(&self) -> Result<u32> {
+        let keystore = self.get_keystore().ok_or_else(|| DeezelError::Wallet("Keystore not loaded".to_string()))?;
+        let network = self.get_network();
+        let mut last_used_index = 0;
+        let gap_limit = 20; // Standard gap limit
+
+        // We check both receive (0) and change (1) chains
+        for chain in 0..=1 {
+            let mut consecutive_unused = 0;
+            for index in 0.. {
+                // Derive one address at a time
+                let addresses = keystore.get_addresses(network, "p2tr", chain, index, 1)?;
+                if let Some(address_info) = addresses.first() {
+                    let txs = self.get_address_txs(&address_info.address).await?;
+                    if txs.as_array().map_or(true, |a| a.is_empty()) {
+                        consecutive_unused += 1;
+                    } else {
+                        last_used_index = core::cmp::max(last_used_index, index);
+                        consecutive_unused = 0;
+                    }
+                } else {
+                    // Should not happen if get_addresses works correctly
+                    break;
+                }
+
+                if consecutive_unused >= gap_limit {
+                    break;
+                }
+            }
+        }
+        Ok(last_used_index)
     }
 }
 
@@ -1637,9 +1673,34 @@ impl RunestoneProvider for ConcreteProvider {
 
 #[async_trait(?Send)]
 impl AlkanesProvider for ConcreteProvider {
-    async fn execute(&mut self, params: EnhancedExecuteParams) -> Result<EnhancedExecuteResult> {
+    async fn execute(&mut self, params: EnhancedExecuteParams) -> Result<ExecutionState> {
         let mut executor = EnhancedAlkanesExecutor::new(self);
         executor.execute(params).await
+    }
+
+    async fn resume_execution(
+        &mut self,
+        state: ReadyToSignTx,
+        params: &EnhancedExecuteParams,
+    ) -> Result<EnhancedExecuteResult> {
+        let mut executor = EnhancedAlkanesExecutor::new(self);
+        executor.resume_execution(state, params).await
+    }
+
+    async fn resume_commit_execution(
+        &mut self,
+        state: ReadyToSignCommitTx,
+    ) -> Result<ExecutionState> {
+        let mut executor = EnhancedAlkanesExecutor::new(self);
+        executor.resume_commit_execution(state).await
+    }
+
+    async fn resume_reveal_execution(
+        &mut self,
+        state: ReadyToSignRevealTx,
+    ) -> Result<EnhancedExecuteResult> {
+        let mut executor = EnhancedAlkanesExecutor::new(self);
+        executor.resume_reveal_execution(state).await
     }
 
     async fn protorunes_by_address(&self, address: &str) -> Result<JsonValue> {

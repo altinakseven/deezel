@@ -153,6 +153,7 @@ impl Keystore {
         &self,
         network: Network,
         address_type: &str,
+        chain: u32,
         start_index: u32,
         count: u32,
     ) -> Result<Vec<crate::traits::AddressInfo>> {
@@ -160,11 +161,8 @@ impl Keystore {
         let xpub = Xpub::from_str(&self.account_xpub)?;
         let mut addresses = Vec::new();
 
-        // We'll derive from the receive path (0) for now.
-        let branch = 0;
-
         for i in start_index..start_index + count {
-            let path_str = format!("m/{}/{}", branch, i);
+            let path_str = format!("m/{}/{}", chain, i);
             let path = DerivationPath::from_str(&path_str)?;
             let derived_xpub = xpub.derive_pub(&secp, &path)?;
             let (internal_key, _) = derived_xpub.public_key.x_only_public_key();

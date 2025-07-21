@@ -438,7 +438,7 @@ pub mod analysis {
 }
 
 /// Transaction analysis result
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, tabled::Tabled)]
 pub struct TransactionAnalysis {
     pub txid: String,
     pub size: usize,
@@ -451,7 +451,15 @@ pub struct TransactionAnalysis {
     pub fee_rate: f32,
     pub has_witness: bool,
     pub has_op_return: bool,
+    #[tabled(display_with = "display_op_return_data")]
     pub op_return_data: Vec<Vec<u8>>,
+}
+
+fn display_op_return_data(data: &Vec<Vec<u8>>) -> String {
+    data.iter()
+        .map(hex::encode)
+        .collect::<Vec<String>>()
+        .join(", ")
 }
 
 #[cfg(test)]

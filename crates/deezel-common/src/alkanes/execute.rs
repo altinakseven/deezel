@@ -16,14 +16,17 @@
 
 use crate::{Result, DeezelError, DeezelProvider};
 use crate::traits::{WalletProvider, UtxoInfo};
-use bitcoin::{Transaction, ScriptBuf, OutPoint, TxOut, Address, XOnlyPublicKey};
+use bitcoin::{Transaction, ScriptBuf, OutPoint, TxOut, Address, XOnlyPublicKey, psbt::Psbt};
 use core::str::FromStr;
 #[cfg(not(feature = "std"))]
 use alloc::{vec, vec::Vec, string::{String, ToString}, format};
 #[cfg(feature = "std")]
 use std::{vec, vec::Vec, string::{String, ToString}, format};
 use tokio::time::{sleep, Duration};
-pub use super::types::{EnhancedExecuteParams, EnhancedExecuteResult, InputRequirement, ProtostoneSpec, OutputTarget};
+pub use super::types::{
+    EnhancedExecuteParams, EnhancedExecuteResult, ExecutionState, InputRequirement, OutputTarget,
+    ProtostoneSpec, ReadyToSignCommitTx, ReadyToSignRevealTx, ReadyToSignTx,
+};
 use super::envelope::AlkanesEnvelope;
 use anyhow::anyhow;
 use protorune_support::protostone::{Protostone, into_protostone_edicts};
@@ -45,9 +48,9 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
     }
 
     /// Execute an enhanced alkanes transaction with commit/reveal pattern
-    pub async fn execute(&mut self, params: EnhancedExecuteParams) -> Result<EnhancedExecuteResult> {
+    pub async fn execute(&mut self, params: EnhancedExecuteParams) -> Result<ExecutionState> {
         log::info!("Starting enhanced alkanes execution");
-        
+
         self.validate_envelope_cellpack_usage(&params)?;
 
         if let Some(envelope_data) = &params.envelope_data {
@@ -55,224 +58,156 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
             log::info!("Envelope data size: {} bytes", envelope_data.len());
             let envelope = AlkanesEnvelope::for_contract(envelope_data.clone());
             log::info!("Created AlkanesEnvelope with BIN protocol tag and gzip compression");
-            self.execute_commit_reveal_pattern(params, &envelope).await
+            self.build_commit_reveal_pattern(params, &envelope).await
         } else {
             log::info!("CONTRACT EXECUTION: Single transaction without envelope");
-            self.execute_single_transaction(&params).await
+            self.build_single_transaction(&params).await
         }
     }
 
-    /// Execute commit/reveal transaction pattern with proper script-path spending
-    async fn execute_commit_reveal_pattern(
-        &mut self,
-        params: EnhancedExecuteParams,
-        envelope: &AlkanesEnvelope,
-    ) -> Result<EnhancedExecuteResult> {
-        log::info!("Using commit/reveal pattern with script-path spending");
-
-        // Step 1: Create and broadcast commit transaction
-        let (commit_txid, commit_fee, commit_outpoint, commit_output_value) =
-            self.create_and_broadcast_commit_transaction(envelope, &params).await?;
-
-        log::info!("✅ Commit transaction broadcast: {}", commit_txid);
-        log::info!("💰 Commit fee: {} sats", commit_fee);
-        log::info!("🎯 Commit output created at: {}:{}", commit_outpoint.txid, commit_outpoint.vout);
-
-        // Step 2: Wait for commit transaction to be available
-        self.provider.sleep_ms(1000).await;
-
-        // Step 3: Create reveal transaction
-        let (reveal_tx, reveal_fee) =
-            self.create_script_path_reveal_transaction(&params, envelope, commit_outpoint, commit_output_value).await?;
+    pub async fn resume_execution(&mut self, state: ReadyToSignTx, params: &EnhancedExecuteParams) -> Result<EnhancedExecuteResult> {
+        let tx = self.sign_and_finalize_psbt(state.psbt).await?;
         
-        let reveal_txid = self.provider.broadcast_transaction(bitcoin::consensus::encode::serialize_hex(&reveal_tx)).await?;
-
-        log::info!("✅ Reveal transaction broadcast: {}", reveal_txid);
-        log::info!("💰 Reveal fee: {} sats", reveal_fee);
-        log::info!("🎯 Total fees: {} sats (commit: {}, reveal: {})", commit_fee + reveal_fee, commit_fee, reveal_fee);
-
-        // Step 4: Handle tracing if enabled
+        let tx_hex = bitcoin::consensus::encode::serialize_hex(&tx);
+        let txid = self.provider.broadcast_transaction(tx_hex).await?;
+        
+        if !params.raw_output {
+            log::info!("✅ Transaction broadcast successfully!");
+            log::info!("🔗 TXID: {}", txid);
+        }
+        
         let traces = if params.trace_enabled {
-            self.trace_reveal_transaction(&reveal_txid, &params).await?
+            self.trace_reveal_transaction(&txid, params).await?
+        } else {
+            None
+        };
+        
+        Ok(EnhancedExecuteResult {
+            commit_txid: None,
+            reveal_txid: txid,
+            commit_fee: None,
+            reveal_fee: state.fee,
+            inputs_used: tx.input.iter().map(|i| i.previous_output.to_string()).collect(),
+            outputs_created: tx.output.iter().map(|o| o.script_pubkey.to_string()).collect(),
+            traces,
+        })
+    }
+
+    pub async fn resume_commit_execution(
+        &mut self,
+        state: ReadyToSignCommitTx,
+    ) -> Result<ExecutionState> {
+        // 1. Sign and broadcast the commit transaction
+        let commit_tx = self.sign_and_finalize_psbt(state.psbt).await?;
+        let commit_txid = self
+            .provider
+            .broadcast_transaction(bitcoin::consensus::encode::serialize_hex(&commit_tx))
+            .await?;
+        log::info!("✅ Commit transaction broadcast successfully: {}", commit_txid);
+
+        // 2. Build the reveal transaction PSBT
+        let commit_outpoint = bitcoin::OutPoint { txid: commit_tx.compute_txid(), vout: 0 };
+        let (reveal_psbt, reveal_fee) = self
+            .build_reveal_psbt(
+                &state.params,
+                &state.envelope,
+                commit_outpoint,
+                state.required_reveal_amount,
+            )
+            .await?;
+
+        // 3. Analyze the reveal transaction
+        let analysis =
+            crate::transaction::analysis::analyze_transaction(&reveal_psbt.unsigned_tx);
+
+        // 4. Return the next state
+        Ok(ExecutionState::ReadyToSignReveal(ReadyToSignRevealTx {
+            psbt: reveal_psbt,
+            fee: reveal_fee,
+            analysis,
+            commit_txid,
+            commit_fee: state.fee,
+            params: state.params,
+        }))
+    }
+
+    pub async fn resume_reveal_execution(
+        &mut self,
+        state: ReadyToSignRevealTx,
+    ) -> Result<EnhancedExecuteResult> {
+        let reveal_tx = self.sign_and_finalize_psbt(state.psbt).await?;
+        let reveal_txid = self
+            .provider
+            .broadcast_transaction(bitcoin::consensus::encode::serialize_hex(&reveal_tx))
+            .await?;
+
+        if !state.params.raw_output {
+            log::info!("✅ Reveal transaction broadcast successfully!");
+            log::info!("🔗 TXID: {}", reveal_txid);
+        }
+
+        let traces = if state.params.trace_enabled {
+            self.trace_reveal_transaction(&reveal_txid, &state.params).await?
         } else {
             None
         };
 
         Ok(EnhancedExecuteResult {
-            commit_txid: Some(commit_txid),
+            commit_txid: Some(state.commit_txid),
             reveal_txid,
-            commit_fee: Some(commit_fee),
-            reveal_fee,
-            inputs_used: vec![commit_outpoint.to_string()], // Simplified for now
+            commit_fee: Some(state.commit_fee),
+            reveal_fee: state.fee,
+            inputs_used: reveal_tx.input.iter().map(|i| i.previous_output.to_string()).collect(),
             outputs_created: reveal_tx.output.iter().map(|o| o.script_pubkey.to_string()).collect(),
             traces,
         })
     }
 
-    /// Creates and broadcasts the commit transaction.
-    ///
-    /// The commit transaction creates an output that locks funds to a taproot address.
-    /// The taproot script path contains the envelope data, which will be revealed
-    /// in the reveal transaction.
-    async fn create_and_broadcast_commit_transaction(
+    /// Build the commit transaction and return it in a ready-to-sign state.
+    async fn build_commit_reveal_pattern(
         &mut self,
+        params: EnhancedExecuteParams,
         envelope: &AlkanesEnvelope,
-        params: &EnhancedExecuteParams,
-    ) -> Result<(String, u64, OutPoint, u64)> {
-        log::info!("Creating commit transaction");
+    ) -> Result<ExecutionState> {
+        log::info!("Building commit transaction");
 
         let internal_key = self.provider.get_internal_key().await?;
         let commit_address = self.create_commit_address_for_envelope(envelope, internal_key).await?;
-
         log::info!("Envelope commit address: {}", commit_address);
 
-        // Determine the amount needed for the commit output to fund the reveal transaction
-        let mut required_bitcoin = 546u64; // Dust for the reveal output
+        let mut required_reveal_amount = 546u64;
         for requirement in &params.input_requirements {
             if let InputRequirement::Bitcoin { amount } = requirement {
-                required_bitcoin += amount;
+                required_reveal_amount += amount;
             }
         }
-        let estimated_reveal_fee = 50_000u64; // Conservative fee estimate
-        required_bitcoin += estimated_reveal_fee;
-        required_bitcoin += params.to_addresses.len() as u64 * 546;
+        let estimated_reveal_fee = 50_000u64;
+        required_reveal_amount += estimated_reveal_fee;
+        required_reveal_amount += params.to_addresses.len() as u64 * 546;
 
-        // Select UTXOs to fund the commit transaction
-        let funding_utxos = self.select_utxos(&[InputRequirement::Bitcoin { amount: required_bitcoin }], &params.from_addresses).await?;
+        let funding_utxos = self
+            .select_utxos(&[InputRequirement::Bitcoin { amount: required_reveal_amount }], &params.from_addresses)
+            .await?;
 
         let commit_output = TxOut {
-            value: bitcoin::Amount::from_sat(required_bitcoin),
+            value: bitcoin::Amount::from_sat(required_reveal_amount),
             script_pubkey: commit_address.script_pubkey(),
         };
 
-        // Build and sign the commit transaction
-        let (commit_tx, commit_fee) = self.build_commit_transaction(funding_utxos, commit_output, params.fee_rate).await?;
-        
-        // Broadcast the commit transaction
-        let commit_txid = self.provider.broadcast_transaction(bitcoin::consensus::encode::serialize_hex(&commit_tx)).await?;
+        let (commit_psbt, commit_fee) = self
+            .build_commit_psbt(funding_utxos, commit_output, params.fee_rate)
+            .await?;
 
-        let commit_outpoint = OutPoint {
-            txid: commit_tx.compute_txid(),
-            vout: 0, // The commit output is always the first output
-        };
-
-        let commit_output_value = commit_tx.output[0].value.to_sat();
-        Ok((commit_txid, commit_fee, commit_outpoint, commit_output_value))
+        Ok(ExecutionState::ReadyToSignCommit(ReadyToSignCommitTx {
+            psbt: commit_psbt,
+            fee: commit_fee,
+            required_reveal_amount,
+            params,
+            envelope: envelope.clone(),
+        }))
     }
 
-    /// Creates the reveal transaction.
-    ///
-    /// The reveal transaction spends the commit output, revealing the envelope
-    /// data in the witness. It also creates the outputs for the recipients and
-    /// the runestone.
-    ///
-    /// CORRECTED: Now properly selects additional UTXOs to meet input requirements
-    /// from the Spec objects, not just the commit outpoint alone.
-    async fn create_script_path_reveal_transaction(
-        &mut self,
-        params: &EnhancedExecuteParams,
-        envelope: &AlkanesEnvelope,
-        commit_outpoint: OutPoint,
-        commit_output_value: u64,
-    ) -> Result<(Transaction, u64)> {
-        log::info!("Creating script-path reveal transaction with proper UTXO selection");
-        log::info!("🎯 Commit input: {}:{}", commit_outpoint.txid, commit_outpoint.vout);
-
-        self.validate_protostones(&params.protostones, params.to_addresses.len())?;
-
-        // CRITICAL FIX: Select additional UTXOs to meet input requirements from Spec objects
-        // This matches the reference implementation pattern where we don't just use commit alone
-        let mut selected_utxos = Vec::new();
-
-        // Step 1: Calculate total Bitcoin needed for reveal transaction
-        let mut total_bitcoin_needed = 0u64;
-        for requirement in &params.input_requirements {
-            if let InputRequirement::Bitcoin { amount } = requirement {
-                total_bitcoin_needed += amount;
-            }
-        }
-
-        // Add output values (dust amounts for recipients)
-        total_bitcoin_needed += params.to_addresses.len() as u64 * 546;
-
-        // Add estimated fee
-        let estimated_fee = 50_000u64; // Conservative estimate
-        total_bitcoin_needed += estimated_fee;
-
-        log::info!("💡 Total Bitcoin needed for reveal: {} sats", total_bitcoin_needed);
-        log::info!("💡 Commit output value: {} sats", commit_output_value);
-
-        // Step 2: Check if commit output has sufficient value for single input optimization
-        if commit_output_value >= total_bitcoin_needed {
-            // Single input optimization: commit output has enough value
-            log::info!("🎯 SINGLE INPUT OPTIMIZATION: Using only commit input");
-            selected_utxos.push(commit_outpoint);
-        } else {
-            // Need additional inputs: select UTXOs to meet requirements
-            log::info!("🎯 MULTIPLE INPUT MODE: Selecting additional UTXOs to meet requirements");
-            
-            // Start with commit outpoint as first input
-            selected_utxos.push(commit_outpoint);
-            
-            // Calculate how much more Bitcoin we need beyond the commit output
-            let additional_bitcoin_needed = total_bitcoin_needed.saturating_sub(commit_output_value);
-            
-            if additional_bitcoin_needed > 0 {
-                log::info!("Need additional {} sats beyond commit output", additional_bitcoin_needed);
-                
-                // Create a modified input requirements list for the additional UTXOs
-                let mut additional_requirements = params.input_requirements.clone();
-                
-                // Adjust Bitcoin requirement to account for what commit output provides
-                for requirement in &mut additional_requirements {
-                    if let InputRequirement::Bitcoin { amount } = requirement {
-                        *amount = additional_bitcoin_needed;
-                        break;
-                    }
-                }
-                
-                // If no Bitcoin requirement exists, add one
-                if !additional_requirements.iter().any(|r| matches!(r, InputRequirement::Bitcoin { .. })) {
-                    additional_requirements.push(InputRequirement::Bitcoin { amount: additional_bitcoin_needed });
-                }
-                
-                // Select additional UTXOs to meet the requirements
-                let additional_utxos = self.select_utxos(&additional_requirements, &params.from_addresses).await?;
-                
-                // Add additional UTXOs to our selection (commit is already first)
-                for utxo in additional_utxos {
-                    if utxo != commit_outpoint {
-                        selected_utxos.push(utxo);
-                    }
-                }
-                
-                log::info!("Selected {} additional UTXOs", selected_utxos.len() - 1);
-            }
-        }
-
-        log::info!("🎯 Total inputs for reveal transaction: {}", selected_utxos.len());
-
-        let outputs = self.create_outputs(&params.to_addresses, &params.change_address, &params.input_requirements).await?;
-
-        let runestone_script = self.construct_runestone(&params.protostones, outputs.len())?;
-
-        let (signed_tx, final_fee) = self.build_script_path_reveal_transaction(
-            selected_utxos,
-            outputs,
-            runestone_script,
-            params.fee_rate,
-            envelope,
-            commit_output_value,
-        )
-        .await?;
-
-        Ok((signed_tx, final_fee))
-    }
-    
     /// Creates a taproot address for the commit transaction.
-    ///
-    /// The address is a P2TR address with the envelope's reveal script
-    /// in the taproot tree.
     async fn create_commit_address_for_envelope(
         &self,
         envelope: &AlkanesEnvelope,
@@ -295,66 +230,43 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
     }
 
     /// Execute single transaction (no envelope)
-    async fn execute_single_transaction(&mut self, params: &EnhancedExecuteParams) -> Result<EnhancedExecuteResult> {
-        log::info!("Executing single transaction (no envelope)");
+    async fn build_single_transaction(&mut self, params: &EnhancedExecuteParams) -> Result<ExecutionState> {
+        log::info!("Building single transaction (no envelope)");
 
-        // Step 1: Validate protostone specifications
         self.validate_protostones(&params.protostones, params.to_addresses.len())?;
-
-        // Step 2: Create transaction outputs to determine value needed
-        let outputs = self.create_outputs(&params.to_addresses, &params.change_address, &params.input_requirements).await?;
-
-        // Step 3: Calculate total bitcoin requirement from outputs and other requirements
+        let mut outputs = self.create_outputs(&params.to_addresses, &params.change_address, &params.input_requirements).await?;
+        for protostone in &params.protostones {
+            if let Some(transfer) = &protostone.bitcoin_transfer {
+                if let OutputTarget::Output(vout) = transfer.target {
+                    if let Some(output) = outputs.get_mut(vout as usize) {
+                        output.value = bitcoin::Amount::from_sat(transfer.amount);
+                    }
+                }
+            }
+        }
         let total_bitcoin_needed: u64 = outputs.iter().filter(|o| o.value.to_sat() > 0).map(|o| o.value.to_sat()).sum();
         let mut final_requirements = params.input_requirements.iter().filter(|req| !matches!(req, InputRequirement::Bitcoin {..})).cloned().collect::<Vec<_>>();
-
-        // The `create_outputs` function now determines the output values. We just need to
-        // ensure we gather enough funds to cover them.
         if total_bitcoin_needed > 0 {
             final_requirements.push(InputRequirement::Bitcoin { amount: total_bitcoin_needed });
         }
-
-        // Step 4: Find UTXOs that meet the calculated requirements
         let selected_utxos = self.select_utxos(&final_requirements, &params.from_addresses).await?;
-
-        // Step 5: Construct runestone with protostones
         let runestone_script = self.construct_runestone(&params.protostones, outputs.len())?;
+        let (psbt, fee) = self.build_psbt_and_fee(selected_utxos.clone(), outputs, runestone_script, params.fee_rate).await?;
 
-        // Step 6: Build and sign transaction
-        let (tx, fee) = self.build_transaction(selected_utxos.clone(), outputs, runestone_script, params.fee_rate).await?;
-        
-        // Step 6: Broadcast transaction
-        let tx_hex = bitcoin::consensus::encode::serialize_hex(&tx);
-        let txid = self.provider.broadcast_transaction(tx_hex).await?;
-        
-        if !params.raw_output {
-            log::info!("✅ Transaction broadcast successfully!");
-            log::info!("🔗 TXID: {}", txid);
-        }
-        
-        // Step 7: Handle tracing if enabled
-        let traces = if params.trace_enabled {
-            self.trace_reveal_transaction(&txid, params).await?
-        } else {
-            None
-        };
-        
-        Ok(EnhancedExecuteResult {
-            commit_txid: None,
-            reveal_txid: txid,
-            commit_fee: None,
-            reveal_fee: fee,
-            inputs_used: selected_utxos.into_iter().map(|o| o.to_string()).collect(),
-            outputs_created: tx.output.iter().map(|o| o.script_pubkey.to_string()).collect(),
-            traces,
-        })
+        let unsigned_tx = &psbt.unsigned_tx;
+        let analysis = crate::transaction::analysis::analyze_transaction(unsigned_tx);
+
+        Ok(ExecutionState::ReadyToSign(ReadyToSignTx {
+            psbt,
+            analysis,
+            fee,
+        }))
     }
 
     pub fn validate_protostones(&self, protostones: &[ProtostoneSpec], num_outputs: usize) -> Result<()> {
         log::info!("Validating {} protostones against {} outputs", protostones.len(), num_outputs);
         
         for (i, protostone) in protostones.iter().enumerate() {
-            // Validate that no protostone refers to a pN value <= current protostone index
             for edict in &protostone.edicts {
                 if let OutputTarget::Protostone(p) = edict.target {
                     if p <= i as u32 {
@@ -366,7 +278,6 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
                 }
             }
             
-            // Validate that Bitcoin transfers don't target protostones
             if let Some(bitcoin_transfer) = &protostone.bitcoin_transfer {
                 if matches!(bitcoin_transfer.target, OutputTarget::Protostone(_)) {
                     return Err(DeezelError::Validation(format!(
@@ -376,7 +287,6 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
                 }
             }
             
-            // Validate output targets are within bounds
             for edict in &protostone.edicts {
                 match edict.target {
                     OutputTarget::Output(v) => {
@@ -395,9 +305,7 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
                             )));
                         }
                     },
-                    OutputTarget::Split => {
-                        // Split is always valid
-                    }
+                    OutputTarget::Split => {}
                 }
             }
         }
@@ -411,7 +319,7 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
             log::info!("Sourcing UTXOs from: {:?}", addrs);
         }
 
-        let utxos = self.provider.get_utxos(true, from_addresses.clone()).await?; // Include frozen to check reasons
+        let utxos = self.provider.get_utxos(true, from_addresses.clone()).await?;
         log::debug!("Found {} total wallet UTXOs from specified sources", utxos.len());
 
         let spendable_utxos: Vec<(OutPoint, UtxoInfo)> = utxos.into_iter()
@@ -439,8 +347,6 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
         log::info!("Need {} sats Bitcoin and {} different alkanes tokens", bitcoin_needed, alkanes_needed.len());
 
         let mut bitcoin_collected = 0u64;
-        // TODO: Implement alkanes balance checking for each UTXO
-        // For now, we just select enough UTXOs to cover the Bitcoin requirement.
 
         for (outpoint, utxo) in spendable_utxos {
             if bitcoin_collected < bitcoin_needed {
@@ -480,10 +386,8 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
         }
 
         let amount_per_recipient = if total_explicit_bitcoin > 0 {
-            // Distribute the explicit amount among recipients
             total_explicit_bitcoin / to_addresses.len() as u64
         } else {
-            // No explicit amount, use dust
             DUST_LIMIT
         };
 
@@ -491,7 +395,6 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
             log::debug!("Parsing to_address in create_outputs: '{}'", addr_str);
             let address = Address::from_str(addr_str)?.require_network(network)?;
             outputs.push(TxOut {
-                // Ensure each output is at least DUST_LIMIT
                 value: bitcoin::Amount::from_sat(amount_per_recipient.max(DUST_LIMIT)),
                 script_pubkey: address.script_pubkey(),
             });
@@ -501,7 +404,7 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
             log::debug!("Parsing change_address in create_outputs: '{}'", change_addr_str);
             let address = Address::from_str(change_addr_str)?.require_network(network)?;
             outputs.push(TxOut {
-                value: bitcoin::Amount::from_sat(0), // Placeholder, will be set later
+                value: bitcoin::Amount::from_sat(0),
                 script_pubkey: address.script_pubkey(),
             });
         }
@@ -526,7 +429,7 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
                 let amount = edict_spec.amount as u128;
                 let output = match edict_spec.target {
                     OutputTarget::Output(v) => v,
-                    _ => 0, // Other cases not handled yet
+                    _ => 0,
                 };
                 current_edicts.push(ordinals::Edict { id, amount, output });
             }
@@ -541,7 +444,7 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
             };
 
             all_protostones.push(Protostone {
-                protocol_tag: 1, // ALKANES protocol tag
+                protocol_tag: 1,
                 message,
                 edicts: into_protostone_edicts(current_edicts),
                 burn: None,
@@ -582,19 +485,15 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
         Ok(runestone.encipher())
     }
 
-    async fn build_transaction(
+    async fn build_psbt_and_fee(
         &mut self,
         utxos: Vec<OutPoint>,
         mut outputs: Vec<TxOut>,
         runestone_script: ScriptBuf,
         fee_rate: Option<f32>
-    ) -> Result<(Transaction, u64)> {
-        log::info!("Building and signing transaction using wallet provider");
-    
-        use bitcoin::psbt::Psbt;
+    ) -> Result<(Psbt, u64)> {
         use bitcoin::transaction::Version;
     
-        // Add OP_RETURN output if a runestone is present
         if !runestone_script.is_empty() {
             outputs.push(TxOut {
                 value: bitcoin::Amount::ZERO,
@@ -602,9 +501,6 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
             });
         }
     
-        // --- Fee Calculation and Output Adjustment (BEFORE SIGNING) ---
-    
-        // 1. Get total input value by fetching each UTXO
         let mut total_input_value = 0;
         let mut input_txouts = Vec::new();
         for outpoint in &utxos {
@@ -614,7 +510,6 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
             input_txouts.push(utxo);
         }
     
-        // 2. Create a temporary transaction to estimate size
         let mut temp_tx = Transaction {
             version: Version::TWO,
             lock_time: bitcoin::absolute::LockTime::ZERO,
@@ -622,31 +517,27 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
                 previous_output: *outpoint,
                 script_sig: ScriptBuf::new(),
                 sequence: bitcoin::Sequence::ENABLE_RBF_NO_LOCKTIME,
-                witness: bitcoin::Witness::new(), // Placeholder for witness
+                witness: bitcoin::Witness::new(),
             }).collect(),
             output: outputs.clone(),
         };
     
-        // Add placeholder witness for size estimation (P2TR key-path spend is common)
         for input in &mut temp_tx.input {
-            input.witness.push(&[0u8; 65]); // 64-byte signature + 1-byte sighash type
+            input.witness.push(&[0u8; 65]);
         }
     
-        // 3. Calculate and cap the fee
         let fee_rate_sat_vb = fee_rate.unwrap_or(5.0);
         let estimated_fee = (fee_rate_sat_vb * temp_tx.vsize() as f32).ceil() as u64;
         let capped_fee = estimated_fee.min(MAX_FEE_SATS);
         log::info!("Estimated fee: {}, Capped fee: {}", estimated_fee, capped_fee);
     
-        // 4. Adjust outputs
         let total_output_value_sans_change: u64 = outputs.iter()
-            .filter(|o| o.value.to_sat() > 0) // Exclude the placeholder change output
+            .filter(|o| o.value.to_sat() > 0)
             .map(|o| o.value.to_sat())
             .sum();
     
         let change_value = total_input_value.saturating_sub(total_output_value_sans_change).saturating_sub(capped_fee);
     
-        // Find and update the change output, or the last output if no explicit change
         if let Some(change_output) = outputs.iter_mut().find(|o| o.value.to_sat() == 0 && !o.script_pubkey.is_op_return()) {
             change_output.value = bitcoin::Amount::from_sat(change_value);
         } else if let Some(last_output) = outputs.iter_mut().last() {
@@ -655,9 +546,6 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
              }
         }
     
-        // --- PSBT Creation and Signing ---
-    
-        // 5. Create the final PSBT with correct output values
         let mut psbt = Psbt::from_unsigned_tx(bitcoin::Transaction {
             version: Version::TWO,
             lock_time: bitcoin::absolute::LockTime::ZERO,
@@ -667,23 +555,22 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
                 sequence: bitcoin::Sequence::ENABLE_RBF_NO_LOCKTIME,
                 witness: bitcoin::Witness::new(),
             }).collect(),
-            output: outputs, // Use the adjusted outputs
+            output: outputs,
         })?;
     
-        // 6. Configure inputs for signing
         for (i, utxo) in input_txouts.iter().enumerate() {
             psbt.inputs[i].witness_utxo = Some(utxo.clone());
-            
             if utxo.script_pubkey.is_p2tr() {
                 let internal_key = self.provider.get_internal_key().await?;
                 psbt.inputs[i].tap_internal_key = Some(internal_key);
             }
         }
         
-        // 7. Sign the PSBT
+        Ok((psbt, capped_fee))
+    }
+
+    async fn sign_and_finalize_psbt(&mut self, mut psbt: bitcoin::psbt::Psbt) -> Result<Transaction> {
         let signed_psbt = self.provider.sign_psbt(&mut psbt).await?;
-        
-        // 8. Finalize the transaction
         let mut tx = signed_psbt.clone().extract_tx()?;
         for (i, psbt_input) in signed_psbt.inputs.iter().enumerate() {
             if let Some(tap_key_sig) = &psbt_input.tap_key_sig {
@@ -692,17 +579,15 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
                 tx.input[i].witness = final_script_witness.clone();
             }
         }
-        
-        Ok((tx, capped_fee))
+        Ok(tx)
     }
 
-    async fn build_commit_transaction(
+    async fn build_commit_psbt(
         &mut self,
         funding_utxos: Vec<OutPoint>,
         commit_output: TxOut,
         fee_rate: Option<f32>,
-    ) -> Result<(Transaction, u64)> {
-        // 1. Get total input value
+    ) -> Result<(bitcoin::psbt::Psbt, u64)> {
         let mut total_input_value = 0;
         let mut input_txouts = Vec::new();
         for outpoint in &funding_utxos {
@@ -712,7 +597,6 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
             input_txouts.push(utxo);
         }
     
-        // 2. Create a temporary transaction to estimate size
         let change_address_str = WalletProvider::get_address(self.provider).await?;
         let change_address = Address::from_str(&change_address_str)?.require_network(self.provider.get_network())?;
         let temp_change_output = TxOut { value: bitcoin::Amount::from_sat(0), script_pubkey: change_address.script_pubkey() };
@@ -730,24 +614,20 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
             output: temp_outputs,
         };
         for input in &mut temp_tx_for_size.input {
-            input.witness.push(&[0u8; 65]); // Placeholder witness
+            input.witness.push(&[0u8; 65]);
         }
     
-        // 3. Calculate fee
         let fee_rate_sat_vb = fee_rate.unwrap_or(1.0);
         let fee = (fee_rate_sat_vb * temp_tx_for_size.vsize() as f32).ceil() as u64;
     
-        // 4. Calculate change
         let change_value = total_input_value.saturating_sub(commit_output.value.to_sat()).saturating_sub(fee);
-        if change_value < 546 { // Dust threshold
+        if change_value < 546 {
             return Err(DeezelError::Wallet("Not enough funds for commit and change".to_string()));
         }
     
-        // 5. Create final outputs
         let final_change_output = TxOut { value: bitcoin::Amount::from_sat(change_value), script_pubkey: change_address.script_pubkey() };
         let final_outputs = vec![commit_output, final_change_output];
     
-        // 6. Build and sign PSBT
         let unsigned_tx = Transaction {
             version: bitcoin::transaction::Version::TWO,
             lock_time: bitcoin::absolute::LockTime::ZERO,
@@ -768,210 +648,51 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
             }
         }
     
-        let signed_psbt = self.provider.sign_psbt(&mut psbt).await?;
-        let mut tx = signed_psbt.clone().extract_tx()?;
-        // Finalize witness
-        for (i, psbt_input) in signed_psbt.inputs.iter().enumerate() {
-            if let Some(tap_key_sig) = &psbt_input.tap_key_sig {
-                tx.input[i].witness = bitcoin::Witness::p2tr_key_spend(tap_key_sig);
-            } else if let Some(final_script_witness) = &psbt_input.final_script_witness {
-                tx.input[i].witness = final_script_witness.clone();
-            }
-        }
-    
-        Ok((tx, fee))
+        Ok((psbt, fee))
     }
     
-    /// Builds the reveal transaction with script-path spending.
-    ///
-    /// This function constructs the reveal transaction, which spends the commit
-    /// output and includes the envelope data in the witness. It also handles
-    /// the creation of the runestone and the final outputs.
-    ///
-    /// CRITICAL FIX: Based on reference implementation pattern for commit/reveal transactions
-    /// - Manually creates commit UTXO instead of fetching from provider
-    /// - Separates script-path signing (commit input) from key-path signing (wallet inputs)
-    /// - Uses proper prevouts handling for multiple inputs
-    async fn build_script_path_reveal_transaction(
+    async fn build_reveal_psbt(
         &mut self,
-        all_inputs: Vec<OutPoint>,
-        mut outputs: Vec<TxOut>,
-        runestone_script: ScriptBuf,
-        fee_rate: Option<f32>,
+        params: &EnhancedExecuteParams,
         envelope: &AlkanesEnvelope,
+        commit_outpoint: OutPoint,
         commit_output_value: u64,
-    ) -> Result<(Transaction, u64)> {
-        log::info!("Building script-path reveal transaction with {} inputs", all_inputs.len());
-        use bitcoin::psbt::Psbt;
+    ) -> Result<(bitcoin::psbt::Psbt, u64)> {
+        self.validate_protostones(&params.protostones, params.to_addresses.len())?;
 
-        let op_return_output = TxOut {
-            value: bitcoin::Amount::ZERO,
-            script_pubkey: runestone_script,
-        };
-        outputs.push(op_return_output);
+        let mut selected_utxos = vec![commit_outpoint];
+        let mut total_bitcoin_needed = params.to_addresses.len() as u64 * DUST_LIMIT;
+        for req in &params.input_requirements {
+            if let InputRequirement::Bitcoin { amount } = req {
+                total_bitcoin_needed += amount;
+            }
+        }
+        total_bitcoin_needed += 50_000;
 
-        // Create transaction structure first
-        let mut tx = bitcoin::Transaction {
-            version: bitcoin::transaction::Version::TWO,
-            lock_time: bitcoin::absolute::LockTime::ZERO,
-            input: all_inputs.iter().map(|outpoint| bitcoin::TxIn {
-                previous_output: *outpoint,
-                script_sig: ScriptBuf::new(),
-                sequence: bitcoin::Sequence::ENABLE_RBF_NO_LOCKTIME,
-                witness: bitcoin::Witness::new(),
-            }).collect(),
-            output: outputs,
-        };
+        if commit_output_value < total_bitcoin_needed {
+            let additional_needed = total_bitcoin_needed - commit_output_value;
+            let additional_reqs = vec![InputRequirement::Bitcoin { amount: additional_needed }];
+            let additional_utxos = self.select_utxos(&additional_reqs, &params.from_addresses).await?;
+            selected_utxos.extend(additional_utxos);
+        }
 
+        let outputs = self.create_outputs(&params.to_addresses, &params.change_address, &params.input_requirements).await?;
+        let runestone_script = self.construct_runestone(&params.protostones, outputs.len())?;
+        
+        let (mut psbt, fee) = self.build_psbt_and_fee(selected_utxos, outputs, runestone_script, params.fee_rate).await?;
+        
         let internal_key = self.provider.get_internal_key().await?;
+        let reveal_script = envelope.build_reveal_script();
+        let (spend_info, _) = self.create_taproot_spend_info_for_envelope(envelope, internal_key).await?;
+        psbt.inputs[0].tap_scripts.insert(
+            spend_info.control_block(&(reveal_script.clone(), bitcoin::taproot::LeafVersion::TapScript)).unwrap(),
+            (reveal_script, bitcoin::taproot::LeafVersion::TapScript)
+        );
 
-        // CRITICAL FIX: Build ALL prevouts manually to match reference implementation
-        // This ensures proper sighash calculation for taproot script-path spending
-        let mut all_prevouts = Vec::new();
-        
-        for (i, outpoint) in all_inputs.iter().enumerate() {
-            if i == 0 {
-                // CRITICAL FIX: First input is the commit output - create it manually from known values
-                // This matches the reference implementation where commit UTXO is created locally
-                log::info!("Creating commit UTXO manually with value {} sats", commit_output_value);
-                let commit_address = self.create_commit_address_for_envelope(envelope, internal_key).await?;
-                let commit_utxo = TxOut {
-                    value: bitcoin::Amount::from_sat(commit_output_value),
-                    script_pubkey: commit_address.script_pubkey(),
-                };
-                all_prevouts.push(commit_utxo);
-                log::info!("Added commit prevout for input {}: {} sats", i, commit_output_value);
-            } else {
-                // Additional inputs are regular wallet UTXOs
-                log::info!("Fetching wallet UTXO for input {}: {}:{}", i, outpoint.txid, outpoint.vout);
-                let utxo_info = self.provider.get_utxo(outpoint).await?
-                    .ok_or_else(|| DeezelError::Wallet(format!("Wallet UTXO not found: {}", outpoint)))?;
-                all_prevouts.push(utxo_info.clone());
-                log::info!("Added wallet prevout for input {}: {} sats", i, utxo_info.value.to_sat());
-            }
-        }
-
-        log::info!("Using Prevouts::All with {} prevouts for sighash calculation", all_prevouts.len());
-
-        // CRITICAL FIX: Handle signing differently for commit input vs wallet inputs
-        // Based on reference implementation pattern at lines 2250-2320
-        
-        // STEP 1: Manually create the script-path signature for the commit input (index 0)
-        if !all_inputs.is_empty() {
-            let reveal_script = envelope.build_reveal_script();
-            let (_, control_block) = self.create_taproot_spend_info_for_envelope(envelope, internal_key).await?;
-            let signature = self.create_taproot_script_signature(&tx, 0, reveal_script.as_bytes(), &control_block.serialize(), &all_prevouts).await?;
-            tx.input[0].witness = envelope.create_complete_witness(&signature, control_block)?;
-            log::info!("✅ Created script-path witness for commit input with {} items", tx.input[0].witness.len());
-        }
-        
-        // STEP 2: Sign additional wallet inputs (if any) using the provider
-        if all_inputs.len() > 1 {
-            log::info!("Signing {} additional wallet inputs using provider", all_inputs.len() - 1);
-            
-            // Create a separate PSBT with only the wallet inputs for provider signing
-            let wallet_inputs = all_inputs[1..].to_vec();
-            if !wallet_inputs.is_empty() {
-                let mut wallet_psbt = Psbt::from_unsigned_tx(bitcoin::Transaction {
-                    version: bitcoin::transaction::Version::TWO,
-                    lock_time: bitcoin::absolute::LockTime::ZERO,
-                    input: wallet_inputs.iter().map(|outpoint| bitcoin::TxIn {
-                        previous_output: *outpoint,
-                        script_sig: ScriptBuf::new(),
-                        sequence: bitcoin::Sequence::ENABLE_RBF_NO_LOCKTIME,
-                        witness: bitcoin::Witness::new(),
-                    }).collect(),
-                    output: tx.output.clone(),
-                })?;
-                
-                // Configure the wallet inputs for signing
-                for (i, outpoint) in wallet_inputs.iter().enumerate() {
-                    let utxo_info = self.provider.get_utxo(outpoint).await?
-                        .ok_or_else(|| DeezelError::Wallet(format!("Wallet UTXO not found: {}", outpoint)))?;
-                    wallet_psbt.inputs[i].witness_utxo = Some(utxo_info.clone());
-                    if utxo_info.script_pubkey.is_p2tr() {
-                        wallet_psbt.inputs[i].tap_internal_key = Some(internal_key);
-                    }
-                }
-                
-                // Sign the wallet inputs using provider
-                let signed_wallet_psbt = self.provider.sign_psbt(&mut wallet_psbt).await?;
-                
-                // Apply the wallet input witnesses to the main transaction
-                for (i, psbt_input) in signed_wallet_psbt.inputs.iter().enumerate() {
-                    let tx_input_index = i + 1; // Wallet inputs start at index 1
-                    if let Some(tap_key_sig) = &psbt_input.tap_key_sig {
-                        tx.input[tx_input_index].witness = bitcoin::Witness::p2tr_key_spend(tap_key_sig);
-                        log::info!("Applied taproot key-path witness to input {}", tx_input_index);
-                    } else if let Some(final_script_witness) = &psbt_input.final_script_witness {
-                        tx.input[tx_input_index].witness = final_script_witness.clone();
-                        log::info!("Applied final script witness to input {}", tx_input_index);
-                    }
-                }
-                
-                log::info!("✅ Applied wallet input witnesses to {} inputs", wallet_inputs.len());
-            }
-        }
-
-        let fee_rate_sat_vb = fee_rate.unwrap_or(5.0);
-        let fee = (fee_rate_sat_vb * tx.vsize() as f32).ceil() as u64;
-
-        // Cap the fee to avoid "absurdly high fee rate" errors, especially for large witness transactions
-        let capped_fee = fee.min(MAX_FEE_SATS);
-        if fee > capped_fee {
-            log::warn!("Reveal transaction fee {} was capped to {}", fee, capped_fee);
-        }
-
-        // Adjust transaction outputs to match the capped fee
-        let total_input_value: u64 = all_prevouts.iter().map(|utxo| utxo.value.to_sat()).sum();
-        let total_output_value: u64 = tx.output.iter().map(|out| out.value.to_sat()).sum();
-        let current_fee = total_input_value.saturating_sub(total_output_value);
-
-        if current_fee > capped_fee {
-            let fee_difference = current_fee - capped_fee;
-            // Find a suitable change output to adjust. We need to *increase* the output value to *decrease* the fee.
-            if let Some(change_output) = tx.output.iter_mut().rfind(|o| !o.script_pubkey.is_op_return()) {
-                let new_value = change_output.value.to_sat() + fee_difference;
-                change_output.value = bitcoin::Amount::from_sat(new_value);
-                log::info!("Adjusted change output by +{} to meet capped fee", fee_difference);
-            } else {
-                log::warn!("Could not find a suitable output to adjust for fee capping in reveal tx.");
-            }
-        } else if capped_fee > current_fee {
-            let fee_difference = capped_fee - current_fee;
-            // Find a suitable change output to adjust. We need to *decrease* the output value to *increase* the fee.
-            if let Some(change_output) = tx.output.iter_mut().rfind(|o| !o.script_pubkey.is_op_return()) {
-                 if change_output.value.to_sat() > fee_difference {
-                    let new_value = change_output.value.to_sat() - fee_difference;
-                    change_output.value = bitcoin::Amount::from_sat(new_value);
-                    log::info!("Adjusted change output by -{} to meet capped fee", fee_difference);
-                 } else {
-                    log::warn!("Change output would be dust after fee adjustment, leaving as is.");
-                 }
-            } else {
-                log::warn!("Could not find a suitable output to adjust for fee capping in reveal tx (or change would be dust).");
-            }
-        }
-
-        log::info!("✅ Successfully built script-path reveal transaction with proper signing separation");
-        log::info!("Transaction: {} inputs, {} outputs, fee: {} sats", tx.input.len(), tx.output.len(), capped_fee);
-
-        // Final dust check
-        for output in &mut tx.output {
-            if !output.script_pubkey.is_op_return() && output.value.to_sat() < DUST_LIMIT {
-                log::warn!("Output value {} is below dust limit, adjusting to {}", output.value.to_sat(), DUST_LIMIT);
-                output.value = bitcoin::Amount::from_sat(DUST_LIMIT);
-            }
-        }
-
-        Ok((tx, capped_fee))
+        Ok((psbt, fee))
     }
 
     /// Creates the taproot spend info and control block for an envelope.
-    ///
-    /// This is a crucial step in creating the commit transaction. The spend info
-    /// contains the necessary details for spending the taproot output, and the
-    /// control block is required for the script-path spend in the reveal transaction.
     async fn create_taproot_spend_info_for_envelope(
         &self,
         envelope: &AlkanesEnvelope,
@@ -996,15 +717,6 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
         Ok((taproot_spend_info, control_block))
     }
 
-    /// Creates a Schnorr signature for a P2TR script-path spend.
-    ///
-    /// This function generates the signature required to spend a taproot output
-    /// via the script path. It constructs the correct sighash message and uses
-    /// the provider to sign it.
-    ///
-    /// CRITICAL FIX: Based on reference implementation pattern at lines 2254-2320
-    /// - Uses Prevouts::All for proper taproot sighash calculation with multiple inputs
-    /// - Handles script-path spending for commit transactions correctly
     pub async fn create_taproot_script_signature(
         &self,
         tx: &Transaction,
@@ -1018,9 +730,6 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
 
         log::info!("Creating taproot script-path signature for input {}", input_index);
         
-        // CRITICAL FIX: For taproot sighash calculation with DEFAULT sighash type,
-        // we MUST provide ALL prevouts, not just the single input being signed.
-        // This fixes the error: "single prevout provided but all prevouts are needed without ANYONECANPAY"
         let prevouts_len = prevouts.len();
         let prevouts_all = Prevouts::All(prevouts);
         
@@ -1028,11 +737,9 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
 
         let mut sighash_cache = SighashCache::new(tx);
 
-        // Parse the script for sighash calculation
         let script_buf = ScriptBuf::from(script.to_vec());
         let leaf_hash = taproot::TapLeafHash::from_script(&script_buf, taproot::LeafVersion::TapScript);
 
-        // Compute taproot script-path sighash
         let sighash = sighash_cache
             .taproot_script_spend_signature_hash(
                 input_index,
@@ -1044,16 +751,13 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
 
         log::info!("Computed taproot script-path sighash for input {}", input_index);
 
-        // Sign the sighash using the provider's taproot script spend method
         let signature = self.provider.sign_taproot_script_spend(sighash.into()).await?;
         
-        // Create taproot signature with sighash type
         let taproot_signature = taproot::Signature {
             signature,
             sighash_type: TapSighashType::Default,
         };
 
-        // Convert to bytes
         let signature_bytes = taproot_signature.to_vec();
         
         log::info!("✅ Created taproot script-path signature: {} bytes", signature_bytes.len());
@@ -1062,10 +766,6 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
     }
 
     /// Traces the reveal transaction to get the results of protostone execution.
-    ///
-    /// This function handles the post-broadcast logic, including mining blocks
-    /// on regtest, waiting for synchronization with various services, and then
-    /// calling the `trace_outpoint` provider method for each protostone.
     async fn trace_reveal_transaction(&self, txid: &str, params: &EnhancedExecuteParams) -> Result<Option<Vec<serde_json::Value>>> {
         log::info!("Starting enhanced transaction tracing for reveal transaction: {}", txid);
         
@@ -1086,10 +786,7 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
         }
 
         let mut traces = Vec::new();
-        // Correctly trace each protostone based on its virtual output index.
-        // The virtual outputs for protostones start after the real transaction outputs.
         for (protostone_idx, _) in params.protostones.iter().enumerate() {
-            // The vout to trace is the number of real outputs + the protostone's index.
             let trace_vout = (tx.output.len() + protostone_idx) as u32;
             
             log::info!("Tracing protostone #{} at virtual outpoint: {}:{}", protostone_idx, txid, trace_vout);
@@ -1120,13 +817,9 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
     }
 
     /// Mines blocks on the regtest network if the provider is configured for it.
-    ///
-    /// This is a utility function to ensure transactions are confirmed during
-    /// testing or local development on a regtest network.
     async fn mine_blocks_if_regtest(&self, params: &EnhancedExecuteParams) -> Result<()> {
         if self.provider.get_network() == bitcoin::Network::Regtest {
             log::info!("Mining blocks on regtest network...");
-            // Add a delay to allow the node to process transactions in the mempool
             sleep(Duration::from_secs(2)).await;
             let address = if let Some(change_address) = &params.change_address {
                 change_address.clone()
@@ -1139,9 +832,6 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
     }
 
     /// Waits for a transaction to be mined.
-    ///
-    /// This function polls the provider's `get_tx_status` method until the
-    /// transaction is confirmed.
     async fn wait_for_transaction_mined(&self, txid: &str, _params: &EnhancedExecuteParams) -> Result<()> {
         loop {
             match self.provider.get_tx_status(txid).await {
@@ -1150,16 +840,13 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
                         return Ok(());
                     }
                 }
-                Err(_) => { /* ignore and retry */ }
+                Err(_) => {}
             }
             self.provider.sleep_ms(1000).await;
         }
     }
 
     /// Waits for the metashrew indexer to be synchronized with the Bitcoin node.
-    ///
-    /// This is essential for accurate tracing, as the metashrew service provides
-    /// the state required to interpret the transaction's effects.
     async fn wait_for_metashrew_sync_enhanced(&self, _params: &EnhancedExecuteParams) -> Result<()> {
         loop {
             let bitcoin_height = self.provider.get_block_count().await?;
@@ -1182,7 +869,6 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
         }
 
         if !has_envelope && has_cellpacks {
-            // This is a valid execution of an existing contract
             return Ok(());
         }
         
@@ -1196,9 +882,6 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
     }
 
     /// Waits for the Esplora indexer to be synchronized with the Bitcoin node.
-    ///
-    /// This ensures that any API calls to an Esplora-based service will have
-    /// access to the latest block data.
     async fn wait_for_esplora_sync_enhanced(&self, _params: &EnhancedExecuteParams) -> Result<()> {
         loop {
             let bitcoin_height = self.provider.get_block_count().await?;
@@ -1224,13 +907,13 @@ mod tests {
         let addr1 = WalletProvider::get_address(&provider).await.unwrap();
         let executor = EnhancedAlkanesExecutor::new(&mut provider);
         let to_addresses = vec![addr1.clone(), addr1];
-        let input_requirements = vec![]; // No explicit bitcoin requirement
+        let input_requirements = vec![];
 
         let outputs = executor.create_outputs(&to_addresses, &None, &input_requirements).await.unwrap();
 
         assert_eq!(outputs.len(), 2);
         for output in outputs {
-            assert_eq!(output.value, Amount::from_sat(546)); // DUST_LIMIT
+            assert_eq!(output.value, Amount::from_sat(546));
         }
     }
 
@@ -1245,7 +928,6 @@ mod tests {
         let outputs = executor.create_outputs(&to_addresses, &None, &input_requirements).await.unwrap();
 
         assert_eq!(outputs.len(), 2);
-        // 20000 sats / 2 addresses = 10000 sats each
         for output in outputs {
             assert_eq!(output.value, Amount::from_sat(10000));
         }
