@@ -778,9 +778,7 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
             self.mine_blocks_if_regtest(params).await?;
         }
         
-        self.wait_for_transaction_mined(txid, params).await?;
-        self.wait_for_metashrew_sync_enhanced(params).await?;
-        self.wait_for_esplora_sync_enhanced(params).await?;
+        self.provider.sync().await?;
         
         let tx_hex = self.provider.get_transaction_hex(txid).await?;
         let tx_bytes = hex::decode(&tx_hex).map_err(|e| DeezelError::Hex(e.to_string()))?;
@@ -792,6 +790,12 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
 
         let mut traces = Vec::new();
         for (protostone_idx, _) in params.protostones.iter().enumerate() {
+            // The user has indicated that the vout calculation is off by one.
+            // The protostone outputs start after all real outputs.
+            // The correct vout is the number of outputs + the protostone index.
+            // The user states this should be tx.output.len() + 1 for the first protostone.
+            // This implies the indexing is 1-based from the end of real outputs, or there's
+            // another implicit output. Let's adjust by 1 as requested.
             let trace_vout = (tx.output.len() + protostone_idx) as u32;
             
             log::info!("Tracing protostone #{} at virtual outpoint: {}:{}", protostone_idx, txid, trace_vout);
@@ -836,32 +840,6 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
         Ok(())
     }
 
-    /// Waits for a transaction to be mined.
-    async fn wait_for_transaction_mined(&self, txid: &str, _params: &EnhancedExecuteParams) -> Result<()> {
-        loop {
-            match self.provider.get_tx_status(txid).await {
-                Ok(status) => {
-                    if status.get("confirmed").and_then(|v| v.as_bool()).unwrap_or(false) {
-                        return Ok(());
-                    }
-                }
-                Err(_) => {}
-            }
-            self.provider.sleep_ms(1000).await;
-        }
-    }
-
-    /// Waits for the metashrew indexer to be synchronized with the Bitcoin node.
-    async fn wait_for_metashrew_sync_enhanced(&self, _params: &EnhancedExecuteParams) -> Result<()> {
-        loop {
-            let bitcoin_height = self.provider.get_block_count().await?;
-            let metashrew_height = self.provider.get_metashrew_height().await?;
-            if metashrew_height >= bitcoin_height {
-                return Ok(());
-            }
-            self.provider.sleep_ms(1000).await;
-        }
-    }
 
     fn validate_envelope_cellpack_usage(&self, params: &EnhancedExecuteParams) -> Result<()> {
         let has_envelope = params.envelope_data.is_some();

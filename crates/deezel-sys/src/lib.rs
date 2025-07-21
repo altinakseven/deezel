@@ -1133,29 +1133,6 @@ impl SystemAlkanes for SystemDeezel {
                             provider.sync().await?;
                             println!("✅ Backends synchronized.");
 
-                            if execute_params.trace_enabled {
-                                println!("🔎 Tracing protostone execution results...");
-
-                                // 1. Get the reveal transaction to find out the number of outputs
-                                let reveal_tx_hex = provider.get_tx_hex(&result.reveal_txid).await?;
-                                let reveal_tx: bitcoin::Transaction = bitcoin::consensus::deserialize(&hex::decode(reveal_tx_hex)?)?;
-                                let vout_offset = reveal_tx.output.len();
-
-                                // 2. Iterate through protostones and trace each one
-                                for (i, _) in execute_params.protostones.iter().enumerate() {
-                                    let vout = (vout_offset + i) as u32;
-                                    println!("\n📊 Tracing protostone #{} (outpoint: {}:{})", i, result.reveal_txid, vout);
-                                    
-                                    match provider.trace_outpoint(&result.reveal_txid, vout).await {
-                                        Ok(trace_result) => {
-                                            println!("{}", serde_json::to_string_pretty(&trace_result)?);
-                                        }
-                                        Err(e) => {
-                                            println!("❌ Error tracing protostone at vout {}: {}", vout, e);
-                                        }
-                                    }
-                                }
-                            }
                             
                             break;
                         }
