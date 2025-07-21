@@ -68,6 +68,9 @@ pub mod esplora;
 pub mod bitcoind;
 pub mod ord;
 
+#[cfg(any(test, feature = "test-utils"))]
+pub mod mock_provider;
+
 // Re-export key types and traits for convenience
 pub use traits::*;
 pub use network::NetworkParams;

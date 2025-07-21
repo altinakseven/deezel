@@ -1066,7 +1066,7 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
     /// This function handles the post-broadcast logic, including mining blocks
     /// on regtest, waiting for synchronization with various services, and then
     /// calling the `trace_outpoint` provider method for each protostone.
-    async fn trace_reveal_transaction(&self, txid: &str, params: &EnhancedExecuteParams) -> Result<Option<Vec<crate::trace::types::SerializableTrace>>> {
+    async fn trace_reveal_transaction(&self, txid: &str, params: &EnhancedExecuteParams) -> Result<Option<Vec<serde_json::Value>>> {
         log::info!("Starting enhanced transaction tracing for reveal transaction: {}", txid);
         
         if params.mine_enabled {
@@ -1096,8 +1096,12 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
 
             match self.provider.trace_outpoint(txid, trace_vout).await {
                 Ok(trace_result) => {
-                    if trace_result.events.is_empty() {
-                        log::warn!("Trace for {}:{} came back empty.", txid, trace_vout);
+                    if let Some(events) = trace_result.get("events").and_then(|e| e.as_array()) {
+                        if events.is_empty() {
+                            log::warn!("Trace for {}:{} came back with an empty 'events' array.", txid, trace_vout);
+                        }
+                    } else {
+                        log::warn!("Trace for {}:{} did not contain an 'events' array.", txid, trace_vout);
                     }
                     log::debug!("Trace result for protostone #{}: {:?}", protostone_idx, trace_result);
                     traces.push(trace_result);
@@ -1211,7 +1215,7 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
 mod tests {
     use super::*;
     use crate::alkanes::execute::EnhancedAlkanesExecutor;
-    use crate::tests::mock_provider::MockProvider;
+    use crate::mock_provider::MockProvider;
     use bitcoin::{Amount, Network};
 
     #[tokio::test]

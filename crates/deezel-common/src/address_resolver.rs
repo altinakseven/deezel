@@ -607,7 +607,7 @@ impl MetashrewRpcProvider for StandaloneAddressResolver {
     async fn get_contract_meta(&self, _block: &str, _tx: &str) -> Result<serde_json::Value> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Metashrew RPC".to_string()))
     }
-    async fn trace_outpoint(&self, _txid: &str, _vout: u32) -> Result<crate::trace::types::SerializableTrace> {
+    async fn trace_outpoint(&self, _txid: &str, _vout: u32) -> Result<serde_json::Value> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Metashrew RPC".to_string()))
     }
     async fn get_spendables_by_address(&self, _address: &str) -> Result<serde_json::Value> {

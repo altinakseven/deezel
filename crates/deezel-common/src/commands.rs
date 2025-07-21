@@ -388,27 +388,23 @@ pub enum AlkanesCommands {
     },
     /// Execute alkanes smart contract with commit/reveal pattern
     Execute {
+        /// Input requirements (format: "B:amount" for Bitcoin, "block:tx:amount" for alkanes)
+        #[arg(long)]
+        inputs: String,
+        /// Recipient addresses or identifiers
+        #[arg(long)]
+        to: String,
+        /// Change address or identifier
+        #[arg(long)]
+        change: Option<String>,
         /// Fee rate in sat/vB
         #[arg(long)]
         fee_rate: Option<f32>,
-        /// Recipient addresses
-        #[arg(long, value_delimiter = ',')]
-        to_addresses: Vec<String>,
-        /// Addresses to source UTXOs from
-        #[arg(long, value_delimiter = ',')]
-        from_addresses: Option<Vec<String>>,
-        /// Change address
-        #[arg(long)]
-        change_address: Option<String>,
-        /// Input requirements (e.g., "B:10000", "123:45:1")
-        #[arg(long, value_delimiter = ',')]
-        input_requirements: Vec<String>,
-        /// Protostone specifications
-        #[arg(long, value_delimiter = ' ')]
-        protostones: Vec<String>,
-        /// Path to envelope data file
+        /// Envelope data file for commit/reveal pattern
         #[arg(long)]
         envelope: Option<String>,
+        /// Protostone specifications
+        protostones: String,
         /// Show raw JSON output
         #[arg(long)]
         raw: bool,
@@ -420,7 +416,7 @@ pub enum AlkanesCommands {
         mine: bool,
         /// Auto-confirm without user prompt
         #[arg(short = 'y', long)]
-        auto_confirm: bool,
+        yes: bool,
     },
     /// Get alkanes balance for an address
     Balance {

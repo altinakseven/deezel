@@ -1197,20 +1197,20 @@ impl MetashrewRpcProvider for ConcreteProvider {
         self.call(&self.metashrew_rpc_url, "metashrew_view", params, 1).await
     }
     
-    async fn trace_outpoint(&self, txid: &str, vout: u32) -> Result<crate::trace::types::SerializableTrace> {
-        let txid = bitcoin::Txid::from_str(txid)?;
+    async fn trace_outpoint(&self, txid: &str, vout: u32) -> Result<JsonValue> {
+        let txid_parsed = bitcoin::Txid::from_str(txid)?;
         let mut outpoint_pb = alkanes_pb::Outpoint::new();
-        outpoint_pb.txid = txid.to_raw_hash().to_byte_array().to_vec().into_iter().rev().collect::<Vec<u8>>();
+        outpoint_pb.txid = txid_parsed.to_raw_hash().to_byte_array().to_vec().into_iter().rev().collect::<Vec<u8>>();
         outpoint_pb.vout = vout;
 
         let hex_input = format!("0x{}", hex::encode(outpoint_pb.write_to_bytes()?));
         let response_bytes = self.metashrew_view_call("trace", &hex_input).await?;
         if response_bytes.is_empty() {
-            return Ok(Default::default());
+            return Ok(JsonValue::Null);
         }
-        let trace_pb = alkanes_pb::AlkanesTrace::parse_from_bytes(&response_bytes)?;
-        let trace: alkanes_support::trace::Trace = trace_pb.into();
-        Ok(trace.into())
+        // The response from `trace` is already JSON, so we parse it directly.
+        let trace_json: JsonValue = serde_json::from_slice(&response_bytes)?;
+        Ok(trace_json)
     }
     
     async fn get_spendables_by_address(&self, address: &str) -> Result<serde_json::Value> {

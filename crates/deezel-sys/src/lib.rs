@@ -997,21 +997,20 @@ impl SystemAlkanes for SystemDeezel {
         let res: anyhow::Result<()> = match command {
             AlkanesCommands::Execute {
                 fee_rate,
-                to_addresses,
-                from_addresses,
-                change_address,
-                input_requirements,
+                inputs,
+                to,
+                change,
                 protostones,
                 envelope,
                 raw,
                 trace,
                 mine,
-                auto_confirm,
+                yes,
             } => {
                 log::info!("🚀 Starting enhanced alkanes execute command");
 
                 // Resolve change address if provided
-                let resolved_change = if let Some(change_addr) = change_address {
+                let resolved_change = if let Some(change_addr) = change {
                     Some(provider.resolve_all_identifiers(&change_addr).await?)
                 } else {
                     None
@@ -1028,52 +1027,34 @@ impl SystemAlkanes for SystemDeezel {
                     None
                 };
 
-                // Parse input requirements
+                // Parse input requirements from a single string
                 let parsed_input_requirements = {
                     use deezel_common::alkanes::parsing::parse_input_requirements;
-                    let mut all_reqs = vec![];
-                    for req_str in &input_requirements {
-                        let parsed = parse_input_requirements(req_str)
-                            .map_err(|e| anyhow!("Failed to parse input requirements: {}", e))?;
-                        all_reqs.extend(parsed);
-                    }
-                    all_reqs
+                    parse_input_requirements(&inputs)
+                        .map_err(|e| anyhow!("Failed to parse input requirements: {}", e))?
                 };
 
-                // Parse protostones
+                // Parse protostones from a single string
                 let parsed_protostones = {
                     use deezel_common::alkanes::parsing::parse_protostones;
-                    let mut all_specs = vec![];
-                    for proto_str in &protostones {
-                        let parsed = parse_protostones(proto_str)
-                            .map_err(|e| anyhow!("Failed to parse protostones: {}", e))?;
-                        all_specs.extend(parsed);
-                    }
-                    all_specs
+                    parse_protostones(&protostones)
+                        .map_err(|e| anyhow!("Failed to parse protostones: {}", e))?
                 };
 
-                // Resolve 'to' addresses
-                let mut resolved_to_addresses = Vec::new();
-                for addr in &to_addresses {
-                    resolved_to_addresses.push(provider.resolve_all_identifiers(addr).await?);
-                }
-
-                // Resolve 'from' addresses if provided
-                let resolved_from_addresses = if let Some(from_addrs) = from_addresses {
+                // Resolve 'to' addresses from a comma-separated string
+                let resolved_to_addresses = {
                     let mut resolved = Vec::new();
-                    for addr in from_addrs {
-                        resolved.push(provider.resolve_all_identifiers(&addr).await?);
+                    for addr in to.split(',') {
+                        resolved.push(provider.resolve_all_identifiers(addr.trim()).await?);
                     }
-                    Some(resolved)
-                } else {
-                    None
+                    resolved
                 };
- 
+
                  // Create enhanced execute parameters
                  let execute_params = deezel_common::alkanes::types::EnhancedExecuteParams {
                      fee_rate,
                      to_addresses: resolved_to_addresses,
-                     from_addresses: resolved_from_addresses,
+                     from_addresses: None, // This field is no longer provided by the CLI
                      change_address: resolved_change,
                      input_requirements: parsed_input_requirements,
                      protostones: parsed_protostones,
@@ -1081,7 +1062,7 @@ impl SystemAlkanes for SystemDeezel {
                     raw_output: raw,
                     trace_enabled: trace,
                     mine_enabled: mine,
-                    auto_confirm,
+                    auto_confirm: yes, // Use the new field name
                 };
 
                 match provider.execute(execute_params).await {
@@ -1101,8 +1082,7 @@ impl SystemAlkanes for SystemDeezel {
                             if let Some(traces) = result.traces {
                                 for (i, trace) in traces.iter().enumerate() {
                                     println!("\n📊 Trace for protostone #{}:", i + 1);
-                                    // TODO: Implement a proper pretty-printer for the Trace object
-                                    println!("{:#?}", trace);
+                                    println!("{}", serde_json::to_string_pretty(&trace).unwrap_or_else(|_| format!("{:#?}", trace)));
                                 }
                             }
                         }
@@ -1139,7 +1119,7 @@ impl SystemAlkanes for SystemDeezel {
                 } else {
                     println!("📊 Alkanes Transaction Trace");
                     println!("═══════════════════════════");
-                    println!("{:#?}", trace_result);
+                    println!("{}", serde_json::to_string_pretty(&trace_result)?);
                 }
                 Ok(())
             }

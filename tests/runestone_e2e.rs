@@ -3,8 +3,7 @@
 //! This module contains tests that execute the `deezel` binary to verify
 //! the functionality of the `runestone` subcommand, particularly the `analyze`
 //! command. These tests ensure that the output matches the expected format,
--//! both for raw JSON and pretty-printed text.
--
+//! both for raw JSON and pretty-printed text.
 use anyhow::Result;
 use assert_cmd::Command;
 use predicates::prelude::*;

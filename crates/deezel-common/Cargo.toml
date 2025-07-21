@@ -98,12 +98,16 @@ wasm-inspection = ["wasmi", "wasmprinter", "wat", "spin"]
 native-deps = ["dirs", "tempfile", "tokio", "reqwest", "url", "bitcoincore-rpc", "tabled", "std"]
 web-compat = ["spin"]
 
+test-utils = []
+
 [dev-dependencies]
+deezel-common = { path = ".", features = ["test-utils"] }
 tokio = { workspace = true, features = ["macros", "rt", "time", "sync", "test-util"] }
 env_logger = "0.10"
 wiremock = "0.6.0"
 mockall = { workspace = true }
 bech32 = { workspace = true }
+tempfile = { workspace = true }
 
 # WASM-specific configuration
 [target.'cfg(target_arch = "wasm32")'.dependencies]
