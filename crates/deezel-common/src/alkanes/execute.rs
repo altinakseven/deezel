@@ -75,6 +75,10 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
             log::info!("✅ Transaction broadcast successfully!");
             log::info!("🔗 TXID: {}", txid);
         }
+
+        if params.mine_enabled {
+            self.mine_blocks_if_regtest(params).await?;
+        }
         
         let traces = if params.trace_enabled {
             self.trace_reveal_transaction(&txid, params).await?
@@ -147,6 +151,10 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
         if !state.params.raw_output {
             log::info!("✅ Reveal transaction broadcast successfully!");
             log::info!("🔗 TXID: {}", reveal_txid);
+        }
+
+        if state.params.mine_enabled {
+            self.mine_blocks_if_regtest(&state.params).await?;
         }
 
         let traces = if state.params.trace_enabled {
@@ -774,9 +782,6 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
     async fn trace_reveal_transaction(&self, txid: &str, params: &EnhancedExecuteParams) -> Result<Option<Vec<serde_json::Value>>> {
         log::info!("Starting enhanced transaction tracing for reveal transaction: {}", txid);
         
-        if params.mine_enabled {
-            self.mine_blocks_if_regtest(params).await?;
-        }
         
         self.provider.sync().await?;
         
@@ -788,6 +793,10 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
             log::info!("Decoded Runestone for debugging:\n{:#?}", decoded);
         }
 
+        let mut txid_bytes = hex::decode(txid).map_err(|e| DeezelError::Hex(e.to_string()))?;
+        txid_bytes.reverse();
+        let reversed_txid_for_trace = hex::encode(&txid_bytes);
+
         let mut traces = Vec::new();
         for (protostone_idx, _) in params.protostones.iter().enumerate() {
             // The user has indicated that the vout calculation is off by one.
@@ -796,18 +805,18 @@ impl<'a, T: DeezelProvider> EnhancedAlkanesExecutor<'a, T> {
             // The user states this should be tx.output.len() + 1 for the first protostone.
             // This implies the indexing is 1-based from the end of real outputs, or there's
             // another implicit output. Let's adjust by 1 as requested.
-            let trace_vout = (tx.output.len() + protostone_idx) as u32;
+            let trace_vout = (tx.output.len() + protostone_idx + 1) as u32;
             
-            log::info!("Tracing protostone #{} at virtual outpoint: {}:{}", protostone_idx, txid, trace_vout);
+            log::info!("Tracing protostone #{} at virtual outpoint: {}:{}", protostone_idx, reversed_txid_for_trace, trace_vout);
 
-            match self.provider.trace_outpoint(txid, trace_vout).await {
+            match self.provider.trace_outpoint(&reversed_txid_for_trace, trace_vout).await {
                 Ok(trace_result) => {
                     if let Some(events) = trace_result.get("events").and_then(|e| e.as_array()) {
                         if events.is_empty() {
-                            log::warn!("Trace for {}:{} came back with an empty 'events' array.", txid, trace_vout);
+                            log::warn!("Trace for {}:{} came back with an empty 'events' array.", reversed_txid_for_trace, trace_vout);
                         }
                     } else {
-                        log::warn!("Trace for {}:{} did not contain an 'events' array.", txid, trace_vout);
+                        log::warn!("Trace for {}:{} did not contain an 'events' array.", reversed_txid_for_trace, trace_vout);
                     }
                     log::debug!("Trace result for protostone #{}: {:?}", protostone_idx, trace_result);
                     traces.push(trace_result);

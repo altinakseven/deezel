@@ -439,6 +439,7 @@ pub mod analysis {
 
 /// Transaction analysis result
 #[derive(Debug, Clone, Serialize, Deserialize, tabled::Tabled)]
+#[tabled(rename_all = "camelCase")]
 pub struct TransactionAnalysis {
     pub txid: String,
     pub size: usize,

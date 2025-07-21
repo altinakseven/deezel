@@ -48,9 +48,31 @@ impl RunestoneProvider for WebProvider {
 // AlkanesProvider implementation
 #[async_trait(?Send)]
 impl AlkanesProvider for WebProvider {
-    async fn execute(&mut self, params: deezel_common::alkanes::types::EnhancedExecuteParams) -> Result<deezel_common::alkanes::types::EnhancedExecuteResult> {
+    async fn execute(&mut self, params: deezel_common::alkanes::types::EnhancedExecuteParams) -> Result<deezel_common::alkanes::types::ExecutionState> {
         let result = self.call(self.sandshrew_rpc_url(), "alkanes_execute", serde_json::to_value(params)?, 1).await?;
         serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
+    }
+
+    async fn resume_execution(
+        &mut self,
+        _state: deezel_common::alkanes::types::ReadyToSignTx,
+        _params: &deezel_common::alkanes::types::EnhancedExecuteParams,
+    ) -> Result<deezel_common::alkanes::types::EnhancedExecuteResult> {
+        unimplemented!("resume_execution is not implemented for WebProvider")
+    }
+
+    async fn resume_commit_execution(
+        &mut self,
+        _state: deezel_common::alkanes::types::ReadyToSignCommitTx,
+    ) -> Result<deezel_common::alkanes::types::ExecutionState> {
+        unimplemented!("resume_commit_execution is not implemented for WebProvider")
+    }
+
+    async fn resume_reveal_execution(
+        &mut self,
+        _state: deezel_common::alkanes::types::ReadyToSignRevealTx,
+    ) -> Result<deezel_common::alkanes::types::EnhancedExecuteResult> {
+        unimplemented!("resume_reveal_execution is not implemented for WebProvider")
     }
 
     async fn protorunes_by_address(&self, _address: &str) -> Result<JsonValue> {

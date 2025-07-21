@@ -1141,6 +1141,12 @@ impl WalletProvider for BrowserWalletProvider {
         // Browser wallets manage their own passphrases
         // This is a no-op for browser wallet providers
     }
+
+    async fn get_last_used_address_index(&self) -> Result<u32> {
+        // Browser wallets don't typically expose this information.
+        // We can return a default value or try to infer it if needed.
+        Ok(0)
+    }
 }
 
 // Implement the remaining provider traits by delegating to web_provider
@@ -1443,8 +1449,30 @@ impl OrdProvider for BrowserWalletProvider {
 
 #[async_trait(?Send)]
 impl AlkanesProvider for BrowserWalletProvider {
-    async fn execute(&mut self, params: deezel_common::alkanes::types::EnhancedExecuteParams) -> Result<deezel_common::alkanes::types::EnhancedExecuteResult> {
+    async fn execute(&mut self, params: deezel_common::alkanes::types::EnhancedExecuteParams) -> Result<deezel_common::alkanes::types::ExecutionState> {
         self.web_provider.execute(params).await
+    }
+
+    async fn resume_execution(
+        &mut self,
+        state: deezel_common::alkanes::types::ReadyToSignTx,
+        params: &deezel_common::alkanes::types::EnhancedExecuteParams,
+    ) -> Result<deezel_common::alkanes::types::EnhancedExecuteResult> {
+        self.web_provider.resume_execution(state, params).await
+    }
+
+    async fn resume_commit_execution(
+        &mut self,
+        state: deezel_common::alkanes::types::ReadyToSignCommitTx,
+    ) -> Result<deezel_common::alkanes::types::ExecutionState> {
+        self.web_provider.resume_commit_execution(state).await
+    }
+
+    async fn resume_reveal_execution(
+        &mut self,
+        state: deezel_common::alkanes::types::ReadyToSignRevealTx,
+    ) -> Result<deezel_common::alkanes::types::EnhancedExecuteResult> {
+        self.web_provider.resume_reveal_execution(state).await
     }
 
     async fn protorunes_by_address(&self, address: &str) -> Result<JsonValue> {

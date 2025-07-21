@@ -300,6 +300,10 @@ impl WalletProvider for WebProvider {
         // Web provider doesn't manage passphrases directly
         // This is a no-op for web providers
     }
+
+    async fn get_last_used_address_index(&self) -> Result<u32> {
+        Ok(0)
+    }
 }
 
 // AddressResolver implementation

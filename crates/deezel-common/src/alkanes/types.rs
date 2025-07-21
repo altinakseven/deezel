@@ -246,7 +246,8 @@ pub struct EnhancedExecuteResult {
 }
 
 /// Represents the state of a pausable transaction execution.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum ExecutionState {
     /// The transaction is ready to be signed and broadcast.
     ReadyToSign(ReadyToSignTx),
@@ -259,8 +260,9 @@ pub enum ExecutionState {
 }
 
 /// Contains the PSBT and analysis for a transaction that is ready to be signed.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReadyToSignTx {
+    #[serde(with = "serde_psbt")]
     pub psbt: bitcoin::psbt::Psbt,
     pub analysis: crate::transaction::TransactionAnalysis,
     pub fee: u64,
@@ -268,18 +270,21 @@ pub struct ReadyToSignTx {
 }
 
 /// Contains the necessary information for signing a commit transaction.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReadyToSignCommitTx {
+    #[serde(with = "serde_psbt")]
     pub psbt: bitcoin::psbt::Psbt,
     pub fee: u64,
     pub required_reveal_amount: u64,
     pub params: EnhancedExecuteParams,
+    #[serde(with = "serde_envelope")]
     pub envelope: super::envelope::AlkanesEnvelope,
 }
 
 /// Contains the necessary information for signing a reveal transaction.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReadyToSignRevealTx {
+    #[serde(with = "serde_psbt")]
     pub psbt: bitcoin::psbt::Psbt,
     pub fee: u64,
     pub analysis: crate::transaction::TransactionAnalysis,
@@ -287,6 +292,48 @@ pub struct ReadyToSignRevealTx {
     pub commit_fee: u64,
     pub params: EnhancedExecuteParams,
     pub inspection_result: Option<AlkanesInspectResult>,
+}
+
+mod serde_psbt {
+    use bitcoin::psbt::Psbt;
+    use serde::{self, Deserializer, Serializer, de::Error};
+    use alloc::vec::Vec;
+
+    pub fn serialize<S>(psbt: &Psbt, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_bytes(&psbt.serialize())
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Psbt, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let bytes: Vec<u8> = serde::de::Deserialize::deserialize(deserializer)?;
+        Psbt::deserialize(&bytes).map_err(Error::custom)
+    }
+}
+
+mod serde_envelope {
+    use crate::alkanes::envelope::AlkanesEnvelope;
+    use serde::{self, Deserializer, Serializer};
+    use alloc::vec::Vec;
+
+    pub fn serialize<S>(envelope: &AlkanesEnvelope, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_bytes(&envelope.payload)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<AlkanesEnvelope, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let bytes: Vec<u8> = serde::de::Deserialize::deserialize(deserializer)?;
+        Ok(AlkanesEnvelope::for_contract(bytes))
+    }
 }
 
 
