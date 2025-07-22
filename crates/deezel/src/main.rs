@@ -6,91 +6,191 @@
 
 use anyhow::Result;
 use clap::Parser;
-use deezel_common::{commands::Args, keystore::Keystore};
-use deezel_sys::SystemDeezel;
+use deezel_common::keystore::Keystore;
+use deezel_sys::{SystemDeezel, SystemOrd};
 use deezel_common::traits::*;
 use futures::future::join_all;
 use std::path::Path;
 
 mod commands;
 mod pretty_print;
-use deezel_common::commands::{BitcoindCommands, OrdCommands};
+use commands::{Alkanes, AlkanesExecute, Commands, DeezelCommands, Protorunes, Runestone};
+use deezel_common::alkanes;
 use pretty_print::*;
 
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
     // Parse command-line arguments
-    let mut args = Args::parse();
+    let mut args = DeezelCommands::parse();
 
     // Initialize logger
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(&args.log_level))
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .init();
 
     // Handle keystore logic
     if let Some(keystore_path) = &args.keystore {
-        if args.wallet_file.is_some() {
-            anyhow::bail!("--keystore cannot be used with --wallet-file");
-        }
         let keystore = Keystore::from_file(Path::new(keystore_path))?;
         let passphrase = rpassword::prompt_password("Enter passphrase: ")?;
         let mnemonic = keystore.decrypt_mnemonic(&passphrase)?;
 
-        // We need to re-configure the provider with the decrypted mnemonic.
-        // For now, we'll create a temporary wallet file from the mnemonic.
-        // This is a workaround until deezel-sys supports direct mnemonic injection.
+        // Create a temporary wallet with the decrypted mnemonic
         let temp_wallet_dir = tempfile::tempdir()?;
         let temp_wallet_path = temp_wallet_dir.path().join("temp_wallet.json");
         
         let mut temp_args = args.clone();
-        temp_args.wallet_file = Some(temp_wallet_path.to_str().unwrap().to_string());
-        temp_args.passphrase = Some(passphrase);
+        temp_args.keystore = Some(temp_wallet_path.to_str().unwrap().to_string());
         
-        // Create a temporary wallet with the decrypted mnemonic
-        let temp_system = SystemDeezel::new(&temp_args).await?;
-        temp_system.execute_wallet_command(deezel_common::commands::WalletCommands::Create { mnemonic: Some(mnemonic) }).await?;
-
-        // Now, use this temporary wallet for the actual command execution
-        args.wallet_file = temp_args.wallet_file;
-        args.passphrase = temp_args.passphrase;
+        let mut temp_provider = SystemDeezel::new(&deezel_common::commands::Args::from(&temp_args)).await?;
+        temp_provider.execute_wallet_command(deezel_common::commands::WalletCommands::Create {
+            passphrase: Some(passphrase.clone()),
+            mnemonic: Some(mnemonic),
+        }).await?;
+        
+        args.keystore = Some(temp_wallet_path.to_str().unwrap().to_string());
     }
 
-
     // Create a new SystemDeezel instance
-    let system = SystemDeezel::new(&args).await?;
+    let mut system = SystemDeezel::new(&deezel_common::commands::Args::from(&args)).await?;
 
     // Execute the command
-    execute_command(&system, args).await
+    execute_command(&mut system, args.command).await
 }
 
-async fn execute_command(system: &SystemDeezel, args: Args) -> Result<()> {
-    let result: Result<(), anyhow::Error> = match args.command {
-        deezel_common::commands::Commands::Bitcoind { command } => {
-            let bitcoind_commands: BitcoindCommands = serde_json::from_value(serde_json::to_value(command)?)?;
-            system.execute_bitcoind_command(bitcoind_commands).await.map_err(anyhow::Error::from)
-        },
-        deezel_common::commands::Commands::Wallet { command } => system.execute_wallet_command(command).await.map_err(anyhow::Error::from),
-        deezel_common::commands::Commands::Walletinfo { raw } => system.execute_walletinfo_command(raw).await.map_err(anyhow::Error::from),
-        deezel_common::commands::Commands::Metashrew { command } => system.execute_metashrew_command(command).await.map_err(anyhow::Error::from),
-        deezel_common::commands::Commands::Alkanes { command } => system.execute_alkanes_command(command).await.map_err(anyhow::Error::from),
-        deezel_common::commands::Commands::Runestone { command } => system.execute_runestone_command(command).await.map_err(anyhow::Error::from),
-        deezel_common::commands::Commands::Protorunes { command } => system.execute_protorunes_command(command).await.map_err(anyhow::Error::from),
-        deezel_common::commands::Commands::Monitor { command } => system.execute_monitor_command(command).await.map_err(anyhow::Error::from),
-        deezel_common::commands::Commands::Esplora { command } => system.execute_esplora_command(command).await.map_err(anyhow::Error::from),
-        deezel_common::commands::Commands::Ord(command) => execute_ord_command(system.provider(), command).await,
-    };
+async fn execute_command<T: System + SystemOrd>(system: &mut T, command: Commands) -> Result<()> {
+    match command {
+        Commands::Bitcoind(cmd) => system.execute_bitcoind_command(cmd.into()).await.map_err(|e| e.into()),
+        Commands::Wallet(cmd) => system.execute_wallet_command(cmd.into()).await.map_err(|e| e.into()),
+        Commands::Alkanes(cmd) => execute_alkanes_command(system, cmd).await,
+        Commands::Runestone(cmd) => system.execute_runestone_command(cmd.into()).await.map_err(|e| e.into()),
+        Commands::Protorunes(cmd) => execute_protorunes_command(system.provider(), cmd).await,
+        Commands::Ord(cmd) => system.execute_ord_command(cmd.into()).await.map_err(|e| e.into()),
+    }
+}
 
-    result
+async fn execute_alkanes_command<T: System>(system: &mut T, command: Alkanes) -> Result<()> {
+    match command {
+        Alkanes::Execute(exec_args) => {
+            let params = to_enhanced_execute_params(exec_args)?;
+            let mut executor = alkanes::execute::EnhancedAlkanesExecutor::new(system.provider_mut());
+            let mut state = executor.execute(params.clone()).await?;
+
+            loop {
+                state = match state {
+                    alkanes::types::ExecutionState::ReadyToSign(s) => {
+                        let result = executor.resume_execution(s, &params).await?;
+                        println!("✅ Alkanes execution completed successfully!");
+                        println!("🔗 Reveal TXID: {}", result.reveal_txid);
+                        println!("💰 Reveal Fee: {} sats", result.reveal_fee);
+                        if let Some(traces) = result.traces {
+                            println!("🔍 Traces: {}", serde_json::to_string_pretty(&traces)?);
+                        }
+                        break;
+                    },
+                    alkanes::types::ExecutionState::ReadyToSignCommit(s) => {
+                        executor.resume_commit_execution(s).await?
+                    },
+                    alkanes::types::ExecutionState::ReadyToSignReveal(s) => {
+                        let result = executor.resume_reveal_execution(s).await?;
+                        println!("✅ Alkanes execution completed successfully!");
+                        if let Some(commit_txid) = result.commit_txid {
+                            println!("🔗 Commit TXID: {}", commit_txid);
+                        }
+                        println!("🔗 Reveal TXID: {}", result.reveal_txid);
+                        if let Some(commit_fee) = result.commit_fee {
+                            println!("💰 Commit Fee: {} sats", commit_fee);
+                        }
+                        println!("💰 Reveal Fee: {} sats", result.reveal_fee);
+                        if let Some(traces) = result.traces {
+                            println!("🔍 Traces: {}", serde_json::to_string_pretty(&traces)?);
+                        }
+                        break;
+                    },
+                    alkanes::types::ExecutionState::Complete(result) => {
+                        println!("✅ Alkanes execution completed successfully!");
+                        if let Some(commit_txid) = result.commit_txid {
+                            println!("🔗 Commit TXID: {}", commit_txid);
+                        }
+                        println!("🔗 Reveal TXID: {}", result.reveal_txid);
+                        if let Some(commit_fee) = result.commit_fee {
+                            println!("💰 Commit Fee: {} sats", commit_fee);
+                        }
+                        println!("💰 Reveal Fee: {} sats", result.reveal_fee);
+                        if let Some(traces) = result.traces {
+                            println!("🔍 Traces: {}", serde_json::to_string_pretty(&traces)?);
+                        }
+                        break;
+                    }
+                };
+            }
+            Ok(())
+        },
+        Alkanes::Inspect { outpoint, disasm, fuzz, fuzz_ranges, meta, codehash, raw } => {
+            let config = alkanes::types::AlkanesInspectConfig {
+                disasm,
+                fuzz,
+                fuzz_ranges,
+                meta,
+                codehash,
+                raw,
+            };
+            let result = system.provider().inspect(&outpoint, config).await?;
+            if raw {
+                println!("{}", serde_json::to_string_pretty(&result)?);
+            } else {
+                pretty_print::print_inspection_result(&result);
+            }
+            Ok(())
+        }
+    }
+}
+
+fn to_enhanced_execute_params(args: AlkanesExecute) -> Result<alkanes::types::EnhancedExecuteParams> {
+    let input_requirements = args.inputs.map(|s| alkanes::parsing::parse_input_requirements(&s)).transpose()?.unwrap_or_default();
+    let protostones = alkanes::parsing::parse_protostones(&args.protostones.join(" "))?;
+    let envelope_data = args.envelope.map(|path| std::fs::read(path)).transpose()?;
+
+    Ok(alkanes::types::EnhancedExecuteParams {
+        input_requirements,
+        to_addresses: args.to,
+        from_addresses: args.from,
+        change_address: args.change,
+        fee_rate: args.fee_rate,
+        envelope_data,
+        protostones,
+        raw_output: args.raw,
+        trace_enabled: args.trace,
+        mine_enabled: args.mine,
+        auto_confirm: args.auto_confirm,
+    })
+}
+
+async fn execute_runestone_command(system: &SystemDeezel, command: Runestone) -> Result<()> {
+    match command {
+        Runestone::Analyze { txid, raw } => {
+            let tx_hex = system.provider().get_transaction_hex(&txid).await?;
+            let tx_bytes = hex::decode(tx_hex)?;
+            let tx: bitcoin::Transaction = bitcoin::consensus::deserialize(&tx_bytes)?;
+            let result = deezel_common::runestone_enhanced::format_runestone_with_decoded_messages(&tx)?;
+            
+            if raw {
+                println!("{}", serde_json::to_string_pretty(&result)?);
+            } else {
+                deezel_common::runestone_enhanced::print_human_readable_runestone(&tx, &result);
+            }
+        }
+    }
+    Ok(())
 }
 
 
 
 async fn execute_ord_command(
     provider: &dyn DeezelProvider,
-    command: OrdCommands,
+    command: deezel_common::commands::OrdCommands,
 ) -> anyhow::Result<()> {
     match command {
-        OrdCommands::Inscription { id, raw } => {
+        deezel_common::commands::OrdCommands::Inscription { id, raw } => {
             if raw {
                 let inscription = provider.get_inscription(&id).await?;
                 let json_value = serde_json::to_value(&inscription)?;
@@ -104,7 +204,7 @@ async fn execute_ord_command(
                 print_inscription(&inscription);
             }
         }
-        OrdCommands::InscriptionsInBlock { hash, raw } => {
+        deezel_common::commands::OrdCommands::InscriptionsInBlock { hash, raw } => {
             if raw {
                 let inscriptions = provider.get_inscriptions_in_block(&hash).await?;
                 let json_value = serde_json::to_value(&inscriptions)?;
@@ -124,7 +224,7 @@ async fn execute_ord_command(
                 print_inscriptions(&fetched_inscriptions?);
             }
         }
-        OrdCommands::Address { address, raw } => {
+        deezel_common::commands::OrdCommands::AddressInfo { address, raw } => {
             if raw {
                 let info = provider.get_ord_address_info(&address).await?;
                 let json_value = serde_json::to_value(&info)?;
@@ -138,7 +238,7 @@ async fn execute_ord_command(
                 print_address_info(&info);
             }
         }
-        OrdCommands::Block { query, raw } => {
+        deezel_common::commands::OrdCommands::BlockInfo { query, raw } => {
             if raw {
                 let info = provider.get_block_info(&query).await?;
                 let json_value = serde_json::to_value(&info)?;
@@ -156,21 +256,11 @@ async fn execute_ord_command(
                 }
             }
         }
-        OrdCommands::BlockCount { raw } => {
-            if raw {
-                let info = provider.get_ord_block_count().await?;
-                let json_value = serde_json::to_value(&info)?;
-                if let Some(s) = json_value.as_str() {
-                    println!("{}", s);
-                } else {
-                    println!("{}", json_value);
-                }
-            } else {
-                let info = provider.get_ord_block_count().await?;
-                println!("{}", serde_json::to_string_pretty(&info)?);
-            }
+        deezel_common::commands::OrdCommands::BlockCount => {
+            let info = provider.get_ord_block_count().await?;
+            println!("{}", serde_json::to_string_pretty(&info)?);
         }
-        OrdCommands::Blocks { raw } => {
+        deezel_common::commands::OrdCommands::Blocks { raw } => {
             if raw {
                 let info = provider.get_ord_blocks().await?;
                 let json_value = serde_json::to_value(&info)?;
@@ -184,7 +274,7 @@ async fn execute_ord_command(
                 print_blocks(&info);
             }
         }
-        OrdCommands::Children { id, page, raw } => {
+        deezel_common::commands::OrdCommands::Children { id, page, raw } => {
             if raw {
                 let children = provider.get_children(&id, page).await?;
                 let json_value = serde_json::to_value(&children)?;
@@ -204,12 +294,12 @@ async fn execute_ord_command(
                 print_children(&fetched_inscriptions?);
             }
         }
-        OrdCommands::Content { id } => {
+        deezel_common::commands::OrdCommands::Content { id } => {
             let content = provider.get_content(&id).await?;
             use std::io::{self, Write};
             io::stdout().write_all(&content)?;
         }
-        OrdCommands::Inscriptions { page, raw } => {
+        deezel_common::commands::OrdCommands::Inscriptions { page, raw } => {
             if raw {
                 let inscriptions = provider.get_inscriptions(page).await?;
                 let json_value = serde_json::to_value(&inscriptions)?;
@@ -229,7 +319,7 @@ async fn execute_ord_command(
                 print_inscriptions(&fetched_inscriptions?);
             }
         }
-        OrdCommands::Output { outpoint, raw } => {
+        deezel_common::commands::OrdCommands::Output { outpoint, raw } => {
             if raw {
                 let output = provider.get_output(&outpoint).await?;
                 let json_value = serde_json::to_value(&output)?;
@@ -243,7 +333,7 @@ async fn execute_ord_command(
                 print_output(&output);
             }
         }
-        OrdCommands::Parents { id, page, raw } => {
+        deezel_common::commands::OrdCommands::Parents { id, page, raw } => {
             if raw {
                 let parents = provider.get_parents(&id, page).await?;
                 let json_value = serde_json::to_value(&parents)?;
@@ -257,7 +347,7 @@ async fn execute_ord_command(
                 print_parents(&parents);
             }
         }
-        OrdCommands::Rune { rune, raw } => {
+        deezel_common::commands::OrdCommands::Rune { rune, raw } => {
             if raw {
                 let rune_info = provider.get_rune(&rune).await?;
                 let json_value = serde_json::to_value(&rune_info)?;
@@ -271,7 +361,7 @@ async fn execute_ord_command(
                 print_rune(&rune_info);
             }
         }
-        OrdCommands::Runes { page, raw } => {
+        deezel_common::commands::OrdCommands::Runes { page, raw } => {
             if raw {
                 let runes = provider.get_runes(page).await?;
                 let json_value = serde_json::to_value(&runes)?;
@@ -285,7 +375,7 @@ async fn execute_ord_command(
                 print_runes(&runes);
             }
         }
-        OrdCommands::Sat { sat, raw } => {
+        deezel_common::commands::OrdCommands::Sat { sat, raw } => {
             if raw {
                 let sat_info = provider.get_sat(sat).await?;
                 let json_value = serde_json::to_value(&sat_info)?;
@@ -299,7 +389,7 @@ async fn execute_ord_command(
                 print_sat_response(&sat_info);
             }
         }
-        OrdCommands::Tx { txid, raw } => {
+        deezel_common::commands::OrdCommands::TxInfo { txid, raw } => {
             if raw {
                 let tx_info = provider.get_tx_info(&txid).await?;
                 let json_value = serde_json::to_value(&tx_info)?;
@@ -311,6 +401,44 @@ async fn execute_ord_command(
             } else {
                 let tx_info = provider.get_tx_info(&txid).await?;
                 print_tx_info(&tx_info);
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn execute_protorunes_command(
+    provider: &dyn DeezelProvider,
+    command: Protorunes,
+) -> anyhow::Result<()> {
+    match command {
+        Protorunes::ByAddress {
+            address,
+            raw,
+            block_tag,
+        } => {
+            let result = provider
+                .protorunes_by_address(&address, block_tag)
+                .await?;
+            if raw {
+                println!("{}", serde_json::to_string_pretty(&result)?);
+            } else {
+                pretty_print::print_protorune_wallet_response(&result);
+            }
+        }
+        Protorunes::ByOutpoint {
+            txid,
+            vout,
+            raw,
+            block_tag,
+        } => {
+            let result = provider
+                .protorunes_by_outpoint(&txid, vout, block_tag)
+                .await?;
+            if raw {
+                println!("{}", serde_json::to_string_pretty(&result)?);
+            } else {
+                pretty_print::print_protorune_outpoint_response(&result);
             }
         }
     }

@@ -61,49 +61,54 @@ fn parse_single_protostone(spec_str: &str) -> Result<ProtostoneSpec> {
     let mut cellpack = None;
     let mut edicts = Vec::new();
     let mut bitcoin_transfer = None;
-    
-    // Use a more sophisticated parsing approach
-    let parts = split_complex_protostone(spec_str)?;
-    
-    for part in parts.iter() {
-        let trimmed = part.trim();
-        
-        if trimmed.starts_with('[') && trimmed.ends_with(']') {
-            let content = &trimmed[1..trimmed.len()-1];
-            
-            // Check if this is a cellpack (contains commas) or an edict (contains colons)
-            if content.contains(',') && !content.contains(':') {
-                // This is a cellpack: [3,797,101]
-                cellpack = Some(parse_cellpack(content)?);
-            } else if content.contains(':') {
-                // This is a bracketed edict: [4:797:1:p1]
-                let edict = parse_edict(trimmed)?;
-                edicts.push(edict);
-            } else {
-                // Ambiguous - try cellpack first, then edict
-                if let Ok(cp) = parse_cellpack(content) {
-                    cellpack = Some(cp);
-                } else {
-                    let edict = parse_edict(trimmed)?;
-                    edicts.push(edict);
-                }
-            }
-        } else if trimmed.starts_with("B:") {
-            // This is a Bitcoin transfer
-            bitcoin_transfer = Some(parse_bitcoin_transfer(trimmed)?);
-        } else if trimmed.starts_with('v') || trimmed.starts_with('p') || trimmed == "split" {
-            // This is a standalone pointer/refund target. The ordinals crate handles this, so we can ignore it here.
-            log::debug!("Ignoring standalone target: {}", trimmed);
-        } else if !trimmed.is_empty() {
-            // This might be a simple edict: block:tx:amount:target
-            if let Ok(edict) = parse_edict(trimmed) {
-                edicts.push(edict);
-            } else {
-                log::warn!("Could not parse protostone part: {}", trimmed);
-            }
+    let mut pointer = None;
+    let mut refund_pointer = None;
+
+    let parts = split_respecting_brackets(spec_str, ':')?;
+    let mut part_iter = parts.iter().map(|s| s.as_str());
+
+    let mut current_part = part_iter.next();
+
+    // 1. Parse optional Cellpack
+    if let Some(part) = current_part {
+        if part.starts_with('[') && part.ends_with(']') {
+            cellpack = Some(parse_cellpack(&part[1..part.len() - 1])?);
+            current_part = part_iter.next();
         }
     }
-    
+
+    // 2. Parse Pointer
+    if let Some(part) = current_part {
+        pointer = Some(parse_output_target(part)?);
+        current_part = part_iter.next();
+    }
+
+    // 3. Parse Refund Pointer
+    if let Some(part) = current_part {
+        refund_pointer = Some(parse_output_target(part)?);
+        current_part = part_iter.next();
+    }
+
+    // 4. Parse Edicts
+    while let Some(part) = current_part {
+        if part.starts_with('[') && part.ends_with(']') {
+            edicts.push(parse_edict(&part[1..part.len() - 1])?);
+        } else if part.starts_with("B:") {
+            // This is a Bitcoin transfer, which is not part of the edict list
+            // but a separate field in ProtostoneSpec.
+            // We assume it's the last part of the spec.
+            bitcoin_transfer = Some(parse_bitcoin_transfer(part)?);
+            break;
+        }
+        current_part = part_iter.next();
+    }
+
+    // The pointer and refund_pointer are parsed but not used in the current struct.
+    // This is fine as per the user's instructions.
+    // We can log them for debugging.
+    log::debug!("Parsed pointer: {:?}", pointer);
+    log::debug!("Parsed refund_pointer: {:?}", refund_pointer);
+
     Ok(ProtostoneSpec {
         cellpack,
         edicts,
@@ -257,63 +262,4 @@ fn split_respecting_brackets(input: &str, delimiter: char) -> Result<Vec<String>
     }
     
     Ok(parts)
-}
-
-/// Split complex protostone specification while respecting nested brackets
-fn split_complex_protostone(input: &str) -> Result<Vec<String>> {
-    let mut parts = Vec::new();
-    let mut current = String::new();
-    let mut bracket_depth = 0;
-    let mut chars = input.chars().peekable();
-
-    while let Some(ch) = chars.next() {
-        match ch {
-            '[' => {
-                if bracket_depth == 0 && !current.is_empty() {
-                    parts.push(current.trim().to_string());
-                    current.clear();
-                }
-                bracket_depth += 1;
-                current.push(ch);
-            },
-            ']' => {
-                bracket_depth -= 1;
-                current.push(ch);
-                if bracket_depth < 0 {
-                    return Err(anyhow!("Unmatched closing bracket"));
-                }
-                if bracket_depth == 0 {
-                    parts.push(current.trim().to_string());
-                    current.clear();
-                }
-            },
-            ':' if bracket_depth == 0 => {
-                if !current.is_empty() {
-                    parts.push(current.trim().to_string());
-                }
-                current.clear();
-                // The colon itself is a separator, not part of a token
-            },
-            ',' if bracket_depth == 0 => {
-                if !current.is_empty() {
-                    parts.push(current.trim().to_string());
-                }
-                current.clear();
-            },
-            _ => {
-                current.push(ch);
-            }
-        }
-    }
-
-    if bracket_depth != 0 {
-        return Err(anyhow!("Unmatched opening bracket"));
-    }
-
-    if !current.trim().is_empty() {
-        parts.push(current.trim().to_string());
-    }
-
-    // Filter out empty strings that might result from separators
-    Ok(parts.into_iter().filter(|s| !s.is_empty()).collect())
 }

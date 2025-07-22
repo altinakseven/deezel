@@ -8,7 +8,8 @@ use bitcoin::secp256k1::{Secp256k1, All, schnorr, SecretKey};
 use bitcoin::key::{Keypair, PrivateKey};
 use crate::alkanes::{EnhancedExecuteParams, EnhancedExecuteResult, execute::EnhancedAlkanesExecutor};
 use crate::alkanes::types::{ExecutionState, ReadyToSignCommitTx, ReadyToSignRevealTx, ReadyToSignTx};
-use bitcoin::{Address, Network, OutPoint, Transaction, TxOut, XOnlyPublicKey};
+use bitcoin::{Address, Network, OutPoint, Transaction, TxOut, XOnlyPublicKey, bip32::{DerivationPath, Fingerprint}};
+use core::str::FromStr;
 
 /// Mock provider for testing
 #[derive(Clone)]
@@ -301,8 +302,10 @@ impl WalletProvider for MockProvider {
         self.network
     }
     
-    async fn get_internal_key(&self) -> Result<XOnlyPublicKey> {
-        Ok(self.internal_key)
+    async fn get_internal_key(&self) -> Result<(XOnlyPublicKey, (Fingerprint, DerivationPath))> {
+        let fingerprint = Fingerprint::from_str("00000000").unwrap();
+        let path = DerivationPath::from_str("m/86'/1'/0'").unwrap();
+        Ok((self.internal_key, (fingerprint, path)))
     }
     
     async fn sign_psbt(&mut self, psbt: &bitcoin::psbt::Psbt) -> Result<bitcoin::psbt::Psbt> {
@@ -599,11 +602,24 @@ impl AlkanesProvider for MockProvider {
         executor.resume_reveal_execution(state).await
     }
 
-    async fn protorunes_by_address(&self, _address: &str) -> Result<JsonValue> {
-        todo!()
+    async fn protorunes_by_address(
+        &self,
+        _address: &str,
+        _block_tag: Option<String>,
+    ) -> Result<alkanes::protorunes::ProtoruneWalletResponse> {
+        Err(DeezelError::NotImplemented(
+            "protorunes_by_address".to_string(),
+        ))
     }
-    async fn protorunes_by_outpoint(&self, _txid: &str, _vout: u32) -> Result<protorune_support::proto::protorune::OutpointResponse> {
-        Err(DeezelError::NotImplemented("protorunes_by_outpoint".to_string()))
+    async fn protorunes_by_outpoint(
+        &self,
+        _txid: &str,
+        _vout: u32,
+        _block_tag: Option<String>,
+    ) -> Result<alkanes::protorunes::ProtoruneOutpointResponse> {
+        Err(DeezelError::NotImplemented(
+            "protorunes_by_outpoint".to_string(),
+        ))
     }
     async fn simulate(&self, _contract_id: &str, _params: Option<&str>) -> Result<JsonValue> {
         todo!()

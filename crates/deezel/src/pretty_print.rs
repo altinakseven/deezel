@@ -3,8 +3,11 @@
 //! This module contains functions for formatting the various data structures
 //! returned by the `ord` server into human-readable output.
 
-use deezel_common::ord::*;
-use tabled::{settings::Style, Table};
+use deezel_common::{
+    alkanes::protorunes::{ProtoruneOutpointResponse, ProtoruneWalletResponse},
+    ord::*,
+};
+use tabled::{builder::Builder, settings::Style, Table};
 
 pub fn print_inscription(inscription: &Inscription) {
     println!("Inscription {}", inscription.id);
@@ -108,4 +111,58 @@ pub fn print_tx_info(tx_info: &TxInfo) {
     let mut table = Table::new(vec![tx_info]);
     table.with(Style::modern());
     println!("{}", table);
+}
+
+pub fn print_protorune_outpoint_response(response: &ProtoruneOutpointResponse) {
+    println!("📦 Protorune Outpoint Response");
+    println!("---------------------------------");
+    println!("Outpoint: {}", response.outpoint);
+    println!("Value: {} sats", response.output.value);
+    println!("Script Pubkey: {}", response.output.script_pubkey);
+    println!();
+    println!("📜 Balance Sheet");
+    println!("-----------------");
+    for (rune_id, balance) in &response.balance_sheet.cached.balances {
+        println!("  - Rune ID: {}:{}", rune_id.block, rune_id.tx);
+        println!("    Balance: {}", balance);
+    }
+}
+
+pub fn print_protorune_wallet_response(response: &ProtoruneWalletResponse) {
+    println!("💰 Protorune Wallet Balances");
+    println!("===========================");
+    for balance in &response.balances {
+        print_protorune_outpoint_response(balance);
+        println!();
+    }
+}
+
+pub fn print_inspection_result(result: &deezel_common::alkanes::types::AlkanesInspectResult) {
+    println!("🔍 Inspection Result for Alkane: {}:{}", result.alkane_id.block, result.alkane_id.tx);
+    println!("══════════════════════════════════════════");
+    println!("📏 Bytecode Length: {} bytes", result.bytecode_length);
+
+    if let Some(codehash) = &result.codehash {
+        println!("🔑 Code Hash: {}", codehash);
+    }
+
+    if let Some(disassembly) = &result.disassembly {
+        println!("\n disassembled bytecode:\n{}", disassembly);
+    }
+
+    if let Some(metadata) = &result.metadata {
+        println!("\n📝 Metadata:");
+        println!("{}", serde_json::to_string_pretty(metadata).unwrap_or_else(|e| e.to_string()));
+    }
+
+    if let Some(metadata_error) = &result.metadata_error {
+        println!("\n⚠️ Metadata Error: {}", metadata_error);
+    }
+
+    if let Some(fuzzing_results) = &result.fuzzing_results {
+        println!("\n🔬 Fuzzing Results:");
+        for result in &fuzzing_results.opcode_results {
+            println!("  - Opcode 0x{:02X}: {}", result.opcode, if result.success { "Success" } else { "Failure" });
+        }
+    }
 }

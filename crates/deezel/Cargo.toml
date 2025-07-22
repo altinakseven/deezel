@@ -64,11 +64,11 @@ path = "../../tests/test_alkanes_inspect.rs"
 harness = true
 
 [[test]]
-name = "alkanes_execute_e2e"
-path = "../../tests/alkanes_execute_e2e.rs"
+name = "alkanes_execute_regtest"
+path = "../../tests/alkanes_execute_regtest.rs"
 harness = true
 
 [[test]]
-name = "alkanes_execute_regtest"
-path = "../../tests/alkanes_execute_regtest.rs"
+name = "protorunes_e2e"
+path = "../../tests/protorunes_e2e.rs"
 harness = true

@@ -26,9 +26,11 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
-
-cargo build --release
+cd /data/deezel
+cargo build --release -p deezel
+cargo build -p deezel
 # Execute the alkanes command with commit/reveal pattern
+
 /data/deezel/target/release/deezel \
     --sandshrew-rpc-url http://localhost:18888 \
     -p regtest \
@@ -36,11 +38,10 @@ cargo build --release
     --passphrase testtesttest \
     alkanes execute \
     --inputs B:1000 \
-    --change [self:p2tr:2] \
-    --to [self:p2tr:1],[self:p2tr:2],[self:p2tr:3] \
-    --envelope ~/free_mint.wasm.gz \
+    --change p2tr:1 \
+    --to p2tr:0 \
     --mine \
     --fee-rate 1 \
     -y \
     --trace \
-	    '[3,797,101]:v0:v0'
+	    '[2,0,77]:v0:v0'

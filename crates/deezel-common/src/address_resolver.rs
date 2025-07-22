@@ -527,7 +527,7 @@ impl WalletProvider for StandaloneAddressResolver {
     async fn get_mnemonic(&self) -> Result<Option<String>> { Ok(None) }
     fn get_network(&self) -> Network { self.network }
     
-    async fn get_internal_key(&self) -> Result<bitcoin::XOnlyPublicKey> {
+    async fn get_internal_key(&self) -> Result<(bitcoin::XOnlyPublicKey, (bitcoin::bip32::Fingerprint, bitcoin::bip32::DerivationPath))> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support wallet operations".to_string()))
     }
     
@@ -616,11 +616,24 @@ impl MetashrewRpcProvider for StandaloneAddressResolver {
     async fn get_spendables_by_address(&self, _address: &str) -> Result<serde_json::Value> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Metashrew RPC".to_string()))
     }
-    async fn get_protorunes_by_address(&self, _address: &str) -> Result<serde_json::Value> {
-        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Metashrew RPC".to_string()))
+    async fn get_protorunes_by_address(
+        &self,
+        _address: &str,
+        _block_tag: Option<String>,
+    ) -> Result<crate::alkanes::protorunes::ProtoruneWalletResponse> {
+        Err(DeezelError::NotImplemented(
+            "StandaloneAddressResolver does not support Metashrew RPC".to_string(),
+        ))
     }
-    async fn get_protorunes_by_outpoint(&self, _txid: &str, _vout: u32) -> Result<serde_json::Value> {
-        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Metashrew RPC".to_string()))
+    async fn get_protorunes_by_outpoint(
+        &self,
+        _txid: &str,
+        _vout: u32,
+        _block_tag: Option<String>,
+    ) -> Result<crate::alkanes::protorunes::ProtoruneOutpointResponse> {
+        Err(DeezelError::NotImplemented(
+            "StandaloneAddressResolver does not support Metashrew RPC".to_string(),
+        ))
     }
 }
 
@@ -859,12 +872,25 @@ impl AlkanesProvider for StandaloneAddressResolver {
         ))
     }
 
-    async fn protorunes_by_address(&self, _address: &str) -> Result<crate::JsonValue> {
-        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
+    async fn protorunes_by_address(
+        &self,
+        _address: &str,
+        _block_tag: Option<String>,
+    ) -> Result<crate::alkanes::protorunes::ProtoruneWalletResponse> {
+        Err(DeezelError::NotImplemented(
+            "StandaloneAddressResolver does not support alkanes operations".to_string(),
+        ))
     }
 
-    async fn protorunes_by_outpoint(&self, _txid: &str, _vout: u32) -> Result<protorune_support::proto::protorune::OutpointResponse> {
-        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
+    async fn protorunes_by_outpoint(
+        &self,
+        _txid: &str,
+        _vout: u32,
+        _block_tag: Option<String>,
+    ) -> Result<crate::alkanes::protorunes::ProtoruneOutpointResponse> {
+        Err(DeezelError::NotImplemented(
+            "StandaloneAddressResolver does not support alkanes operations".to_string(),
+        ))
     }
 
     async fn simulate(&self, _contract_id: &str, _params: Option<&str>) -> Result<crate::JsonValue> {

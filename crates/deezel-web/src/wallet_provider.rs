@@ -1095,27 +1095,9 @@ impl WalletProvider for BrowserWalletProvider {
         self.web_provider.network()
     }
     
-    async fn get_internal_key(&self) -> Result<XOnlyPublicKey> {
-        // Try to get the public key from the wallet
-        let pubkey_hex = self.wallet.get_public_key().await?;
-        
-        // Parse the public key
-        let pubkey_bytes = hex::decode(&pubkey_hex)
-            .map_err(|e| DeezelError::Wallet(format!("Invalid public key hex: {}", e)))?;
-        
-        if pubkey_bytes.len() == 32 {
-            // X-only public key
-            XOnlyPublicKey::from_slice(&pubkey_bytes)
-                .map_err(|e| DeezelError::Wallet(format!("Invalid X-only public key: {}", e)))
-        } else if pubkey_bytes.len() == 33 {
-            // Compressed public key - convert to X-only
-            let _secp = bitcoin::secp256k1::Secp256k1::new();
-            let pubkey = bitcoin::secp256k1::PublicKey::from_slice(&pubkey_bytes)
-                .map_err(|e| DeezelError::Wallet(format!("Invalid compressed public key: {}", e)))?;
-            Ok(XOnlyPublicKey::from(pubkey))
-        } else {
-            Err(DeezelError::Wallet("Invalid public key length".to_string()))
-        }
+    async fn get_internal_key(&self) -> Result<(XOnlyPublicKey, (bitcoin::bip32::Fingerprint, bitcoin::bip32::DerivationPath))> {
+        // Browser wallets do not expose derivation paths, so this method cannot be fully implemented.
+        Err(DeezelError::NotImplemented("get_internal_key is not supported for browser wallets as they do not expose derivation paths.".to_string()))
     }
     
     async fn sign_psbt(&mut self, psbt: &Psbt) -> Result<Psbt> {

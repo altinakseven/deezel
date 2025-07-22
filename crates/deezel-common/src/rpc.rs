@@ -6,6 +6,7 @@
 use crate::{Result, DeezelError};
 use alloc::{string::ToString, format};
 use crate::traits::*;
+use crate::alkanes::protorunes::{ProtoruneWalletResponse, ProtoruneOutpointResponse};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
@@ -231,13 +232,22 @@ impl<P: DeezelProvider> RpcClient<P> {
     }
     
     /// Get protorunes by address
-    pub async fn get_protorunes_by_address(&self, address: &str) -> Result<JsonValue> {
-        self.provider.get_protorunes_by_address(address).await
+    pub async fn get_protorunes_by_address(
+        &self,
+        address: &str,
+        block_tag: Option<String>,
+    ) -> Result<ProtoruneWalletResponse> {
+        self.provider.get_protorunes_by_address(address, block_tag).await
     }
-    
+
     /// Get protorunes by outpoint
-    pub async fn get_protorunes_by_outpoint(&self, txid: &str, vout: u32) -> Result<JsonValue> {
-        self.provider.get_protorunes_by_outpoint(txid, vout).await
+    pub async fn get_protorunes_by_outpoint(
+        &self,
+        txid: &str,
+        vout: u32,
+        block_tag: Option<String>,
+    ) -> Result<ProtoruneOutpointResponse> {
+        self.provider.get_protorunes_by_outpoint(txid, vout, block_tag).await
     }
     
     /// Make a generic call with method name (for Esplora API compatibility)

@@ -19,6 +19,7 @@ use crate::alkanes::types::{
 use alkanes_support::proto::alkanes as alkanes_pb;
 use protorune_support::proto::protorune as protorune_pb;
 use protobuf::Message;
+use std::collections::BTreeMap;
 use async_trait::async_trait;
 use alloc::format;
 use alloc::string::{String, ToString};
@@ -45,10 +46,10 @@ use bip39::{Mnemonic, MnemonicType, Seed};
 use hex::{self, FromHex};
 use bitcoin::{
     Address, Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
-    secp256k1::{Secp256k1, All},
-    sighash::{SighashCache, Prevouts, TapSighashType},
-    bip32::{DerivationPath, Xpriv, Xpub},
+    bip32::{DerivationPath, Fingerprint, Xpriv, Xpub},
     key::{TapTweak, UntweakedKeypair},
+    secp256k1::{All, Secp256k1},
+    sighash::{Prevouts, SighashCache, TapSighashType},
     taproot,
 };
 use bitcoin_hashes::Hash;
@@ -245,13 +246,20 @@ impl ConcreteProvider {
         )))
     }
 
-    async fn metashrew_view_call(&self, method: &str, hex_input: &str) -> Result<Vec<u8>> {
-        let result = self.call(
-            &self.metashrew_rpc_url,
-            "metashrew_view",
-            serde_json::json!([method, hex_input, "latest"]),
-            1, // Using a static ID for simplicity, can be made dynamic if needed
-        ).await?;
+    async fn metashrew_view_call(
+        &self,
+        method: &str,
+        hex_input: &str,
+        block_tag: &str,
+    ) -> Result<Vec<u8>> {
+        let result = self
+            .call(
+                &self.metashrew_rpc_url,
+                "metashrew_view",
+                serde_json::json!([method, hex_input, block_tag]),
+                1, // Using a static ID for simplicity, can be made dynamic if needed
+            )
+            .await?;
 
         let hex_response = result.as_str().ok_or_else(|| {
             DeezelError::RpcError("metashrew_view response was not a string".to_string())
@@ -361,7 +369,9 @@ impl JsonRpcProvider for ConcreteProvider {
         request.id = ::protobuf::MessageField::some(alkane_id_pb);
 
         let hex_input = format!("0x{}", hex::encode(request.write_to_bytes()?));
-        let response_bytes = self.metashrew_view_call("getbytecode", &hex_input).await?;
+        let response_bytes = self
+            .metashrew_view_call("getbytecode", &hex_input, "latest")
+            .await?;
 
         Ok(format!("0x{}", hex::encode(response_bytes)))
     }
@@ -999,91 +1009,135 @@ impl WalletProvider for ConcreteProvider {
         }
     }
     
-    async fn get_internal_key(&self) -> Result<bitcoin::XOnlyPublicKey> {
-        let mnemonic = self.get_mnemonic().await?
-            .ok_or_else(|| DeezelError::Wallet("Wallet must be unlocked to get internal key".to_string()))?;
-        let mnemonic = bip39::Mnemonic::from_phrase(&mnemonic, bip39::Language::English)?;
+    async fn get_internal_key(&self) -> Result<(bitcoin::XOnlyPublicKey, (Fingerprint, DerivationPath))> {
+        let (keystore, mnemonic) = match &self.wallet_state {
+            WalletState::Unlocked { keystore, mnemonic } => (keystore, mnemonic),
+            _ => return Err(DeezelError::Wallet("Wallet must be unlocked to get internal key".to_string())),
+        };
+
+        let mnemonic = bip39::Mnemonic::from_phrase(mnemonic, bip39::Language::English)?;
         let seed = bip39::Seed::new(&mnemonic, "");
         let network = self.get_network();
-        let xpriv = bitcoin::bip32::Xpriv::new_master(network, seed.as_bytes())?;
-        let secp = bitcoin::secp256k1::Secp256k1::new();
-        let (internal_key, _) = xpriv.to_keypair(&secp).x_only_public_key();
-        Ok(internal_key)
+        let root_key = Xpriv::new_master(network, seed.as_bytes())?;
+        
+        // Standard path for Taproot internal key. This should be configurable in a real wallet.
+        let path = DerivationPath::from_str("m/86'/1'/0'")?;
+        
+        let derived_xpriv = root_key.derive_priv(&self.secp, &path)?;
+        let keypair = derived_xpriv.to_keypair(&self.secp);
+        let (internal_key, _) = keypair.x_only_public_key();
+
+        let master_fingerprint = Fingerprint::from_str(&keystore.master_fingerprint)?;
+
+        Ok((internal_key, (master_fingerprint, path)))
     }
     
     async fn sign_psbt(&mut self, psbt: &bitcoin::psbt::Psbt) -> Result<bitcoin::psbt::Psbt> {
         let mut psbt = psbt.clone();
-        // 1. Deserialize the transaction
         let mut tx = psbt.clone().extract_tx().map_err(|e| DeezelError::Other(e.to_string()))?;
-
-        // 2. Setup for signing - gather immutable info first to avoid borrow checker issues.
         let network = self.get_network();
-        let secp: Secp256k1<All> = Secp256k1::new();
+        let secp = Secp256k1::<All>::new();
 
-        // 3. Fetch the previous transaction outputs (prevouts) for signing.
         let mut prevouts = Vec::new();
         for input in &tx.input {
-            let tx_info = self.get_tx(&input.previous_output.txid.to_string()).await?;
-            let vout_info = tx_info["vout"].get(input.previous_output.vout as usize)
-                .ok_or_else(|| DeezelError::Wallet(format!("Vout {} not found for tx {}", input.previous_output.vout, input.previous_output.txid)))?;
-            
-            let amount = vout_info["value"].as_u64()
-                .ok_or_else(|| DeezelError::Wallet("UTXO value not found".to_string()))?;
-            let script_pubkey_hex = vout_info["scriptpubkey"].as_str()
-                .ok_or_else(|| DeezelError::Wallet("UTXO script pubkey not found".to_string()))?;
-            
-            let script_pubkey = ScriptBuf::from(Vec::from_hex(script_pubkey_hex)?);
-            prevouts.push(TxOut { value: Amount::from_sat(amount), script_pubkey });
+            let utxo = self.get_utxo(&input.previous_output).await?
+                .ok_or_else(|| DeezelError::Wallet(format!("UTXO not found: {}", input.previous_output)))?;
+            prevouts.push(utxo);
         }
 
-        // 4. Get mutable access to the wallet state *after* all immutable borrows are done.
         let (keystore, mnemonic) = match &mut self.wallet_state {
             WalletState::Unlocked { keystore, mnemonic } => (keystore, mnemonic),
             _ => return Err(DeezelError::Wallet("Wallet must be unlocked to sign transactions".to_string())),
         };
 
-        // 5. Sign each input
         let mut sighash_cache = SighashCache::new(&mut tx);
-        for i in 0..prevouts.len() {
+        for (i, psbt_input) in psbt.inputs.iter_mut().enumerate() {
             let prev_txout = &prevouts[i];
-            
-            // Find the address and its derivation path from our keystore
-            let address = Address::from_script(&prev_txout.script_pubkey, network)
-                .map_err(|e| DeezelError::Wallet(format!("Failed to parse address from script: {}", e)))?;
-            
-            // This call now takes a mutable keystore and may cache the derived address info.
-            let addr_info = Self::find_address_info(keystore, &address, network)?;
-            let path = DerivationPath::from_str(&addr_info.path)?;
 
-            // Derive the private key for this input
-            let mnemonic_obj = Mnemonic::from_phrase(mnemonic, bip39::Language::English)?;
-            let seed = Seed::new(&mnemonic_obj, "");
-            let root_key = Xpriv::new_master(network, seed.as_bytes())?;
-            let derived_xpriv = root_key.derive_priv(&secp, &path)?;
-            let keypair = derived_xpriv.to_keypair(&secp);
-            let untweaked_keypair = UntweakedKeypair::from(keypair);
-            let tweaked_keypair = untweaked_keypair.tap_tweak(&secp, None);
+            if !psbt_input.tap_scripts.is_empty() {
+                // Script-path spend
+                let (control_block, (script, leaf_version)) = psbt_input.tap_scripts.iter().next().unwrap();
+                let leaf_hash = taproot::TapLeafHash::from_script(script, *leaf_version);
+                let sighash = sighash_cache.taproot_script_spend_signature_hash(
+                    i,
+                    &Prevouts::All(&prevouts),
+                    leaf_hash,
+                    TapSighashType::Default,
+                )?;
+                
+                // Find the keypair corresponding to the internal public key from the PSBT's tap_key_origins.
+                // There should be exactly one entry for a script path spend.
+                let (internal_pk, (_leaf_hashes, (master_fingerprint, derivation_path))) = psbt_input.tap_key_origins.iter().next()
+                    .ok_or_else(|| DeezelError::Wallet("tap_key_origins is empty for script spend".to_string()))?;
 
-            // Create the sighash
-            let sighash = sighash_cache.taproot_key_spend_signature_hash(
-                i,
-                &Prevouts::All(&prevouts),
-                TapSighashType::Default,
-            )?;
+                if *master_fingerprint != Fingerprint::from_str(&keystore.master_fingerprint)? {
+                    return Err(DeezelError::Wallet(
+                        "Master fingerprint mismatch in tap_key_origins".to_string(),
+                    ));
+                }
 
-            // Sign the sighash
-            let msg = bitcoin::secp256k1::Message::from(sighash);
-            #[cfg(not(target_arch = "wasm32"))]
-            let signature = secp.sign_schnorr_with_rng(&msg, &tweaked_keypair.to_keypair(), &mut thread_rng());
-            #[cfg(target_arch = "wasm32")]
-            let signature = secp.sign_schnorr_with_rng(&msg, &tweaked_keypair.to_keypair(), &mut OsRng);
-            
-            let taproot_signature = taproot::Signature {
-                signature,
-                sighash_type: TapSighashType::Default,
-            };
+                // Derive the private key for this input
+                let mnemonic_obj = Mnemonic::from_phrase(mnemonic, bip39::Language::English)?;
+                let seed = Seed::new(&mnemonic_obj, "");
+                let root_key = Xpriv::new_master(network, seed.as_bytes())?;
+                let derived_xpriv = root_key.derive_priv(&secp, derivation_path)?;
+                let keypair = derived_xpriv.to_keypair(&secp);
 
-            psbt.inputs[i].tap_key_sig = Some(taproot_signature);
+                // Verify that the derived key matches the public key from the PSBT
+                if keypair.public_key().x_only_public_key().0 != *internal_pk {
+                    return Err(DeezelError::Wallet("Derived key does not match internal public key in PSBT".to_string()));
+                }
+
+                let msg = bitcoin::secp256k1::Message::from(sighash);
+                
+                #[cfg(not(target_arch = "wasm32"))]
+                let signature = self.secp.sign_schnorr_with_rng(&msg, &keypair, &mut rand::thread_rng());
+                #[cfg(target_arch = "wasm32")]
+                let signature = self.secp.sign_schnorr_with_rng(&msg, &keypair, &mut OsRng);
+
+                let taproot_signature = taproot::Signature { signature, sighash_type: TapSighashType::Default };
+                
+                let mut final_witness = Witness::new();
+                final_witness.push(taproot_signature.to_vec());
+                final_witness.push(script.as_bytes());
+                final_witness.push(control_block.serialize());
+                psbt_input.final_script_witness = Some(final_witness);
+
+            } else {
+                // Key-path spend
+                let address = Address::from_script(&prev_txout.script_pubkey, network)
+                    .map_err(|e| DeezelError::Wallet(format!("Failed to parse address from script: {}", e)))?;
+                
+                let addr_info = Self::find_address_info(keystore, &address, network)?;
+                let path = DerivationPath::from_str(&addr_info.path)?;
+
+                let mnemonic_obj = Mnemonic::from_phrase(mnemonic, bip39::Language::English)?;
+                let seed = Seed::new(&mnemonic_obj, "");
+                let root_key = Xpriv::new_master(network, seed.as_bytes())?;
+                let derived_xpriv = root_key.derive_priv(&secp, &path)?;
+                let keypair = derived_xpriv.to_keypair(&secp);
+                let untweaked_keypair = UntweakedKeypair::from(keypair);
+                let tweaked_keypair = untweaked_keypair.tap_tweak(&secp, None);
+
+                let sighash = sighash_cache.taproot_key_spend_signature_hash(
+                    i,
+                    &Prevouts::All(&prevouts),
+                    TapSighashType::Default,
+                )?;
+
+                let msg = bitcoin::secp256k1::Message::from(sighash);
+                #[cfg(not(target_arch = "wasm32"))]
+                let signature = secp.sign_schnorr_with_rng(&msg, &tweaked_keypair.to_keypair(), &mut thread_rng());
+                #[cfg(target_arch = "wasm32")]
+                let signature = secp.sign_schnorr_with_rng(&msg, &tweaked_keypair.to_keypair(), &mut OsRng);
+                
+                let taproot_signature = taproot::Signature {
+                    signature,
+                    sighash_type: TapSighashType::Default,
+                };
+
+                psbt_input.tap_key_sig = Some(taproot_signature);
+            }
         }
 
         Ok(psbt)
@@ -1236,11 +1290,16 @@ impl MetashrewRpcProvider for ConcreteProvider {
     async fn trace_outpoint(&self, txid: &str, vout: u32) -> Result<JsonValue> {
         let txid_parsed = bitcoin::Txid::from_str(txid)?;
         let mut outpoint_pb = alkanes_pb::Outpoint::new();
-        outpoint_pb.txid = txid_parsed.to_raw_hash().to_byte_array().to_vec().into_iter().rev().collect::<Vec<u8>>();
+        // The metashrew_view `trace` method expects the raw txid bytes (little-endian),
+        // which is how the `bitcoin::Txid` type stores them internally.
+        // We do not need to reverse them.
+        outpoint_pb.txid = txid_parsed.to_raw_hash().to_byte_array().to_vec();
         outpoint_pb.vout = vout;
 
         let hex_input = format!("0x{}", hex::encode(outpoint_pb.write_to_bytes()?));
-        let response_bytes = self.metashrew_view_call("trace", &hex_input).await?;
+        let response_bytes = self
+            .metashrew_view_call("trace", &hex_input, "latest")
+            .await?;
         if response_bytes.is_empty() {
             return Ok(JsonValue::Null);
         }
@@ -1254,14 +1313,151 @@ impl MetashrewRpcProvider for ConcreteProvider {
         self.call(&self.metashrew_rpc_url, "spendablesbyaddress", params, 1).await
     }
     
-    async fn get_protorunes_by_address(&self, address: &str) -> Result<serde_json::Value> {
-        let params = serde_json::json!([address]);
-        self.call(&self.metashrew_rpc_url, "protorunesbyaddress", params, 1).await
+    async fn get_protorunes_by_address(
+        &self,
+        address: &str,
+        block_tag: Option<String>,
+    ) -> Result<crate::alkanes::protorunes::ProtoruneWalletResponse> {
+        let mut request = protorune_pb::WalletRequest::new();
+        request.wallet = address.as_bytes().to_vec();
+        let hex_input = format!("0x{}", hex::encode(request.write_to_bytes()?));
+        let response_bytes = self
+            .metashrew_view_call(
+                "protorunesbyaddress",
+                &hex_input,
+                block_tag.as_deref().unwrap_or("latest"),
+            )
+            .await?;
+        if response_bytes.is_empty() {
+            return Ok(crate::alkanes::protorunes::ProtoruneWalletResponse {
+                balances: vec![],
+            });
+        }
+        let wallet_response = protorune_pb::WalletResponse::parse_from_bytes(&response_bytes)?;
+        let mut balances = vec![];
+        for item in wallet_response.outpoints.into_iter() {
+            let outpoint = item.outpoint.into_option().ok_or_else(|| {
+                DeezelError::Other("missing outpoint in wallet response".to_string())
+            })?;
+            let output = item.output.into_option().ok_or_else(|| {
+                DeezelError::Other("missing output in wallet response".to_string())
+            })?;
+            let balance_sheet_pb = item.balances.into_option().ok_or_else(|| {
+                DeezelError::Other("missing balance sheet in wallet response".to_string())
+            })?;
+            let txid_bytes: [u8; 32] = outpoint.txid.try_into().map_err(|_| {
+                DeezelError::Other("invalid txid length in wallet response".to_string())
+            })?;
+            balances.push(crate::alkanes::protorunes::ProtoruneOutpointResponse {
+                output: TxOut {
+                    value: Amount::from_sat(output.value),
+                    script_pubkey: ScriptBuf::from_bytes(output.script),
+                },
+                outpoint: OutPoint {
+                    txid: bitcoin::Txid::from_byte_array(txid_bytes),
+                    vout: outpoint.vout,
+                },
+                balance_sheet: {
+                    let mut balances_map = BTreeMap::new();
+                    for entry in balance_sheet_pb.entries {
+                        if let Some(rune) = entry.rune.into_option() {
+                            if let Some(rune_id) = rune.runeId.into_option() {
+                                if let (Some(height), Some(txindex), Some(balance)) = (
+                                    rune_id.height.into_option(),
+                                    rune_id.txindex.into_option(),
+                                    entry.balance.into_option(),
+                                ) {
+                                    let protorune_id =
+                                        protorune_support::balance_sheet::ProtoruneRuneId {
+                                            block: height.lo as u128,
+                                            tx: txindex.lo as u128,
+                                        };
+                                    balances_map.insert(protorune_id, balance.lo as u128);
+                                }
+                            }
+                        }
+                    }
+                    protorune_support::balance_sheet::BalanceSheet {
+                        cached: protorune_support::balance_sheet::CachedBalanceSheet {
+                            balances: balances_map,
+                        },
+                        load_ptrs: vec![],
+                    }
+                },
+            });
+        }
+        Ok(crate::alkanes::protorunes::ProtoruneWalletResponse { balances })
     }
-    
-    async fn get_protorunes_by_outpoint(&self, txid: &str, vout: u32) -> Result<serde_json::Value> {
-        let params = serde_json::json!([format!("{}:{}", txid, vout)]);
-        self.call(&self.metashrew_rpc_url, "protorunesbyoutpoint", params, 1).await
+
+    async fn get_protorunes_by_outpoint(
+        &self,
+        txid: &str,
+        vout: u32,
+        block_tag: Option<String>,
+    ) -> Result<crate::alkanes::protorunes::ProtoruneOutpointResponse> {
+        let txid = bitcoin::Txid::from_str(txid)?;
+        let outpoint = bitcoin::OutPoint { txid, vout };
+        let mut request = protorune_pb::OutpointWithProtocol::new();
+        request.txid = outpoint.txid.to_byte_array().to_vec();
+        request.vout = outpoint.vout;
+        let hex_input = format!("0x{}", hex::encode(request.write_to_bytes()?));
+        let response_bytes = self
+            .metashrew_view_call(
+                "protorunesbyoutpoint",
+                &hex_input,
+                block_tag.as_deref().unwrap_or("latest"),
+            )
+            .await?;
+        if response_bytes.is_empty() {
+            return Err(DeezelError::Other(
+                "empty response from protorunesbyoutpoint".to_string(),
+            ));
+        }
+        let proto_response = protorune_pb::OutpointResponse::parse_from_bytes(&response_bytes)?;
+        let output = proto_response
+            .output
+            .into_option()
+            .ok_or_else(|| DeezelError::Other("missing output in outpoint response".to_string()))?;
+        let balance_sheet_pb = proto_response
+            .balances
+            .into_option()
+            .ok_or_else(|| {
+                DeezelError::Other("missing balance sheet in outpoint response".to_string())
+            })?;
+        Ok(crate::alkanes::protorunes::ProtoruneOutpointResponse {
+            output: TxOut {
+                value: Amount::from_sat(output.value),
+                script_pubkey: ScriptBuf::from_bytes(output.script),
+            },
+            outpoint,
+            balance_sheet: {
+                let mut balances_map = BTreeMap::new();
+                for entry in balance_sheet_pb.entries {
+                    if let Some(rune) = entry.rune.into_option() {
+                        if let Some(rune_id) = rune.runeId.into_option() {
+                            if let (Some(height), Some(txindex), Some(balance)) = (
+                                rune_id.height.into_option(),
+                                rune_id.txindex.into_option(),
+                                entry.balance.into_option(),
+                            ) {
+                                let protorune_id =
+                                    protorune_support::balance_sheet::ProtoruneRuneId {
+                                        block: height.lo as u128,
+                                        tx: txindex.lo as u128,
+                                    };
+                                balances_map.insert(protorune_id, balance.lo as u128);
+                            }
+                        }
+                    }
+                }
+                protorune_support::balance_sheet::BalanceSheet {
+                    cached: protorune_support::balance_sheet::CachedBalanceSheet {
+                        balances: balances_map,
+                    },
+                    load_ptrs: vec![],
+                }
+            },
+        })
     }
 }
 
@@ -1703,53 +1899,22 @@ impl AlkanesProvider for ConcreteProvider {
         executor.resume_reveal_execution(state).await
     }
 
-    async fn protorunes_by_address(&self, address: &str) -> Result<JsonValue> {
-        let mut request = protorune_pb::WalletRequest::new();
-        request.wallet = address.as_bytes().to_vec();
-        let hex_input = format!("0x{}", hex::encode(request.write_to_bytes()?));
-        let response_bytes = self.metashrew_view_call("protorunesbyaddress", &hex_input).await?;
-        if response_bytes.is_empty() {
-            return Ok(serde_json::Value::Array(vec![]));
-        }
-        let proto_sheet = protorune_pb::BalanceSheet::parse_from_bytes(&response_bytes)?;
-
-        let entries: Vec<serde_json::Value> = proto_sheet.entries.into_iter().map(|item| {
-            let rune = item.rune.as_ref();
-            let rune_id = rune.and_then(|r| r.runeId.as_ref());
-            serde_json::json!({
-                "rune": {
-                    "runeId": {
-                        "height": rune_id.and_then(|id| id.height.as_ref()).map_or(0, |h| h.lo),
-                        "txindex": rune_id.and_then(|id| id.txindex.as_ref()).map_or(0, |t| t.lo)
-                    },
-                    "name": rune.map_or("".to_string(), |r| r.name.clone()),
-                    "divisibility": rune.map_or(0, |r| r.divisibility),
-                    "spacers": rune.map_or(0, |r| r.spacers),
-                    "symbol": rune.map_or("".to_string(), |r| r.symbol.clone()),
-                },
-                "balance": item.balance.as_ref().map_or(0, |b| b.lo)
-            })
-        }).collect();
-
-        Ok(serde_json::json!({ "entries": entries }))
+    async fn protorunes_by_address(
+        &self,
+        address: &str,
+        block_tag: Option<String>,
+    ) -> Result<crate::alkanes::protorunes::ProtoruneWalletResponse> {
+        <Self as MetashrewRpcProvider>::get_protorunes_by_address(self, address, block_tag).await
     }
 
     async fn protorunes_by_outpoint(
-  &self,
-  txid: &str,
-  vout: u32,
- ) -> Result<protorune_pb::OutpointResponse> {
-       let txid = bitcoin::Txid::from_str(txid)?;
-       let outpoint = bitcoin::OutPoint { txid, vout };
-       let key_bytes = consensus::encode::serialize(&outpoint);
-       let hex_input = format!("0x{}", hex::encode(key_bytes));
-       let response_bytes = self.metashrew_view_call("protorunesbyoutpoint", &hex_input).await?;
-       if response_bytes.is_empty() {
-           return Ok(protorune_pb::OutpointResponse::new());
-       }
-       let proto_response = protorune_pb::OutpointResponse::parse_from_bytes(&response_bytes)?;
-       Ok(proto_response)
- }
+        &self,
+        txid: &str,
+        vout: u32,
+        block_tag: Option<String>,
+    ) -> Result<crate::alkanes::protorunes::ProtoruneOutpointResponse> {
+        <Self as MetashrewRpcProvider>::get_protorunes_by_outpoint(self, txid, vout, block_tag).await
+    }
 
     async fn simulate(&self, contract_id: &str, params: Option<&str>) -> Result<JsonValue> {
         let parts: Vec<&str> = contract_id.split(':').collect();
@@ -1791,7 +1956,7 @@ impl AlkanesProvider for ConcreteProvider {
         out_point_pb.vout = vout;
 
         let hex_input = format!("0x{}", hex::encode(out_point_pb.write_to_bytes()?));
-        let response_bytes = self.metashrew_view_call("trace", &hex_input).await?;
+        let response_bytes = self.metashrew_view_call("trace", &hex_input, "latest").await?;
         
         let trace = alkanes_pb::Trace::parse_from_bytes(&response_bytes)?;
         Ok(trace)
@@ -1802,7 +1967,7 @@ impl AlkanesProvider for ConcreteProvider {
         block_request.height = height as u32;
         
         let hex_input = format!("0x{}", hex::encode(block_request.write_to_bytes()?));
-        let response_bytes = self.metashrew_view_call("getblock", &hex_input).await?;
+        let response_bytes = self.metashrew_view_call("getblock", &hex_input, "latest").await?;
 
         let block_response = alkanes_pb::BlockResponse::parse_from_bytes(&response_bytes)?;
         Ok(block_response)
@@ -1817,7 +1982,9 @@ impl AlkanesProvider for ConcreteProvider {
         let mut request = protorune_pb::WalletRequest::new();
         request.wallet = address.as_bytes().to_vec();
         let hex_input = format!("0x{}", hex::encode(request.write_to_bytes()?));
-        let response_bytes = self.metashrew_view_call("spendablesbyaddress", &hex_input).await?;
+        let response_bytes = self
+            .metashrew_view_call("spendablesbyaddress", &hex_input, "latest")
+            .await?;
         if response_bytes.is_empty() {
             return Ok(serde_json::json!([]));
         }
@@ -1851,7 +2018,7 @@ impl AlkanesProvider for ConcreteProvider {
         block_request.height = height as u32;
         
         let hex_input = format!("0x{}", hex::encode(block_request.write_to_bytes()?));
-        let response_bytes = self.metashrew_view_call("traceblock", &hex_input).await?;
+        let response_bytes = self.metashrew_view_call("traceblock", &hex_input, "latest").await?;
 
         let trace = alkanes_pb::Trace::parse_from_bytes(&response_bytes)?;
         Ok(trace)
@@ -1877,7 +2044,7 @@ impl AlkanesProvider for ConcreteProvider {
         request.id = ::protobuf::MessageField::some(alkane_id_pb);
 
         let hex_input = format!("0x{}", hex::encode(request.write_to_bytes()?));
-        let response_bytes = self.metashrew_view_call("getbytecode", &hex_input).await?;
+        let response_bytes = self.metashrew_view_call("getbytecode", &hex_input, "latest").await?;
 
         Ok(format!("0x{}", hex::encode(response_bytes)))
     }
@@ -1929,7 +2096,9 @@ impl AlkanesProvider for ConcreteProvider {
         let mut request = protorune_pb::WalletRequest::new();
         request.wallet = addr_str.as_bytes().to_vec();
         let hex_input = format!("0x{}", hex::encode(request.write_to_bytes()?));
-        let response_bytes = self.metashrew_view_call("balancesbyaddress", &hex_input).await?;
+        let response_bytes = self
+            .metashrew_view_call("balancesbyaddress", &hex_input, "latest")
+            .await?;
         if response_bytes.is_empty() {
             return Ok(vec![]);
         }

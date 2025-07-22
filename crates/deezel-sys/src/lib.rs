@@ -135,6 +135,10 @@ impl System for SystemDeezel {
     fn provider(&self) -> &dyn DeezelProvider {
         &self.provider
     }
+
+    fn provider_mut(&mut self) -> &mut dyn DeezelProvider {
+        &mut self.provider
+    }
 }
 
 // Implement the individual system traits
@@ -160,13 +164,13 @@ impl SystemWallet for SystemDeezel {
         }
 
        let res: anyhow::Result<()> = match command {
-           WalletCommands::Create { mnemonic } => {
+           WalletCommands::Create { mnemonic, passphrase } => {
                println!("🔐 Creating encrypted keystore...");
 
                // Create keystore parameters, including the passphrase from CLI args
                let keystore_params = KeystoreCreateParams {
                    mnemonic: mnemonic.clone(),
-                   passphrase: self.args.passphrase.clone(),
+                   passphrase: passphrase.clone(),
                    network: provider.get_network(),
                    address_count: 5, // This parameter is now unused but kept for compatibility
                    hd_path: None,
@@ -1120,20 +1124,6 @@ impl SystemAlkanes for SystemDeezel {
                                     }
                                 }
                             }
-
-                            // After successful broadcast, check if we need to mine
-                            if execute_params.mine_enabled {
-                                println!("⛏️  Mining a new block to confirm the transaction...");
-                                let mine_to_address = get_new_address(&provider).await?;
-                                provider.generate_to_address(1, &mine_to_address).await?;
-                                println!("✅ Block mined successfully to address: {}", mine_to_address);
-                            }
-
-                            println!("🔄 Synchronizing backends...");
-                            provider.sync().await?;
-                            println!("✅ Backends synchronized.");
-
-                            
                             break;
                         }
                     }
@@ -1353,8 +1343,8 @@ impl SystemProtorunes for SystemDeezel {
    async fn execute_protorunes_command(&self, command: ProtorunesCommands) -> deezel_common::Result<()> {
        let provider = &self.provider;
        let res: anyhow::Result<()> = match command {
-            ProtorunesCommands::ByAddress { address, raw } => {
-                let result = provider.get_protorunes_by_address(&address).await?;
+            ProtorunesCommands::ByAddress { address, raw, block_tag } => {
+                let result = provider.get_protorunes_by_address(&address, block_tag).await?;
                 
                 if raw {
                     println!("{}", serde_json::to_string_pretty(&result)?);
@@ -1365,8 +1355,8 @@ impl SystemProtorunes for SystemDeezel {
                 }
                 Ok(())
             },
-           ProtorunesCommands::ByOutpoint { txid, vout, raw } => {
-               let result = provider.get_protorunes_by_outpoint(&txid, vout).await?;
+           ProtorunesCommands::ByOutpoint { txid, vout, raw, block_tag } => {
+               let result = provider.get_protorunes_by_outpoint(&txid, vout, block_tag).await?;
                
                if raw {
                    println!("{}", serde_json::to_string_pretty(&result)?);
@@ -1811,7 +1801,7 @@ impl SystemOrd for SystemDeezel {
                 }
                 Ok(())
             },
-            OrdCommands::Address { address, raw } => {
+            OrdCommands::AddressInfo { address, raw } => {
                 let result = provider.get_ord_address_info(&address).await?;
                 if raw {
                     println!("{}", serde_json::to_string_pretty(&result)?);
@@ -1820,7 +1810,7 @@ impl SystemOrd for SystemDeezel {
                 }
                 Ok(())
             },
-            OrdCommands::Block { query, raw } => {
+            OrdCommands::BlockInfo { query, raw } => {
                 let result = provider.get_block_info(&query).await?;
                 if raw {
                     println!("{}", serde_json::to_string_pretty(&result)?);
@@ -1829,13 +1819,9 @@ impl SystemOrd for SystemDeezel {
                 }
                 Ok(())
             },
-            OrdCommands::BlockCount { raw } => {
+            OrdCommands::BlockCount => {
                 let result = provider.get_ord_block_count().await?;
-                if raw {
-                    println!("{}", serde_json::to_string_pretty(&result)?);
-                } else {
-                    println!("Block count:\n{}", serde_json::to_string_pretty(&result)?);
-                }
+                println!("Block count:\n{}", serde_json::to_string_pretty(&result)?);
                 Ok(())
             },
             OrdCommands::Blocks { raw } => {
@@ -1916,7 +1902,7 @@ impl SystemOrd for SystemDeezel {
                 }
                 Ok(())
             },
-            OrdCommands::Tx { txid, raw } => {
+            OrdCommands::TxInfo { txid, raw } => {
                 let result = provider.get_tx_info(&txid).await?;
                 if raw {
                     println!("{}", serde_json::to_string_pretty(&result)?);

@@ -277,10 +277,13 @@ impl WalletProvider for WebProvider {
         self.network()
     }
 
-    async fn get_internal_key(&self) -> Result<bitcoin::XOnlyPublicKey> {
+    async fn get_internal_key(&self) -> Result<(bitcoin::XOnlyPublicKey, (bitcoin::bip32::Fingerprint, bitcoin::bip32::DerivationPath))> {
         // Mock internal key
-        Ok(bitcoin::XOnlyPublicKey::from_slice(&[0; 32])
-            .map_err(|e| DeezelError::Wallet(format!("Failed to create internal key: {}", e)))?)
+        let key = bitcoin::XOnlyPublicKey::from_slice(&[1; 32])
+            .map_err(|e| DeezelError::Wallet(format!("Failed to create internal key: {}", e)))?;
+        let fingerprint = bitcoin::bip32::Fingerprint::from_str("00000000").unwrap();
+        let path = bitcoin::bip32::DerivationPath::from_str("m/86'/1'/0'").unwrap();
+        Ok((key, (fingerprint, path)))
     }
 
     async fn sign_psbt(&mut self, psbt: &bitcoin::psbt::Psbt) -> Result<bitcoin::psbt::Psbt> {

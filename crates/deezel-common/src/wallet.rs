@@ -348,7 +348,7 @@ impl<P: DeezelProvider> WalletManager<P> {
     
     /// Get internal key for wallet
     pub async fn get_internal_key(&self) -> Result<bitcoin::XOnlyPublicKey> {
-        self.provider.get_internal_key().await
+        self.provider.get_internal_key().await.map(|(key, _)| key)
     }
     
     /// Sign PSBT

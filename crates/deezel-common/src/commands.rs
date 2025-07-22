@@ -65,7 +65,7 @@ pub struct Args {
 }
 
 /// Available commands
-#[derive(Subcommand, Debug, Clone)]
+#[derive(Subcommand, Debug, Clone, Serialize, Deserialize)]
 pub enum Commands {
     /// Wallet operations
     Wallet {
@@ -118,14 +118,21 @@ pub enum Commands {
     Ord(OrdCommands),
 }
 
+impl From<RunestoneCommands> for Commands {
+    fn from(command: RunestoneCommands) -> Self {
+        Commands::Runestone { command }
+    }
+}
+
 /// Wallet subcommands
-#[derive(Subcommand, Debug, Clone)]
+#[derive(Subcommand, Debug, Clone, Serialize, Deserialize)]
 pub enum WalletCommands {
     /// Create a new wallet
     Create {
         /// Optional mnemonic phrase (if not provided, a new one will be generated)
         #[arg(long)]
         mnemonic: Option<String>,
+        passphrase: Option<String>,
     },
     /// Restore wallet from mnemonic
     Restore {
@@ -373,14 +380,14 @@ pub enum BitcoindCommands {
 }
 
 /// Metashrew RPC subcommands
-#[derive(Subcommand, Debug, Clone)]
+#[derive(Subcommand, Debug, Clone, Serialize, Deserialize)]
 pub enum MetashrewCommands {
     /// Get Metashrew height
     Height,
 }
 
 /// Alkanes smart contract subcommands
-#[derive(Subcommand, Debug, Clone)]
+#[derive(Subcommand, Debug, Clone, Serialize, Deserialize)]
 pub enum AlkanesCommands {
     /// Get bytecode for an alkanes contract
     GetBytecode {
@@ -517,7 +524,7 @@ impl AlkanesCommands {
 }
 
 /// Runestone analysis subcommands
-#[derive(Subcommand, Debug, Clone)]
+#[derive(Subcommand, Debug, Clone, Serialize, Deserialize)]
 pub enum RunestoneCommands {
     /// Decode runestone from transaction hex
     Decode {
@@ -538,7 +545,7 @@ pub enum RunestoneCommands {
 }
 
 /// Protorunes subcommands
-#[derive(Subcommand, Debug, Clone)]
+#[derive(Subcommand, Debug, Clone, Serialize, Deserialize)]
 pub enum ProtorunesCommands {
     /// Get protorunes by address
     ByAddress {
@@ -547,6 +554,9 @@ pub enum ProtorunesCommands {
         /// Show raw JSON output
         #[arg(long)]
         raw: bool,
+        /// Block tag to query (e.g., "latest" or a block height)
+        #[arg(long)]
+        block_tag: Option<String>,
     },
     /// Get protorunes by outpoint
     ByOutpoint {
@@ -557,11 +567,14 @@ pub enum ProtorunesCommands {
         /// Show raw JSON output
         #[arg(long)]
         raw: bool,
+        /// Block tag to query (e.g., "latest" or a block height)
+        #[arg(long)]
+        block_tag: Option<String>,
     },
 }
 
 /// Monitor subcommands
-#[derive(Subcommand, Debug, Clone)]
+#[derive(Subcommand, Debug, Clone, Serialize, Deserialize)]
 pub enum MonitorCommands {
     /// Monitor blocks for events
     Blocks {
@@ -575,7 +588,7 @@ pub enum MonitorCommands {
 }
 
 /// Esplora API subcommands
-#[derive(Subcommand, Debug, Clone)]
+#[derive(Subcommand, Debug, Clone, Serialize, Deserialize)]
 pub enum EsploraCommands {
     /// Get blocks tip hash
     BlocksTipHash {
@@ -810,7 +823,7 @@ pub enum OrdCommands {
         raw: bool,
     },
     /// Get address information
-    Address {
+    AddressInfo {
         /// The address
         address: String,
         /// Show raw JSON output
@@ -818,7 +831,7 @@ pub enum OrdCommands {
         raw: bool,
     },
     /// Get block information
-    Block {
+    BlockInfo {
         /// The block hash or height
         query: String,
         /// Show raw JSON output
@@ -826,11 +839,7 @@ pub enum OrdCommands {
         raw: bool,
     },
     /// Get latest block count
-    BlockCount {
-        /// Show raw JSON output
-        #[arg(long)]
-        raw: bool,
-    },
+    BlockCount,
     /// Get latest blocks
     Blocks {
         /// Show raw JSON output
@@ -907,7 +916,7 @@ pub enum OrdCommands {
         raw: bool,
     },
     /// Get transaction information
-    Tx {
+    TxInfo {
         /// The transaction ID
         txid: String,
         /// Show raw JSON output

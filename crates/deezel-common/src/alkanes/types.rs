@@ -3,6 +3,10 @@
 use serde::{Deserialize, Serialize};
 use alkanes_support::cellpack::Cellpack;
 use serde_json::Value as JsonValue;
+use bitcoin::{
+    bip32::{DerivationPath, Fingerprint},
+    XOnlyPublicKey,
+};
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::{string::String, vec::Vec};
@@ -279,6 +283,12 @@ pub struct ReadyToSignCommitTx {
     pub params: EnhancedExecuteParams,
     #[serde(with = "serde_envelope")]
     pub envelope: super::envelope::AlkanesEnvelope,
+    #[serde(with = "serde_xonly_public_key")]
+    pub commit_internal_key: XOnlyPublicKey,
+    #[serde(with = "serde_fingerprint")]
+    pub commit_internal_key_fingerprint: Fingerprint,
+    #[serde(with = "serde_derivation_path")]
+    pub commit_internal_key_path: DerivationPath,
 }
 
 /// Contains the necessary information for signing a reveal transaction.
@@ -292,6 +302,12 @@ pub struct ReadyToSignRevealTx {
     pub commit_fee: u64,
     pub params: EnhancedExecuteParams,
     pub inspection_result: Option<AlkanesInspectResult>,
+    #[serde(with = "serde_xonly_public_key")]
+    pub commit_internal_key: XOnlyPublicKey,
+    #[serde(with = "serde_fingerprint")]
+    pub commit_internal_key_fingerprint: Fingerprint,
+    #[serde(with = "serde_derivation_path")]
+    pub commit_internal_key_path: DerivationPath,
 }
 
 mod serde_psbt {
@@ -333,6 +349,71 @@ mod serde_envelope {
     {
         let bytes: Vec<u8> = serde::de::Deserialize::deserialize(deserializer)?;
         Ok(AlkanesEnvelope::for_contract(bytes))
+    }
+}
+
+mod serde_xonly_public_key {
+    use bitcoin::XOnlyPublicKey;
+    use serde::{self, Deserializer, Serializer, de::Error};
+    use alloc::vec::Vec;
+
+    pub fn serialize<S>(key: &XOnlyPublicKey, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_bytes(&key.serialize())
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<XOnlyPublicKey, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let bytes: Vec<u8> = serde::de::Deserialize::deserialize(deserializer)?;
+        XOnlyPublicKey::from_slice(&bytes).map_err(Error::custom)
+    }
+}
+
+mod serde_fingerprint {
+    use bitcoin::bip32::Fingerprint;
+    use serde::{self, Deserializer, Serializer, de::Error, Deserialize};
+    use alloc::string::ToString;
+    use core::str::FromStr;
+
+    pub fn serialize<S>(fingerprint: &Fingerprint, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&fingerprint.to_string())
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Fingerprint, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = alloc::string::String::deserialize(deserializer)?;
+        Fingerprint::from_str(&s).map_err(Error::custom)
+    }
+}
+
+mod serde_derivation_path {
+    use bitcoin::bip32::DerivationPath;
+    use serde::{self, Deserializer, Serializer, de::Error, Deserialize};
+    use alloc::string::ToString;
+    use core::str::FromStr;
+
+    pub fn serialize<S>(path: &DerivationPath, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&path.to_string())
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<DerivationPath, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = alloc::string::String::deserialize(deserializer)?;
+        DerivationPath::from_str(&s).map_err(Error::custom)
     }
 }
 

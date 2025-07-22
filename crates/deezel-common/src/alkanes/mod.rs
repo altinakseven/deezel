@@ -11,5 +11,6 @@ pub mod parsing;
 pub mod types;
 pub mod envelope;
 pub mod inspector;
+pub mod protorunes;
 
 pub use types::*;

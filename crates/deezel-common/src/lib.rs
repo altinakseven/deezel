@@ -67,6 +67,7 @@ pub mod keystore;
 pub mod esplora;
 pub mod bitcoind;
 pub mod ord;
+pub mod index_pointer;
 
 #[cfg(any(test, feature = "test-utils"))]
 pub mod mock_provider;
@@ -327,6 +328,7 @@ pub fn init() {
 /// Utility functions for common operations
 pub mod prelude {
     pub use crate::traits::*;
+    pub use crate::index_pointer::{StubPointer};
     pub use crate::{DeezelError, Result};
     pub use crate::address::{DeezelAddress, NetworkConfig};
     pub use crate::network::NetworkParams;

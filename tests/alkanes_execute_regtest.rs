@@ -140,10 +140,7 @@ fn test_alkanes_execute_with_mine_and_trace() -> Result<()> {
 
     // Assertions
     assert!(stdout.contains("--- Transaction Preview ---"));
-    assert!(stdout.contains("Mining a new block..."));
-    assert!(stdout.contains("Block mined successfully to address:"));
-    assert!(stdout.contains("Synchronizing backends..."));
-    assert!(stdout.contains("Backends synchronized."));
+    assert!(stdout.contains("Mining blocks on regtest network..."));
     assert!(stdout.contains("Tracing protostone execution results..."));
     assert!(stdout.contains("Tracing protostone #0"));
 

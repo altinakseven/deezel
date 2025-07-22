@@ -19,7 +19,7 @@
 use crate::Result;
 use async_trait::async_trait;
 use serde_json::Value as JsonValue;
-use bitcoin::{Network, Transaction, ScriptBuf};
+use bitcoin::{Network, Transaction, ScriptBuf, bip32::{DerivationPath, Fingerprint}};
 use crate::ord::{
     AddressInfo as OrdAddressInfo, Block as OrdBlock, Blocks as OrdBlocks, Children as OrdChildren,
     Inscription as OrdInscription, Inscriptions as OrdInscriptions, Output as OrdOutput,
@@ -30,8 +30,8 @@ use crate::alkanes::types::{
     EnhancedExecuteParams, EnhancedExecuteResult, ExecutionState, ReadyToSignCommitTx,
     ReadyToSignRevealTx, ReadyToSignTx,
 };
+use crate::alkanes::protorunes::{ProtoruneOutpointResponse, ProtoruneWalletResponse};
 use alkanes_support::proto::alkanes as alkanes_pb;
-use protorune_support::proto::protorune as protorune_pb;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::{vec::Vec, boxed::Box, string::String};
@@ -228,7 +228,7 @@ pub trait WalletProvider {
     fn get_network(&self) -> Network;
     
     /// Get internal key for wallet
-    async fn get_internal_key(&self) -> Result<bitcoin::XOnlyPublicKey>;
+    async fn get_internal_key(&self) -> Result<(bitcoin::XOnlyPublicKey, (Fingerprint, DerivationPath))>;
     
     /// Sign PSBT
     async fn sign_psbt(&mut self, psbt: &bitcoin::psbt::Psbt) -> Result<bitcoin::psbt::Psbt>;
@@ -486,10 +486,19 @@ pub trait MetashrewRpcProvider {
     async fn get_spendables_by_address(&self, address: &str) -> Result<JsonValue>;
     
     /// Get protorunes by address
-    async fn get_protorunes_by_address(&self, address: &str) -> Result<JsonValue>;
+    async fn get_protorunes_by_address(
+        &self,
+        address: &str,
+        block_tag: Option<String>,
+    ) -> Result<ProtoruneWalletResponse>;
     
     /// Get protorunes by outpoint
-    async fn get_protorunes_by_outpoint(&self, txid: &str, vout: u32) -> Result<JsonValue>;
+    async fn get_protorunes_by_outpoint(
+        &self,
+        txid: &str,
+        vout: u32,
+        block_tag: Option<String>,
+    ) -> Result<ProtoruneOutpointResponse>;
 }
 
 /// Trait for Esplora API operations
@@ -661,8 +670,17 @@ pub trait AlkanesProvider {
         state: ReadyToSignRevealTx,
     ) -> Result<EnhancedExecuteResult>;
     
-    async fn protorunes_by_address(&self, address: &str) -> Result<JsonValue>;
-    async fn protorunes_by_outpoint(&self, txid: &str, vout: u32) -> Result<protorune_pb::OutpointResponse>;
+    async fn protorunes_by_address(
+        &self,
+        address: &str,
+        block_tag: Option<String>,
+    ) -> Result<ProtoruneWalletResponse>;
+    async fn protorunes_by_outpoint(
+        &self,
+        txid: &str,
+        vout: u32,
+        block_tag: Option<String>,
+    ) -> Result<ProtoruneOutpointResponse>;
     async fn simulate(&self, contract_id: &str, params: Option<&str>) -> Result<JsonValue>;
     async fn trace(&self, outpoint: &str) -> Result<alkanes_pb::Trace>;
     async fn get_block(&self, height: u64) -> Result<alkanes_pb::BlockResponse>;
@@ -897,7 +915,7 @@ impl<T: DeezelProvider + ?Sized> WalletProvider for Box<T> {
    fn get_network(&self) -> bitcoin::Network {
        (**self).get_network()
    }
-   async fn get_internal_key(&self) -> Result<bitcoin::XOnlyPublicKey> {
+   async fn get_internal_key(&self) -> Result<(bitcoin::XOnlyPublicKey, (Fingerprint, DerivationPath))> {
        (**self).get_internal_key().await
    }
    async fn sign_psbt(&mut self, psbt: &bitcoin::psbt::Psbt) -> Result<bitcoin::psbt::Psbt> {
@@ -983,12 +1001,21 @@ impl<T: DeezelProvider + ?Sized> MetashrewRpcProvider for Box<T> {
    async fn get_spendables_by_address(&self, address: &str) -> Result<serde_json::Value> {
        (**self).get_spendables_by_address(address).await
    }
-   async fn get_protorunes_by_address(&self, address: &str) -> Result<serde_json::Value> {
-       (**self).get_protorunes_by_address(address).await
-   }
-   async fn get_protorunes_by_outpoint(&self, txid: &str, vout: u32) -> Result<serde_json::Value> {
-       (**self).get_protorunes_by_outpoint(txid, vout).await
-   }
+    async fn get_protorunes_by_address(
+        &self,
+        address: &str,
+        block_tag: Option<String>,
+    ) -> Result<ProtoruneWalletResponse> {
+        (**self).get_protorunes_by_address(address, block_tag).await
+    }
+    async fn get_protorunes_by_outpoint(
+        &self,
+        txid: &str,
+        vout: u32,
+        block_tag: Option<String>,
+    ) -> Result<ProtoruneOutpointResponse> {
+        (**self).get_protorunes_by_outpoint(txid, vout, block_tag).await
+    }
 }
 
 #[async_trait(?Send)]
@@ -1175,11 +1202,20 @@ impl<T: DeezelProvider + ?Sized> AlkanesProvider for Box<T> {
     ) -> Result<EnhancedExecuteResult> {
         (**self).resume_reveal_execution(state).await
     }
-    async fn protorunes_by_address(&self, address: &str) -> Result<JsonValue> {
-        (**self).protorunes_by_address(address).await
+    async fn protorunes_by_address(
+        &self,
+        address: &str,
+        block_tag: Option<String>,
+    ) -> Result<ProtoruneWalletResponse> {
+        AlkanesProvider::protorunes_by_address(&**self, address, block_tag).await
     }
-    async fn protorunes_by_outpoint(&self, txid: &str, vout: u32) -> Result<protorune_pb::OutpointResponse> {
-        AlkanesProvider::protorunes_by_outpoint(&**self, txid, vout).await
+    async fn protorunes_by_outpoint(
+        &self,
+        txid: &str,
+        vout: u32,
+        block_tag: Option<String>,
+    ) -> Result<ProtoruneOutpointResponse> {
+        AlkanesProvider::protorunes_by_outpoint(&**self, txid, vout, block_tag).await
     }
     async fn simulate(&self, contract_id: &str, params: Option<&str>) -> Result<JsonValue> {
         (**self).simulate(contract_id, params).await
@@ -1346,4 +1382,6 @@ pub trait System:
 {
    /// Get the underlying provider
    fn provider(&self) -> &dyn DeezelProvider;
+   /// Get the underlying provider mutably
+   fn provider_mut(&mut self) -> &mut dyn DeezelProvider;
 }
