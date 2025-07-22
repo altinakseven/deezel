@@ -428,12 +428,17 @@ async fn execute_protorunes_command(
             }
         }
         Protorunes::ByOutpoint {
-            txid,
-            vout,
+            outpoint,
             raw,
             block_tag,
             protocol_tag,
         } => {
+            let parts: Vec<&str> = outpoint.split(':').collect();
+            if parts.len() != 2 {
+                return Err(anyhow::anyhow!("Invalid outpoint format. Expected txid:vout"));
+            }
+            let txid = parts[0].to_string();
+            let vout = parts[1].parse::<u32>()?;
             let result = provider
                 .protorunes_by_outpoint(&txid, vout, block_tag, protocol_tag)
                 .await?;

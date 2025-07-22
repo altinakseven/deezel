@@ -341,10 +341,8 @@ pub enum Protorunes {
     },
     /// Get protorunes by outpoint
     ByOutpoint {
-        /// Transaction ID
-        txid: String,
-        /// Output index
-        vout: u32,
+        /// Outpoint to query
+        outpoint: String,
         /// Show raw JSON output
         #[arg(long)]
         raw: bool,
