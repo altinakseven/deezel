@@ -75,11 +75,11 @@ impl AlkanesProvider for WebProvider {
         unimplemented!("resume_reveal_execution is not implemented for WebProvider")
     }
 
-    async fn protorunes_by_address(&self, _address: &str) -> Result<JsonValue> {
+    async fn protorunes_by_address(&self, _address: &str, _block_tag: Option<String>, _protocol_tag: u128) -> Result<deezel_common::alkanes::protorunes::ProtoruneWalletResponse> {
         unimplemented!()
     }
 
-    async fn protorunes_by_outpoint(&self, _txid: &str, _vout: u32) -> Result<protorune_support::proto::protorune::OutpointResponse> {
+    async fn protorunes_by_outpoint(&self, _txid: &str, _vout: u32, _block_tag: Option<String>, _protocol_tag: u128) -> Result<deezel_common::alkanes::protorunes::ProtoruneOutpointResponse> {
         unimplemented!()
     }
 

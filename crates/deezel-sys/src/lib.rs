@@ -1343,8 +1343,8 @@ impl SystemProtorunes for SystemDeezel {
    async fn execute_protorunes_command(&self, command: ProtorunesCommands) -> deezel_common::Result<()> {
        let provider = &self.provider;
        let res: anyhow::Result<()> = match command {
-            ProtorunesCommands::ByAddress { address, raw, block_tag } => {
-                let result = provider.get_protorunes_by_address(&address, block_tag).await?;
+            ProtorunesCommands::ByAddress { address, raw, block_tag, protocol_tag } => {
+                let result = provider.get_protorunes_by_address(&address, block_tag, protocol_tag).await?;
                 
                 if raw {
                     println!("{}", serde_json::to_string_pretty(&result)?);
@@ -1355,8 +1355,8 @@ impl SystemProtorunes for SystemDeezel {
                 }
                 Ok(())
             },
-           ProtorunesCommands::ByOutpoint { txid, vout, raw, block_tag } => {
-               let result = provider.get_protorunes_by_outpoint(&txid, vout, block_tag).await?;
+           ProtorunesCommands::ByOutpoint { txid, vout, raw, block_tag, protocol_tag } => {
+               let result = provider.get_protorunes_by_outpoint(&txid, vout, block_tag, protocol_tag).await?;
                
                if raw {
                    println!("{}", serde_json::to_string_pretty(&result)?);

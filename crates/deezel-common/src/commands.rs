@@ -36,7 +36,7 @@ pub struct Args {
     pub ord_url: Option<String>,
 
     /// Network provider
-    #[arg(short = 'p', long, default_value = "regtest")]
+    #[arg(short, long, default_value = "regtest")]
     pub provider: String,
 
     /// Custom network magic (overrides provider)
@@ -557,6 +557,9 @@ pub enum ProtorunesCommands {
         /// Block tag to query (e.g., "latest" or a block height)
         #[arg(long)]
         block_tag: Option<String>,
+        /// Protocol tag
+        #[arg(long, default_value = "1")]
+        protocol_tag: u128,
     },
     /// Get protorunes by outpoint
     ByOutpoint {
@@ -570,6 +573,9 @@ pub enum ProtorunesCommands {
         /// Block tag to query (e.g., "latest" or a block height)
         #[arg(long)]
         block_tag: Option<String>,
+        /// Protocol tag
+        #[arg(long, default_value = "1")]
+        protocol_tag: u128,
     },
 }
 

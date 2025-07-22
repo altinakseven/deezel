@@ -416,9 +416,10 @@ async fn execute_protorunes_command(
             address,
             raw,
             block_tag,
+            protocol_tag,
         } => {
             let result = provider
-                .protorunes_by_address(&address, block_tag)
+                .protorunes_by_address(&address, block_tag, protocol_tag)
                 .await?;
             if raw {
                 println!("{}", serde_json::to_string_pretty(&result)?);
@@ -431,9 +432,10 @@ async fn execute_protorunes_command(
             vout,
             raw,
             block_tag,
+            protocol_tag,
         } => {
             let result = provider
-                .protorunes_by_outpoint(&txid, vout, block_tag)
+                .protorunes_by_outpoint(&txid, vout, block_tag, protocol_tag)
                 .await?;
             if raw {
                 println!("{}", serde_json::to_string_pretty(&result)?);

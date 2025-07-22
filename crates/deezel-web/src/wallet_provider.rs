@@ -1216,12 +1216,12 @@ impl MetashrewRpcProvider for BrowserWalletProvider {
         self.web_provider.get_spendables_by_address(address).await
     }
     
-    async fn get_protorunes_by_address(&self, address: &str) -> Result<JsonValue> {
-        self.web_provider.get_protorunes_by_address(address).await
+    async fn get_protorunes_by_address(&self, address: &str, block_tag: Option<String>, protocol_tag: u128) -> Result<deezel_common::alkanes::protorunes::ProtoruneWalletResponse> {
+        self.web_provider.get_protorunes_by_address(address, block_tag, protocol_tag).await
     }
     
-    async fn get_protorunes_by_outpoint(&self, txid: &str, vout: u32) -> Result<JsonValue> {
-        self.web_provider.get_protorunes_by_outpoint(txid, vout).await
+    async fn get_protorunes_by_outpoint(&self, txid: &str, vout: u32, block_tag: Option<String>, protocol_tag: u128) -> Result<deezel_common::alkanes::protorunes::ProtoruneOutpointResponse> {
+        self.web_provider.get_protorunes_by_outpoint(txid, vout, block_tag, protocol_tag).await
     }
 }
 
@@ -1457,12 +1457,12 @@ impl AlkanesProvider for BrowserWalletProvider {
         self.web_provider.resume_reveal_execution(state).await
     }
 
-    async fn protorunes_by_address(&self, address: &str) -> Result<JsonValue> {
-        self.web_provider.protorunes_by_address(address).await
+    async fn protorunes_by_address(&self, address: &str, block_tag: Option<String>, protocol_tag: u128) -> Result<deezel_common::alkanes::protorunes::ProtoruneWalletResponse> {
+        self.web_provider.protorunes_by_address(address, block_tag, protocol_tag).await
     }
 
-    async fn protorunes_by_outpoint(&self, txid: &str, vout: u32) -> Result<protorune_support::proto::protorune::OutpointResponse> {
-        self.web_provider.protorunes_by_outpoint(txid, vout).await
+    async fn protorunes_by_outpoint(&self, txid: &str, vout: u32, block_tag: Option<String>, protocol_tag: u128) -> Result<deezel_common::alkanes::protorunes::ProtoruneOutpointResponse> {
+        self.web_provider.protorunes_by_outpoint(txid, vout, block_tag, protocol_tag).await
     }
 
     async fn simulate(&self, contract_id: &str, params: Option<&str>) -> Result<JsonValue> {

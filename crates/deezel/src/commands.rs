@@ -26,9 +26,9 @@ pub struct DeezelCommands {
     /// Metashrew server URL
     #[arg(long)]
     pub metashrew_server_url: Option<String>,
-    /// Network type (mainnet, testnet, signet, regtest)
-    #[arg(long)]
-    pub network: Option<String>,
+    /// Network provider
+    #[arg(short, long, default_value = "regtest")]
+    pub provider: String,
     /// Subcommands
     #[command(subcommand)]
     pub command: Commands,
@@ -335,6 +335,9 @@ pub enum Protorunes {
         /// Block tag to query (e.g., "latest" or a block height)
         #[arg(long)]
         block_tag: Option<String>,
+        /// Protocol tag
+        #[arg(long, default_value = "1")]
+        protocol_tag: u128,
     },
     /// Get protorunes by outpoint
     ByOutpoint {
@@ -348,6 +351,9 @@ pub enum Protorunes {
         /// Block tag to query (e.g., "latest" or a block height)
         #[arg(long)]
         block_tag: Option<String>,
+        /// Protocol tag
+        #[arg(long, default_value = "1")]
+        protocol_tag: u128,
     },
 }
 
@@ -464,7 +470,7 @@ impl From<&DeezelCommands> for deezel_common::commands::Args {
             esplora_url: args.esplora_api_url.clone(),
             ord_url: args.ord_server_url.clone(),
             metashrew_rpc_url: args.metashrew_server_url.clone(),
-            provider: args.network.clone().unwrap_or_else(|| "regtest".to_string()),
+            provider: args.provider.clone(),
             magic: None,
             log_level: "info".to_string(),
             command: deezel_common::commands::Commands::Bitcoind {

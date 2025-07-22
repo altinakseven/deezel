@@ -620,6 +620,7 @@ impl MetashrewRpcProvider for StandaloneAddressResolver {
         &self,
         _address: &str,
         _block_tag: Option<String>,
+        _protocol_tag: u128,
     ) -> Result<crate::alkanes::protorunes::ProtoruneWalletResponse> {
         Err(DeezelError::NotImplemented(
             "StandaloneAddressResolver does not support Metashrew RPC".to_string(),
@@ -630,6 +631,7 @@ impl MetashrewRpcProvider for StandaloneAddressResolver {
         _txid: &str,
         _vout: u32,
         _block_tag: Option<String>,
+        _protocol_tag: u128,
     ) -> Result<crate::alkanes::protorunes::ProtoruneOutpointResponse> {
         Err(DeezelError::NotImplemented(
             "StandaloneAddressResolver does not support Metashrew RPC".to_string(),
@@ -876,6 +878,7 @@ impl AlkanesProvider for StandaloneAddressResolver {
         &self,
         _address: &str,
         _block_tag: Option<String>,
+        _protocol_tag: u128,
     ) -> Result<crate::alkanes::protorunes::ProtoruneWalletResponse> {
         Err(DeezelError::NotImplemented(
             "StandaloneAddressResolver does not support alkanes operations".to_string(),
@@ -887,6 +890,7 @@ impl AlkanesProvider for StandaloneAddressResolver {
         _txid: &str,
         _vout: u32,
         _block_tag: Option<String>,
+        _protocol_tag: u128,
     ) -> Result<crate::alkanes::protorunes::ProtoruneOutpointResponse> {
         Err(DeezelError::NotImplemented(
             "StandaloneAddressResolver does not support alkanes operations".to_string(),

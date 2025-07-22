@@ -490,6 +490,7 @@ pub trait MetashrewRpcProvider {
         &self,
         address: &str,
         block_tag: Option<String>,
+        protocol_tag: u128,
     ) -> Result<ProtoruneWalletResponse>;
     
     /// Get protorunes by outpoint
@@ -498,6 +499,7 @@ pub trait MetashrewRpcProvider {
         txid: &str,
         vout: u32,
         block_tag: Option<String>,
+        protocol_tag: u128,
     ) -> Result<ProtoruneOutpointResponse>;
 }
 
@@ -674,12 +676,14 @@ pub trait AlkanesProvider {
         &self,
         address: &str,
         block_tag: Option<String>,
+        protocol_tag: u128,
     ) -> Result<ProtoruneWalletResponse>;
     async fn protorunes_by_outpoint(
         &self,
         txid: &str,
         vout: u32,
         block_tag: Option<String>,
+        protocol_tag: u128,
     ) -> Result<ProtoruneOutpointResponse>;
     async fn simulate(&self, contract_id: &str, params: Option<&str>) -> Result<JsonValue>;
     async fn trace(&self, outpoint: &str) -> Result<alkanes_pb::Trace>;
@@ -1005,16 +1009,18 @@ impl<T: DeezelProvider + ?Sized> MetashrewRpcProvider for Box<T> {
         &self,
         address: &str,
         block_tag: Option<String>,
+        protocol_tag: u128,
     ) -> Result<ProtoruneWalletResponse> {
-        (**self).get_protorunes_by_address(address, block_tag).await
+        (**self).get_protorunes_by_address(address, block_tag, protocol_tag).await
     }
     async fn get_protorunes_by_outpoint(
         &self,
         txid: &str,
         vout: u32,
         block_tag: Option<String>,
+        protocol_tag: u128,
     ) -> Result<ProtoruneOutpointResponse> {
-        (**self).get_protorunes_by_outpoint(txid, vout, block_tag).await
+        (**self).get_protorunes_by_outpoint(txid, vout, block_tag, protocol_tag).await
     }
 }
 
@@ -1206,16 +1212,18 @@ impl<T: DeezelProvider + ?Sized> AlkanesProvider for Box<T> {
         &self,
         address: &str,
         block_tag: Option<String>,
+        protocol_tag: u128,
     ) -> Result<ProtoruneWalletResponse> {
-        AlkanesProvider::protorunes_by_address(&**self, address, block_tag).await
+        AlkanesProvider::protorunes_by_address(&**self, address, block_tag, protocol_tag).await
     }
     async fn protorunes_by_outpoint(
         &self,
         txid: &str,
         vout: u32,
         block_tag: Option<String>,
+        protocol_tag: u128,
     ) -> Result<ProtoruneOutpointResponse> {
-        AlkanesProvider::protorunes_by_outpoint(&**self, txid, vout, block_tag).await
+        AlkanesProvider::protorunes_by_outpoint(&**self, txid, vout, block_tag, protocol_tag).await
     }
     async fn simulate(&self, contract_id: &str, params: Option<&str>) -> Result<JsonValue> {
         (**self).simulate(contract_id, params).await

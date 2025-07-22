@@ -237,7 +237,7 @@ impl<P: DeezelProvider> RpcClient<P> {
         address: &str,
         block_tag: Option<String>,
     ) -> Result<ProtoruneWalletResponse> {
-        self.provider.get_protorunes_by_address(address, block_tag).await
+        self.provider.get_protorunes_by_address(address, block_tag, 1).await
     }
 
     /// Get protorunes by outpoint
@@ -247,7 +247,7 @@ impl<P: DeezelProvider> RpcClient<P> {
         vout: u32,
         block_tag: Option<String>,
     ) -> Result<ProtoruneOutpointResponse> {
-        self.provider.get_protorunes_by_outpoint(txid, vout, block_tag).await
+        self.provider.get_protorunes_by_outpoint(txid, vout, block_tag, 1).await
     }
     
     /// Make a generic call with method name (for Esplora API compatibility)

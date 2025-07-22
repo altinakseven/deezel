@@ -422,14 +422,16 @@ impl MetashrewRpcProvider for WebProvider {
         self.call(self.sandshrew_rpc_url(), "spendablesbyaddress", params, 1).await
     }
 
-    async fn get_protorunes_by_address(&self, address: &str) -> Result<JsonValue> {
-        let params = serde_json::json!([address]);
-        self.call(self.sandshrew_rpc_url(), "protorunesbyaddress", params, 1).await
+    async fn get_protorunes_by_address(&self, address: &str, block_tag: Option<String>, protocol_tag: u128) -> Result<deezel_common::alkanes::protorunes::ProtoruneWalletResponse> {
+        let params = serde_json::json!([address, block_tag, protocol_tag]);
+        let result = self.call(self.sandshrew_rpc_url(), "protorunesbyaddress", params, 1).await?;
+        serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
     }
 
-    async fn get_protorunes_by_outpoint(&self, txid: &str, vout: u32) -> Result<JsonValue> {
-        let params = serde_json::json!([txid, vout]);
-        self.call(self.sandshrew_rpc_url(), "protorunesbyoutpoint", params, 1).await
+    async fn get_protorunes_by_outpoint(&self, txid: &str, vout: u32, block_tag: Option<String>, protocol_tag: u128) -> Result<deezel_common::alkanes::protorunes::ProtoruneOutpointResponse> {
+        let params = serde_json::json!([txid, vout, block_tag, protocol_tag]);
+        let result = self.call(self.sandshrew_rpc_url(), "protorunesbyoutpoint", params, 1).await?;
+        serde_json::from_value(result).map_err(|e| DeezelError::Serialization(e.to_string()))
     }
 }
 

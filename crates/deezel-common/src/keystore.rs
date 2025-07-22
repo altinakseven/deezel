@@ -38,7 +38,8 @@ pub struct PbkdfParams {
     /// The salt used for PBKDF2 (hex encoded).
     pub salt: String,
     /// The nonce used for AES-GCM (hex encoded).
-    pub nonce: String,
+    #[serde(default)]
+    pub nonce: Option<String>,
     /// The number of iterations for the PBKDF2 function.
     pub iterations: u32,
     /// The symmetric key algorithm used (e.g., "aes-256-gcm").
@@ -100,7 +101,7 @@ impl Keystore {
             version: env!("CARGO_PKG_VERSION").to_string(),
             pbkdf2_params: PbkdfParams {
                 salt: hex::encode(salt),
-                nonce: hex::encode(nonce),
+                nonce: Some(hex::encode(nonce)),
                 iterations: 600_000,
                 algorithm: Some("aes-256-gcm".to_string()),
             },
@@ -135,7 +136,10 @@ impl Keystore {
 
         // 2. Decode salt and nonce from hex
         let salt = hex::decode(&self.pbkdf2_params.salt)?;
-        let nonce = hex::decode(&self.pbkdf2_params.nonce)?;
+        let nonce = match &self.pbkdf2_params.nonce {
+            Some(n) => hex::decode(n)?,
+            None => vec![], // Backwards compatibility for old keystores
+        };
 
         // 3. Decrypt using the crypto module
         let decrypted_bytes = crate::crypto::decrypt(&encrypted_bytes, passphrase, &salt, &nonce)?;

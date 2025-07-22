@@ -53,7 +53,6 @@ use bitcoin::{
     taproot,
 };
 use bitcoin_hashes::Hash;
-use bitcoin::consensus;
 use ordinals::{Runestone, Artifact};
 
 
@@ -1317,9 +1316,11 @@ impl MetashrewRpcProvider for ConcreteProvider {
         &self,
         address: &str,
         block_tag: Option<String>,
+        protocol_tag: u128,
     ) -> Result<crate::alkanes::protorunes::ProtoruneWalletResponse> {
-        let mut request = protorune_pb::WalletRequest::new();
+        let mut request = protorune_pb::ProtorunesWalletRequest::new();
         request.wallet = address.as_bytes().to_vec();
+        request.protocol_tag = ::protobuf::MessageField::some(crate::utils::to_uint128(protocol_tag));
         let hex_input = format!("0x{}", hex::encode(request.write_to_bytes()?));
         let response_bytes = self
             .metashrew_view_call(
@@ -1394,12 +1395,16 @@ impl MetashrewRpcProvider for ConcreteProvider {
         txid: &str,
         vout: u32,
         block_tag: Option<String>,
+        protocol_tag: u128,
     ) -> Result<crate::alkanes::protorunes::ProtoruneOutpointResponse> {
         let txid = bitcoin::Txid::from_str(txid)?;
         let outpoint = bitcoin::OutPoint { txid, vout };
         let mut request = protorune_pb::OutpointWithProtocol::new();
-        request.txid = outpoint.txid.to_byte_array().to_vec();
+        let mut txid_bytes = txid.to_byte_array().to_vec();
+        txid_bytes.reverse();
+        request.txid = txid_bytes;
         request.vout = outpoint.vout;
+        request.protocol = ::protobuf::MessageField::some(crate::utils::to_uint128(protocol_tag));
         let hex_input = format!("0x{}", hex::encode(request.write_to_bytes()?));
         let response_bytes = self
             .metashrew_view_call(
@@ -1903,8 +1908,9 @@ impl AlkanesProvider for ConcreteProvider {
         &self,
         address: &str,
         block_tag: Option<String>,
+        protocol_tag: u128,
     ) -> Result<crate::alkanes::protorunes::ProtoruneWalletResponse> {
-        <Self as MetashrewRpcProvider>::get_protorunes_by_address(self, address, block_tag).await
+        <Self as MetashrewRpcProvider>::get_protorunes_by_address(self, address, block_tag, protocol_tag).await
     }
 
     async fn protorunes_by_outpoint(
@@ -1912,8 +1918,9 @@ impl AlkanesProvider for ConcreteProvider {
         txid: &str,
         vout: u32,
         block_tag: Option<String>,
+        protocol_tag: u128,
     ) -> Result<crate::alkanes::protorunes::ProtoruneOutpointResponse> {
-        <Self as MetashrewRpcProvider>::get_protorunes_by_outpoint(self, txid, vout, block_tag).await
+        <Self as MetashrewRpcProvider>::get_protorunes_by_outpoint(self, txid, vout, block_tag, protocol_tag).await
     }
 
     async fn simulate(&self, contract_id: &str, params: Option<&str>) -> Result<JsonValue> {
