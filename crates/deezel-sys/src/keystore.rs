@@ -41,6 +41,12 @@ pub struct KeystoreManager {
     _marker: core::marker::PhantomData<()>,
 }
 
+impl Default for KeystoreManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl KeystoreManager {
     pub fn new() -> Self {
         Self {
@@ -100,7 +106,7 @@ impl KeystoreManager {
             .context("Failed to serialize keystore")?;
 
         std::fs::write(file_path, keystore_json)
-            .with_context(|| format!("Failed to write keystore to file: {}", file_path))?;
+            .with_context(|| format!("Failed to write keystore to file: {file_path}"))?;
 
         Ok(())
     }
@@ -108,7 +114,7 @@ impl KeystoreManager {
     /// Load keystore from file
     pub async fn load_keystore_from_file(&self, file_path: &str, passphrase: &str) -> AnyhowResult<(Keystore, String)> {
         let keystore_data = std::fs::read_to_string(file_path)
-            .with_context(|| format!("Failed to read keystore file: {}", file_path))?;
+            .with_context(|| format!("Failed to read keystore file: {file_path}"))?;
 
         self.load_keystore(&keystore_data, passphrase).await
     }
@@ -116,7 +122,7 @@ impl KeystoreManager {
     /// Load keystore metadata (master public key, fingerprint, etc.) without decryption
     pub async fn load_keystore_metadata_from_file(&self, file_path: &str) -> AnyhowResult<Keystore> {
         let keystore_data = std::fs::read_to_string(file_path)
-            .with_context(|| format!("Failed to read keystore file: {}", file_path))?;
+            .with_context(|| format!("Failed to read keystore file: {file_path}"))?;
 
         // Parse the keystore JSON - we only need the metadata, not the encrypted seed
         let keystore: Keystore = serde_json::from_str(&keystore_data)
@@ -155,26 +161,26 @@ impl KeystoreManager {
         };
 
         // BIP-86 standard derivation from an account xpub uses m/0/* for receive and m/1/* for change.
-        let relative_path_str = format!("m/{}/{}", chain, index);
+        let relative_path_str = format!("m/{chain}/{index}");
         let relative_path = DerivationPath::from_str(&relative_path_str)
-            .with_context(|| format!("Failed to create relative derivation path: {}", relative_path_str))?;
+            .with_context(|| format!("Failed to create relative derivation path: {relative_path_str}"))?;
 
         // Derive the public key using the relative path from the account xpub.
         let derived_key = master_xpub.derive_pub(secp, &relative_path)
-            .with_context(|| format!("Failed to derive public key for path: {}", relative_path))?;
+            .with_context(|| format!("Failed to derive public key for path: {relative_path}"))?;
 
         // The full derivation path for display depends on the script type's standard.
         // Since our account_xpub is for BIP-86, we'll show that path for p2tr.
         // For other types, we'll show a non-standard path to indicate what's happening.
         let (derivation_path, address) = match script_type {
             "p2tr" => {
-                let full_path = format!("m/86'/{}'/0'/{}/{}", coin_type, chain, index);
+                let full_path = format!("m/86'/{coin_type}'/0'/{chain}/{index}");
                 let internal_key = bitcoin::key::UntweakedPublicKey::from(derived_key.public_key);
                 let address = Address::p2tr(secp, internal_key, None, network);
                 (full_path, address.to_string())
             }
             "p2wpkh" => {
-                let full_path = format!("m/84'/{}'/0'/{}/{}", coin_type, chain, index);
+                let full_path = format!("m/84'/{coin_type}'/0'/{chain}/{index}");
                 let bitcoin_pubkey = PublicKey::new(derived_key.public_key);
                 let compressed_pubkey = CompressedPublicKey::try_from(bitcoin_pubkey)
                     .context("Failed to create compressed public key")?;
@@ -182,7 +188,7 @@ impl KeystoreManager {
                 (full_path, address.to_string())
             }
             "p2sh" => {
-                let full_path = format!("m/49'/{}'/0'/{}/{}", coin_type, chain, index);
+                let full_path = format!("m/49'/{coin_type}'/0'/{chain}/{index}");
                 let bitcoin_pubkey = PublicKey::new(derived_key.public_key);
                 let compressed_pubkey = CompressedPublicKey::try_from(bitcoin_pubkey)
                     .context("Failed to create compressed public key")?;
@@ -192,7 +198,7 @@ impl KeystoreManager {
                 (full_path, address.to_string())
             }
             "p2pkh" => {
-                let full_path = format!("m/44'/{}'/0'/{}/{}", coin_type, chain, index);
+                let full_path = format!("m/44'/{coin_type}'/0'/{chain}/{index}");
                 let bitcoin_pubkey = PublicKey::new(derived_key.public_key);
                 let compressed_pubkey = CompressedPublicKey::try_from(bitcoin_pubkey)
                     .context("Failed to create compressed public key")?;
@@ -200,7 +206,7 @@ impl KeystoreManager {
                 (full_path, address.to_string())
             }
             "p2wsh" => {
-                let full_path = format!("m/86'/{}'/0'/{}/{} (p2wsh from p2tr account)", coin_type, chain, index);
+                let full_path = format!("m/86'/{coin_type}'/0'/{chain}/{index} (p2wsh from p2tr account)");
                 let bitcoin_pubkey = PublicKey::new(derived_key.public_key);
                 let compressed_pubkey = CompressedPublicKey::try_from(bitcoin_pubkey)
                     .context("Failed to create compressed public key")?;
@@ -337,7 +343,7 @@ impl KeystoreManager {
 impl KeystoreProvider for KeystoreManager {
     async fn derive_addresses(&self, master_public_key: &str, network: Network, script_types: &[&str], start_index: u32, count: u32) -> CommonResult<Vec<KeystoreAddress>> {
         let master_xpub = Xpub::from_str(master_public_key)
-            .map_err(|e| DeezelError::Crypto(format!("Failed to parse master public key: {}", e)))?;
+            .map_err(|e| DeezelError::Crypto(format!("Failed to parse master public key: {e}")))?;
         
         let secp = Secp256k1::new();
         let mut addresses = Vec::new();
@@ -345,7 +351,7 @@ impl KeystoreProvider for KeystoreManager {
         for script_type in script_types {
             for index in start_index..(start_index + count) {
                 let address = self.derive_single_address(&master_xpub, &secp, network, script_type, 0, index)
-                    .map_err(|e| DeezelError::Crypto(format!("Failed to derive address: {}", e)))?;
+                    .map_err(|e| DeezelError::Crypto(format!("Failed to derive address: {e}")))?;
                 addresses.push(address);
             }
         }
@@ -362,7 +368,7 @@ impl KeystoreProvider for KeystoreManager {
     fn parse_address_range(&self, range_spec: &str) -> CommonResult<(String, u32, u32)> {
         // Call the struct method directly to avoid infinite recursion
         KeystoreManager::parse_address_range(self, range_spec)
-            .map_err(|e| DeezelError::Parse(format!("Failed to parse address range: {}", e)))
+            .map_err(|e| DeezelError::Parse(format!("Failed to parse address range: {e}")))
     }
     
     async fn get_keystore_info(&self, master_fingerprint: &str, created_at: u64, version: &str) -> CommonResult<KeystoreInfo> {

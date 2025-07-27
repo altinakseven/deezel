@@ -225,7 +225,7 @@ fn test_supported_wallets_completeness() {
     
     for expected in expected_wallets {
         let found = supported_wallets.iter().any(|w| w.id == expected);
-        assert!(found, "Expected wallet {} not found in supported wallets", expected);
+        assert!(found, "Expected wallet {expected} not found in supported wallets");
     }
     
     // Verify all wallets have required fields

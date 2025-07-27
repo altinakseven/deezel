@@ -4,7 +4,7 @@ use alloc::vec;
 
 use base64::Engine;
 #[cfg(feature = "std")]
-use std::io::{BufRead, Read, Result, Error, ErrorKind};
+use std::io::{BufRead, Read, Result, Error};
 
 /// Reads base64 values from a given byte input, stops once it detects the first non base64 char.
 #[derive(Debug)]
@@ -42,7 +42,7 @@ impl<R: BufRead> Read for Base64Reader<R> {
 
         let len = base64::engine::general_purpose::STANDARD
             .decode_slice(&available[..end], &mut temp_buf)
-            .map_err(|_e| Error::new(ErrorKind::Other, "base64 decode error"))?;
+            .map_err(|_e| Error::other("base64 decode error"))?;
 
         buf[..len].copy_from_slice(&temp_buf[..len]);
         self.inner.consume(end);

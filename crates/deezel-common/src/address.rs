@@ -253,7 +253,7 @@ impl DeezelAddress {
 impl fmt::Display for DeezelAddress {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.to_string() {
-            Ok(addr_str) => write!(f, "{}", addr_str),
+            Ok(addr_str) => write!(f, "{addr_str}"),
             Err(_) => write!(f, "<invalid address>"),
         }
     }

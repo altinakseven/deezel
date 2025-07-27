@@ -515,7 +515,7 @@ impl core::str::FromStr for AddressType {
             "p2wpkh" => Ok(AddressType::P2WPKH),
             "p2wsh" => Ok(AddressType::P2WSH),
             "p2tr" => Ok(AddressType::P2TR),
-            _ => Err(DeezelError::Parse(format!("Unknown address type: {}", s))),
+            _ => Err(DeezelError::Parse(format!("Unknown address type: {s}"))),
         }
     }
 }
@@ -539,7 +539,7 @@ pub mod derivation {
             AddressType::P2TR => 86,
         };
         
-        format!("m/{}'/{}'/{}'/{}/{}", purpose, coin_type, account, change, index)
+        format!("m/{purpose}'/{coin_type}'/{account}'/{change}/{index}")
     }
     
     /// Parse derivation path

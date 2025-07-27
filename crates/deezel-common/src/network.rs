@@ -64,7 +64,7 @@ mod network_serde {
             "testnet" => Ok(Network::Testnet),
             "signet" => Ok(Network::Signet),
             "regtest" => Ok(Network::Regtest),
-            _ => Err(serde::de::Error::custom(format!("Unknown network: {}", s))),
+            _ => Err(serde::de::Error::custom(format!("Unknown network: {s}"))),
         }
     }
 }
@@ -151,7 +151,7 @@ impl<'de> Deserialize<'de> for NetworkParams {
                                 "testnet" => Network::Testnet,
                                 "signet" => Network::Signet,
                                 "regtest" => Network::Regtest,
-                                _ => return Err(serde::de::Error::custom(format!("Unknown network: {}", network_str))),
+                                _ => return Err(serde::de::Error::custom(format!("Unknown network: {network_str}"))),
                             });
                         }
                         Field::Magic => {
@@ -383,7 +383,7 @@ impl NetworkParams {
             "dogecoin" | "doge" => Ok(Self::dogecoin()),
             "luckycoin" | "lucky" => Ok(Self::luckycoin()),
             "bellscoin" | "bells" => Ok(Self::bellscoin()),
-            _ => Err(DeezelError::Parse(format!("Unknown network: {}", network_str))),
+            _ => Err(DeezelError::Parse(format!("Unknown network: {network_str}"))),
         }
     }
     

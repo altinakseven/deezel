@@ -66,7 +66,7 @@ impl WalletProvider for WebProvider {
         match self.read(&wallet_key).await {
             Ok(data) => {
                 let wallet_data: JsonValue = serde_json::from_slice(&data)
-                    .map_err(|e| DeezelError::Wallet(format!("Failed to parse wallet data: {}", e)))?;
+                    .map_err(|e| DeezelError::Wallet(format!("Failed to parse wallet data: {e}")))?;
                 
                 let address = match config.network {
                     Network::Bitcoin => "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4".to_string(),
@@ -129,9 +129,9 @@ impl WalletProvider for WebProvider {
         
         for i in 0..count {
             addresses.push(AddressInfo {
-                address: format!("{}_{}", base_address, i),
+                address: format!("{base_address}_{i}"),
                 script_type: "p2wpkh".to_string(),
-                derivation_path: format!("m/84'/0'/0'/0/{}", i),
+                derivation_path: format!("m/84'/0'/0'/0/{i}"),
                 index: i,
                 used: false,
             });
@@ -210,7 +210,7 @@ impl WalletProvider for WebProvider {
 
     async fn freeze_utxo(&self, utxo: String, reason: Option<String>) -> Result<()> {
         // Store frozen UTXO info in localStorage
-        let freeze_key = format!("frozen_utxo:{}", utxo);
+        let freeze_key = format!("frozen_utxo:{utxo}");
         let freeze_data = serde_json::json!({
             "reason": reason,
             "frozen_at": self.now_millis()
@@ -219,7 +219,7 @@ impl WalletProvider for WebProvider {
     }
 
     async fn unfreeze_utxo(&self, utxo: String) -> Result<()> {
-        let freeze_key = format!("frozen_utxo:{}", utxo);
+        let freeze_key = format!("frozen_utxo:{utxo}");
         self.delete(&freeze_key).await
     }
 
@@ -235,7 +235,7 @@ impl WalletProvider for WebProvider {
 
     async fn broadcast_transaction(&self, tx_hex: String) -> Result<String> {
         // Mock broadcast - in real implementation would use RPC
-        self.info(&format!("Broadcasting transaction: {}", tx_hex));
+        self.info(&format!("Broadcasting transaction: {tx_hex}"));
         Ok("web_broadcast_".to_string() + &hex::encode(self.random_bytes(16)?))
     }
 
@@ -280,7 +280,7 @@ impl WalletProvider for WebProvider {
     async fn get_internal_key(&self) -> Result<(bitcoin::XOnlyPublicKey, (bitcoin::bip32::Fingerprint, bitcoin::bip32::DerivationPath))> {
         // Mock internal key
         let key = bitcoin::XOnlyPublicKey::from_slice(&[1; 32])
-            .map_err(|e| DeezelError::Wallet(format!("Failed to create internal key: {}", e)))?;
+            .map_err(|e| DeezelError::Wallet(format!("Failed to create internal key: {e}")))?;
         let fingerprint = bitcoin::bip32::Fingerprint::from_str("00000000").unwrap();
         let path = bitcoin::bip32::DerivationPath::from_str("m/86'/1'/0'").unwrap();
         Ok((key, (fingerprint, path)))
@@ -295,7 +295,7 @@ impl WalletProvider for WebProvider {
         use bitcoin::secp256k1::{Secp256k1, SecretKey};
         let secp = Secp256k1::new();
         let secret_key = SecretKey::from_slice(&[1; 32])
-            .map_err(|e| DeezelError::Wallet(format!("Failed to create secret key: {}", e)))?;
+            .map_err(|e| DeezelError::Wallet(format!("Failed to create secret key: {e}")))?;
         Ok(bitcoin::secp256k1::Keypair::from_secret_key(&secp, &secret_key))
     }
 
@@ -326,7 +326,7 @@ impl AddressResolver for WebProvider {
 
     async fn get_address(&self, address_type: &str, index: u32) -> Result<String> {
         let base_address = WalletProvider::get_address(self).await?;
-        Ok(format!("{}:{}:{}", address_type, index, base_address))
+        Ok(format!("{address_type}:{index}:{base_address}"))
     }
 
     async fn list_identifiers(&self) -> Result<Vec<String>> {

@@ -125,16 +125,16 @@ pub(crate) fn create_host_functions(engine: &Engine) -> Linker<AlkanesState> {
                     if memory.read(&caller, k_addr, &mut key_bytes).is_ok() {
                         String::from_utf8_lossy(&key_bytes).to_string()
                     } else {
-                        format!("invalid_key_bounds_ptr_{}_len_{}", k, len)
+                        format!("invalid_key_bounds_ptr_{k}_len_{len}")
                     }
                 } else {
-                    format!("invalid_key_ptr_{}", k)
+                    format!("invalid_key_ptr_{k}")
                 }
             } else {
-                format!("invalid_key_ptr_{}", k)
+                format!("invalid_key_ptr_{k}")
             }
         } else {
-            format!("no_memory_export_key_{}", k)
+            format!("no_memory_export_key_{k}")
         };
         
         // For now, return 0 size but track the call
@@ -144,7 +144,7 @@ pub(crate) fn create_host_functions(engine: &Engine) -> Linker<AlkanesState> {
         let host_call = HostCall {
             function_name: "__request_storage".to_string(),
             parameters: vec![format!("key: \"{}\"", key_str)],
-            result: format!("size: {}", result_size),
+            result: format!("size: {result_size}"),
             timestamp_micros: start_time.elapsed().as_micros() as u64,
         };
         
@@ -174,16 +174,16 @@ pub(crate) fn create_host_functions(engine: &Engine) -> Linker<AlkanesState> {
                     if memory.read(&caller, k_addr, &mut key_bytes).is_ok() {
                         String::from_utf8_lossy(&key_bytes).to_string()
                     } else {
-                        format!("invalid_key_bounds_ptr_{}_len_{}", k, len)
+                        format!("invalid_key_bounds_ptr_{k}_len_{len}")
                     }
                 } else {
-                    format!("invalid_key_ptr_{}", k)
+                    format!("invalid_key_ptr_{k}")
                 }
             } else {
-                format!("invalid_key_ptr_{}", k)
+                format!("invalid_key_ptr_{k}")
             }
         } else {
-            format!("no_memory_export_key_{}", k)
+            format!("no_memory_export_key_{k}")
         };
         
         // Simulate storage values based on key patterns
@@ -289,7 +289,7 @@ pub(crate) fn create_host_functions(engine: &Engine) -> Linker<AlkanesState> {
                     let mut message_bytes = vec![0u8; len];
                     if memory.read(&caller, v_addr, &mut message_bytes).is_ok() {
                         if let Ok(message) = String::from_utf8(message_bytes) {
-                            print!("{}", message);
+                            print!("{message}");
                         }
                     }
                 }
@@ -475,18 +475,18 @@ pub(crate) fn decode_cellpack_info(caller: &mut Caller<'_, AlkanesState>, cellpa
                         let inputs_info = if len > 32 {
                             let remaining_len = len - 32;
                             let inputs_count = remaining_len / 16; // Each u128 input is 16 bytes
-                            format!(" with {} inputs", inputs_count)
+                            format!(" with {inputs_count} inputs")
                         } else {
                             String::new()
                         };
                         
-                        return format!("AlkaneId{{block: {}, tx: {}}}{}", block, tx, inputs_info);
+                        return format!("AlkaneId{{block: {block}, tx: {tx}}}{inputs_info}");
                     }
                 }
             }
         }
     }
-    format!("unknown_cellpack_{}", cellpack_ptr)
+    format!("unknown_cellpack_{cellpack_ptr}")
 }
 
 /// Decode ExtendedCallResponse structure from WASM memory

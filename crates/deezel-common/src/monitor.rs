@@ -102,19 +102,19 @@ impl<P: DeezelProvider> BlockMonitor<P> {
         self.state.is_running = true;
         self.state.start_time = Some(SystemTime::now());
         
-        self.provider.info(&format!("Starting block monitoring from height {}", start_height));
+        self.provider.info(&format!("Starting block monitoring from height {start_height}"));
         
         while self.state.is_running {
             match self.check_new_blocks().await {
                 Ok(new_blocks) => {
                     for block_height in new_blocks {
                         if let Err(e) = self.process_block(block_height).await {
-                            self.provider.error(&format!("Error processing block {}: {}", block_height, e));
+                            self.provider.error(&format!("Error processing block {block_height}: {e}"));
                         }
                     }
                 }
                 Err(e) => {
-                    self.provider.error(&format!("Error checking for new blocks: {}", e));
+                    self.provider.error(&format!("Error checking for new blocks: {e}"));
                 }
             }
             
@@ -158,7 +158,7 @@ impl<P: DeezelProvider> BlockMonitor<P> {
     
     /// Process a single block
     async fn process_block(&mut self, height: u64) -> Result<()> {
-        self.provider.debug(&format!("Processing block {}", height));
+        self.provider.debug(&format!("Processing block {height}"));
         
         let events = self.provider.get_block_events(height).await?;
         let events_count = events.len();
@@ -271,9 +271,9 @@ impl<P: DeezelProvider> BlockMonitor<P> {
             Ok(tx_hex) => {
                 // Parse transaction from hex
                 let tx_bytes = hex::decode(&tx_hex)
-                    .map_err(|e| crate::DeezelError::Parse(format!("Invalid hex: {}", e)))?;
+                    .map_err(|e| crate::DeezelError::Parse(format!("Invalid hex: {e}")))?;
                 let tx: bitcoin::Transaction = bitcoin::consensus::deserialize(&tx_bytes)
-                    .map_err(|e| crate::DeezelError::Parse(format!("Invalid transaction: {}", e)))?;
+                    .map_err(|e| crate::DeezelError::Parse(format!("Invalid transaction: {e}")))?;
                 
                 // Check inputs and outputs for monitored addresses
                 for input in &tx.input {
@@ -460,7 +460,7 @@ impl<P: DeezelProvider> AddressMonitor<P> {
                     }
                 }
                 Err(e) => {
-                    self.provider.warn(&format!("Failed to check activity for address {}: {}", address, e));
+                    self.provider.warn(&format!("Failed to check activity for address {address}: {e}"));
                 }
             }
         }

@@ -13,7 +13,7 @@ fn setup() -> Command {
 #[test]
 fn test_protorunes_by_address_pretty_output() -> Result<()> {
     let mut cmd = setup();
-    cmd.args(&[
+    cmd.args([
         "protorunes",
         "by-address",
         "bc1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
@@ -27,7 +27,7 @@ fn test_protorunes_by_address_pretty_output() -> Result<()> {
 #[test]
 fn test_protorunes_by_outpoint_pretty_output() -> Result<()> {
     let mut cmd = setup();
-    cmd.args(&[
+    cmd.args([
         "protorunes",
         "by-outpoint",
         "0000000000000000000000000000000000000000000000000000000000000000",

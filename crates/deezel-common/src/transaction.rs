@@ -280,10 +280,10 @@ impl<P: DeezelProvider> TransactionConstructor<P> {
         let signed_hex = self.provider.sign_transaction(tx_hex).await?;
         
         let signed_bytes = hex::decode(signed_hex)
-            .map_err(|e| DeezelError::Parse(format!("Invalid signed transaction hex: {}", e)))?;
+            .map_err(|e| DeezelError::Parse(format!("Invalid signed transaction hex: {e}")))?;
         
         bitcoin::consensus::encode::deserialize(&signed_bytes)
-            .map_err(|e| DeezelError::Transaction(format!("Failed to deserialize signed transaction: {}", e)))
+            .map_err(|e| DeezelError::Transaction(format!("Failed to deserialize signed transaction: {e}")))
     }
     
     /// Broadcast transaction
@@ -346,13 +346,13 @@ pub mod fee_validation {
         
         if actual_fee < min_fee {
             return Err(DeezelError::Transaction(format!(
-                "Fee too low: {} sats (minimum: {} sats)", actual_fee, min_fee
+                "Fee too low: {actual_fee} sats (minimum: {min_fee} sats)"
             )));
         }
         
         if actual_fee > max_fee {
             return Err(DeezelError::Transaction(format!(
-                "Fee too high: {} sats (maximum: {} sats)", actual_fee, max_fee
+                "Fee too high: {actual_fee} sats (maximum: {max_fee} sats)"
             )));
         }
         

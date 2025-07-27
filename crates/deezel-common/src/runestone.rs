@@ -116,9 +116,9 @@ impl<P: DeezelProvider> RunestoneManager<P> {
     pub async fn from_transaction_hex(&self, tx_hex: String) -> Result<Option<RunestoneInfo>> {
         // Parse transaction from hex
         let tx_bytes = hex::decode(&tx_hex)
-            .map_err(|e| DeezelError::Parse(format!("Invalid hex: {}", e)))?;
+            .map_err(|e| DeezelError::Parse(format!("Invalid hex: {e}")))?;
         let tx: Transaction = bitcoin::consensus::deserialize(&tx_bytes)
-            .map_err(|e| DeezelError::Parse(format!("Invalid transaction: {}", e)))?;
+            .map_err(|e| DeezelError::Parse(format!("Invalid transaction: {e}")))?;
         
         // Use decode_runestone trait method
         let _result = self.provider.decode_runestone(&tx).await?;
@@ -157,27 +157,27 @@ impl<P: DeezelProvider> RunestoneManager<P> {
         if let Some(ref etching) = runestone.etching {
             output.push_str("🎯 Etching:\n");
             if let Some(ref rune) = etching.rune {
-                output.push_str(&format!("  📛 Rune: {}\n", rune));
+                output.push_str(&format!("  📛 Rune: {rune}\n"));
             }
             if let Some(ref divisibility) = etching.divisibility {
-                output.push_str(&format!("  🔢 Divisibility: {}\n", divisibility));
+                output.push_str(&format!("  🔢 Divisibility: {divisibility}\n"));
             }
             if let Some(ref premine) = etching.premine {
-                output.push_str(&format!("  ⛏️  Premine: {}\n", premine));
+                output.push_str(&format!("  ⛏️  Premine: {premine}\n"));
             }
             if let Some(ref spacers) = etching.spacers {
-                output.push_str(&format!("  📏 Spacers: {}\n", spacers));
+                output.push_str(&format!("  📏 Spacers: {spacers}\n"));
             }
             if let Some(ref symbol) = etching.symbol {
-                output.push_str(&format!("  🔤 Symbol: {}\n", symbol));
+                output.push_str(&format!("  🔤 Symbol: {symbol}\n"));
             }
             if let Some(ref terms) = etching.terms {
                 output.push_str("  📋 Terms:\n");
                 if let Some(ref amount) = terms.amount {
-                    output.push_str(&format!("    💰 Amount: {}\n", amount));
+                    output.push_str(&format!("    💰 Amount: {amount}\n"));
                 }
                 if let Some(ref cap) = terms.cap {
-                    output.push_str(&format!("    🧢 Cap: {}\n", cap));
+                    output.push_str(&format!("    🧢 Cap: {cap}\n"));
                 }
                 if let Some(ref height) = terms.height {
                     output.push_str(&format!("    📏 Height: {} - {}\n", 
@@ -201,17 +201,17 @@ impl<P: DeezelProvider> RunestoneManager<P> {
         }
         
         if let Some(ref mint) = runestone.mint {
-            output.push_str(&format!("🏭 Mint: {}\n\n", mint));
+            output.push_str(&format!("🏭 Mint: {mint}\n\n"));
         }
         
         if let Some(ref pointer) = runestone.pointer {
-            output.push_str(&format!("👉 Pointer: {}\n\n", pointer));
+            output.push_str(&format!("👉 Pointer: {pointer}\n\n"));
         }
         
         if !runestone.cenotaph.is_empty() {
             output.push_str("⚠️  Cenotaph Issues:\n");
             for issue in &runestone.cenotaph {
-                output.push_str(&format!("  • {}\n", issue));
+                output.push_str(&format!("  • {issue}\n"));
             }
             output.push('\n');
         }
@@ -229,27 +229,27 @@ impl<P: DeezelProvider> RunestoneManager<P> {
         if let Some(ref etching) = runestone.etching {
             output.push_str("Etching:\n");
             if let Some(ref rune) = etching.rune {
-                output.push_str(&format!("  Rune: {}\n", rune));
+                output.push_str(&format!("  Rune: {rune}\n"));
             }
             if let Some(ref divisibility) = etching.divisibility {
-                output.push_str(&format!("  Divisibility: {}\n", divisibility));
+                output.push_str(&format!("  Divisibility: {divisibility}\n"));
             }
             if let Some(ref premine) = etching.premine {
-                output.push_str(&format!("  Premine: {}\n", premine));
+                output.push_str(&format!("  Premine: {premine}\n"));
             }
             if let Some(ref spacers) = etching.spacers {
-                output.push_str(&format!("  Spacers: {}\n", spacers));
+                output.push_str(&format!("  Spacers: {spacers}\n"));
             }
             if let Some(ref symbol) = etching.symbol {
-                output.push_str(&format!("  Symbol: {}\n", symbol));
+                output.push_str(&format!("  Symbol: {symbol}\n"));
             }
             if let Some(ref terms) = etching.terms {
                 output.push_str("  Terms:\n");
                 if let Some(ref amount) = terms.amount {
-                    output.push_str(&format!("    Amount: {}\n", amount));
+                    output.push_str(&format!("    Amount: {amount}\n"));
                 }
                 if let Some(ref cap) = terms.cap {
-                    output.push_str(&format!("    Cap: {}\n", cap));
+                    output.push_str(&format!("    Cap: {cap}\n"));
                 }
                 if let Some(ref height) = terms.height {
                     output.push_str(&format!("    Height: {} - {}\n", 
@@ -273,17 +273,17 @@ impl<P: DeezelProvider> RunestoneManager<P> {
         }
         
         if let Some(ref mint) = runestone.mint {
-            output.push_str(&format!("Mint: {}\n\n", mint));
+            output.push_str(&format!("Mint: {mint}\n\n"));
         }
         
         if let Some(ref pointer) = runestone.pointer {
-            output.push_str(&format!("Pointer: {}\n\n", pointer));
+            output.push_str(&format!("Pointer: {pointer}\n\n"));
         }
         
         if !runestone.cenotaph.is_empty() {
             output.push_str("Cenotaph Issues:\n");
             for issue in &runestone.cenotaph {
-                output.push_str(&format!("  - {}\n", issue));
+                output.push_str(&format!("  - {issue}\n"));
             }
             output.push('\n');
         }
@@ -478,7 +478,7 @@ impl<'de> Deserialize<'de> for NetworkWrapper {
             "testnet" => Network::Testnet,
             "signet" => Network::Signet,
             "regtest" => Network::Regtest,
-            _ => return Err(serde::de::Error::custom(format!("Unknown network: {}", s))),
+            _ => return Err(serde::de::Error::custom(format!("Unknown network: {s}"))),
         };
         Ok(NetworkWrapper(network))
     }
@@ -522,7 +522,7 @@ mod network_serde {
             "testnet" => Ok(Network::Testnet),
             "signet" => Ok(Network::Signet),
             "regtest" => Ok(Network::Regtest),
-            _ => Err(serde::de::Error::custom(format!("Unknown network: {}", s))),
+            _ => Err(serde::de::Error::custom(format!("Unknown network: {s}"))),
         }
     }
 }
@@ -547,7 +547,7 @@ pub mod utils {
         if name.chars().all(|c| c.is_ascii_uppercase() || c == '.') {
             Ok(name.to_string())
         } else {
-            Err(DeezelError::Parse(format!("Invalid rune name: {}", name)))
+            Err(DeezelError::Parse(format!("Invalid rune name: {name}")))
         }
     }
     
@@ -575,12 +575,12 @@ pub mod utils {
     pub fn parse_rune_amount(amount_str: &str, divisibility: u8) -> Result<u128> {
         if divisibility == 0 {
             return amount_str.parse::<u128>()
-                .map_err(|_| DeezelError::Parse(format!("Invalid amount: {}", amount_str)));
+                .map_err(|_| DeezelError::Parse(format!("Invalid amount: {amount_str}")));
         }
         
         let parts: Vec<&str> = amount_str.split('.').collect();
         if parts.len() > 2 {
-            return Err(DeezelError::Parse(format!("Invalid amount format: {}", amount_str)));
+            return Err(DeezelError::Parse(format!("Invalid amount format: {amount_str}")));
         }
         
         let whole: u128 = parts[0].parse()
@@ -589,12 +589,12 @@ pub mod utils {
         let fractional = if parts.len() == 2 {
             let frac_str = parts[1];
             if frac_str.len() > divisibility as usize {
-                return Err(DeezelError::Parse(format!("Too many decimal places: {}", frac_str)));
+                return Err(DeezelError::Parse(format!("Too many decimal places: {frac_str}")));
             }
             
             let padded = format!("{:0<width$}", frac_str, width = divisibility as usize);
             padded.parse::<u128>()
-                .map_err(|_| DeezelError::Parse(format!("Invalid fractional part: {}", frac_str)))?
+                .map_err(|_| DeezelError::Parse(format!("Invalid fractional part: {frac_str}")))?
         } else {
             0
         };

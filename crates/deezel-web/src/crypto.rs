@@ -265,7 +265,7 @@ impl deezel_common::CryptoProvider for WebCrypto {
         let key_data = self.bytes_to_uint8_array(key);
         let key_algorithm = Object::new();
         js_sys::Reflect::set(&key_algorithm, &"name".into(), &"AES-GCM".into())
-            .map_err(|e| DeezelError::Crypto(format!("Failed to set key algorithm: {:?}", e)))?;
+            .map_err(|e| DeezelError::Crypto(format!("Failed to set key algorithm: {e:?}")))?;
         
         let crypto_key_promise = subtle.import_key_with_object(
             "raw",
@@ -273,29 +273,29 @@ impl deezel_common::CryptoProvider for WebCrypto {
             &key_algorithm,
             false,
             &Array::of1(&"encrypt".into()),
-        ).map_err(|e| DeezelError::Crypto(format!("Failed to import key: {:?}", e)))?;
+        ).map_err(|e| DeezelError::Crypto(format!("Failed to import key: {e:?}")))?;
         
         let crypto_key_value = JsFuture::from(crypto_key_promise)
             .await
-            .map_err(|e| DeezelError::Crypto(format!("Failed to import key: {:?}", e)))?;
+            .map_err(|e| DeezelError::Crypto(format!("Failed to import key: {e:?}")))?;
         
         let crypto_key: CryptoKey = crypto_key_value.dyn_into()
-            .map_err(|e| DeezelError::Crypto(format!("Failed to cast crypto key: {:?}", e)))?;
+            .map_err(|e| DeezelError::Crypto(format!("Failed to cast crypto key: {e:?}")))?;
         
         // Set up encryption parameters
         let algorithm = Object::new();
         js_sys::Reflect::set(&algorithm, &"name".into(), &"AES-GCM".into())
-            .map_err(|e| DeezelError::Crypto(format!("Failed to set algorithm: {:?}", e)))?;
+            .map_err(|e| DeezelError::Crypto(format!("Failed to set algorithm: {e:?}")))?;
         js_sys::Reflect::set(&algorithm, &"iv".into(), &self.bytes_to_uint8_array(nonce))
-            .map_err(|e| DeezelError::Crypto(format!("Failed to set IV: {:?}", e)))?;
+            .map_err(|e| DeezelError::Crypto(format!("Failed to set IV: {e:?}")))?;
         
         // Encrypt the data
         let encrypt_promise = subtle.encrypt_with_object_and_u8_array(&algorithm, &crypto_key, data)
-            .map_err(|e| DeezelError::Crypto(format!("Failed to encrypt: {:?}", e)))?;
+            .map_err(|e| DeezelError::Crypto(format!("Failed to encrypt: {e:?}")))?;
         
         let encrypted_value = JsFuture::from(encrypt_promise)
             .await
-            .map_err(|e| DeezelError::Crypto(format!("Failed to encrypt: {:?}", e)))?;
+            .map_err(|e| DeezelError::Crypto(format!("Failed to encrypt: {e:?}")))?;
         
         let encrypted_array = Uint8Array::new(&encrypted_value);
         Ok(self.uint8_array_to_bytes(&encrypted_array))
@@ -308,7 +308,7 @@ impl deezel_common::CryptoProvider for WebCrypto {
         let key_data = self.bytes_to_uint8_array(key);
         let key_algorithm = Object::new();
         js_sys::Reflect::set(&key_algorithm, &"name".into(), &"AES-GCM".into())
-            .map_err(|e| DeezelError::Crypto(format!("Failed to set key algorithm: {:?}", e)))?;
+            .map_err(|e| DeezelError::Crypto(format!("Failed to set key algorithm: {e:?}")))?;
         
         let crypto_key_promise = subtle.import_key_with_object(
             "raw",
@@ -316,29 +316,29 @@ impl deezel_common::CryptoProvider for WebCrypto {
             &key_algorithm,
             false,
             &Array::of1(&"decrypt".into()),
-        ).map_err(|e| DeezelError::Crypto(format!("Failed to import key: {:?}", e)))?;
+        ).map_err(|e| DeezelError::Crypto(format!("Failed to import key: {e:?}")))?;
         
         let crypto_key_value = JsFuture::from(crypto_key_promise)
             .await
-            .map_err(|e| DeezelError::Crypto(format!("Failed to import key: {:?}", e)))?;
+            .map_err(|e| DeezelError::Crypto(format!("Failed to import key: {e:?}")))?;
         
         let crypto_key: CryptoKey = crypto_key_value.dyn_into()
-            .map_err(|e| DeezelError::Crypto(format!("Failed to cast crypto key: {:?}", e)))?;
+            .map_err(|e| DeezelError::Crypto(format!("Failed to cast crypto key: {e:?}")))?;
         
         // Set up decryption parameters
         let algorithm = Object::new();
         js_sys::Reflect::set(&algorithm, &"name".into(), &"AES-GCM".into())
-            .map_err(|e| DeezelError::Crypto(format!("Failed to set algorithm: {:?}", e)))?;
+            .map_err(|e| DeezelError::Crypto(format!("Failed to set algorithm: {e:?}")))?;
         js_sys::Reflect::set(&algorithm, &"iv".into(), &self.bytes_to_uint8_array(nonce))
-            .map_err(|e| DeezelError::Crypto(format!("Failed to set IV: {:?}", e)))?;
+            .map_err(|e| DeezelError::Crypto(format!("Failed to set IV: {e:?}")))?;
         
         // Decrypt the data
         let decrypt_promise = subtle.decrypt_with_object_and_u8_array(&algorithm, &crypto_key, data)
-            .map_err(|e| DeezelError::Crypto(format!("Failed to decrypt: {:?}", e)))?;
+            .map_err(|e| DeezelError::Crypto(format!("Failed to decrypt: {e:?}")))?;
         
         let decrypted_value = JsFuture::from(decrypt_promise)
             .await
-            .map_err(|e| DeezelError::Crypto(format!("Failed to decrypt: {:?}", e)))?;
+            .map_err(|e| DeezelError::Crypto(format!("Failed to decrypt: {e:?}")))?;
         
         let decrypted_array = Uint8Array::new(&decrypted_value);
         Ok(self.uint8_array_to_bytes(&decrypted_array))
@@ -351,7 +351,7 @@ impl deezel_common::CryptoProvider for WebCrypto {
         let password_data = self.bytes_to_uint8_array(password);
         let import_algorithm = Object::new();
         js_sys::Reflect::set(&import_algorithm, &"name".into(), &"PBKDF2".into())
-            .map_err(|e| DeezelError::Crypto(format!("Failed to set import algorithm: {:?}", e)))?;
+            .map_err(|e| DeezelError::Crypto(format!("Failed to set import algorithm: {e:?}")))?;
         
         let password_key_promise = subtle.import_key_with_object(
             "raw",
@@ -359,33 +359,33 @@ impl deezel_common::CryptoProvider for WebCrypto {
             &import_algorithm,
             false,
             &Array::of1(&"deriveBits".into()),
-        ).map_err(|e| DeezelError::Crypto(format!("Failed to import password: {:?}", e)))?;
+        ).map_err(|e| DeezelError::Crypto(format!("Failed to import password: {e:?}")))?;
         
         let password_key_value = JsFuture::from(password_key_promise)
             .await
-            .map_err(|e| DeezelError::Crypto(format!("Failed to import password: {:?}", e)))?;
+            .map_err(|e| DeezelError::Crypto(format!("Failed to import password: {e:?}")))?;
         
         let password_key: CryptoKey = password_key_value.dyn_into()
-            .map_err(|e| DeezelError::Crypto(format!("Failed to cast password key: {:?}", e)))?;
+            .map_err(|e| DeezelError::Crypto(format!("Failed to cast password key: {e:?}")))?;
         
         // Set up PBKDF2 parameters
         let algorithm = Object::new();
         js_sys::Reflect::set(&algorithm, &"name".into(), &"PBKDF2".into())
-            .map_err(|e| DeezelError::Crypto(format!("Failed to set algorithm: {:?}", e)))?;
+            .map_err(|e| DeezelError::Crypto(format!("Failed to set algorithm: {e:?}")))?;
         js_sys::Reflect::set(&algorithm, &"salt".into(), &self.bytes_to_uint8_array(salt))
-            .map_err(|e| DeezelError::Crypto(format!("Failed to set salt: {:?}", e)))?;
+            .map_err(|e| DeezelError::Crypto(format!("Failed to set salt: {e:?}")))?;
         js_sys::Reflect::set(&algorithm, &"iterations".into(), &JsValue::from(iterations))
-            .map_err(|e| DeezelError::Crypto(format!("Failed to set iterations: {:?}", e)))?;
+            .map_err(|e| DeezelError::Crypto(format!("Failed to set iterations: {e:?}")))?;
         js_sys::Reflect::set(&algorithm, &"hash".into(), &"SHA-256".into())
-            .map_err(|e| DeezelError::Crypto(format!("Failed to set hash: {:?}", e)))?;
+            .map_err(|e| DeezelError::Crypto(format!("Failed to set hash: {e:?}")))?;
         
         // Derive the key
         let derive_promise = subtle.derive_bits_with_object(&algorithm, &password_key, (key_len * 8) as u32)
-            .map_err(|e| DeezelError::Crypto(format!("Failed to derive bits: {:?}", e)))?;
+            .map_err(|e| DeezelError::Crypto(format!("Failed to derive bits: {e:?}")))?;
         
         let derived_value = JsFuture::from(derive_promise)
             .await
-            .map_err(|e| DeezelError::Crypto(format!("Failed to derive bits: {:?}", e)))?;
+            .map_err(|e| DeezelError::Crypto(format!("Failed to derive bits: {e:?}")))?;
         
         let derived_array = Uint8Array::new(&derived_value);
         Ok(self.uint8_array_to_bytes(&derived_array))

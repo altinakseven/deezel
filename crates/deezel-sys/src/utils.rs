@@ -10,7 +10,7 @@ pub async fn resolve_address_identifiers(input: &str, provider: &ConcreteProvide
     // If it's not a valid address, assume it's an identifier
     if bitcoin::Address::from_str(input).is_err() {
         // Convert shorthand to full format and resolve
-        let full_identifier = format!("[self:{}]", input);
+        let full_identifier = format!("[self:{input}]");
         return provider.resolve_all_identifiers(&full_identifier).await.map_err(|e| anyhow!("{}", e));
     }
     
@@ -48,9 +48,9 @@ pub async fn analyze_runestone_tx(tx: &Transaction, raw_output: bool, provider: 
         },
         Err(e) => {
             if raw_output {
-                eprintln!("Error decoding runestone: {}", e);
+                eprintln!("Error decoding runestone: {e}");
             } else {
-                println!("❌ Error decoding runestone: {}", e);
+                println!("❌ Error decoding runestone: {e}");
             }
         }
     }

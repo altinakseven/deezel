@@ -141,78 +141,78 @@ impl MonitorProvider for WebProvider {
 #[async_trait(?Send)]
 impl OrdProvider for WebProvider {
     async fn get_inscription(&self, inscription_id: &str) -> Result<ord::Inscription> {
-        let json = self.call(&self.sandshrew_rpc_url(), "ord_getInscription", serde_json::json!([inscription_id]), 1).await?;
+        let json = self.call(self.sandshrew_rpc_url(), "ord_getInscription", serde_json::json!([inscription_id]), 1).await?;
         serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
     }
 
     async fn get_inscriptions_in_block(&self, block_hash: &str) -> Result<ord::Inscriptions> {
-        let json = self.call(&self.sandshrew_rpc_url(), "ord_getInscriptionsInBlock", serde_json::json!([block_hash]), 1).await?;
+        let json = self.call(self.sandshrew_rpc_url(), "ord_getInscriptionsInBlock", serde_json::json!([block_hash]), 1).await?;
         serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
     }
 
     async fn get_ord_address_info(&self, address: &str) -> Result<ord::AddressInfo> {
-        let json = self.call(&self.sandshrew_rpc_url(), "ord_address", serde_json::json!([address]), 1).await?;
+        let json = self.call(self.sandshrew_rpc_url(), "ord_address", serde_json::json!([address]), 1).await?;
         serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
     }
 
     async fn get_block_info(&self, query: &str) -> Result<ord::Block> {
-        let json = self.call(&self.sandshrew_rpc_url(), "ord_block", serde_json::json!([query]), 1).await?;
+        let json = self.call(self.sandshrew_rpc_url(), "ord_block", serde_json::json!([query]), 1).await?;
         serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
     }
 
     async fn get_ord_block_count(&self) -> Result<u64> {
-        let json = self.call(&self.sandshrew_rpc_url(), "ord_blockCount", serde_json::json!([]), 1).await?;
+        let json = self.call(self.sandshrew_rpc_url(), "ord_blockCount", serde_json::json!([]), 1).await?;
         json.as_u64().ok_or_else(|| DeezelError::RpcError("Invalid block count response".to_string()))
     }
 
     async fn get_ord_blocks(&self) -> Result<ord::Blocks> {
-        let json = self.call(&self.sandshrew_rpc_url(), "ord_blocks", serde_json::json!([]), 1).await?;
+        let json = self.call(self.sandshrew_rpc_url(), "ord_blocks", serde_json::json!([]), 1).await?;
         serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
     }
 
     async fn get_children(&self, inscription_id: &str, page: Option<u32>) -> Result<ord::Children> {
-        let json = self.call(&self.sandshrew_rpc_url(), "ord_children", serde_json::json!([inscription_id, page]), 1).await?;
+        let json = self.call(self.sandshrew_rpc_url(), "ord_children", serde_json::json!([inscription_id, page]), 1).await?;
         serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
     }
 
     async fn get_content(&self, inscription_id: &str) -> Result<Vec<u8>> {
-        let result = self.call(&self.sandshrew_rpc_url(), "ord_content", serde_json::json!([inscription_id]), 1).await?;
+        let result = self.call(self.sandshrew_rpc_url(), "ord_content", serde_json::json!([inscription_id]), 1).await?;
         let hex_str = result.as_str().ok_or_else(|| DeezelError::RpcError("Invalid content response".to_string()))?;
         hex::decode(hex_str.strip_prefix("0x").unwrap_or(hex_str)).map_err(|e| DeezelError::Serialization(e.to_string()))
     }
 
     async fn get_inscriptions(&self, page: Option<u32>) -> Result<ord::Inscriptions> {
-        let json = self.call(&self.sandshrew_rpc_url(), "ord_inscriptions", serde_json::json!([page]), 1).await?;
+        let json = self.call(self.sandshrew_rpc_url(), "ord_inscriptions", serde_json::json!([page]), 1).await?;
         serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
     }
 
     async fn get_output(&self, output: &str) -> Result<ord::Output> {
-        let json = self.call(&self.sandshrew_rpc_url(), "ord_output", serde_json::json!([output]), 1).await?;
+        let json = self.call(self.sandshrew_rpc_url(), "ord_output", serde_json::json!([output]), 1).await?;
         serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
     }
 
     async fn get_parents(&self, inscription_id: &str, page: Option<u32>) -> Result<ord::ParentInscriptions> {
-        let json = self.call(&self.sandshrew_rpc_url(), "ord_parents", serde_json::json!([inscription_id, page]), 1).await?;
+        let json = self.call(self.sandshrew_rpc_url(), "ord_parents", serde_json::json!([inscription_id, page]), 1).await?;
         serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
     }
 
     async fn get_rune(&self, rune: &str) -> Result<ord::RuneInfo> {
-        let json = self.call(&self.sandshrew_rpc_url(), "ord_rune", serde_json::json!([rune]), 1).await?;
+        let json = self.call(self.sandshrew_rpc_url(), "ord_rune", serde_json::json!([rune]), 1).await?;
         serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
     }
 
     async fn get_runes(&self, page: Option<u32>) -> Result<ord::Runes> {
-        let json = self.call(&self.sandshrew_rpc_url(), "ord_runes", serde_json::json!([page]), 1).await?;
+        let json = self.call(self.sandshrew_rpc_url(), "ord_runes", serde_json::json!([page]), 1).await?;
         serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
     }
 
     async fn get_sat(&self, sat: u64) -> Result<ord::SatResponse> {
-        let json = self.call(&self.sandshrew_rpc_url(), "ord_sat", serde_json::json!([sat]), 1).await?;
+        let json = self.call(self.sandshrew_rpc_url(), "ord_sat", serde_json::json!([sat]), 1).await?;
         serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
     }
 
     async fn get_tx_info(&self, txid: &str) -> Result<ord::TxInfo> {
-        let json = self.call(&self.sandshrew_rpc_url(), "ord_tx", serde_json::json!([txid]), 1).await?;
+        let json = self.call(self.sandshrew_rpc_url(), "ord_tx", serde_json::json!([txid]), 1).await?;
         serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
     }
 }

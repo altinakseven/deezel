@@ -71,7 +71,7 @@ fn test_alkanes_execute_regtest_preview() -> Result<()> {
 
     // Now, run the alkanes execute command
     let mut cmd = Command::cargo_bin("deezel")?;
-    cmd.args(&[
+    cmd.args([
         "--keystore",
         keystore_path_str,
         "--bitcoin-rpc-url",
@@ -109,7 +109,7 @@ fn test_alkanes_execute_with_mine_and_trace() -> Result<()> {
 
     // Now, run the alkanes execute command with --mine and --trace
     let mut cmd = Command::cargo_bin("deezel")?;
-    cmd.args(&[
+    cmd.args([
         "--keystore",
         keystore_path_str,
         "--bitcoin-rpc-url",
@@ -133,8 +133,8 @@ fn test_alkanes_execute_with_mine_and_trace() -> Result<()> {
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     if !output.status.success() {
-        println!("stdout: {}", stdout);
-        println!("stderr: {}", stderr);
+        println!("stdout: {stdout}");
+        println!("stderr: {stderr}");
     }
     assert!(output.status.success());
 
@@ -158,7 +158,7 @@ fn test_alkanes_execute_regtest_simulation_preview() -> Result<()> {
 
     // Now, run the alkanes execute command with an envelope
     let mut cmd = Command::cargo_bin("deezel")?;
-    cmd.args(&[
+    cmd.args([
         "--keystore",
         keystore_path_str,
         "--bitcoin-rpc-url",
@@ -183,8 +183,8 @@ fn test_alkanes_execute_regtest_simulation_preview() -> Result<()> {
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     if !output.status.success() {
-        println!("stdout: {}", stdout);
-        println!("stderr: {}", stderr);
+        println!("stdout: {stdout}");
+        println!("stderr: {stderr}");
     }
     assert!(output.status.success());
     assert!(stdout.contains("--- Transaction Preview ---"));

@@ -36,7 +36,7 @@ impl Display for Rune {
             n = (n - 1) / 26;
         }
         for c in s.chars().rev() {
-            write!(f, "{}", c)?;
+            write!(f, "{c}")?;
         }
         Ok(())
     }
@@ -48,7 +48,7 @@ impl FromStr for Rune {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut n = 0;
         for c in s.chars() {
-            if !('A'..='Z').contains(&c) {
+            if !c.is_ascii_uppercase() {
                 anyhow::bail!("invalid character in rune: {}", c);
             }
             n = n * 26 + (c as u128 - 'A' as u128 + 1);
@@ -95,7 +95,7 @@ impl Display for SpacedRune {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let s = self.rune.to_string();
         for (i, c) in s.chars().enumerate() {
-            write!(f, "{}", c)?;
+            write!(f, "{c}")?;
             if i < s.len() - 1 && (self.spacers >> i) & 1 != 0 {
                 write!(f, "•")?;
             }

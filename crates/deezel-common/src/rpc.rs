@@ -334,7 +334,7 @@ impl StandaloneRpcClient {
         use reqwest;
         use url::Url;
 
-        let parsed_url = Url::parse(url).map_err(|e| DeezelError::Configuration(format!("Invalid RPC URL: {}", e)))?;
+        let parsed_url = Url::parse(url).map_err(|e| DeezelError::Configuration(format!("Invalid RPC URL: {e}")))?;
         let username = parsed_url.username();
         let password = parsed_url.password();
 

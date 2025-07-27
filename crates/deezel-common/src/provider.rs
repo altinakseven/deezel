@@ -129,7 +129,7 @@ impl ConcreteProvider {
            if path.exists() {
                match Keystore::from_file(path) {
                    Ok(keystore) => new_self.wallet_state = WalletState::Locked(keystore),
-                   Err(e) => log::warn!("Failed to load keystore metadata: {}", e),
+                   Err(e) => log::warn!("Failed to load keystore metadata: {e}"),
                }
            }
        }
@@ -223,13 +223,13 @@ impl ConcreteProvider {
         // listed or used before. We search a reasonable gap limit.
         let secp = Secp256k1::<All>::new();
         let account_xpub = Xpub::from_str(&keystore.account_xpub)
-            .map_err(|e| DeezelError::Wallet(format!("Invalid account xpub in keystore: {}", e)))?;
+            .map_err(|e| DeezelError::Wallet(format!("Invalid account xpub in keystore: {e}")))?;
 
         // Standard gap limit is 20, but we'll search a bit more to be safe.
         // We need to check both the receive (0) and change (1) branches.
         for branch in 0..=1 {
             for i in 0..101 { // Gap limit of 100
-                let address_path_str = format!("{}/{}", branch, i);
+                let address_path_str = format!("{branch}/{i}");
                 let address_path = DerivationPath::from_str(&address_path_str)?;
                 let derived_xpub = account_xpub.derive_pub(&secp, &address_path)?;
                 let (internal_key, _) = derived_xpub.public_key.x_only_public_key();
@@ -249,8 +249,7 @@ impl ConcreteProvider {
         }
 
         Err(DeezelError::Wallet(format!(
-            "Address {} not found in keystore and could not be derived within the gap limit",
-            address
+            "Address {address} not found in keystore and could not be derived within the gap limit"
         )))
     }
 
@@ -308,7 +307,7 @@ impl JsonRpcProvider for ConcreteProvider {
                 .map_err(|e| DeezelError::Network(e.to_string()))?;
             let response_text = response.text().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             
-            log::debug!("Raw RPC response: {}", response_text);
+            log::debug!("Raw RPC response: {response_text}");
             // First, try to parse as a standard RpcResponse
             // A more robust parsing logic that handles different RPC response structures.
             if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(&response_text) {
@@ -318,7 +317,7 @@ impl JsonRpcProvider for ConcreteProvider {
                         if let Ok(rpc_error) = serde_json::from_value::<crate::rpc::RpcError>(error_obj.clone()) {
                             return Err(DeezelError::RpcError(format!("Code {}: {}", rpc_error.code, rpc_error.message)));
                         } else {
-                            return Err(DeezelError::RpcError(format!("Non-standard error object received: {}", error_obj)));
+                            return Err(DeezelError::RpcError(format!("Non-standard error object received: {error_obj}")));
                         }
                     }
                 }
@@ -353,7 +352,7 @@ impl JsonRpcProvider for ConcreteProvider {
             }
 
             // If all attempts fail, return a generic error
-            Err(DeezelError::Network(format!("Failed to decode RPC response: {}", response_text)))
+            Err(DeezelError::Network(format!("Failed to decode RPC response: {response_text}")))
         }
         #[cfg(not(feature = "native-deps"))]
         {
@@ -508,7 +507,7 @@ impl LogProvider for ConcreteProvider {
 impl WalletProvider for ConcreteProvider {
     async fn create_wallet(&mut self, config: WalletConfig, mnemonic: Option<String>, passphrase: Option<String>) -> Result<WalletInfo> {
         let mnemonic = if let Some(m) = mnemonic {
-            Mnemonic::from_phrase(&m, bip39::Language::English).map_err(|e| DeezelError::Wallet(format!("Invalid mnemonic: {}", e)))?
+            Mnemonic::from_phrase(&m, bip39::Language::English).map_err(|e| DeezelError::Wallet(format!("Invalid mnemonic: {e}")))?
         } else {
             Mnemonic::new(MnemonicType::Words24, bip39::Language::English)
         };
@@ -522,7 +521,7 @@ impl WalletProvider for ConcreteProvider {
         }
 
         let addresses = keystore.get_addresses(config.network, "p2tr", 0, 0, 1)?;
-        let address = addresses.get(0).map(|a| a.address.clone()).unwrap_or_default();
+        let address = addresses.first().map(|a| a.address.clone()).unwrap_or_default();
         
         self.wallet_state = WalletState::Unlocked {
             keystore,
@@ -545,7 +544,7 @@ impl WalletProvider for ConcreteProvider {
             let pass = passphrase.as_deref().ok_or_else(|| DeezelError::Wallet("Passphrase required to load wallet".to_string()))?;
             let mnemonic = keystore.decrypt_mnemonic(pass)?;
             let addresses = keystore.get_addresses(config.network, "p2tr", 0, 0, 1)?;
-            let address = addresses.get(0).map(|a| a.address.clone()).unwrap_or_default();
+            let address = addresses.first().map(|a| a.address.clone()).unwrap_or_default();
 
             self.wallet_state = WalletState::Unlocked {
                 keystore,
@@ -647,11 +646,11 @@ impl WalletProvider for ConcreteProvider {
 
         let mut all_utxos = Vec::new();
         for address in addrs_to_check {
-            log::info!("Checking UTXOs for address: {}", address);
+            log::info!("Checking UTXOs for address: {address}");
             let utxos_json = self.get_address_utxo(&address).await;
             
             if let Err(e) = utxos_json {
-                log::warn!("Failed to get UTXOs for address {}: {}", address, e);
+                log::warn!("Failed to get UTXOs for address {address}: {e}");
                 continue;
             }
             let utxos_json = utxos_json.unwrap();
@@ -668,13 +667,13 @@ impl WalletProvider for ConcreteProvider {
                         let confirmed = status.and_then(|s| s.get("confirmed")).and_then(|c| c.as_bool()).unwrap_or(false);
                         let block_height = status.and_then(|s| s.get("block_height")).and_then(|h| h.as_u64());
                         
-                        let outpoint = OutPoint::from_str(&format!("{}:{}", txid_str, vout))?;
+                        let outpoint = OutPoint::from_str(&format!("{txid_str}:{vout}"))?;
                         let addr = Address::from_str(&address)?.require_network(self.get_network())?;
-                        let tx_info = self.get_tx(&txid_str).await?;
+                        let tx_info = self.get_tx(txid_str).await?;
                         let is_coinbase = tx_info
                             .get("vin")
                             .and_then(|v| v.as_array())
-                            .map_or(false, |vin| {
+                            .is_some_and(|vin| {
                                 vin.len() == 1 && vin[0].get("is_coinbase").and_then(|v| v.as_bool()).unwrap_or(false)
                             });
                         
@@ -702,7 +701,7 @@ impl WalletProvider for ConcreteProvider {
                         };
 
                         if utxo_info.is_coinbase && utxo_info.confirmations < 100 {
-                            log::info!("Skipping immature coinbase UTXO: {}:{}", txid_str, vout);
+                            log::info!("Skipping immature coinbase UTXO: {txid_str}:{vout}");
                             continue;
                         }
 
@@ -874,10 +873,10 @@ impl WalletProvider for ConcreteProvider {
             
             // Find the address and its derivation path from our keystore
             let address = Address::from_script(&prev_txout.script_pubkey, network)
-                .map_err(|e| DeezelError::Wallet(format!("Failed to parse address from script: {}", e)))?;
+                .map_err(|e| DeezelError::Wallet(format!("Failed to parse address from script: {e}")))?;
             
             // This call now takes a mutable keystore and may cache the derived address info.
-            let addr_info = Self::find_address_info(&keystore, &address, network)?;
+            let addr_info = Self::find_address_info(keystore, &address, network)?;
             let path = DerivationPath::from_str(&addr_info.path)?;
 
             // Derive the private key for this input
@@ -924,7 +923,7 @@ impl WalletProvider for ConcreteProvider {
     async fn estimate_fee(&self, target: u32) -> Result<FeeEstimate> {
         let fee_estimates = self.get_fee_estimates().await?;
         let fee_rate = fee_estimates
-            .get(&target.to_string())
+            .get(target.to_string())
             .and_then(|v| v.as_f64().map(|f| f as f32))
             .unwrap_or(1.0);
 
@@ -969,20 +968,20 @@ impl WalletProvider for ConcreteProvider {
 
             // 3. Check if services are synced
             // All services should be at least at the same height as bitcoind.
-            let metashrew_synced = metashrew_height_res.as_ref().map_or(false, |&h| h >= bitcoind_height);
-            let esplora_synced = esplora_height_res.as_ref().map_or(false, |&h| h >= bitcoind_height);
-            let ord_synced = ord_height_res.as_ref().map_or(false, |&h| h >= bitcoind_height);
+            let metashrew_synced = metashrew_height_res.as_ref().is_ok_and(|&h| h >= bitcoind_height);
+            let esplora_synced = esplora_height_res.as_ref().is_ok_and(|&h| h >= bitcoind_height);
+            let ord_synced = ord_height_res.as_ref().is_ok_and(|&h| h >= bitcoind_height);
 
             log::info!(
                 "Sync attempt {}/{}: bitcoind: {}, metashrew: {} (synced: {}), esplora: {} (synced: {}), ord: {} (synced: {})",
                 i + 1,
                 max_retries,
                 bitcoind_height,
-                metashrew_height_res.map_or_else(|e| format!("err ({})", e), |h| h.to_string()),
+                metashrew_height_res.map_or_else(|e| format!("err ({e})"), |h| h.to_string()),
                 metashrew_synced,
-                esplora_height_res.map_or_else(|e| format!("err ({})", e), |h| h.to_string()),
+                esplora_height_res.map_or_else(|e| format!("err ({e})"), |h| h.to_string()),
                 esplora_synced,
-                ord_height_res.map_or_else(|e| format!("err ({})", e), |h| h.to_string()),
+                ord_height_res.map_or_else(|e| format!("err ({e})"), |h| h.to_string()),
                 ord_synced
             );
 
@@ -994,7 +993,7 @@ impl WalletProvider for ConcreteProvider {
             self.sleep_ms(2000).await;
         }
 
-        Err(DeezelError::Other(format!("Timeout waiting for backends to sync after {} attempts", max_retries)))
+        Err(DeezelError::Other(format!("Timeout waiting for backends to sync after {max_retries} attempts")))
     }
     
     async fn backup(&self) -> Result<String> {
@@ -1115,7 +1114,7 @@ impl WalletProvider for ConcreteProvider {
             } else {
                 // Key-path spend
                 let address = Address::from_script(&prev_txout.script_pubkey, network)
-                    .map_err(|e| DeezelError::Wallet(format!("Failed to parse address from script: {}", e)))?;
+                    .map_err(|e| DeezelError::Wallet(format!("Failed to parse address from script: {e}")))?;
                 
                 let addr_info = Self::find_address_info(keystore, &address, network)?;
                 let path = DerivationPath::from_str(&addr_info.path)?;
@@ -1181,7 +1180,7 @@ impl WalletProvider for ConcreteProvider {
                 let addresses = keystore.get_addresses(network, "p2tr", chain, index, 1)?;
                 if let Some(address_info) = addresses.first() {
                     let txs = self.get_address_txs(&address_info.address).await?;
-                    if txs.as_array().map_or(true, |a| a.is_empty()) {
+                    if txs.as_array().is_none_or(|a| a.is_empty()) {
                         consecutive_unused += 1;
                     } else {
                         last_used_index = core::cmp::max(last_used_index, index);
@@ -1265,11 +1264,11 @@ impl BitcoinRpcProvider for ConcreteProvider {
                 if let Some(txid) = value.as_str() {
                     Ok(txid.to_string())
                 } else {
-                    Err(DeezelError::RpcError(format!("Invalid txid response from sendrawtransaction: response was not a string: {:?}", value)))
+                    Err(DeezelError::RpcError(format!("Invalid txid response from sendrawtransaction: response was not a string: {value:?}")))
                 }
             }
             Err(e) => {
-                log::error!("sendrawtransaction RPC call failed: {}", e);
+                log::error!("sendrawtransaction RPC call failed: {e}");
                 Err(e)
             }
         }
@@ -1497,7 +1496,7 @@ impl EsploraProvider for ConcreteProvider {
     async fn get_blocks_tip_hash(&self) -> Result<String> {
         #[cfg(feature = "native-deps")]
         if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{}/blocks/tip/hash", esplora_url);
+            let url = format!("{esplora_url}/blocks/tip/hash");
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.text().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
@@ -1509,10 +1508,10 @@ impl EsploraProvider for ConcreteProvider {
     async fn get_blocks_tip_height(&self) -> Result<u64> {
         #[cfg(feature = "native-deps")]
         if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{}/blocks/tip/height", esplora_url);
+            let url = format!("{esplora_url}/blocks/tip/height");
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             let text = response.text().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            return text.parse::<u64>().map_err(|e| DeezelError::RpcError(format!("Invalid tip height response from REST API: {}", e)));
+            return text.parse::<u64>().map_err(|e| DeezelError::RpcError(format!("Invalid tip height response from REST API: {e}")));
         }
         
         let result = self.call(&self.rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCKS_TIP_HEIGHT, crate::esplora::params::empty(), 1).await?;
@@ -1523,9 +1522,9 @@ impl EsploraProvider for ConcreteProvider {
         #[cfg(feature = "native-deps")]
         if let Some(esplora_url) = &self.esplora_url {
             let url = if let Some(height) = start_height {
-                format!("{}/blocks/{}", esplora_url, height)
+                format!("{esplora_url}/blocks/{height}")
             } else {
-                format!("{}/blocks", esplora_url)
+                format!("{esplora_url}/blocks")
             };
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
@@ -1537,7 +1536,7 @@ impl EsploraProvider for ConcreteProvider {
     async fn get_block_by_height(&self, height: u64) -> Result<String> {
         #[cfg(feature = "native-deps")]
         if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{}/block-height/{}", esplora_url, height);
+            let url = format!("{esplora_url}/block-height/{height}");
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.text().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
@@ -1549,7 +1548,7 @@ impl EsploraProvider for ConcreteProvider {
     async fn get_block(&self, hash: &str) -> Result<serde_json::Value> {
         #[cfg(feature = "native-deps")]
         if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{}/block/{}", esplora_url, hash);
+            let url = format!("{esplora_url}/block/{hash}");
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
@@ -1560,7 +1559,7 @@ impl EsploraProvider for ConcreteProvider {
     async fn get_block_status(&self, hash: &str) -> Result<serde_json::Value> {
         #[cfg(feature = "native-deps")]
         if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{}/block/{}/status", esplora_url, hash);
+            let url = format!("{esplora_url}/block/{hash}/status");
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
@@ -1571,7 +1570,7 @@ impl EsploraProvider for ConcreteProvider {
     async fn get_block_txids(&self, hash: &str) -> Result<serde_json::Value> {
         #[cfg(feature = "native-deps")]
         if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{}/block/{}/txids", esplora_url, hash);
+            let url = format!("{esplora_url}/block/{hash}/txids");
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
@@ -1582,7 +1581,7 @@ impl EsploraProvider for ConcreteProvider {
     async fn get_block_header(&self, hash: &str) -> Result<String> {
         #[cfg(feature = "native-deps")]
         if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{}/block/{}/header", esplora_url, hash);
+            let url = format!("{esplora_url}/block/{hash}/header");
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.text().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
@@ -1594,7 +1593,7 @@ impl EsploraProvider for ConcreteProvider {
     async fn get_block_raw(&self, hash: &str) -> Result<String> {
         #[cfg(feature = "native-deps")]
         if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{}/block/{}/raw", esplora_url, hash);
+            let url = format!("{esplora_url}/block/{hash}/raw");
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             let bytes = response.bytes().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return Ok(hex::encode(bytes));
@@ -1607,7 +1606,7 @@ impl EsploraProvider for ConcreteProvider {
     async fn get_block_txid(&self, hash: &str, index: u32) -> Result<String> {
         #[cfg(feature = "native-deps")]
         if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{}/block/{}/txid/{}", esplora_url, hash, index);
+            let url = format!("{esplora_url}/block/{hash}/txid/{index}");
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.text().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
@@ -1620,9 +1619,9 @@ impl EsploraProvider for ConcreteProvider {
         #[cfg(feature = "native-deps")]
         if let Some(esplora_url) = &self.esplora_url {
             let url = if let Some(index) = start_index {
-                format!("{}/block/{}/txs/{}", esplora_url, hash, index)
+                format!("{esplora_url}/block/{hash}/txs/{index}")
             } else {
-                format!("{}/block/{}/txs", esplora_url, hash)
+                format!("{esplora_url}/block/{hash}/txs")
             };
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
@@ -1634,7 +1633,7 @@ impl EsploraProvider for ConcreteProvider {
     async fn get_address(&self, address: &str) -> Result<serde_json::Value> {
         #[cfg(feature = "native-deps")]
         if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{}/address/{}", esplora_url, address);
+            let url = format!("{esplora_url}/address/{address}");
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
@@ -1645,7 +1644,7 @@ impl EsploraProvider for ConcreteProvider {
     async fn get_address_info(&self, address: &str) -> Result<serde_json::Value> {
         #[cfg(feature = "native-deps")]
         if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{}/address/{}", esplora_url, address);
+            let url = format!("{esplora_url}/address/{address}");
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
@@ -1656,7 +1655,7 @@ impl EsploraProvider for ConcreteProvider {
     async fn get_address_txs(&self, address: &str) -> Result<serde_json::Value> {
         #[cfg(feature = "native-deps")]
         if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{}/address/{}/txs", esplora_url, address);
+            let url = format!("{esplora_url}/address/{address}/txs");
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
@@ -1668,9 +1667,9 @@ impl EsploraProvider for ConcreteProvider {
         #[cfg(feature = "native-deps")]
         if let Some(esplora_url) = &self.esplora_url {
             let url = if let Some(txid) = last_seen_txid {
-                format!("{}/address/{}/txs/chain/{}", esplora_url, address, txid)
+                format!("{esplora_url}/address/{address}/txs/chain/{txid}")
             } else {
-                format!("{}/address/{}/txs/chain", esplora_url, address)
+                format!("{esplora_url}/address/{address}/txs/chain")
             };
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
@@ -1682,7 +1681,7 @@ impl EsploraProvider for ConcreteProvider {
     async fn get_address_txs_mempool(&self, address: &str) -> Result<serde_json::Value> {
         #[cfg(feature = "native-deps")]
         if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{}/address/{}/txs/mempool", esplora_url, address);
+            let url = format!("{esplora_url}/address/{address}/txs/mempool");
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
@@ -1693,7 +1692,7 @@ impl EsploraProvider for ConcreteProvider {
     async fn get_address_utxo(&self, address: &str) -> Result<serde_json::Value> {
         #[cfg(feature = "native-deps")]
         if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{}/address/{}/utxo", esplora_url, address);
+            let url = format!("{esplora_url}/address/{address}/utxo");
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
@@ -1704,7 +1703,7 @@ impl EsploraProvider for ConcreteProvider {
     async fn get_address_prefix(&self, prefix: &str) -> Result<serde_json::Value> {
         #[cfg(feature = "native-deps")]
         if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{}/address-prefix/{}", esplora_url, prefix);
+            let url = format!("{esplora_url}/address-prefix/{prefix}");
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
@@ -1715,7 +1714,7 @@ impl EsploraProvider for ConcreteProvider {
     async fn get_tx(&self, txid: &str) -> Result<serde_json::Value> {
         #[cfg(feature = "native-deps")]
         if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{}/tx/{}", esplora_url, txid);
+            let url = format!("{esplora_url}/tx/{txid}");
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
@@ -1726,7 +1725,7 @@ impl EsploraProvider for ConcreteProvider {
     async fn get_tx_hex(&self, txid: &str) -> Result<String> {
         #[cfg(feature = "native-deps")]
         if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{}/tx/{}/hex", esplora_url, txid);
+            let url = format!("{esplora_url}/tx/{txid}/hex");
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.text().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
@@ -1738,7 +1737,7 @@ impl EsploraProvider for ConcreteProvider {
     async fn get_tx_raw(&self, txid: &str) -> Result<String> {
         #[cfg(feature = "native-deps")]
         if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{}/tx/{}/raw", esplora_url, txid);
+            let url = format!("{esplora_url}/tx/{txid}/raw");
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             let bytes = response.bytes().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return Ok(hex::encode(bytes));
@@ -1751,7 +1750,7 @@ impl EsploraProvider for ConcreteProvider {
     async fn get_tx_status(&self, txid: &str) -> Result<serde_json::Value> {
         #[cfg(feature = "native-deps")]
         if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{}/tx/{}/status", esplora_url, txid);
+            let url = format!("{esplora_url}/tx/{txid}/status");
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
@@ -1762,7 +1761,7 @@ impl EsploraProvider for ConcreteProvider {
     async fn get_tx_merkle_proof(&self, txid: &str) -> Result<serde_json::Value> {
         #[cfg(feature = "native-deps")]
         if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{}/tx/{}/merkle-proof", esplora_url, txid);
+            let url = format!("{esplora_url}/tx/{txid}/merkle-proof");
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
@@ -1773,7 +1772,7 @@ impl EsploraProvider for ConcreteProvider {
     async fn get_tx_merkleblock_proof(&self, txid: &str) -> Result<String> {
         #[cfg(feature = "native-deps")]
         if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{}/tx/{}/merkleblock-proof", esplora_url, txid);
+            let url = format!("{esplora_url}/tx/{txid}/merkleblock-proof");
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.text().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
@@ -1785,7 +1784,7 @@ impl EsploraProvider for ConcreteProvider {
     async fn get_tx_outspend(&self, txid: &str, index: u32) -> Result<serde_json::Value> {
         #[cfg(feature = "native-deps")]
         if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{}/tx/{}/outspend/{}", esplora_url, txid, index);
+            let url = format!("{esplora_url}/tx/{txid}/outspend/{index}");
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
@@ -1796,7 +1795,7 @@ impl EsploraProvider for ConcreteProvider {
     async fn get_tx_outspends(&self, txid: &str) -> Result<serde_json::Value> {
         #[cfg(feature = "native-deps")]
         if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{}/tx/{}/outspends", esplora_url, txid);
+            let url = format!("{esplora_url}/tx/{txid}/outspends");
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
@@ -1807,7 +1806,7 @@ impl EsploraProvider for ConcreteProvider {
     async fn broadcast(&self, tx_hex: &str) -> Result<String> {
         #[cfg(feature = "native-deps")]
         if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{}/tx", esplora_url);
+            let url = format!("{esplora_url}/tx");
             let response = self.http_client.post(&url).body(tx_hex.to_string()).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.text().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
@@ -1819,7 +1818,7 @@ impl EsploraProvider for ConcreteProvider {
     async fn get_mempool(&self) -> Result<serde_json::Value> {
         #[cfg(feature = "native-deps")]
         if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{}/mempool", esplora_url);
+            let url = format!("{esplora_url}/mempool");
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
@@ -1830,7 +1829,7 @@ impl EsploraProvider for ConcreteProvider {
     async fn get_mempool_txids(&self) -> Result<serde_json::Value> {
         #[cfg(feature = "native-deps")]
         if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{}/mempool/txids", esplora_url);
+            let url = format!("{esplora_url}/mempool/txids");
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
@@ -1841,7 +1840,7 @@ impl EsploraProvider for ConcreteProvider {
     async fn get_mempool_recent(&self) -> Result<serde_json::Value> {
         #[cfg(feature = "native-deps")]
         if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{}/mempool/recent", esplora_url);
+            let url = format!("{esplora_url}/mempool/recent");
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
@@ -1852,7 +1851,7 @@ impl EsploraProvider for ConcreteProvider {
     async fn get_fee_estimates(&self) -> Result<serde_json::Value> {
         #[cfg(feature = "native-deps")]
         if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{}/fee-estimates", esplora_url);
+            let url = format!("{esplora_url}/fee-estimates");
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
@@ -1867,7 +1866,7 @@ impl RunestoneProvider for ConcreteProvider {
         if let Some(artifact) = Runestone::decipher(tx) {
             match artifact {
                 Artifact::Runestone(runestone) => Ok(serde_json::to_value(runestone)?),
-                Artifact::Cenotaph(cenotaph) => Err(DeezelError::Runestone(format!("Cenotaph found: {:?}", cenotaph))),
+                Artifact::Cenotaph(cenotaph) => Err(DeezelError::Runestone(format!("Cenotaph found: {cenotaph:?}"))),
             }
         } else {
             Err(DeezelError::Runestone("No runestone found in transaction".to_string()))
@@ -1883,7 +1882,7 @@ impl RunestoneProvider for ConcreteProvider {
                         "decoded_messages": format!("{:?}", runestone)
                     }))
                 },
-                Artifact::Cenotaph(cenotaph) => Err(DeezelError::Runestone(format!("Cenotaph found: {:?}", cenotaph))),
+                Artifact::Cenotaph(cenotaph) => Err(DeezelError::Runestone(format!("Cenotaph found: {cenotaph:?}"))),
             }
         } else {
             Err(DeezelError::Runestone("No runestone found in transaction".to_string()))
@@ -2025,12 +2024,12 @@ impl AlkanesProvider for ConcreteProvider {
         let entries: Vec<serde_json::Value> = wallet_response.outpoints.into_iter().map(|item| {
             serde_json::json!({
                 "outpoint": {
-                    "txid": hex::encode(&item.outpoint.as_ref().map_or(vec![], |o| o.txid.clone())),
+                    "txid": hex::encode(item.outpoint.as_ref().map_or(vec![], |o| o.txid.clone())),
                     "vout": item.outpoint.as_ref().map_or(0, |o| o.vout),
                 },
                 "amount": item.output.as_ref().map_or(0, |o| o.value),
-                "script": hex::encode(&item.output.as_ref().map_or(vec![], |o| o.script.clone())),
-                "runes": item.balances.iter().map(|balance| {
+                "script": hex::encode(item.output.as_ref().map_or(vec![], |o| o.script.clone())),
+                "runes": item.balances.iter().flat_map(|balance| {
                     balance.entries.iter().map(|entry| {
                         serde_json::json!({
                             "runeId": {
@@ -2040,7 +2039,7 @@ impl AlkanesProvider for ConcreteProvider {
                             "amount": entry.balance.as_ref().map_or(0, |a| a.lo),
                         })
                     }).collect::<Vec<_>>()
-                }).flatten().collect::<Vec<_>>(),
+                }).collect::<Vec<_>>(),
             })
         }).collect();
         Ok(serde_json::json!(entries))
@@ -2182,7 +2181,7 @@ impl AddressResolver for ConcreteProvider {
         let addresses = WalletProvider::get_addresses(self, index + 1).await?;
         addresses.get(index as usize)
             .map(|a| a.address.clone())
-            .ok_or_else(|| DeezelError::Wallet(format!("Address with index {} not found", index)))
+            .ok_or_else(|| DeezelError::Wallet(format!("Address with index {index} not found")))
     }
 
     async fn list_identifiers(&self) -> Result<Vec<String>> {
@@ -2350,7 +2349,7 @@ mod esplora_provider_tests {
         let mock_hash = "0000000000000000000abcde".to_string();
 
         Mock::given(method("GET"))
-            .and(path(format!("/block-height/{}", mock_height)))
+            .and(path(format!("/block-height/{mock_height}")))
             .respond_with(ResponseTemplate::new(200).set_body_string(mock_hash.clone()))
             .mount(&server)
             .await;
@@ -2384,7 +2383,7 @@ mod esplora_provider_tests {
         });
 
         Mock::given(method("GET"))
-            .and(path(format!("/block/{}", mock_hash)))
+            .and(path(format!("/block/{mock_hash}")))
             .respond_with(ResponseTemplate::new(200).set_body_json(mock_block.clone()))
             .mount(&server)
             .await;
@@ -2409,7 +2408,7 @@ mod esplora_provider_tests {
         });
 
         Mock::given(method("GET"))
-            .and(path(format!("/block/{}/status", mock_hash)))
+            .and(path(format!("/block/{mock_hash}/status")))
             .respond_with(ResponseTemplate::new(200).set_body_json(mock_status.clone()))
             .mount(&server)
             .await;
@@ -2433,7 +2432,7 @@ mod esplora_provider_tests {
         ]);
 
         Mock::given(method("GET"))
-            .and(path(format!("/block/{}/txids", mock_hash)))
+            .and(path(format!("/block/{mock_hash}/txids")))
             .respond_with(ResponseTemplate::new(200).set_body_json(mock_txids.clone()))
             .mount(&server)
             .await;
@@ -2455,7 +2454,7 @@ mod esplora_provider_tests {
         let mock_txid = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2";
 
         Mock::given(method("GET"))
-            .and(path(format!("/block/{}/txid/{}", mock_hash, mock_index)))
+            .and(path(format!("/block/{mock_hash}/txid/{mock_index}")))
             .respond_with(ResponseTemplate::new(200).set_body_string(mock_txid))
             .mount(&server)
             .await;
@@ -2491,7 +2490,7 @@ mod esplora_provider_tests {
         });
 
         Mock::given(method("GET"))
-            .and(path(format!("/tx/{}", mock_txid)))
+            .and(path(format!("/tx/{mock_txid}")))
             .respond_with(ResponseTemplate::new(200).set_body_json(mock_tx.clone()))
             .mount(&server)
             .await;
@@ -2517,7 +2516,7 @@ mod esplora_provider_tests {
         });
 
         Mock::given(method("GET"))
-            .and(path(format!("/tx/{}/status", mock_txid)))
+            .and(path(format!("/tx/{mock_txid}/status")))
             .respond_with(ResponseTemplate::new(200).set_body_json(mock_status.clone()))
             .mount(&server)
             .await;
@@ -2538,7 +2537,7 @@ mod esplora_provider_tests {
         let mock_hex = "02000000000101...";
 
         Mock::given(method("GET"))
-            .and(path(format!("/tx/{}/hex", mock_txid)))
+            .and(path(format!("/tx/{mock_txid}/hex")))
             .respond_with(ResponseTemplate::new(200).set_body_string(mock_hex))
             .mount(&server)
             .await;
@@ -2559,7 +2558,7 @@ mod esplora_provider_tests {
         let mock_raw = vec![0x02, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01];
 
         Mock::given(method("GET"))
-            .and(path(format!("/tx/{}/raw", mock_txid)))
+            .and(path(format!("/tx/{mock_txid}/raw")))
             .respond_with(ResponseTemplate::new(200).set_body_bytes(mock_raw.clone()))
             .mount(&server)
             .await;
@@ -2586,7 +2585,7 @@ mod esplora_provider_tests {
         });
 
         Mock::given(method("GET"))
-            .and(path(format!("/tx/{}/merkle-proof", mock_txid)))
+            .and(path(format!("/tx/{mock_txid}/merkle-proof")))
             .respond_with(ResponseTemplate::new(200).set_body_json(mock_proof.clone()))
             .mount(&server)
             .await;
@@ -2618,7 +2617,7 @@ mod esplora_provider_tests {
         });
 
         Mock::given(method("GET"))
-            .and(path(format!("/tx/{}/outspend/{}", mock_txid, mock_index)))
+            .and(path(format!("/tx/{mock_txid}/outspend/{mock_index}")))
             .respond_with(ResponseTemplate::new(200).set_body_json(mock_outspend.clone()))
             .mount(&server)
             .await;
@@ -2654,7 +2653,7 @@ mod esplora_provider_tests {
         ]);
 
         Mock::given(method("GET"))
-            .and(path(format!("/tx/{}/outspends", mock_txid)))
+            .and(path(format!("/tx/{mock_txid}/outspends")))
             .respond_with(ResponseTemplate::new(200).set_body_json(mock_outspends.clone()))
             .mount(&server)
             .await;
@@ -2679,7 +2678,7 @@ mod esplora_provider_tests {
         });
 
         Mock::given(method("GET"))
-            .and(path(format!("/address/{}", mock_address)))
+            .and(path(format!("/address/{mock_address}")))
             .respond_with(ResponseTemplate::new(200).set_body_json(mock_address_info.clone()))
             .mount(&server)
             .await;
@@ -2702,7 +2701,7 @@ mod esplora_provider_tests {
         ]);
 
         Mock::given(method("GET"))
-            .and(path(format!("/address/{}/txs", mock_address)))
+            .and(path(format!("/address/{mock_address}/txs")))
             .respond_with(ResponseTemplate::new(200).set_body_json(mock_txs.clone()))
             .mount(&server)
             .await;
@@ -2726,7 +2725,7 @@ mod esplora_provider_tests {
         ]);
 
         Mock::given(method("GET"))
-            .and(path(format!("/address/{}/txs/chain/{}", mock_address, mock_last_txid)))
+            .and(path(format!("/address/{mock_address}/txs/chain/{mock_last_txid}")))
             .respond_with(ResponseTemplate::new(200).set_body_json(mock_txs.clone()))
             .mount(&server)
             .await;
@@ -2749,7 +2748,7 @@ mod esplora_provider_tests {
         ]);
 
         Mock::given(method("GET"))
-            .and(path(format!("/address/{}/txs/mempool", mock_address)))
+            .and(path(format!("/address/{mock_address}/txs/mempool")))
             .respond_with(ResponseTemplate::new(200).set_body_json(mock_txs.clone()))
             .mount(&server)
             .await;
@@ -2772,7 +2771,7 @@ mod esplora_provider_tests {
         ]);
 
         Mock::given(method("GET"))
-            .and(path(format!("/address/{}/utxo", mock_address)))
+            .and(path(format!("/address/{mock_address}/utxo")))
             .respond_with(ResponseTemplate::new(200).set_body_json(mock_utxos.clone()))
             .mount(&server)
             .await;

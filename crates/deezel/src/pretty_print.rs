@@ -67,7 +67,7 @@ pub fn print_protorune_outpoint_response(response: &ProtoruneOutpointResponse) {
     println!("-----------------");
     for (rune_id, balance) in &response.balance_sheet.cached.balances {
         println!("  - Rune ID: {}:{}", rune_id.block, rune_id.tx);
-        println!("    Balance: {}", balance);
+        println!("    Balance: {balance}");
     }
 }
 
@@ -86,11 +86,11 @@ pub fn print_inspection_result(result: &deezel_common::alkanes::types::AlkanesIn
     println!("📏 Bytecode Length: {} bytes", result.bytecode_length);
 
     if let Some(codehash) = &result.codehash {
-        println!("🔑 Code Hash: {}", codehash);
+        println!("🔑 Code Hash: {codehash}");
     }
 
     if let Some(disassembly) = &result.disassembly {
-        println!("\n disassembled bytecode:\n{}", disassembly);
+        println!("\n disassembled bytecode:\n{disassembly}");
     }
 
     if let Some(metadata) = &result.metadata {
@@ -99,7 +99,7 @@ pub fn print_inspection_result(result: &deezel_common::alkanes::types::AlkanesIn
     }
 
     if let Some(metadata_error) = &result.metadata_error {
-        println!("\n⚠️ Metadata Error: {}", metadata_error);
+        println!("\n⚠️ Metadata Error: {metadata_error}");
     }
 
     if let Some(fuzzing_results) = &result.fuzzing_results {

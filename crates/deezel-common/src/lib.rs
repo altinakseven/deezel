@@ -116,29 +116,29 @@ pub enum DeezelError {
 impl core::fmt::Display for DeezelError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            DeezelError::JsonRpc(msg) => write!(f, "JSON-RPC error: {}", msg),
-            DeezelError::RpcError(msg) => write!(f, "RPC error: {}", msg),
-            DeezelError::Storage(msg) => write!(f, "Storage error: {}", msg),
-            DeezelError::Network(msg) => write!(f, "Network error: {}", msg),
-            DeezelError::Wallet(msg) => write!(f, "Wallet error: {}", msg),
-            DeezelError::Alkanes(msg) => write!(f, "Alkanes error: {}", msg),
-            DeezelError::Runestone(msg) => write!(f, "Runestone error: {}", msg),
-            DeezelError::Serialization(msg) => write!(f, "Serialization error: {}", msg),
-            DeezelError::Validation(msg) => write!(f, "Validation error: {}", msg),
-            DeezelError::Configuration(msg) => write!(f, "Configuration error: {}", msg),
-            DeezelError::InvalidParameters(msg) => write!(f, "Invalid parameters: {}", msg),
-            DeezelError::AddressResolution(msg) => write!(f, "Address resolution error: {}", msg),
-            DeezelError::Transaction(msg) => write!(f, "Transaction error: {}", msg),
-            DeezelError::Monitor(msg) => write!(f, "Monitoring error: {}", msg),
-            DeezelError::WasmExecution(msg) => write!(f, "WASM execution error: {}", msg),
-            DeezelError::Crypto(msg) => write!(f, "Cryptography error: {}", msg),
-            DeezelError::Io(msg) => write!(f, "I/O error: {}", msg),
-            DeezelError::Parse(msg) => write!(f, "Parse error: {}", msg),
-            DeezelError::Pgp(msg) => write!(f, "PGP error: {}", msg),
-            DeezelError::Hex(msg) => write!(f, "Hex error: {}", msg),
-            DeezelError::NotImplemented(msg) => write!(f, "Not implemented: {}", msg),
-            DeezelError::NotConfigured(msg) => write!(f, "Not configured: {}", msg),
-            DeezelError::Other(msg) => write!(f, "Other error: {}", msg),
+            DeezelError::JsonRpc(msg) => write!(f, "JSON-RPC error: {msg}"),
+            DeezelError::RpcError(msg) => write!(f, "RPC error: {msg}"),
+            DeezelError::Storage(msg) => write!(f, "Storage error: {msg}"),
+            DeezelError::Network(msg) => write!(f, "Network error: {msg}"),
+            DeezelError::Wallet(msg) => write!(f, "Wallet error: {msg}"),
+            DeezelError::Alkanes(msg) => write!(f, "Alkanes error: {msg}"),
+            DeezelError::Runestone(msg) => write!(f, "Runestone error: {msg}"),
+            DeezelError::Serialization(msg) => write!(f, "Serialization error: {msg}"),
+            DeezelError::Validation(msg) => write!(f, "Validation error: {msg}"),
+            DeezelError::Configuration(msg) => write!(f, "Configuration error: {msg}"),
+            DeezelError::InvalidParameters(msg) => write!(f, "Invalid parameters: {msg}"),
+            DeezelError::AddressResolution(msg) => write!(f, "Address resolution error: {msg}"),
+            DeezelError::Transaction(msg) => write!(f, "Transaction error: {msg}"),
+            DeezelError::Monitor(msg) => write!(f, "Monitoring error: {msg}"),
+            DeezelError::WasmExecution(msg) => write!(f, "WASM execution error: {msg}"),
+            DeezelError::Crypto(msg) => write!(f, "Cryptography error: {msg}"),
+            DeezelError::Io(msg) => write!(f, "I/O error: {msg}"),
+            DeezelError::Parse(msg) => write!(f, "Parse error: {msg}"),
+            DeezelError::Pgp(msg) => write!(f, "PGP error: {msg}"),
+            DeezelError::Hex(msg) => write!(f, "Hex error: {msg}"),
+            DeezelError::NotImplemented(msg) => write!(f, "Not implemented: {msg}"),
+            DeezelError::NotConfigured(msg) => write!(f, "Not configured: {msg}"),
+            DeezelError::Other(msg) => write!(f, "Other error: {msg}"),
         }
     }
 }
@@ -166,133 +166,133 @@ pub type Result<T> = core::result::Result<T, DeezelError>;
 /// Convert anyhow::Error to DeezelError
 impl From<anyhow::Error> for DeezelError {
     fn from(err: anyhow::Error) -> Self {
-        DeezelError::Wallet(alloc::format!("{}", err))
+        DeezelError::Wallet(alloc::format!("{err}"))
     }
 }
 
 /// Convert serde_json::Error to DeezelError
 impl From<serde_json::Error> for DeezelError {
     fn from(err: serde_json::Error) -> Self {
-        DeezelError::Serialization(alloc::format!("{}", err))
+        DeezelError::Serialization(alloc::format!("{err}"))
     }
 }
 
 impl From<protobuf::Error> for DeezelError {
     fn from(err: protobuf::Error) -> Self {
-        DeezelError::Serialization(alloc::format!("Protobuf error: {}", err))
+        DeezelError::Serialization(alloc::format!("Protobuf error: {err}"))
     }
 }
 
 impl From<protobuf_json_mapping::PrintError> for DeezelError {
     fn from(err: protobuf_json_mapping::PrintError) -> Self {
-        DeezelError::Serialization(format!("Protobuf JSON mapping error: {}", err))
+        DeezelError::Serialization(format!("Protobuf JSON mapping error: {err}"))
     }
 }
 
 impl From<bitcoin::address::ParseError> for DeezelError {
     fn from(err: bitcoin::address::ParseError) -> Self {
-        DeezelError::AddressResolution(format!("{:?}", err))
+        DeezelError::AddressResolution(format!("{err:?}"))
     }
 }
 
 impl From<bitcoin::address::FromScriptError> for DeezelError {
     fn from(err: bitcoin::address::FromScriptError) -> Self {
-        DeezelError::AddressResolution(format!("{:?}", err))
+        DeezelError::AddressResolution(format!("{err:?}"))
     }
 }
 
 
 impl From<bitcoin::sighash::TaprootError> for DeezelError {
     fn from(err: bitcoin::sighash::TaprootError) -> Self {
-        DeezelError::Transaction(format!("{:?}", err))
+        DeezelError::Transaction(format!("{err:?}"))
     }
 }
 
 impl From<bitcoin::sighash::P2wpkhError> for DeezelError {
     fn from(err: bitcoin::sighash::P2wpkhError) -> Self {
-        DeezelError::Transaction(format!("{:?}", err))
+        DeezelError::Transaction(format!("{err:?}"))
     }
 }
 
 /// Convert bitcoin::consensus::encode::Error to DeezelError
 impl From<bitcoin::consensus::encode::Error> for DeezelError {
     fn from(err: bitcoin::consensus::encode::Error) -> Self {
-        DeezelError::Transaction(alloc::format!("{}", err))
+        DeezelError::Transaction(alloc::format!("{err}"))
     }
 }
 
 impl From<bitcoin::blockdata::transaction::ParseOutPointError> for DeezelError {
     fn from(err: bitcoin::blockdata::transaction::ParseOutPointError) -> Self {
-        DeezelError::Transaction(format!("{:?}", err))
+        DeezelError::Transaction(format!("{err:?}"))
     }
 }
 
 #[cfg(feature = "std")]
 impl From<std::io::Error> for DeezelError {
     fn from(err: std::io::Error) -> Self {
-        DeezelError::Io(format!("{:?}", err))
+        DeezelError::Io(format!("{err:?}"))
     }
 }
 
 impl From<bitcoin::psbt::Error> for DeezelError {
     fn from(err: bitcoin::psbt::Error) -> Self {
-        DeezelError::Transaction(format!("PSBT error: {}", err))
+        DeezelError::Transaction(format!("PSBT error: {err}"))
     }
 }
 
 impl From<bitcoin::psbt::ExtractTxError> for DeezelError {
     fn from(err: bitcoin::psbt::ExtractTxError) -> Self {
-        DeezelError::Transaction(format!("PSBT extraction error: {}", err))
+        DeezelError::Transaction(format!("PSBT extraction error: {err}"))
     }
 }
 
 
 impl From<hex::FromHexError> for DeezelError {
     fn from(err: hex::FromHexError) -> Self {
-        DeezelError::Hex(format!("{:?}", err))
+        DeezelError::Hex(format!("{err:?}"))
     }
 }
 
 impl From<core::num::ParseIntError> for DeezelError {
     fn from(err: core::num::ParseIntError) -> Self {
-        DeezelError::Parse(format!("Failed to parse integer: {}", err))
+        DeezelError::Parse(format!("Failed to parse integer: {err}"))
     }
 }
 
 impl From<bitcoin::hashes::hex::HexToBytesError> for DeezelError {
     fn from(err: bitcoin::hashes::hex::HexToBytesError) -> Self {
-        DeezelError::Hex(format!("{:?}", err))
+        DeezelError::Hex(format!("{err:?}"))
     }
 }
 
 impl From<bitcoin::bip32::Error> for DeezelError {
     fn from(err: bitcoin::bip32::Error) -> Self {
-        DeezelError::Wallet(format!("{:?}", err))
+        DeezelError::Wallet(format!("{err:?}"))
     }
 }
 
 impl From<bip39::ErrorKind> for DeezelError {
     fn from(err: bip39::ErrorKind) -> Self {
-        DeezelError::Wallet(format!("BIP39 error: {:?}", err))
+        DeezelError::Wallet(format!("BIP39 error: {err:?}"))
     }
 }
 
 impl From<bitcoin::secp256k1::Error> for DeezelError {
     fn from(err: bitcoin::secp256k1::Error) -> Self {
-        DeezelError::Crypto(format!("{:?}", err))
+        DeezelError::Crypto(format!("{err:?}"))
     }
 }
 
 impl From<bitcoin::hashes::hex::HexToArrayError> for DeezelError {
     fn from(err: bitcoin::hashes::hex::HexToArrayError) -> Self {
-        DeezelError::Hex(format!("{:?}", err))
+        DeezelError::Hex(format!("{err:?}"))
     }
 }
 
 #[cfg(feature = "native-deps")]
 impl From<reqwest::Error> for DeezelError {
     fn from(err: reqwest::Error) -> Self {
-        DeezelError::Network(format!("{:?}", err))
+        DeezelError::Network(format!("{err:?}"))
     }
 }
 

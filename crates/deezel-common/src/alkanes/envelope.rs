@@ -51,9 +51,9 @@ impl AlkanesEnvelope {
     fn compress_payload(&self) -> Result<Vec<u8>, DeezelError> {
         let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
         encoder.write_all(&self.payload)
-            .map_err(|e| DeezelError::Other(format!("Failed to write payload to gzip encoder: {}", e)))?;
+            .map_err(|e| DeezelError::Other(format!("Failed to write payload to gzip encoder: {e}")))?;
         encoder.finish()
-            .map_err(|e| DeezelError::Other(format!("Failed to finish gzip compression: {}", e)))
+            .map_err(|e| DeezelError::Other(format!("Failed to finish gzip compression: {e}")))
     }
 
     #[cfg(not(feature = "std"))]
@@ -124,7 +124,7 @@ impl AlkanesEnvelope {
         // Verify all elements are non-empty
         for (i, item) in witness.iter().enumerate() {
             if item.is_empty() {
-                return Err(DeezelError::Other(format!("Witness item {} is empty", i)));
+                return Err(DeezelError::Other(format!("Witness item {i} is empty")));
             }
         }
         

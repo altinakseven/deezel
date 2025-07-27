@@ -107,7 +107,7 @@ pub struct U128 {
 impl fmt::Display for Trace {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for (i, call) in self.calls.iter().enumerate() {
-            writeln!(f, "Call {}:", i)?;
+            writeln!(f, "Call {i}:")?;
             if let (Some(b), Some(t)) = (call.caller.block.as_ref(), call.caller.tx.as_ref()) {
                 writeln!(f, "  Caller: {}.{}", b.lo, t.lo)?;
             }
@@ -122,7 +122,7 @@ impl fmt::Display for Trace {
             }
             writeln!(f, "  Events:")?;
             for (j, event) in call.events.iter().enumerate() {
-                writeln!(f, "    Event {}: {:?}", j, event)?;
+                writeln!(f, "    Event {j}: {event:?}")?;
             }
         }
         Ok(())

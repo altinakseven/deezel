@@ -31,10 +31,10 @@ fn decipher_protostones(tx: &Transaction) -> Option<Vec<Protostone>> {
 #[wasm_bindgen]
 pub fn parse_block(block_hex: &str) -> Result<JsValue, JsValue> {
     let block_bytes = hex::decode(block_hex)
-        .map_err(|e| JsValue::from_str(&format!("Failed to decode block hex: {}", e)))?;
+        .map_err(|e| JsValue::from_str(&format!("Failed to decode block hex: {e}")))?;
     
     let block: Block = bitcoin::consensus::deserialize(&block_bytes)
-        .map_err(|e| JsValue::from_str(&format!("Failed to deserialize block: {}", e)))?;
+        .map_err(|e| JsValue::from_str(&format!("Failed to deserialize block: {e}")))?;
 
     let header: &BlockHeader = &block.header;
     let transactions: Vec<JsonValue> = block.txdata.iter().map(|tx| {
@@ -42,14 +42,14 @@ pub fn parse_block(block_hex: &str) -> Result<JsValue, JsValue> {
         let artifact = Runestone::decipher(tx);
         let runestone_str = artifact.map(|a| {
             match a {
-                Artifact::Runestone(r) => format!("{:?}", r),
-                Artifact::Cenotaph(c) => format!("cenotaph: {:?}", c),
+                Artifact::Runestone(r) => format!("{r:?}"),
+                Artifact::Cenotaph(c) => format!("cenotaph: {c:?}"),
             }
         });
         serde_json::json!({
             "txid": tx.compute_txid(),
             "transaction": tx,
-            "protostones": protostones.map(|p| format!("{:?}", p)),
+            "protostones": protostones.map(|p| format!("{p:?}")),
             "runestone": runestone_str,
         })
     }).collect();
@@ -60,7 +60,7 @@ pub fn parse_block(block_hex: &str) -> Result<JsValue, JsValue> {
     });
 
     let js_result = serde_wasm_bindgen::to_value(&result)
-        .map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {}", e)))?;
+        .map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {e}")))?;
 
     Ok(js_result)
 }

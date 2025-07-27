@@ -55,7 +55,7 @@ pub fn pretty_print_inspection_result(result: &AlkanesInspectResult) -> anyhow::
     if let Some(codehash) = &result.codehash {
         println!("=== WASM CODEHASH ===");
         println!("📦 WASM size: {} bytes", result.bytecode_length);
-        println!("🔐 SHA3 (Keccak256): 0x{}", codehash);
+        println!("🔐 SHA3 (Keccak256): 0x{codehash}");
         println!("=====================");
     }
 
@@ -64,13 +64,13 @@ pub fn pretty_print_inspection_result(result: &AlkanesInspectResult) -> anyhow::
     } else if let Some(error) = &result.metadata_error {
         println!("=== ALKANE METADATA ===");
         println!("Note: Failed to extract metadata from __meta export");
-        println!("Error: {}", error);
+        println!("Error: {error}");
         println!("========================");
     }
 
     if let Some(disassembly) = &result.disassembly {
         println!("=== WASM DISASSEMBLY (WAT) ===");
-        println!("{}", disassembly);
+        println!("{disassembly}");
         println!("==============================");
     }
 
@@ -88,7 +88,7 @@ fn pretty_print_metadata(metadata: &AlkaneMetadata) {
     println!("🏷️  Version: {}", metadata.version);
 
     if let Some(desc) = &metadata.description {
-        println!("📝 Description: {}", desc);
+        println!("📝 Description: {desc}");
     }
 
     if metadata.methods.is_empty() {
@@ -156,7 +156,7 @@ fn pretty_print_fuzzing_results(
         println!();
         println!("🔍 Implemented Opcodes:");
         let ranges = compress_opcode_ranges(&fuzzing_results.implemented_opcodes);
-        println!("   📋 Opcodes: {}", ranges);
+        println!("   📋 Opcodes: {ranges}");
 
         println!();
         println!("📊 Detailed Results for Implemented Opcodes:");
@@ -168,7 +168,7 @@ fn pretty_print_fuzzing_results(
             );
 
             let decoded_data = decode_data_bytevector(&result.return_data);
-            println!("      📦 Data: {}", decoded_data);
+            println!("      📦 Data: {decoded_data}");
 
             if !result.host_calls.is_empty() {
                 println!("      🔧 Host Calls ({}):", result.host_calls.len());
@@ -189,7 +189,7 @@ fn pretty_print_fuzzing_results(
             }
 
             if let Some(error) = &result.error {
-                println!("      ⚠️  Error: {}", error);
+                println!("      ⚠️  Error: {error}");
             }
         }
     }
@@ -219,28 +219,28 @@ fn decode_data_bytevector(data: &[u8]) -> String {
         if let Ok(utf8_string) = String::from_utf8(message_bytes.to_vec()) {
             let clean_string = utf8_string.trim_matches('\0').trim();
             if !clean_string.is_empty() && clean_string.is_ascii() {
-                return format!("{} | Solidity Error: \"{}\"", hex_part, clean_string);
+                return format!("{hex_part} | Solidity Error: \"{clean_string}\"");
             }
         }
-        return format!("{} | Solidity Error", hex_part);
+        return format!("{hex_part} | Solidity Error");
     }
 
     if let Ok(utf8_string) = String::from_utf8(data.to_vec()) {
         let clean_string = utf8_string.trim_matches('\0').trim();
         if !clean_string.is_empty() && clean_string.is_ascii() && clean_string.len() > 3 {
-            return format!("{} | UTF-8: \"{}\"", hex_part, clean_string);
+            return format!("{hex_part} | UTF-8: \"{clean_string}\"");
         }
     }
 
     if data.len() == 16 {
         let value = u128::from_le_bytes(data.try_into().unwrap_or([0; 16]));
-        return format!("{} | u128: {}", hex_part, value);
+        return format!("{hex_part} | u128: {value}");
     } else if data.len() == 8 {
         let value = u64::from_le_bytes(data.try_into().unwrap_or([0; 8]));
-        return format!("{} | u64: {}", hex_part, value);
+        return format!("{hex_part} | u64: {value}");
     } else if data.len() == 4 {
         let value = u32::from_le_bytes(data.try_into().unwrap_or([0; 4]));
-        return format!("{} | u32: {}", hex_part, value);
+        return format!("{hex_part} | u32: {value}");
     }
 
     hex_part
@@ -266,7 +266,7 @@ fn compress_opcode_ranges(opcodes: &[u128]) -> String {
             if start == end {
                 ranges.push(start.to_string());
             } else {
-                ranges.push(format!("{}-{}", start, end));
+                ranges.push(format!("{start}-{end}"));
             }
             start = opcode;
             end = opcode;
@@ -276,7 +276,7 @@ fn compress_opcode_ranges(opcodes: &[u128]) -> String {
     if start == end {
         ranges.push(start.to_string());
     } else {
-        ranges.push(format!("{}-{}", start, end));
+        ranges.push(format!("{start}-{end}"));
     }
 
     ranges.join(", ")

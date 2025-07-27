@@ -264,7 +264,7 @@ pub struct TxInfo {
 
 impl Display for Charm {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{self:?}")
     }
 }
 

@@ -11,6 +11,15 @@ use serde::{Deserialize, Serialize};
 #[derive(Parser, Debug, Clone, Serialize, Deserialize)]
 #[command(author, version, about, long_about = None)]
 pub struct DeezelCommands {
+    /// Path to the wallet file
+    #[arg(long)]
+    pub wallet_file: Option<String>,
+    /// Passphrase for the wallet
+    #[arg(long)]
+    pub passphrase: Option<String>,
+    /// HD path for the wallet
+    #[arg(long)]
+    pub hd_path: Option<String>,
     /// Path to the keystore file
     #[arg(long)]
     pub keystore: Option<String>,
@@ -609,8 +618,9 @@ impl From<&DeezelCommands> for deezel_common::commands::Args {
     fn from(args: &DeezelCommands) -> Self {
         deezel_common::commands::Args {
             keystore: args.keystore.clone(),
-            wallet_file: None,
-            passphrase: None,
+            wallet_file: args.wallet_file.clone(),
+            passphrase: args.passphrase.clone(),
+            hd_path: args.hd_path.clone(),
             sandshrew_rpc_url: args.sandshrew_rpc_url.clone(),
             bitcoin_rpc_url: args.bitcoin_rpc_url.clone(),
             esplora_url: args.esplora_api_url.clone(),

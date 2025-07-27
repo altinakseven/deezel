@@ -52,7 +52,7 @@ impl WebUtils {
     pub fn get_current_url() -> Result<String> {
         let location = Self::get_location()?;
         location.href()
-            .map_err(|e| DeezelError::Network(format!("Failed to get current URL: {:?}", e)))
+            .map_err(|e| DeezelError::Network(format!("Failed to get current URL: {e:?}")))
     }
 
     /// Get the user agent string
@@ -140,7 +140,7 @@ impl WebUtils {
     /// Set a value in a JavaScript object
     pub fn set_js_object_value(obj: &Object, key: &str, value: &JsValue) -> Result<()> {
         js_sys::Reflect::set(obj, &JsValue::from_str(key), value)
-            .map_err(|e| DeezelError::Serialization(format!("Failed to set object value: {:?}", e)))?;
+            .map_err(|e| DeezelError::Serialization(format!("Failed to set object value: {e:?}")))?;
         Ok(())
     }
 
@@ -157,7 +157,7 @@ impl WebUtils {
     pub fn get_origin() -> Result<String> {
         let location = Self::get_location()?;
         location.origin()
-            .map_err(|e| DeezelError::Network(format!("Failed to get origin: {:?}", e)))
+            .map_err(|e| DeezelError::Network(format!("Failed to get origin: {e:?}")))
     }
 
     /// Check if running in an iframe
@@ -232,7 +232,7 @@ pub mod error_utils {
         } else if let Ok(error_obj) = js_error.clone().dyn_into::<js_sys::Error>() {
             error_obj.message().as_string().unwrap_or_else(|| "Unknown error".to_string())
         } else {
-            format!("JavaScript error: {:?}", js_error)
+            format!("JavaScript error: {js_error:?}")
         };
         
         DeezelError::Network(error_string)
@@ -241,7 +241,7 @@ pub mod error_utils {
     /// Handle and log JavaScript errors
     pub fn handle_js_error(js_error: JsValue, context: &str) -> DeezelError {
         let error = js_error_to_deezel_error(js_error);
-        crate::logging::console_log::error(&format!("Error in {}: {}", context, error));
+        crate::logging::console_log::error(&format!("Error in {context}: {error}"));
         error
     }
 }
@@ -345,7 +345,7 @@ mod tests {
         let has_required = capabilities.has_required_capabilities();
         if !has_required {
             let missing = capabilities.missing_capabilities();
-            web_sys::console::log_1(&format!("Missing capabilities: {:?}", missing).into());
+            web_sys::console::log_1(&format!("Missing capabilities: {missing:?}").into());
         }
     }
 }

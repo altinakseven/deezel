@@ -89,7 +89,7 @@ impl<'a> EnhancedAlkanesExecutor<'a> {
 
         if !params.raw_output {
             log::info!("✅ Transaction broadcast successfully!");
-            log::info!("🔗 TXID: {}", txid);
+            log::info!("🔗 TXID: {txid}");
         }
 
         if params.mine_enabled {
@@ -124,7 +124,7 @@ impl<'a> EnhancedAlkanesExecutor<'a> {
             .provider
             .broadcast_transaction(bitcoin::consensus::encode::serialize_hex(&commit_tx))
             .await?;
-        log::info!("✅ Commit transaction broadcast successfully: {}", commit_txid);
+        log::info!("✅ Commit transaction broadcast successfully: {commit_txid}");
 
         // Mine a block to confirm the commit transaction if on regtest
         if state.params.mine_enabled {
@@ -190,7 +190,7 @@ impl<'a> EnhancedAlkanesExecutor<'a> {
 
         if !state.params.raw_output {
             log::info!("✅ Reveal transaction broadcast successfully!");
-            log::info!("🔗 TXID: {}", reveal_txid);
+            log::info!("🔗 TXID: {reveal_txid}");
         }
 
         if state.params.mine_enabled {
@@ -225,7 +225,7 @@ impl<'a> EnhancedAlkanesExecutor<'a> {
 
         let (internal_key, (fingerprint, path)) = self.provider.get_internal_key().await?;
         let commit_address = self.create_commit_address_for_envelope(envelope, internal_key).await?;
-        log::info!("Envelope commit address: {}", commit_address);
+        log::info!("Envelope commit address: {commit_address}");
 
         let mut required_reveal_amount = 546u64;
         for requirement in &params.input_requirements {
@@ -274,10 +274,10 @@ impl<'a> EnhancedAlkanesExecutor<'a> {
         let reveal_script = envelope.build_reveal_script();
 
         let taproot_builder = TaprootBuilder::new()
-            .add_leaf(0, reveal_script.clone()).map_err(|e| DeezelError::Other(format!("{:?}", e)))?;
+            .add_leaf(0, reveal_script.clone()).map_err(|e| DeezelError::Other(format!("{e:?}")))?;
 
         let taproot_spend_info = taproot_builder
-            .finalize(&self.provider.secp(), internal_key).map_err(|e| DeezelError::Other(format!("{:?}", e)))?;
+            .finalize(self.provider.secp(), internal_key).map_err(|e| DeezelError::Other(format!("{e:?}")))?;
 
         let commit_address = Address::p2tr_tweaked(taproot_spend_info.output_key(), network);
 
@@ -328,8 +328,7 @@ impl<'a> EnhancedAlkanesExecutor<'a> {
                 if let OutputTarget::Protostone(p) = edict.target {
                     if p <= i as u32 {
                         return Err(DeezelError::Validation(format!(
-                            "Protostone {} refers to protostone {} which is not allowed (must be > {})",
-                            i, p, i
+                            "Protostone {i} refers to protostone {p} which is not allowed (must be > {i})"
                         )));
                     }
                 }
@@ -338,8 +337,7 @@ impl<'a> EnhancedAlkanesExecutor<'a> {
             if let Some(bitcoin_transfer) = &protostone.bitcoin_transfer {
                 if matches!(bitcoin_transfer.target, OutputTarget::Protostone(_)) {
                     return Err(DeezelError::Validation(format!(
-                        "Bitcoin transfer in protostone {} cannot target another protostone",
-                        i
+                        "Bitcoin transfer in protostone {i} cannot target another protostone"
                     )));
                 }
             }
@@ -349,8 +347,7 @@ impl<'a> EnhancedAlkanesExecutor<'a> {
                     OutputTarget::Output(v) => {
                         if v as usize >= num_outputs {
                             return Err(DeezelError::Validation(format!(
-                                "Edict in protostone {} targets output v{} but only {} outputs exist",
-                                i, v, num_outputs
+                                "Edict in protostone {i} targets output v{v} but only {num_outputs} outputs exist"
                             )));
                         }
                     },
@@ -373,7 +370,7 @@ impl<'a> EnhancedAlkanesExecutor<'a> {
     async fn select_utxos(&self, requirements: &[InputRequirement], from_addresses: &Option<Vec<String>>) -> Result<Vec<OutPoint>> {
         log::info!("Selecting UTXOs for {} requirements", requirements.len());
         if let Some(addrs) = from_addresses {
-            log::info!("Sourcing UTXOs from: {:?}", addrs);
+            log::info!("Sourcing UTXOs from: {addrs:?}");
         }
 
         let utxos = self.provider.get_utxos(true, from_addresses.clone()).await?;
@@ -416,8 +413,7 @@ impl<'a> EnhancedAlkanesExecutor<'a> {
 
         if bitcoin_collected < bitcoin_needed {
             return Err(DeezelError::Wallet(format!(
-                "Insufficient funds: need {} sats, have {}",
-                bitcoin_needed, bitcoin_collected
+                "Insufficient funds: need {bitcoin_needed} sats, have {bitcoin_collected}"
             )));
         }
 
@@ -449,7 +445,7 @@ impl<'a> EnhancedAlkanesExecutor<'a> {
         };
 
         for addr_str in to_addresses {
-            log::debug!("Parsing to_address in create_outputs: '{}'", addr_str);
+            log::debug!("Parsing to_address in create_outputs: '{addr_str}'");
             let address = Address::from_str(addr_str)?.require_network(network)?;
             outputs.push(TxOut {
                 value: bitcoin::Amount::from_sat(amount_per_recipient.max(DUST_LIMIT)),
@@ -458,7 +454,7 @@ impl<'a> EnhancedAlkanesExecutor<'a> {
         }
 
         if let Some(change_addr_str) = change_address {
-            log::debug!("Parsing change_address in create_outputs: '{}'", change_addr_str);
+            log::debug!("Parsing change_address in create_outputs: '{change_addr_str}'");
             let address = Address::from_str(change_addr_str)?.require_network(network)?;
             outputs.push(TxOut {
                 value: bitcoin::Amount::from_sat(0),
@@ -536,7 +532,7 @@ impl<'a> EnhancedAlkanesExecutor<'a> {
         let mut input_txouts = Vec::new();
         for outpoint in &utxos {
             let utxo = self.provider.get_utxo(outpoint).await?
-                .ok_or_else(|| DeezelError::Wallet(format!("UTXO not found: {}", outpoint)))?;
+                .ok_or_else(|| DeezelError::Wallet(format!("UTXO not found: {outpoint}")))?;
             total_input_value += utxo.value.to_sat();
             input_txouts.push(utxo);
         }
@@ -559,18 +555,18 @@ impl<'a> EnhancedAlkanesExecutor<'a> {
                 // The witness will be: <signature> <script> <control_block>
                 // We use a larger placeholder to get a more accurate fee estimation.
                 // A value of 400 bytes should be sufficient for most contract sizes.
-                input.witness.push(&[0u8; 400]);
+                input.witness.push([0u8; 400]);
             } else {
                 // Regular p2tr key-path spend or other witness types.
                 // A 65-byte witness is a good estimate for a P2TR key-path spend.
-                input.witness.push(&[0u8; 65]);
+                input.witness.push([0u8; 65]);
             }
         }
     
         let fee_rate_sat_vb = fee_rate.unwrap_or(600.0);
         let estimated_fee = (fee_rate_sat_vb * temp_tx.vsize() as f32).ceil() as u64;
         let capped_fee = estimated_fee.min(MAX_FEE_SATS);
-        log::info!("Estimated fee: {}, Capped fee: {}", estimated_fee, capped_fee);
+        log::info!("Estimated fee: {estimated_fee}, Capped fee: {capped_fee}");
     
         let total_output_value_sans_change: u64 = outputs.iter()
             .filter(|o| o.value.to_sat() > 0)
@@ -639,7 +635,7 @@ impl<'a> EnhancedAlkanesExecutor<'a> {
         let mut input_txouts = Vec::new();
         for outpoint in &funding_utxos {
             let utxo = self.provider.get_utxo(outpoint).await?
-                .ok_or_else(|| DeezelError::Wallet(format!("UTXO not found: {}", outpoint)))?;
+                .ok_or_else(|| DeezelError::Wallet(format!("UTXO not found: {outpoint}")))?;
             total_input_value += utxo.value.to_sat();
             input_txouts.push(utxo);
         }
@@ -661,7 +657,7 @@ impl<'a> EnhancedAlkanesExecutor<'a> {
             output: temp_outputs,
         };
         for input in &mut temp_tx_for_size.input {
-            input.witness.push(&[0u8; 65]);
+            input.witness.push([0u8; 65]);
         }
     
         let fee_rate_sat_vb = fee_rate.unwrap_or(600.0);
@@ -765,11 +761,11 @@ impl<'a> EnhancedAlkanesExecutor<'a> {
 
         let taproot_builder = TaprootBuilder::new()
             .add_leaf(0, reveal_script.clone())
-            .map_err(|e| DeezelError::Other(format!("{:?}", e)))?;
+            .map_err(|e| DeezelError::Other(format!("{e:?}")))?;
 
         let taproot_spend_info = taproot_builder
-            .finalize(&self.provider.secp(), internal_key)
-            .map_err(|e| DeezelError::Other(format!("{:?}", e)))?;
+            .finalize(self.provider.secp(), internal_key)
+            .map_err(|e| DeezelError::Other(format!("{e:?}")))?;
 
         let control_block = taproot_spend_info
             .control_block(&(reveal_script, LeafVersion::TapScript))
@@ -789,12 +785,12 @@ impl<'a> EnhancedAlkanesExecutor<'a> {
         use bitcoin::sighash::{SighashCache, TapSighashType, Prevouts};
         use bitcoin::taproot;
 
-        log::info!("Creating taproot script-path signature for input {}", input_index);
+        log::info!("Creating taproot script-path signature for input {input_index}");
         
         let prevouts_len = prevouts.len();
         let prevouts_all = Prevouts::All(prevouts);
         
-        log::info!("Using Prevouts::All with {} prevouts for sighash calculation", prevouts_len);
+        log::info!("Using Prevouts::All with {prevouts_len} prevouts for sighash calculation");
 
         let mut sighash_cache = SighashCache::new(tx);
 
@@ -810,7 +806,7 @@ impl<'a> EnhancedAlkanesExecutor<'a> {
             )
             .map_err(|e| DeezelError::Transaction(e.to_string()))?;
 
-        log::info!("Computed taproot script-path sighash for input {}", input_index);
+        log::info!("Computed taproot script-path sighash for input {input_index}");
 
         let signature = self.provider.sign_taproot_script_spend(sighash.into()).await?;
         
@@ -828,14 +824,14 @@ impl<'a> EnhancedAlkanesExecutor<'a> {
 
     /// Traces the reveal transaction to get the results of protostone execution.
     async fn trace_reveal_transaction(&self, txid: &str, params: &EnhancedExecuteParams) -> Result<Option<Vec<serde_json::Value>>> {
-        log::info!("Starting enhanced transaction tracing for reveal transaction: {}", txid);
+        log::info!("Starting enhanced transaction tracing for reveal transaction: {txid}");
         
         let tx_hex = self.provider.get_transaction_hex(txid).await?;
         let tx_bytes = hex::decode(&tx_hex).map_err(|e| DeezelError::Hex(e.to_string()))?;
         let tx: Transaction = bitcoin::consensus::deserialize(&tx_bytes).map_err(|e| DeezelError::Serialization(e.to_string()))?;
         
         if let Ok(decoded) = crate::runestone_enhanced::format_runestone_with_decoded_messages(&tx) {
-            log::debug!("Decoded Runestone for tracing:\n{:#?}", decoded);
+            log::debug!("Decoded Runestone for tracing:\n{decoded:#?}");
         }
 
         let mut traces = Vec::new();
@@ -843,21 +839,21 @@ impl<'a> EnhancedAlkanesExecutor<'a> {
         // It's calculated as tx.output.len() + 1 + protostone_index.
         for (i, _) in params.protostones.iter().enumerate() {
             let vout = (tx.output.len() as u32) + 1 + (i as u32);
-            log::info!("Tracing protostone #{} at virtual vout {}...", i, vout);
+            log::info!("Tracing protostone #{i} at virtual vout {vout}...");
             match self.provider.trace_outpoint(txid, vout).await {
                 Ok(trace_result) => {
                     if let Some(events) = trace_result.get("events").and_then(|e| e.as_array()) {
                         if events.is_empty() {
-                            log::warn!("Trace for {}:{} came back with an empty 'events' array.", txid, vout);
+                            log::warn!("Trace for {txid}:{vout} came back with an empty 'events' array.");
                         }
                     } else {
-                        log::warn!("Trace for {}:{} did not contain an 'events' array.", txid, vout);
+                        log::warn!("Trace for {txid}:{vout} did not contain an 'events' array.");
                     }
-                    log::debug!("Trace result for vout {}: {:?}", vout, trace_result);
+                    log::debug!("Trace result for vout {vout}: {trace_result:?}");
                     traces.push(trace_result);
                 },
                 Err(e) => {
-                    log::warn!("Failed to trace vout {}: {}", vout, e);
+                    log::warn!("Failed to trace vout {vout}: {e}");
                 }
             }
         }
@@ -985,7 +981,7 @@ impl<'a> EnhancedAlkanesExecutor<'a> {
             println!("\n🔍 Transaction Preview");
             println!("═══════════════════════");
             println!("📋 Transaction ID: {}", tx.compute_txid());
-            println!("💰 Estimated Fee: {} sats", fee);
+            println!("💰 Estimated Fee: {fee} sats");
             println!("📊 Transaction Size: {} vbytes", tx.vsize());
             println!("📈 Fee Rate: {:.2} sat/vB", fee as f64 / tx.vsize() as f64);
 

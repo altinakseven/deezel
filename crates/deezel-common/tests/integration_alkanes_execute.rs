@@ -45,8 +45,8 @@ async fn test_alkanes_execute_commit_reveal_flow_with_mock_provider() -> anyhow:
         _ => panic!("Expected ReadyToSignCommit state"),
     };
 
-    assert!(commit_state.psbt.unsigned_tx.input.len() > 0);
-    assert!(commit_state.psbt.unsigned_tx.output.len() > 0);
+    assert!(!commit_state.psbt.unsigned_tx.input.is_empty());
+    assert!(!commit_state.psbt.unsigned_tx.output.is_empty());
     assert!(commit_state.fee > 0);
 
     // 4. Execute the second step (resume from commit to build reveal)
@@ -56,8 +56,8 @@ async fn test_alkanes_execute_commit_reveal_flow_with_mock_provider() -> anyhow:
         _ => panic!("Expected ReadyToSignReveal state"),
     };
 
-    assert!(reveal_state.psbt.unsigned_tx.input.len() > 0);
-    assert!(reveal_state.psbt.unsigned_tx.output.len() > 0);
+    assert!(!reveal_state.psbt.unsigned_tx.input.is_empty());
+    assert!(!reveal_state.psbt.unsigned_tx.output.is_empty());
     assert!(reveal_state.fee > 0);
     assert!(!reveal_state.commit_txid.is_empty());
 
@@ -76,7 +76,7 @@ async fn test_alkanes_execute_commit_reveal_flow_with_mock_provider() -> anyhow:
     assert!(!first_trace.is_null(), "Trace should not be null");
     assert!(first_trace.is_object(), "Trace should be a JSON object");
 
-    println!("Mock E2E Test Passed: {:#?}", final_result);
+    println!("Mock E2E Test Passed: {final_result:#?}");
 
     Ok(())
 }

@@ -312,7 +312,7 @@ pub fn decode(i: &[u8]) -> Result<(BlockType, Headers, Vec<u8>)> {
     // Decode the base64 content directly
     use base64::Engine;
     let decoded = base64::engine::general_purpose::STANDARD.decode(&cleaned_base64)
-        .map_err(|e| crate::errors::Error::from(format!("base64 decode error: {}", e)))?;
+        .map_err(|e| crate::errors::Error::from(format!("base64 decode error: {e}")))?;
 
     Ok((typ, headers, decoded))
 }

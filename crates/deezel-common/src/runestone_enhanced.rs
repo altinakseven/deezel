@@ -114,7 +114,7 @@ pub fn decode_runestone(tx: &Transaction) -> Result<Value> {
         }
         
         // Found a Runestone
-        debug!("Found Runestone in output {}", vout);
+        debug!("Found Runestone in output {vout}");
         
         // Extract payload from script
         let payload = extract_payload_from_instructions(instructions)?;
@@ -413,7 +413,7 @@ fn decode_integers(payload: &[u8]) -> Result<Vec<u128>> {
     
     while i < payload.len() {
         let (integer, length) = decode_varint(&payload[i..])
-            .context(format!("Failed to decode varint at position {}", i))?;
+            .context(format!("Failed to decode varint at position {i}"))?;
         integers.push(integer);
         i += length;
     }
@@ -665,7 +665,7 @@ pub fn format_runestone_with_decoded_messages(tx: &Transaction) -> Result<Value>
             match decode_protostone_message(&protostone.message) {
                 Ok(decoded) => Some(decoded),
                 Err(e) => {
-                    debug!("Failed to decode protostone message: {}", e);
+                    debug!("Failed to decode protostone message: {e}");
                     None
                 }
             }
@@ -796,7 +796,7 @@ pub fn print_human_readable_runestone(tx: &Transaction, result: &serde_json::Val
     
     // Transaction basic info
     if let Some(txid) = result.get("transaction_id").and_then(|v| v.as_str()) {
-        println!("📋 Transaction ID: {}", txid);
+        println!("📋 Transaction ID: {txid}");
     }
     println!("🔢 Version: {}", tx.version);
     println!("🔒 Lock Time: {}", tx.lock_time);
@@ -823,7 +823,7 @@ pub fn print_human_readable_runestone(tx: &Transaction, result: &serde_json::Val
             if op_return_bytes.len() > 2 {
                 let data_bytes = &op_return_bytes[2..]; // Skip OP_RETURN and length byte
                 let hex_data = hex::encode(data_bytes);
-                println!("     📄 Data: {}", hex_data);
+                println!("     📄 Data: {hex_data}");
             }
         } else {
             // Try to extract address
@@ -866,7 +866,7 @@ pub fn print_human_readable_runestone(tx: &Transaction, result: &serde_json::Val
                         1 => "ALKANES Metaprotocol",
                         _ => "Unknown Protocol",
                     };
-                    println!("🏷️  Protocol: {} (tag: {})", protocol_name, protocol_tag);
+                    println!("🏷️  Protocol: {protocol_name} (tag: {protocol_tag})");
                 }
                 
                 // Message information
@@ -876,10 +876,10 @@ pub fn print_human_readable_runestone(tx: &Transaction, result: &serde_json::Val
                     // Show raw bytes
                     let bytes_str = message_bytes.iter()
                         .filter_map(|v| v.as_u64())
-                        .map(|n| format!("{:02x}", n))
+                        .map(|n| format!("{n:02x}"))
                         .collect::<Vec<_>>()
                         .join(" ");
-                    println!("   📄 Raw bytes: {}", bytes_str);
+                    println!("   📄 Raw bytes: {bytes_str}");
                     
                     // Show decoded values
                     if let Some(message_decoded) = protostone.get("message_decoded").and_then(|v| v.as_array()) {
@@ -888,7 +888,7 @@ pub fn print_human_readable_runestone(tx: &Transaction, result: &serde_json::Val
                             .map(|n| n.to_string())
                             .collect::<Vec<_>>()
                             .join(", ");
-                        println!("   🔓 Decoded: [{}]", decoded_str);
+                        println!("   🔓 Decoded: [{decoded_str}]");
                         
                         // Special handling for DIESEL tokens
                         if let Some(protocol_tag) = protostone.get("protocol_tag").and_then(|v| v.as_u64()) {
@@ -920,7 +920,7 @@ pub fn print_human_readable_runestone(tx: &Transaction, result: &serde_json::Val
                                 let output_idx = edict_obj.get("output").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
                                 
                                 let tree_symbol = if j == edicts.len() - 1 { "└─" } else { "├─" };
-                                println!("   {} 🪙 Token {}:{}", tree_symbol, id_block, id_tx);
+                                println!("   {tree_symbol} 🪙 Token {id_block}:{id_tx}");
                                 println!("   {}    💰 Amount: {} units", if j == edicts.len() - 1 { "  " } else { "│ " }, amount);
                                 
                                 // Show destination output details
@@ -948,7 +948,7 @@ pub fn print_human_readable_runestone(tx: &Transaction, result: &serde_json::Val
                 // Pointer and refund with output details
                 if let Some(pointer) = protostone.get("pointer").and_then(|v| v.as_u64()) {
                     let pointer_idx = pointer as usize;
-                    println!("👉 Pointer: output {}", pointer);
+                    println!("👉 Pointer: output {pointer}");
                     if pointer_idx < tx.output.len() {
                         let pointer_output = &tx.output[pointer_idx];
                         println!("   └─ 💰 {} sats", pointer_output.value);
@@ -960,7 +960,7 @@ pub fn print_human_readable_runestone(tx: &Transaction, result: &serde_json::Val
                 
                 if let Some(refund) = protostone.get("refund").and_then(|v| v.as_u64()) {
                     let refund_idx = refund as usize;
-                    println!("💸 Refund: output {}", refund);
+                    println!("💸 Refund: output {refund}");
                     if refund_idx < tx.output.len() {
                         let refund_output = &tx.output[refund_idx];
                         println!("   └─ 💰 {} sats", refund_output.value);

@@ -48,7 +48,7 @@ impl SystemDeezel {
                     )
                 },
                 Err(e) => {
-                    eprintln!("⚠️  Invalid magic bytes format: {}", e);
+                    eprintln!("⚠️  Invalid magic bytes format: {e}");
                     eprintln!("💡 Expected format: p2pkh_prefix,p2sh_prefix,bech32_hrp (e.g., '0x00,0x05,bc')");
                     return Err(anyhow!("Invalid magic bytes: {}", e));
                 }
@@ -77,7 +77,7 @@ impl SystemDeezel {
                 _ => "custom",
             };
             // Default to keystore.json extension (not .asc since we handle encryption internally)
-            expand_tilde(&format!("~/.deezel/{}.keystore.json", network_name))?
+            expand_tilde(&format!("~/.deezel/{network_name}.keystore.json"))?
         };
         
         // Create wallet directory if it doesn't exist
@@ -141,7 +141,7 @@ impl SystemWallet for SystemDeezel {
                     pass.clone()
                 } else {
                     rpassword::prompt_password("Enter passphrase to unlock keystore for signing: ")
-                        .map_err(|e| DeezelError::Wallet(format!("Failed to get passphrase: {}", e)))?
+                        .map_err(|e| DeezelError::Wallet(format!("Failed to get passphrase: {e}")))?
                 };
                 provider.unlock_wallet(&passphrase).await?;
             } else if let deezel_common::provider::WalletState::None = provider.get_wallet_state() {
@@ -191,10 +191,10 @@ impl SystemWallet for SystemDeezel {
                 };
                 
                 println!("✅ Wallet keystore created successfully!");
-                println!("📁 Keystore saved to: {}", wallet_file);
-                println!("🔑 Mnemonic: {}", mnemonic_phrase);
+                println!("📁 Keystore saved to: {wallet_file}");
+                println!("🔑 Mnemonic: {mnemonic_phrase}");
                 println!("⚠️  IMPORTANT: Save this mnemonic phrase in a secure location!");
-                println!("🏠 First {} P2WPKH address: {}", network_name, first_p2wpkh);
+                println!("🏠 First {network_name} P2WPKH address: {first_p2wpkh}");
                 println!("🔐 Keystore is encrypted and armored");
                 
                 // Show keystore info
@@ -249,10 +249,10 @@ impl SystemWallet for SystemDeezel {
                 };
                 
                 println!("✅ Wallet keystore restored successfully!");
-                println!("📁 Keystore saved to: {}", wallet_file);
-                println!("🔑 Mnemonic: {}", mnemonic_phrase);
+                println!("📁 Keystore saved to: {wallet_file}");
+                println!("🔑 Mnemonic: {mnemonic_phrase}");
                 println!("⚠️  IMPORTANT: Save this mnemonic phrase in a secure location!");
-                println!("🏠 First {} P2WPKH address: {}", network_name, first_p2wpkh);
+                println!("🏠 First {network_name} P2WPKH address: {first_p2wpkh}");
                 println!("🔐 Keystore is encrypted and armored");
                 
                 // Show keystore info
@@ -288,7 +288,7 @@ impl SystemWallet for SystemDeezel {
                 println!("🔍 Master Fingerprint: {}", info.master_fingerprint);
                 println!("📅 Created: {}", chrono::DateTime::from_timestamp(info.created_at as i64, 0).map(|dt| dt.to_rfc2822()).unwrap_or_else(|| "Invalid date".to_string()));
                 println!("🏷️  Version: {}", info.version);
-                println!("🌐 Network: {:?}", network);
+                println!("🌐 Network: {network:?}");
 
                 // Display first 5 addresses of each type
                 println!("\n📋 Default Addresses (derived from public key):");
@@ -357,10 +357,10 @@ impl SystemWallet for SystemDeezel {
                     ]
                 } else if let Some(ref network_name) = network {
                     // Show addresses for specific network
-                    match deezel_common::network::NetworkParams::from_network_str(&network_name) {
+                    match deezel_common::network::NetworkParams::from_network_str(network_name) {
                         Ok(params) => vec![params.network],
                         Err(e) => {
-                            println!("❌ Invalid network '{}': {}", network_name, e);
+                            println!("❌ Invalid network '{network_name}': {e}");
                             println!("💡 Supported networks: {}", deezel_common::network::NetworkParams::supported_networks().join(", "));
                             return Ok(());
                         }
@@ -373,7 +373,7 @@ impl SystemWallet for SystemDeezel {
                 // Handle custom magic bytes if provided, OR use global magic bytes from args
                 let custom_network_params = if let Some(ref magic_str) = magic {
                     // Local --magic flag takes precedence
-                    match deezel_common::network::NetworkParams::from_magic_str(&magic_str) {
+                    match deezel_common::network::NetworkParams::from_magic_str(magic_str) {
                         Ok((p2pkh_prefix, p2sh_prefix, bech32_hrp)) => {
                             Some(deezel_common::network::NetworkParams::with_custom_magic(
                                 provider.get_network(),
@@ -383,13 +383,13 @@ impl SystemWallet for SystemDeezel {
                             ))
                         },
                         Err(e) => {
-                            println!("❌ Invalid magic bytes format: {}", e);
+                            println!("❌ Invalid magic bytes format: {e}");
                             return Ok(());
                         }
                     }
                 } else if let Some(ref global_magic_str) = self.args.magic {
                     // Use global -p flag magic bytes if no local --magic specified
-                    match deezel_common::network::NetworkParams::from_magic_str(&global_magic_str) {
+                    match deezel_common::network::NetworkParams::from_magic_str(global_magic_str) {
                         Ok((p2pkh_prefix, p2sh_prefix, bech32_hrp)) => {
                             Some(deezel_common::network::NetworkParams::with_custom_magic(
                                 provider.get_network(),
@@ -400,18 +400,12 @@ impl SystemWallet for SystemDeezel {
                         },
                         Err(_) => {
                             // If global magic parsing fails, try to get network params from provider string
-                            match deezel_common::network::NetworkParams::from_network_str(&self.args.provider) {
-                                Ok(params) => Some(params),
-                                Err(_) => None,
-                            }
+                            deezel_common::network::NetworkParams::from_network_str(&self.args.provider).ok()
                         }
                     }
                 } else if self.args.provider != "regtest" {
                     // Use network params from provider if it's not the default regtest
-                    match deezel_common::network::NetworkParams::from_network_str(&self.args.provider) {
-                        Ok(params) => Some(params),
-                        Err(_) => None,
-                    }
+                    deezel_common::network::NetworkParams::from_network_str(&self.args.provider).ok()
                 } else {
                     None
                 };
@@ -432,7 +426,7 @@ impl SystemWallet for SystemDeezel {
                         let mut network_addresses = Vec::new();
                         
                         for range_spec in range_specs {
-                            let (script_type, start_index, count) = KeystoreManager::parse_address_range(&self.keystore_manager, &range_spec)?;
+                            let (script_type, start_index, count) = KeystoreManager::parse_address_range(&self.keystore_manager, range_spec)?;
                             let script_types = [script_type.as_str()];
                             let derived = KeystoreManager::derive_addresses_from_metadata(&self.keystore_manager, &keystore_metadata, network, &script_types, start_index, count, custom_network_params.as_ref())?;
                             network_addresses.extend(derived);
@@ -467,7 +461,7 @@ impl SystemWallet for SystemDeezel {
                     if all_networks {
                         println!("🏠 Wallet Addresses (All Networks)");
                     } else if let Some(network_name) = &network {
-                        println!("🏠 Wallet Addresses ({})", network_name);
+                        println!("🏠 Wallet Addresses ({network_name})");
                     } else {
                         let current_network_name = match provider.get_network() {
                             bitcoin::Network::Bitcoin => "mainnet",
@@ -476,7 +470,7 @@ impl SystemWallet for SystemDeezel {
                             bitcoin::Network::Regtest => "regtest",
                             _ => "custom",
                         };
-                        println!("🏠 Wallet Addresses ({})", current_network_name);
+                        println!("🏠 Wallet Addresses ({current_network_name})");
                     }
                     println!("═════════════════════════════");
                     
@@ -493,12 +487,12 @@ impl SystemWallet for SystemDeezel {
                     }
                     
                     if let Some(ref hd_path_custom) = hd_path {
-                        println!("🛤️  Custom HD Path: {}", hd_path_custom);
+                        println!("🛤️  Custom HD Path: {hd_path_custom}");
                         println!();
                     }
                     
                     if let Some(ref magic_str) = magic {
-                        println!("🔮 Custom Magic Bytes: {}", magic_str);
+                        println!("🔮 Custom Magic Bytes: {magic_str}");
                         println!();
                     }
                     
@@ -506,8 +500,8 @@ impl SystemWallet for SystemDeezel {
                     let mut grouped_addresses: std::collections::HashMap<String, std::collections::HashMap<String, Vec<&deezel_common::traits::KeystoreAddress>>> = std::collections::HashMap::new();
                     for addr in &all_addresses {
                         let network_key = addr.network.as_ref().unwrap_or(&"unknown".to_string()).clone();
-                        grouped_addresses.entry(network_key).or_insert_with(std::collections::HashMap::new)
-                            .entry(addr.script_type.clone()).or_insert_with(Vec::new).push(addr);
+                        grouped_addresses.entry(network_key).or_default()
+                            .entry(addr.script_type.clone()).or_default().push(addr);
                     }
                     
                     for (network_name, script_types) in grouped_addresses {
@@ -563,11 +557,11 @@ impl SystemWallet for SystemDeezel {
                match provider.send(send_params).await {
                    Ok(txid) => {
                        println!("✅ Transaction sent successfully!");
-                       println!("🔗 Transaction ID: {}", txid);
+                       println!("🔗 Transaction ID: {txid}");
                    },
                    Err(e) => {
-                       println!("❌ Failed to send transaction: {}", e);
-                       return Err(e.into());
+                       println!("❌ Failed to send transaction: {e}");
+                       return Err(e);
                    }
                }
                Ok(())
@@ -589,11 +583,11 @@ impl SystemWallet for SystemDeezel {
                match provider.send(send_params).await {
                    Ok(txid) => {
                        println!("✅ All funds sent successfully!");
-                       println!("🔗 Transaction ID: {}", txid);
+                       println!("🔗 Transaction ID: {txid}");
                    },
                    Err(e) => {
-                       println!("❌ Failed to send all funds: {}", e);
-                       return Err(e.into());
+                       println!("❌ Failed to send all funds: {e}");
+                       return Err(e);
                    }
                }
                Ok(())
@@ -615,11 +609,11 @@ impl SystemWallet for SystemDeezel {
                match provider.create_transaction(create_params).await {
                    Ok(tx_hex) => {
                        println!("✅ Transaction created successfully!");
-                       println!("📄 Transaction hex: {}", tx_hex);
+                       println!("📄 Transaction hex: {tx_hex}");
                    },
                    Err(e) => {
-                       println!("❌ Failed to create transaction: {}", e);
-                       return Err(e.into());
+                       println!("❌ Failed to create transaction: {e}");
+                       return Err(e);
                    }
                }
                Ok(())
@@ -628,18 +622,18 @@ impl SystemWallet for SystemDeezel {
                match provider.sign_transaction(tx_hex).await {
                    Ok(signed_hex) => {
                        println!("✅ Transaction signed successfully!");
-                       println!("📄 Signed transaction hex: {}", signed_hex);
+                       println!("📄 Signed transaction hex: {signed_hex}");
                    },
                    Err(e) => {
-                       println!("❌ Failed to sign transaction: {}", e);
-                       return Err(e.into());
+                       println!("❌ Failed to sign transaction: {e}");
+                       return Err(e);
                    }
                }
                Ok(())
            },
            WalletCommands::BroadcastTx { tx_hex, yes } => {
                if !yes {
-                   println!("⚠️  About to broadcast transaction: {}", tx_hex);
+                   println!("⚠️  About to broadcast transaction: {tx_hex}");
                    println!("Do you want to continue? (y/N)");
                    
                    let mut input = String::new();
@@ -654,11 +648,11 @@ impl SystemWallet for SystemDeezel {
                match provider.broadcast(&tx_hex).await {
                    Ok(txid) => {
                        println!("✅ Transaction broadcast successfully!");
-                       println!("🔗 Transaction ID: {}", txid);
+                       println!("🔗 Transaction ID: {txid}");
                    },
                    Err(e) => {
-                       println!("❌ Failed to broadcast transaction: {}", e);
-                       return Err(e.into());
+                       println!("❌ Failed to broadcast transaction: {e}");
+                       return Err(e);
                    }
                }
                Ok(())
@@ -709,7 +703,7 @@ impl SystemWallet for SystemDeezel {
                            println!("   ✅ Confirmations: {}", utxo_info.confirmations);
                            
                            if let Some(block_height) = utxo_info.block_height {
-                               println!("   📦 Block: {}", block_height);
+                               println!("   📦 Block: {block_height}");
                            }
                            
                            // Show special properties
@@ -733,7 +727,7 @@ impl SystemWallet for SystemDeezel {
                            if utxo_info.frozen {
                                println!("   ❄️  Status: FROZEN");
                                if let Some(reason) = &utxo_info.freeze_reason {
-                                   println!("   📝 Reason: {}", reason);
+                                   println!("   📝 Reason: {reason}");
                                }
                            } else {
                                println!("   ✅ Status: spendable");
@@ -749,12 +743,12 @@ impl SystemWallet for SystemDeezel {
            },
            WalletCommands::FreezeUtxo { utxo, reason } => {
                provider.freeze_utxo(utxo.clone(), reason).await?;
-               println!("❄️  UTXO {} frozen successfully", utxo);
+               println!("❄️  UTXO {utxo} frozen successfully");
                Ok(())
            },
            WalletCommands::UnfreezeUtxo { utxo } => {
                provider.unfreeze_utxo(utxo.clone()).await?;
-               println!("✅ UTXO {} unfrozen successfully", utxo);
+               println!("✅ UTXO {utxo} unfrozen successfully");
                Ok(())
            },
            WalletCommands::History { count, raw, address } => {
@@ -788,7 +782,7 @@ impl SystemWallet for SystemDeezel {
                        for (i, tx) in history.iter().enumerate() {
                            println!("{}. 🔗 TXID: {}", i + 1, tx.txid);
                            if let Some(fee) = tx.fee {
-                               println!("   💰 Fee: {} sats", fee);
+                               println!("   💰 Fee: {fee} sats");
                            }
                            println!("   ✅ Confirmed: {}", tx.confirmed);
                            
@@ -808,7 +802,7 @@ impl SystemWallet for SystemDeezel {
                } else {
                    println!("📄 Transaction Details");
                    println!("════════════════════");
-                   println!("🔗 TXID: {}", txid);
+                   println!("🔗 TXID: {txid}");
                    println!("{}", serde_json::to_string_pretty(&details)?);
                }
                Ok(())
@@ -817,7 +811,7 @@ impl SystemWallet for SystemDeezel {
                let estimate = provider.estimate_fee(target).await?;
                println!("💰 Fee Estimate");
                println!("═══════════════");
-               println!("🎯 Target: {} blocks", target);
+               println!("🎯 Target: {target} blocks");
                println!("💸 Fee rate: {} sat/vB", estimate.fee_rate);
                Ok(())
            },
@@ -839,7 +833,7 @@ impl SystemWallet for SystemDeezel {
                let backup = provider.backup().await?;
                println!("💾 Wallet Backup");
                println!("═══════════════");
-               println!("{}", backup);
+               println!("{backup}");
                Ok(())
            },
            WalletCommands::ListIdentifiers => {
@@ -847,7 +841,7 @@ impl SystemWallet for SystemDeezel {
                println!("🏷️  Address Identifiers");
                println!("═════════════════════");
                for identifier in identifiers {
-                   println!("  {}", identifier);
+                   println!("  {identifier}");
                }
                Ok(())
            },
@@ -871,9 +865,9 @@ impl SystemWallet for SystemDeezel {
        } else {
            println!("💼 Wallet Information");
            println!("═══════════════════");
-           println!("🏠 Address: {}", address);
+           println!("🏠 Address: {address}");
            println!("💰 Balance: {} sats", balance.confirmed as i64 + balance.pending);
-           println!("🌐 Network: {:?}", network);
+           println!("🌐 Network: {network:?}");
        }
        
        Ok(())
@@ -910,7 +904,7 @@ impl SystemBitcoind for SystemDeezel {
        let res: anyhow::Result<()> = match command {
             BitcoindCommands::Getblockcount => {
                 let count = <ConcreteProvider as BitcoinRpcProvider>::get_block_count(provider).await?;
-                println!("{}", count);
+                println!("{count}");
                 Ok(())
             },
            BitcoindCommands::Generatetoaddress { nblocks, address } => {
@@ -918,7 +912,7 @@ impl SystemBitcoind for SystemDeezel {
               let resolved_address = provider.resolve_all_identifiers(&address).await?;
               
               let result = <ConcreteProvider as BitcoinRpcProvider>::generate_to_address(provider, nblocks, &resolved_address).await?;
-              println!("Generated {} blocks to address {}", nblocks, resolved_address);
+              println!("Generated {nblocks} blocks to address {resolved_address}");
               if let Some(block_hashes) = result.as_array() {
                   println!("Block hashes:");
                   for (i, hash) in block_hashes.iter().enumerate() {
@@ -946,7 +940,7 @@ impl SystemMetashrew for SystemDeezel {
        let res: anyhow::Result<()> = match command {
             MetashrewCommands::Height => {
                 let height = provider.get_metashrew_height().await?;
-                println!("{}", height);
+                println!("{height}");
                 Ok(())
             },
        };
@@ -965,7 +959,7 @@ impl SystemAlkanes for SystemDeezel {
                     pass.clone()
                 } else {
                     rpassword::prompt_password("Enter passphrase to unlock keystore for signing: ")
-                        .map_err(|e| DeezelError::Wallet(format!("Failed to get passphrase: {}", e)))?
+                        .map_err(|e| DeezelError::Wallet(format!("Failed to get passphrase: {e}")))?
                 };
                 provider.unlock_wallet(&passphrase).await?;
             } else if let deezel_common::provider::WalletState::None = provider.get_wallet_state() {
@@ -999,7 +993,7 @@ impl SystemAlkanes for SystemDeezel {
                 let envelope_data = if let Some(ref envelope_file) = envelope {
                     let expanded_path = expand_tilde(envelope_file)?;
                     let data = std::fs::read(&expanded_path)
-                        .with_context(|| format!("Failed to read envelope file: {}", expanded_path))?;
+                        .with_context(|| format!("Failed to read envelope file: {expanded_path}"))?;
                     log::info!("📦 Loaded envelope data: {} bytes", data.len());
                     Some(data)
                 } else {
@@ -1096,17 +1090,17 @@ impl SystemAlkanes for SystemDeezel {
                             } else {
                                 println!("✅ Alkanes execution completed successfully!");
                                 if let Some(commit_txid) = result.commit_txid {
-                                    println!("🔗 Commit TXID: {}", commit_txid);
+                                    println!("🔗 Commit TXID: {commit_txid}");
                                 }
                                 println!("🔗 Reveal TXID: {}", result.reveal_txid);
                                 if let Some(commit_fee) = result.commit_fee {
-                                    println!("💰 Commit Fee: {} sats", commit_fee);
+                                    println!("💰 Commit Fee: {commit_fee} sats");
                                 }
                                 println!("💰 Reveal Fee: {} sats", result.reveal_fee);
                                 if let Some(traces) = result.traces {
                                     for (i, trace) in traces.iter().enumerate() {
                                         println!("\n📊 Trace for protostone #{}:", i + 1);
-                                        println!("{}", serde_json::to_string_pretty(&trace).unwrap_or_else(|_| format!("{:#?}", trace)));
+                                        println!("{}", serde_json::to_string_pretty(&trace).unwrap_or_else(|_| format!("{trace:#?}")));
                                     }
                                 }
                             }
@@ -1193,7 +1187,7 @@ impl SystemAlkanes for SystemDeezel {
                 } else {
                     println!("🔍 Alkanes Contract Bytecode");
                     println!("═══════════════════════════");
-                    println!("🏷️  Alkane ID: {}", alkane_id);
+                    println!("🏷️  Alkane ID: {alkane_id}");
 
                     if bytecode.is_empty() || bytecode == "0x" {
                         println!("❌ No bytecode found for this contract");
@@ -1203,7 +1197,7 @@ impl SystemAlkanes for SystemDeezel {
 
                         println!("💾 Bytecode:");
                         println!("   Length: {} bytes", clean_bytecode.len() / 2);
-                        println!("   Hex: {}", bytecode);
+                        println!("   Hex: {bytecode}");
 
                         // Show first few bytes for quick inspection
                         if clean_bytecode.len() >= 8 {
@@ -1225,7 +1219,7 @@ impl SystemAlkanes for SystemDeezel {
                 } else {
                     println!("🧪 Alkanes Contract Simulation");
                     println!("═══════════════════════════");
-                    println!("🔗 Contract ID: {}", contract_id);
+                    println!("🔗 Contract ID: {contract_id}");
                     println!("📊 Result: {}", serde_json::to_string_pretty(&result)?);
                 }
                 Ok(())
@@ -1233,9 +1227,9 @@ impl SystemAlkanes for SystemDeezel {
             AlkanesCommands::GetBlock { height, raw } => {
                 let result = AlkanesProvider::get_block(&provider, height).await?;
                 if raw {
-                    println!("{:#?}", result);
+                    println!("{result:#?}");
                 } else {
-                    println!("📦 Alkanes Block {}:\n{:#?}", height, result);
+                    println!("📦 Alkanes Block {height}:\n{result:#?}");
                 }
                 Ok(())
             }
@@ -1260,9 +1254,9 @@ impl SystemAlkanes for SystemDeezel {
             AlkanesCommands::TraceBlock { height, raw } => {
                 let result = provider.trace_block(height).await?;
                 if raw {
-                    println!("{:#?}", result);
+                    println!("{result:#?}");
                 } else {
-                    println!("📊 Trace for block {}:\n{:#?}", height, result);
+                    println!("📊 Trace for block {height}:\n{result:#?}");
                 }
                 Ok(())
             }
@@ -1301,7 +1295,7 @@ impl SystemRunestone for SystemDeezel {
                     println!("{}", serde_json::to_string_pretty(&analysis)?);
                 } else {
                     let pretty_output = pretty_print_transaction_analysis(&analysis)?;
-                    println!("{}", pretty_output);
+                    println!("{pretty_output}");
                 }
                 Ok(())
             },
@@ -1315,7 +1309,7 @@ impl SystemRunestone for SystemDeezel {
                     println!("{}", serde_json::to_string_pretty(&analysis)?);
                 } else {
                     let pretty_output = pretty_print_transaction_analysis(&analysis)?;
-                    println!("{}", pretty_output);
+                    println!("{pretty_output}");
                 }
                 Ok(())
             },
@@ -1335,7 +1329,7 @@ impl SystemProtorunes for SystemDeezel {
                 if raw {
                     println!("{}", serde_json::to_string_pretty(&result)?);
                 } else {
-                    println!("🪙 Protorunes for address: {}", address);
+                    println!("🪙 Protorunes for address: {address}");
                     println!("═══════════════════════════════════════");
                     println!("{}", serde_json::to_string_pretty(&result)?);
                 }
@@ -1347,7 +1341,7 @@ impl SystemProtorunes for SystemDeezel {
                if raw {
                    println!("{}", serde_json::to_string_pretty(&result)?);
                } else {
-                   println!("🪙 Protorunes for outpoint: {}:{}", txid, vout);
+                   println!("🪙 Protorunes for outpoint: {txid}:{vout}");
                    println!("═══════════════════════════════════════");
                    println!("{}", serde_json::to_string_pretty(&result)?);
                }
@@ -1369,7 +1363,7 @@ impl SystemMonitor for SystemDeezel {
                     0 // Placeholder - would need async context
                 });
                 
-                println!("🔍 Monitoring blocks starting from height: {}", start_height);
+                println!("🔍 Monitoring blocks starting from height: {start_height}");
                 provider.monitor_blocks(start).await?;
                 println!("✅ Block monitoring completed");
                 Ok(())
@@ -1387,18 +1381,18 @@ impl SystemEsplora for SystemDeezel {
             EsploraCommands::BlocksTipHash { raw } => {
                 let hash = provider.get_blocks_tip_hash().await?;
                 if raw {
-                    println!("{}", hash);
+                    println!("{hash}");
                 } else {
-                    println!("⛓️ Tip Hash: {}", hash);
+                    println!("⛓️ Tip Hash: {hash}");
                 }
                 Ok(())
             },
             EsploraCommands::BlocksTipHeight { raw } => {
                 let height = provider.get_blocks_tip_height().await?;
                 if raw {
-                    println!("{}", height);
+                    println!("{height}");
                 } else {
-                    println!("📈 Tip Height: {}", height);
+                    println!("📈 Tip Height: {height}");
                 }
                 Ok(())
             },
@@ -1408,7 +1402,7 @@ impl SystemEsplora for SystemDeezel {
                     if let Some(s) = result.as_str() {
                         println!("{}", s.trim_matches('"'));
                     } else {
-                        println!("{}", result);
+                        println!("{result}");
                     }
                 } else {
                     println!("📦 Blocks:\n{}", serde_json::to_string_pretty(&result)?);
@@ -1418,9 +1412,9 @@ impl SystemEsplora for SystemDeezel {
             EsploraCommands::BlockHeight { height, raw } => {
                 let hash = provider.get_block_by_height(height).await?;
                 if raw {
-                    println!("{}", hash);
+                    println!("{hash}");
                 } else {
-                    println!("🔗 Block Hash at {}: {}", height, hash);
+                    println!("🔗 Block Hash at {height}: {hash}");
                 }
                 Ok(())
             },
@@ -1430,7 +1424,7 @@ impl SystemEsplora for SystemDeezel {
                     if let Some(s) = block.as_str() {
                         println!("{}", s.trim_matches('"'));
                     } else {
-                        println!("{}", block);
+                        println!("{block}");
                     }
                 } else {
                     println!("📦 Block {}:\n{}", hash, serde_json::to_string_pretty(&block)?);
@@ -1443,7 +1437,7 @@ impl SystemEsplora for SystemDeezel {
                     if let Some(s) = status.as_str() {
                         println!("{}", s.trim_matches('"'));
                     } else {
-                        println!("{}", status);
+                        println!("{status}");
                     }
                 } else {
                     println!("ℹ️ Block Status {}:\n{}", hash, serde_json::to_string_pretty(&status)?);
@@ -1456,7 +1450,7 @@ impl SystemEsplora for SystemDeezel {
                     if let Some(s) = txids.as_str() {
                         println!("{}", s.trim_matches('"'));
                     } else {
-                        println!("{}", txids);
+                        println!("{txids}");
                     }
                 } else {
                     println!("📄 Block Txids {}:\n{}", hash, serde_json::to_string_pretty(&txids)?);
@@ -1464,29 +1458,29 @@ impl SystemEsplora for SystemDeezel {
                 Ok(())
             },
             EsploraCommands::BlockHeader { hash, raw } => {
-                let header = <ConcreteProvider as EsploraProvider>::get_block_header(&provider, &hash).await?;
+                let header = <ConcreteProvider as EsploraProvider>::get_block_header(provider, &hash).await?;
                 if raw {
-                    println!("{}", header);
+                    println!("{header}");
                 } else {
-                    println!("📄 Block Header {}: {}", hash, header);
+                    println!("📄 Block Header {hash}: {header}");
                 }
                 Ok(())
             },
             EsploraCommands::BlockRaw { hash, raw } => {
                 let raw_block = provider.get_block_raw(&hash).await?;
                 if raw {
-                    println!("{}", raw_block);
+                    println!("{raw_block}");
                 } else {
-                    println!("📦 Raw Block {}: {}", hash, raw_block);
+                    println!("📦 Raw Block {hash}: {raw_block}");
                 }
                 Ok(())
             },
             EsploraCommands::BlockTxid { hash, index, raw } => {
                 let txid = provider.get_block_txid(&hash, index).await?;
                 if raw {
-                    println!("{}", txid);
+                    println!("{txid}");
                 } else {
-                    println!("📄 Txid at index {} in block {}: {}", index, hash, txid);
+                    println!("📄 Txid at index {index} in block {hash}: {txid}");
                 }
                 Ok(())
             },
@@ -1496,7 +1490,7 @@ impl SystemEsplora for SystemDeezel {
                     if let Some(s) = txs.as_str() {
                         println!("{}", s.trim_matches('"'));
                     } else {
-                        println!("{}", txs);
+                        println!("{txs}");
                     }
                 } else {
                     println!("📄 Transactions in block {}:\n{}", hash, serde_json::to_string_pretty(&txs)?);
@@ -1510,7 +1504,7 @@ impl SystemEsplora for SystemDeezel {
                     if let Some(s) = result.as_str() {
                         println!("{}", s.trim_matches('"'));
                     } else {
-                        println!("{}", result);
+                        println!("{result}");
                     }
                 } else {
                     println!("🏠 Address {}:\n{}", params, serde_json::to_string_pretty(&result)?);
@@ -1524,7 +1518,7 @@ impl SystemEsplora for SystemDeezel {
                     if let Some(s) = result.as_str() {
                         println!("{}", s.trim_matches('"'));
                     } else {
-                        println!("{}", result);
+                        println!("{result}");
                     }
                 } else {
                     println!("📄 Transactions for address {}:\n{}", params, serde_json::to_string_pretty(&result)?);
@@ -1549,7 +1543,7 @@ impl SystemEsplora for SystemDeezel {
                     if let Some(s) = result.as_str() {
                         println!("{}", s.trim_matches('"'));
                     } else {
-                        println!("{}", result);
+                        println!("{result}");
                     }
                 } else {
                     println!("⛓️ Chain transactions for address {}:\n{}", params, serde_json::to_string_pretty(&result)?);
@@ -1563,7 +1557,7 @@ impl SystemEsplora for SystemDeezel {
                     if let Some(s) = result.as_str() {
                         println!("{}", s.trim_matches('"'));
                     } else {
-                        println!("{}", result);
+                        println!("{result}");
                     }
                 } else {
                     println!("⏳ Mempool transactions for address {}:\n{}", address, serde_json::to_string_pretty(&result)?);
@@ -1577,7 +1571,7 @@ impl SystemEsplora for SystemDeezel {
                     if let Some(s) = result.as_str() {
                         println!("{}", s.trim_matches('"'));
                     } else {
-                        println!("{}", result);
+                        println!("{result}");
                     }
                 } else {
                     println!("💰 UTXOs for address {}:\n{}", address, serde_json::to_string_pretty(&result)?);
@@ -1590,7 +1584,7 @@ impl SystemEsplora for SystemDeezel {
                     if let Some(s) = result.as_str() {
                         println!("{}", s.trim_matches('"'));
                     } else {
-                        println!("{}", result);
+                        println!("{result}");
                     }
                 } else {
                     println!("🔍 Addresses with prefix '{}':\n{}", prefix, serde_json::to_string_pretty(&result)?);
@@ -1603,7 +1597,7 @@ impl SystemEsplora for SystemDeezel {
                     if let Some(s) = tx.as_str() {
                         println!("{}", s.trim_matches('"'));
                     } else {
-                        println!("{}", tx);
+                        println!("{tx}");
                     }
                 } else {
                     println!("📄 Transaction {}:\n{}", txid, serde_json::to_string_pretty(&tx)?);
@@ -1613,18 +1607,18 @@ impl SystemEsplora for SystemDeezel {
             EsploraCommands::TxHex { txid, raw } => {
                 let hex = provider.get_tx_hex(&txid).await?;
                 if raw {
-                    println!("{}", hex);
+                    println!("{hex}");
                 } else {
-                    println!("📄 Hex for tx {}: {}", txid, hex);
+                    println!("📄 Hex for tx {txid}: {hex}");
                 }
                 Ok(())
             },
             EsploraCommands::TxRaw { txid, raw } => {
                 let raw_tx = provider.get_tx_raw(&txid).await?;
                 if raw {
-                    println!("{}", raw_tx);
+                    println!("{raw_tx}");
                 } else {
-                    println!("📄 Raw tx {}: {}", txid, raw_tx);
+                    println!("📄 Raw tx {txid}: {raw_tx}");
                 }
                 Ok(())
             },
@@ -1634,7 +1628,7 @@ impl SystemEsplora for SystemDeezel {
                     if let Some(s) = status.as_str() {
                         println!("{}", s.trim_matches('"'));
                     } else {
-                        println!("{}", status);
+                        println!("{status}");
                     }
                 } else {
                     println!("ℹ️ Status for tx {}:\n{}", txid, serde_json::to_string_pretty(&status)?);
@@ -1647,7 +1641,7 @@ impl SystemEsplora for SystemDeezel {
                     if let Some(s) = proof.as_str() {
                         println!("{}", s.trim_matches('"'));
                     } else {
-                        println!("{}", proof);
+                        println!("{proof}");
                     }
                 } else {
                     println!("🧾 Merkle proof for tx {}:\n{}", txid, serde_json::to_string_pretty(&proof)?);
@@ -1657,9 +1651,9 @@ impl SystemEsplora for SystemDeezel {
             EsploraCommands::TxMerkleblockProof { txid, raw } => {
                 let proof = provider.get_tx_merkleblock_proof(&txid).await?;
                 if raw {
-                    println!("{}", proof);
+                    println!("{proof}");
                 } else {
-                    println!("🧾 Merkleblock proof for tx {}: {}", txid, proof);
+                    println!("🧾 Merkleblock proof for tx {txid}: {proof}");
                 }
                 Ok(())
             },
@@ -1669,7 +1663,7 @@ impl SystemEsplora for SystemDeezel {
                     if let Some(s) = outspend.as_str() {
                         println!("{}", s.trim_matches('"'));
                     } else {
-                        println!("{}", outspend);
+                        println!("{outspend}");
                     }
                 } else {
                     println!("💸 Outspend for tx {}, vout {}:\n{}", txid, index, serde_json::to_string_pretty(&outspend)?);
@@ -1682,7 +1676,7 @@ impl SystemEsplora for SystemDeezel {
                     if let Some(s) = outspends.as_str() {
                         println!("{}", s.trim_matches('"'));
                     } else {
-                        println!("{}", outspends);
+                        println!("{outspends}");
                     }
                 } else {
                     println!("💸 Outspends for tx {}:\n{}", txid, serde_json::to_string_pretty(&outspends)?);
@@ -1692,13 +1686,13 @@ impl SystemEsplora for SystemDeezel {
             EsploraCommands::Broadcast { tx_hex, raw: _ } => {
                 let txid = provider.broadcast(&tx_hex).await?;
                 println!("✅ Transaction broadcast successfully!");
-                println!("🔗 Transaction ID: {}", txid);
+                println!("🔗 Transaction ID: {txid}");
                 Ok(())
             },
             EsploraCommands::PostTx { tx_hex, raw: _ } => {
                 let txid = provider.broadcast(&tx_hex).await?;
                 println!("✅ Transaction posted successfully!");
-                println!("🔗 Transaction ID: {}", txid);
+                println!("🔗 Transaction ID: {txid}");
                 Ok(())
             },
             EsploraCommands::Mempool { raw } => {
@@ -1707,7 +1701,7 @@ impl SystemEsplora for SystemDeezel {
                     if let Some(s) = mempool.as_str() {
                         println!("{}", s.trim_matches('"'));
                     } else {
-                        println!("{}", mempool);
+                        println!("{mempool}");
                     }
                 } else {
                     println!("⏳ Mempool Info:\n{}", serde_json::to_string_pretty(&mempool)?);
@@ -1720,7 +1714,7 @@ impl SystemEsplora for SystemDeezel {
                     if let Some(s) = txids.as_str() {
                         println!("{}", s.trim_matches('"'));
                     } else {
-                        println!("{}", txids);
+                        println!("{txids}");
                     }
                 } else {
                     println!("📄 Mempool Txids:\n{}", serde_json::to_string_pretty(&txids)?);
@@ -1733,7 +1727,7 @@ impl SystemEsplora for SystemDeezel {
                     if let Some(s) = recent.as_str() {
                         println!("{}", s.trim_matches('"'));
                     } else {
-                        println!("{}", recent);
+                        println!("{recent}");
                     }
                 } else {
                     println!("📄 Recent Mempool Txs:\n{}", serde_json::to_string_pretty(&recent)?);
@@ -1746,7 +1740,7 @@ impl SystemEsplora for SystemDeezel {
                     if let Some(s) = estimates.as_str() {
                         println!("{}", s.trim_matches('"'));
                     } else {
-                        println!("{}", estimates);
+                        println!("{estimates}");
                     }
                 } else {
                     println!("💰 Fee Estimates:\n{}", serde_json::to_string_pretty(&estimates)?);

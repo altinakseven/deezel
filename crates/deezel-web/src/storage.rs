@@ -162,7 +162,7 @@ impl WebStorage {
     /// Returns [`DeezelError::Storage`] if the input is not valid base64
     fn decode_data(&self, encoded: &str) -> Result<Vec<u8>> {
         BASE64.decode(encoded)
-            .map_err(|e| DeezelError::Storage(format!("Failed to decode base64 data: {}", e)))
+            .map_err(|e| DeezelError::Storage(format!("Failed to decode base64 data: {e}")))
     }
 
     /// Get the namespaced key for localStorage operations
@@ -187,7 +187,7 @@ impl WebStorage {
     /// // let prefixed = storage.get_prefixed_key("wallet_data");
     /// ```
     fn get_prefixed_key(&self, key: &str) -> String {
-        format!("deezel:{}", key)
+        format!("deezel:{key}")
     }
 }
 
@@ -222,8 +222,8 @@ impl deezel_common::StorageProvider for WebStorage {
         let prefixed_key = self.get_prefixed_key(key);
         
         let value = storage.get_item(&prefixed_key)
-            .map_err(|e| DeezelError::Storage(format!("Failed to read from localStorage: {:?}", e)))?
-            .ok_or_else(|| DeezelError::Storage(format!("Key not found: {}", key)))?;
+            .map_err(|e| DeezelError::Storage(format!("Failed to read from localStorage: {e:?}")))?
+            .ok_or_else(|| DeezelError::Storage(format!("Key not found: {key}")))?;
         
         self.decode_data(&value)
     }
@@ -249,7 +249,7 @@ impl deezel_common::StorageProvider for WebStorage {
         let encoded_data = self.encode_data(data);
         
         storage.set_item(&prefixed_key, &encoded_data)
-            .map_err(|e| DeezelError::Storage(format!("Failed to write to localStorage: {:?}", e)))?;
+            .map_err(|e| DeezelError::Storage(format!("Failed to write to localStorage: {e:?}")))?;
         
         Ok(())
     }
@@ -275,7 +275,7 @@ impl deezel_common::StorageProvider for WebStorage {
         let prefixed_key = self.get_prefixed_key(key);
         
         let exists = storage.get_item(&prefixed_key)
-            .map_err(|e| DeezelError::Storage(format!("Failed to check localStorage: {:?}", e)))?
+            .map_err(|e| DeezelError::Storage(format!("Failed to check localStorage: {e:?}")))?
             .is_some();
         
         Ok(exists)
@@ -302,7 +302,7 @@ impl deezel_common::StorageProvider for WebStorage {
         let prefixed_key = self.get_prefixed_key(key);
         
         storage.remove_item(&prefixed_key)
-            .map_err(|e| DeezelError::Storage(format!("Failed to delete from localStorage: {:?}", e)))?;
+            .map_err(|e| DeezelError::Storage(format!("Failed to delete from localStorage: {e:?}")))?;
         
         Ok(())
     }
@@ -336,7 +336,7 @@ impl deezel_common::StorageProvider for WebStorage {
         
         // Get the length of localStorage
         let length = storage.length()
-            .map_err(|e| DeezelError::Storage(format!("Failed to get localStorage length: {:?}", e)))?;
+            .map_err(|e| DeezelError::Storage(format!("Failed to get localStorage length: {e:?}")))?;
         
         // Iterate through all keys
         for i in 0..length {

@@ -142,7 +142,7 @@ impl WebProvider {
             "testnet" => Network::Testnet,
             "signet" => Network::Signet,
             "regtest" => Network::Regtest,
-            _ => return Err(DeezelError::Configuration(format!("Invalid network: {}", network_str))),
+            _ => return Err(DeezelError::Configuration(format!("Invalid network: {network_str}"))),
         };
 
         let sandshrew_rpc_url = match network {
@@ -150,7 +150,7 @@ impl WebProvider {
             Network::Testnet => "https://signet.sandshrew.io/v4/wrlckwrld".to_string(),
             Network::Signet => "https://signet.sandshrew.io/v4/wrlckwrld".to_string(),
             Network::Regtest => "http://localhost:18888".to_string(),
-            _ => return Err(DeezelError::Configuration(format!("Unsupported network: {}", network_str))),
+            _ => return Err(DeezelError::Configuration(format!("Unsupported network: {network_str}"))),
         };
 
         let esplora_rpc_url = match network {
@@ -158,7 +158,7 @@ impl WebProvider {
             Network::Testnet => "https://mempool.space/testnet/api".to_string(),
             Network::Signet => "https://mempool.space/signet/api".to_string(),
             Network::Regtest => "http://localhost:3003".to_string(),
-            _ => return Err(DeezelError::Configuration(format!("Unsupported network: {}", network_str))),
+            _ => return Err(DeezelError::Configuration(format!("Unsupported network: {network_str}"))),
         };
 
         Ok(Self {
@@ -238,14 +238,14 @@ impl WebProvider {
         }
 
         let request = Request::new_with_str_and_init(url, &opts)
-            .map_err(|e| DeezelError::Network(format!("Failed to create request: {:?}", e)))?;
+            .map_err(|e| DeezelError::Network(format!("Failed to create request: {e:?}")))?;
 
         let resp_value = JsFuture::from(window.fetch_with_request(&request))
             .await
-            .map_err(|e| DeezelError::Network(format!("Fetch failed: {:?}", e)))?;
+            .map_err(|e| DeezelError::Network(format!("Fetch failed: {e:?}")))?;
 
         let resp: Response = resp_value.dyn_into()
-            .map_err(|e| DeezelError::Network(format!("Failed to cast response: {:?}", e)))?;
+            .map_err(|e| DeezelError::Network(format!("Failed to cast response: {e:?}")))?;
 
         Ok(resp)
     }
@@ -304,12 +304,12 @@ impl WebProvider {
             "params": [tx_hex]
         });
         
-        self.logger.info(&format!("Sending transaction to Rebar Shield endpoint: {}", rebar_endpoint));
+        self.logger.info(&format!("Sending transaction to Rebar Shield endpoint: {rebar_endpoint}"));
         
         // Create headers
         let headers = js_sys::Object::new();
         js_sys::Reflect::set(&headers, &"Content-Type".into(), &"application/json".into())
-            .map_err(|e| DeezelError::Network(format!("Failed to set header: {:?}", e)))?;
+            .map_err(|e| DeezelError::Network(format!("Failed to set header: {e:?}")))?;
         
         // Make HTTP POST request to Rebar Labs Shield
         let response = self.fetch_request(
@@ -320,19 +320,19 @@ impl WebProvider {
         ).await?;
         
         let response_text = JsFuture::from(response.text()
-            .map_err(|e| DeezelError::Network(format!("Failed to get response text: {:?}", e)))?)
+            .map_err(|e| DeezelError::Network(format!("Failed to get response text: {e:?}")))?)
             .await
-            .map_err(|e| DeezelError::Network(format!("Failed to read Rebar Shield response: {:?}", e)))?;
+            .map_err(|e| DeezelError::Network(format!("Failed to read Rebar Shield response: {e:?}")))?;
         
         let response_str = response_text.as_string()
             .ok_or_else(|| DeezelError::Network("Response is not a string".to_string()))?;
         
         let response_json: JsonValue = serde_json::from_str(&response_str)
-            .map_err(|e| DeezelError::Serialization(format!("Failed to parse Rebar Shield JSON: {}", e)))?;
+            .map_err(|e| DeezelError::Serialization(format!("Failed to parse Rebar Shield JSON: {e}")))?;
         
         // Check for JSON-RPC error
         if let Some(error) = response_json.get("error") {
-            return Err(DeezelError::JsonRpc(format!("Rebar Shield error: {}", error)));
+            return Err(DeezelError::JsonRpc(format!("Rebar Shield error: {error}")));
         }
         
         // Extract transaction ID from result
@@ -340,7 +340,7 @@ impl WebProvider {
             .and_then(|r| r.as_str())
             .ok_or_else(|| DeezelError::JsonRpc("No transaction ID in Rebar Shield response".to_string()))?;
         
-        self.logger.info(&format!("✅ Transaction broadcast via Rebar Shield: {}", txid));
+        self.logger.info(&format!("✅ Transaction broadcast via Rebar Shield: {txid}"));
         self.logger.info("🛡️  Transaction sent privately to mining pools");
         
         Ok(txid.to_string())
@@ -360,7 +360,7 @@ impl JsonRpcProvider for WebProvider {
         // Create headers
         let headers = js_sys::Object::new();
         js_sys::Reflect::set(&headers, &"Content-Type".into(), &"application/json".into())
-            .map_err(|e| DeezelError::Network(format!("Failed to set header: {:?}", e)))?;
+            .map_err(|e| DeezelError::Network(format!("Failed to set header: {e:?}")))?;
 
         let response = self.fetch_request(
             url,
@@ -370,18 +370,18 @@ impl JsonRpcProvider for WebProvider {
         ).await?;
 
         let response_text = JsFuture::from(response.text()
-            .map_err(|e| DeezelError::Network(format!("Failed to get response text: {:?}", e)))?)
+            .map_err(|e| DeezelError::Network(format!("Failed to get response text: {e:?}")))?)
             .await
-            .map_err(|e| DeezelError::Network(format!("Failed to read response: {:?}", e)))?;
+            .map_err(|e| DeezelError::Network(format!("Failed to read response: {e:?}")))?;
 
         let response_str = response_text.as_string()
             .ok_or_else(|| DeezelError::Network("Response is not a string".to_string()))?;
 
         let response_json: JsonValue = serde_json::from_str(&response_str)
-            .map_err(|e| DeezelError::Serialization(format!("Failed to parse JSON: {}", e)))?;
+            .map_err(|e| DeezelError::Serialization(format!("Failed to parse JSON: {e}")))?;
 
         if let Some(error) = response_json.get("error") {
-            return Err(DeezelError::JsonRpc(format!("JSON-RPC error: {}", error)));
+            return Err(DeezelError::JsonRpc(format!("JSON-RPC error: {error}")));
         }
 
         response_json.get("result")

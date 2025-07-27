@@ -14,9 +14,8 @@ pub fn parse_input_requirements(input_str: &str) -> Result<Vec<InputRequirement>
     for part in input_str.split(',') {
         let trimmed = part.trim();
         
-        if trimmed.starts_with("B:") {
+        if let Some(amount_str) = trimmed.strip_prefix("B:") {
             // Bitcoin requirement: B:amount
-            let amount_str = &trimmed[2..];
             let amount = amount_str.parse::<u64>()
                 .context("Invalid Bitcoin amount in input requirement")?;
             requirements.push(InputRequirement::Bitcoin { amount });
@@ -106,8 +105,8 @@ fn parse_single_protostone(spec_str: &str) -> Result<ProtostoneSpec> {
     // The pointer and refund_pointer are parsed but not used in the current struct.
     // This is fine as per the user's instructions.
     // We can log them for debugging.
-    log::debug!("Parsed pointer: {:?}", pointer);
-    log::debug!("Parsed refund_pointer: {:?}", refund_pointer);
+    log::debug!("Parsed pointer: {pointer:?}");
+    log::debug!("Parsed refund_pointer: {refund_pointer:?}");
 
     Ok(ProtostoneSpec {
         cellpack,
@@ -124,7 +123,7 @@ fn parse_cellpack(cellpack_str: &str) -> Result<Cellpack> {
     for part in cellpack_str.split(',') {
         let trimmed = part.trim();
         let value = trimmed.parse::<u128>()
-            .with_context(|| format!("Invalid u128 value in cellpack: {}", trimmed))?;
+            .with_context(|| format!("Invalid u128 value in cellpack: {trimmed}"))?;
         values.push(value);
     }
     
@@ -207,13 +206,11 @@ fn parse_output_target(target_str: &str) -> Result<OutputTarget> {
     
     if trimmed == "split" {
         Ok(OutputTarget::Split)
-    } else if trimmed.starts_with('v') {
-        let index_str = &trimmed[1..];
+    } else if let Some(index_str) = trimmed.strip_prefix('v') {
         let index = index_str.parse::<u32>()
             .context("Invalid output index in target")?;
         Ok(OutputTarget::Output(index))
-    } else if trimmed.starts_with('p') {
-        let index_str = &trimmed[1..];
+    } else if let Some(index_str) = trimmed.strip_prefix('p') {
         let index = index_str.parse::<u32>()
             .context("Invalid protostone index in target")?;
         Ok(OutputTarget::Protostone(index))

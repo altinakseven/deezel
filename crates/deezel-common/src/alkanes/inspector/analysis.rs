@@ -267,7 +267,7 @@ async fn execute_opcodes_batch(
                     success: false,
                     return_value: None,
                     return_data: vec![],
-                    error: Some(format!("WASM execution failed: {}", e)),
+                    error: Some(format!("WASM execution failed: {e}")),
                     execution_time_micros: execution_time.as_micros() as u64,
                     opcode,
                     host_calls,
@@ -319,7 +319,7 @@ fn parse_opcode_ranges(ranges_str: &str) -> Result<Vec<u128>> {
             }
         } else {
             let opcode: u128 = range_part.parse()
-                .with_context(|| format!("Invalid opcode: {}", range_part))?;
+                .with_context(|| format!("Invalid opcode: {range_part}"))?;
             opcodes.push(opcode);
         }
     }
@@ -381,7 +381,7 @@ fn normalize_response_pattern(result: &ExecutionResult) -> String {
             .replace(&result.opcode.to_string(), "OPCODE")
             .replace(&format!("0x{:x}", result.opcode), "OPCODE")
             .replace(&format!("{:#x}", result.opcode), "OPCODE");
-        format!("ERROR:{}", normalized)
+        format!("ERROR:{normalized}")
     } else {
         // For successful results, use return data pattern
         let data_pattern = if result.return_data.is_empty() {
@@ -402,6 +402,6 @@ fn normalize_response_pattern(result: &ExecutionResult) -> String {
                 .join(",")
         };
         
-        format!("SUCCESS:{}:CALLS:{}", data_pattern, host_call_pattern)
+        format!("SUCCESS:{data_pattern}:CALLS:{host_call_pattern}")
     }
 }

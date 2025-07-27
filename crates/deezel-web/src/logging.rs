@@ -77,7 +77,7 @@ impl WebLogger {
     /// Format log message with timestamp and level
     fn format_message(&self, level: &str, message: &str) -> String {
         let timestamp = js_sys::Date::new_0().to_iso_string().as_string().unwrap_or_default();
-        format!("[{}] [{}] {}", timestamp, level, message)
+        format!("[{timestamp}] [{level}] {message}")
     }
 }
 

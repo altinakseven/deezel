@@ -22,7 +22,7 @@ fn setup() -> Command {
 #[test]
 fn test_runestone_analyze_pretty_output() -> Result<()> {
     let mut cmd = setup();
-    cmd.args(&[
+    cmd.args([
         "runestone",
         "analyze",
         TEST_TXID,
@@ -42,7 +42,7 @@ fn test_runestone_analyze_pretty_output() -> Result<()> {
 #[test]
 fn test_runestone_analyze_raw_output() -> Result<()> {
     let mut cmd = setup();
-    cmd.args(&[
+    cmd.args([
         "runestone",
         "analyze",
         TEST_TXID,

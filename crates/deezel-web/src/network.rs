@@ -161,14 +161,14 @@ impl WebNetwork {
 
         // Set headers
         let headers = Headers::new()
-            .map_err(|e| DeezelError::Network(format!("Failed to create headers: {:?}", e)))?;
+            .map_err(|e| DeezelError::Network(format!("Failed to create headers: {e:?}")))?;
         
         headers.set("User-Agent", &self.user_agent)
-            .map_err(|e| DeezelError::Network(format!("Failed to set User-Agent: {:?}", e)))?;
+            .map_err(|e| DeezelError::Network(format!("Failed to set User-Agent: {e:?}")))?;
 
         if let Some(ct) = content_type {
             headers.set("Content-Type", ct)
-                .map_err(|e| DeezelError::Network(format!("Failed to set Content-Type: {:?}", e)))?;
+                .map_err(|e| DeezelError::Network(format!("Failed to set Content-Type: {e:?}")))?;
         }
 
         opts.set_headers(&headers);
@@ -181,14 +181,14 @@ impl WebNetwork {
         }
 
         let request = Request::new_with_str_and_init(url, &opts)
-            .map_err(|e| DeezelError::Network(format!("Failed to create request: {:?}", e)))?;
+            .map_err(|e| DeezelError::Network(format!("Failed to create request: {e:?}")))?;
 
         let resp_value = JsFuture::from(window.fetch_with_request(&request))
             .await
-            .map_err(|e| DeezelError::Network(format!("Fetch failed: {:?}", e)))?;
+            .map_err(|e| DeezelError::Network(format!("Fetch failed: {e:?}")))?;
 
         let resp: Response = resp_value.dyn_into()
-            .map_err(|e| DeezelError::Network(format!("Failed to cast response: {:?}", e)))?;
+            .map_err(|e| DeezelError::Network(format!("Failed to cast response: {e:?}")))?;
 
         if !resp.ok() {
             return Err(DeezelError::Network(format!(
@@ -220,9 +220,9 @@ impl WebNetwork {
     /// * [`DeezelError::Network`] if converting the buffer to bytes fails
     async fn response_to_bytes(&self, response: Response) -> Result<Vec<u8>> {
         let array_buffer = JsFuture::from(response.array_buffer()
-            .map_err(|e| DeezelError::Network(format!("Failed to get array buffer: {:?}", e)))?)
+            .map_err(|e| DeezelError::Network(format!("Failed to get array buffer: {e:?}")))?)
             .await
-            .map_err(|e| DeezelError::Network(format!("Failed to read array buffer: {:?}", e)))?;
+            .map_err(|e| DeezelError::Network(format!("Failed to read array buffer: {e:?}")))?;
 
         let uint8_array = Uint8Array::new(&array_buffer);
         let mut bytes = vec![0u8; uint8_array.length() as usize];

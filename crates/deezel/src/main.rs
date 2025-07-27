@@ -6,11 +6,9 @@
 
 use anyhow::Result;
 use clap::Parser;
-use deezel_common::keystore::Keystore;
 use deezel_sys::{SystemDeezel, SystemOrd};
 use deezel_common::traits::*;
 use futures::future::join_all;
-use std::path::Path;
 
 mod commands;
 mod pretty_print;
@@ -29,25 +27,10 @@ async fn main() -> Result<()> {
         .init();
 
     // Handle keystore logic
-    if let Some(keystore_path) = &args.keystore {
-        let keystore = Keystore::from_file(Path::new(keystore_path))?;
-        let passphrase = rpassword::prompt_password("Enter passphrase: ")?;
-        let mnemonic = keystore.decrypt_mnemonic(&passphrase)?;
-
-        // Create a temporary wallet with the decrypted mnemonic
-        let temp_wallet_dir = tempfile::tempdir()?;
-        let temp_wallet_path = temp_wallet_dir.path().join("temp_wallet.json");
-        
-        let mut temp_args = args.clone();
-        temp_args.keystore = Some(temp_wallet_path.to_str().unwrap().to_string());
-        
-        let temp_provider = SystemDeezel::new(&deezel_common::commands::Args::from(&temp_args)).await?;
-        temp_provider.execute_wallet_command(deezel_common::commands::WalletCommands::Create {
-            passphrase: Some(passphrase.clone()),
-            mnemonic: Some(mnemonic),
-        }).await?;
-        
-        args.keystore = Some(temp_wallet_path.to_str().unwrap().to_string());
+    if let Some(_wallet_path) = &args.wallet_file {
+        if args.passphrase.is_none() {
+            args.passphrase = Some(rpassword::prompt_password("Enter passphrase: ")?);
+        }
     }
 
     // Create a new SystemDeezel instance
@@ -95,11 +78,11 @@ async fn execute_alkanes_command<T: System>(system: &mut T, command: Alkanes) ->
                         let result = executor.resume_reveal_execution(s).await?;
                         println!("✅ Alkanes execution completed successfully!");
                         if let Some(commit_txid) = result.commit_txid {
-                            println!("🔗 Commit TXID: {}", commit_txid);
+                            println!("🔗 Commit TXID: {commit_txid}");
                         }
                         println!("🔗 Reveal TXID: {}", result.reveal_txid);
                         if let Some(commit_fee) = result.commit_fee {
-                            println!("💰 Commit Fee: {} sats", commit_fee);
+                            println!("💰 Commit Fee: {commit_fee} sats");
                         }
                         println!("💰 Reveal Fee: {} sats", result.reveal_fee);
                         if let Some(traces) = result.traces {
@@ -110,11 +93,11 @@ async fn execute_alkanes_command<T: System>(system: &mut T, command: Alkanes) ->
                     alkanes::types::ExecutionState::Complete(result) => {
                         println!("✅ Alkanes execution completed successfully!");
                         if let Some(commit_txid) = result.commit_txid {
-                            println!("🔗 Commit TXID: {}", commit_txid);
+                            println!("🔗 Commit TXID: {commit_txid}");
                         }
                         println!("🔗 Reveal TXID: {}", result.reveal_txid);
                         if let Some(commit_fee) = result.commit_fee {
-                            println!("💰 Commit Fee: {} sats", commit_fee);
+                            println!("💰 Commit Fee: {commit_fee} sats");
                         }
                         println!("💰 Reveal Fee: {} sats", result.reveal_fee);
                         if let Some(traces) = result.traces {
@@ -151,11 +134,11 @@ async fn execute_alkanes_command<T: System>(system: &mut T, command: Alkanes) ->
                     if raw {
                         println!("{}", serde_json::to_string_pretty(&trace)?);
                     } else {
-                        println!("{}", trace);
+                        println!("{trace}");
                     }
                 }
                 Err(e) => {
-                    println!("Error: {}", e);
+                    println!("Error: {e}");
                 }
             }
             Ok(())
@@ -166,7 +149,7 @@ async fn execute_alkanes_command<T: System>(system: &mut T, command: Alkanes) ->
 fn to_enhanced_execute_params(args: AlkanesExecute) -> Result<alkanes::types::EnhancedExecuteParams> {
     let input_requirements = args.inputs.map(|s| alkanes::parsing::parse_input_requirements(&s)).transpose()?.unwrap_or_default();
     let protostones = alkanes::parsing::parse_protostones(&args.protostones.join(" "))?;
-    let envelope_data = args.envelope.map(|path| std::fs::read(path)).transpose()?;
+    let envelope_data = args.envelope.map(std::fs::read).transpose()?;
 
     Ok(alkanes::types::EnhancedExecuteParams {
         input_requirements,
@@ -211,17 +194,17 @@ async fn execute_esplora_command(
         deezel_common::commands::EsploraCommands::BlocksTipHash { raw } => {
             let hash = provider.get_blocks_tip_hash().await?;
             if raw {
-                println!("{}", hash);
+                println!("{hash}");
             } else {
-                println!("⛓️ Tip Hash: {}", hash);
+                println!("⛓️ Tip Hash: {hash}");
             }
         }
         deezel_common::commands::EsploraCommands::BlocksTipHeight { raw } => {
             let height = provider.get_blocks_tip_height().await?;
             if raw {
-                println!("{}", height);
+                println!("{height}");
             } else {
-                println!("📈 Tip Height: {}", height);
+                println!("📈 Tip Height: {height}");
             }
         }
         deezel_common::commands::EsploraCommands::Blocks { start_height, raw } => {
@@ -235,9 +218,9 @@ async fn execute_esplora_command(
         deezel_common::commands::EsploraCommands::BlockHeight { height, raw } => {
             let hash = provider.get_block_by_height(height).await?;
             if raw {
-                println!("{}", hash);
+                println!("{hash}");
             } else {
-                println!("🔗 Block Hash at {}: {}", height, hash);
+                println!("🔗 Block Hash at {height}: {hash}");
             }
         }
         deezel_common::commands::EsploraCommands::Block { hash, raw } => {
@@ -267,25 +250,25 @@ async fn execute_esplora_command(
         deezel_common::commands::EsploraCommands::BlockHeader { hash, raw } => {
             let header = provider.get_block_header(&hash).await?;
             if raw {
-                println!("{}", header);
+                println!("{header}");
             } else {
-                println!("📄 Block Header {}: {}", hash, header);
+                println!("📄 Block Header {hash}: {header}");
             }
         }
         deezel_common::commands::EsploraCommands::BlockRaw { hash, raw } => {
             let raw_block = provider.get_block_raw(&hash).await?;
             if raw {
-                println!("{}", raw_block);
+                println!("{raw_block}");
             } else {
-                println!("📦 Raw Block {}: {}", hash, raw_block);
+                println!("📦 Raw Block {hash}: {raw_block}");
             }
         }
         deezel_common::commands::EsploraCommands::BlockTxid { hash, index, raw } => {
             let txid = provider.get_block_txid(&hash, index).await?;
             if raw {
-                println!("{}", txid);
+                println!("{txid}");
             } else {
-                println!("📄 Txid at index {} in block {}: {}", index, hash, txid);
+                println!("📄 Txid at index {index} in block {hash}: {txid}");
             }
         }
         deezel_common::commands::EsploraCommands::BlockTxs { hash, start_index, raw } => {
@@ -354,7 +337,7 @@ async fn execute_esplora_command(
         }
         deezel_common::commands::EsploraCommands::TxHex { txid, .. } => {
             let hex = provider.get_tx_hex(&txid).await?;
-            println!("{}", hex);
+            println!("{hex}");
         }
         deezel_common::commands::EsploraCommands::TxRaw { txid, .. } => {
             let raw_tx = provider.get_tx_raw(&txid).await?;
@@ -378,7 +361,7 @@ async fn execute_esplora_command(
         }
         deezel_common::commands::EsploraCommands::TxMerkleblockProof { txid, .. } => {
             let proof = provider.get_tx_merkleblock_proof(&txid).await?;
-            println!("{}", proof);
+            println!("{proof}");
         }
         deezel_common::commands::EsploraCommands::TxOutspend { txid, index, raw } => {
             let outspend = provider.get_tx_outspend(&txid, index).await?;
@@ -399,12 +382,12 @@ async fn execute_esplora_command(
         deezel_common::commands::EsploraCommands::Broadcast { tx_hex, .. } => {
             let txid = provider.broadcast(&tx_hex).await?;
             println!("✅ Transaction broadcast successfully!");
-            println!("🔗 Transaction ID: {}", txid);
+            println!("🔗 Transaction ID: {txid}");
         }
         deezel_common::commands::EsploraCommands::PostTx { tx_hex, .. } => {
             let txid = provider.broadcast(&tx_hex).await?;
             println!("✅ Transaction posted successfully!");
-            println!("🔗 Transaction ID: {}", txid);
+            println!("🔗 Transaction ID: {txid}");
         }
         deezel_common::commands::EsploraCommands::Mempool { raw } => {
             let mempool = provider.get_mempool().await?;
@@ -452,9 +435,9 @@ async fn execute_ord_command(
                 let inscription = provider.get_inscription(&id).await?;
                 let json_value = serde_json::to_value(&inscription)?;
                 if let Some(s) = json_value.as_str() {
-                    println!("{}", s);
+                    println!("{s}");
                 } else {
-                    println!("{}", json_value);
+                    println!("{json_value}");
                 }
             } else {
                 let inscription = provider.get_inscription(&id).await?;
@@ -466,9 +449,9 @@ async fn execute_ord_command(
                 let inscriptions = provider.get_inscriptions_in_block(&hash).await?;
                 let json_value = serde_json::to_value(&inscriptions)?;
                 if let Some(s) = json_value.as_str() {
-                    println!("{}", s);
+                    println!("{s}");
                 } else {
-                    println!("{}", json_value);
+                    println!("{json_value}");
                 }
             } else {
                 let inscriptions = provider.get_inscriptions_in_block(&hash).await?;
@@ -486,9 +469,9 @@ async fn execute_ord_command(
                 let info = provider.get_ord_address_info(&address).await?;
                 let json_value = serde_json::to_value(&info)?;
                 if let Some(s) = json_value.as_str() {
-                    println!("{}", s);
+                    println!("{s}");
                 } else {
-                    println!("{}", json_value);
+                    println!("{json_value}");
                 }
             } else {
                 let info = provider.get_ord_address_info(&address).await?;
@@ -500,9 +483,9 @@ async fn execute_ord_command(
                 let info = provider.get_block_info(&query).await?;
                 let json_value = serde_json::to_value(&info)?;
                 if let Some(s) = json_value.as_str() {
-                    println!("{}", s);
+                    println!("{s}");
                 } else {
-                    println!("{}", json_value);
+                    println!("{json_value}");
                 }
             } else {
                 let info = provider.get_block_info(&query).await?;
@@ -522,9 +505,9 @@ async fn execute_ord_command(
                 let info = provider.get_ord_blocks().await?;
                 let json_value = serde_json::to_value(&info)?;
                 if let Some(s) = json_value.as_str() {
-                    println!("{}", s);
+                    println!("{s}");
                 } else {
-                    println!("{}", json_value);
+                    println!("{json_value}");
                 }
             } else {
                 let info = provider.get_ord_blocks().await?;
@@ -536,9 +519,9 @@ async fn execute_ord_command(
                 let children = provider.get_children(&id, page).await?;
                 let json_value = serde_json::to_value(&children)?;
                 if let Some(s) = json_value.as_str() {
-                    println!("{}", s);
+                    println!("{s}");
                 } else {
-                    println!("{}", json_value);
+                    println!("{json_value}");
                 }
             } else {
                 let children = provider.get_children(&id, page).await?;
@@ -561,9 +544,9 @@ async fn execute_ord_command(
                 let inscriptions = provider.get_inscriptions(page).await?;
                 let json_value = serde_json::to_value(&inscriptions)?;
                 if let Some(s) = json_value.as_str() {
-                    println!("{}", s);
+                    println!("{s}");
                 } else {
-                    println!("{}", json_value);
+                    println!("{json_value}");
                 }
             } else {
                 let inscriptions = provider.get_inscriptions(page).await?;
@@ -581,9 +564,9 @@ async fn execute_ord_command(
                 let output = provider.get_output(&outpoint).await?;
                 let json_value = serde_json::to_value(&output)?;
                 if let Some(s) = json_value.as_str() {
-                    println!("{}", s);
+                    println!("{s}");
                 } else {
-                    println!("{}", json_value);
+                    println!("{json_value}");
                 }
             } else {
                 let output = provider.get_output(&outpoint).await?;
@@ -595,9 +578,9 @@ async fn execute_ord_command(
                 let parents = provider.get_parents(&id, page).await?;
                 let json_value = serde_json::to_value(&parents)?;
                 if let Some(s) = json_value.as_str() {
-                    println!("{}", s);
+                    println!("{s}");
                 } else {
-                    println!("{}", json_value);
+                    println!("{json_value}");
                 }
             } else {
                 let parents = provider.get_parents(&id, page).await?;
@@ -609,9 +592,9 @@ async fn execute_ord_command(
                 let rune_info = provider.get_rune(&rune).await?;
                 let json_value = serde_json::to_value(&rune_info)?;
                 if let Some(s) = json_value.as_str() {
-                    println!("{}", s);
+                    println!("{s}");
                 } else {
-                    println!("{}", json_value);
+                    println!("{json_value}");
                 }
             } else {
                 let rune_info = provider.get_rune(&rune).await?;
@@ -623,9 +606,9 @@ async fn execute_ord_command(
                 let runes = provider.get_runes(page).await?;
                 let json_value = serde_json::to_value(&runes)?;
                 if let Some(s) = json_value.as_str() {
-                    println!("{}", s);
+                    println!("{s}");
                 } else {
-                    println!("{}", json_value);
+                    println!("{json_value}");
                 }
             } else {
                 let runes = provider.get_runes(page).await?;
@@ -637,9 +620,9 @@ async fn execute_ord_command(
                 let sat_info = provider.get_sat(sat).await?;
                 let json_value = serde_json::to_value(&sat_info)?;
                 if let Some(s) = json_value.as_str() {
-                    println!("{}", s);
+                    println!("{s}");
                 } else {
-                    println!("{}", json_value);
+                    println!("{json_value}");
                 }
             } else {
                 let sat_info = provider.get_sat(sat).await?;
@@ -651,9 +634,9 @@ async fn execute_ord_command(
                 let tx_info = provider.get_tx_info(&txid).await?;
                 let json_value = serde_json::to_value(&tx_info)?;
                 if let Some(s) = json_value.as_str() {
-                    println!("{}", s);
+                    println!("{s}");
                 } else {
-                    println!("{}", json_value);
+                    println!("{json_value}");
                 }
             } else {
                 let tx_info = provider.get_tx_info(&txid).await?;

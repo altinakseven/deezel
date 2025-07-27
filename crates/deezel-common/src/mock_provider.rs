@@ -1,4 +1,4 @@
-use crate::*;
+use crate::{alkanes::protorunes::{ProtoruneOutpointResponse, ProtoruneWalletResponse}, *};
 use crate::{Result, DeezelError};
 use async_trait::async_trait;
 use serde_json::Value as JsonValue;
@@ -52,7 +52,7 @@ impl JsonRpcProvider for MockProvider {
     async fn call(&self, _url: &str, method: &str, _params: JsonValue, _id: u64) -> Result<JsonValue> {
         self.responses.get(method)
             .cloned()
-            .ok_or_else(|| DeezelError::JsonRpc(format!("No mock response for method: {}", method)))
+            .ok_or_else(|| DeezelError::JsonRpc(format!("No mock response for method: {method}")))
     }
     
     async fn get_bytecode(&self, _block: &str, _tx: &str) -> Result<String> {
@@ -187,9 +187,9 @@ impl WalletProvider for MockProvider {
         let mut addresses = Vec::new();
         for i in 0..count {
             addresses.push(AddressInfo {
-                address: format!("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t{}", i),
+                address: format!("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t{i}"),
                 script_type: "p2wpkh".to_string(),
-                derivation_path: format!("m/84'/0'/0'/0/{}", i),
+                derivation_path: format!("m/84'/0'/0'/0/{i}"),
                 index: i,
                 used: false,
             });
@@ -259,7 +259,7 @@ impl WalletProvider for MockProvider {
     async fn broadcast_transaction(&self, tx_hex: String) -> Result<String> {
         let tx_bytes = hex::decode(&tx_hex).map_err(|e| DeezelError::Hex(e.to_string()))?;
         let tx: Transaction = bitcoin::consensus::deserialize(&tx_bytes).map_err(|e| DeezelError::Serialization(e.to_string()))?;
-        let txid = tx.txid();
+        let txid = tx.compute_txid();
         
         // Add the new outputs of this transaction to the UTXO set
         let mut utxos = self.utxos.lock().unwrap();
@@ -314,7 +314,7 @@ impl WalletProvider for MockProvider {
         let mut keys = HashMap::new();
         let private_key = PrivateKey::new(self.secret_key, self.network);
         keys.insert(self.internal_key, private_key);
-        psbt.sign(&keys, secp).map_err(|e| DeezelError::Other(format!("{:?}", e)))?;
+        psbt.sign(&keys, secp).map_err(|e| DeezelError::Other(format!("{e:?}")))?;
         Ok(psbt)
     }
     
@@ -370,7 +370,7 @@ impl BitcoinRpcProvider for MockProvider {
             .unwrap()
             .get(txid)
             .cloned()
-            .ok_or_else(|| DeezelError::JsonRpc(format!("No mock tx hex for txid: {}", txid)))
+            .ok_or_else(|| DeezelError::JsonRpc(format!("No mock tx hex for txid: {txid}")))
     }
     
     async fn get_block(&self, _hash: &str, _raw: bool) -> Result<JsonValue> {
@@ -420,12 +420,12 @@ impl MetashrewRpcProvider for MockProvider {
         Ok(serde_json::json!([]))
     }
     
-    async fn get_protorunes_by_address(&self, _address: &str) -> Result<JsonValue> {
-        Ok(serde_json::json!([]))
+    async fn get_protorunes_by_address(&self, _address: &str, _block_tag: Option<String>, _protocol_tag: u128) -> Result<ProtoruneWalletResponse> {
+        Ok(ProtoruneWalletResponse::default())
     }
     
-    async fn get_protorunes_by_outpoint(&self, _txid: &str, _vout: u32) -> Result<JsonValue> {
-        Ok(serde_json::json!({}))
+    async fn get_protorunes_by_outpoint(&self, _txid: &str, _vout: u32, _block_tag: Option<String>, _protocol_tag: u128) -> Result<ProtoruneOutpointResponse> {
+        Ok(ProtoruneOutpointResponse::default())
     }
 }
 
@@ -606,6 +606,7 @@ impl AlkanesProvider for MockProvider {
         &self,
         _address: &str,
         _block_tag: Option<String>,
+        _protocol_tag: u128,
     ) -> Result<alkanes::protorunes::ProtoruneWalletResponse> {
         Err(DeezelError::NotImplemented(
             "protorunes_by_address".to_string(),
@@ -616,6 +617,7 @@ impl AlkanesProvider for MockProvider {
         _txid: &str,
         _vout: u32,
         _block_tag: Option<String>,
+        _protocol_tag: u128,
     ) -> Result<alkanes::protorunes::ProtoruneOutpointResponse> {
         Err(DeezelError::NotImplemented(
             "protorunes_by_outpoint".to_string(),

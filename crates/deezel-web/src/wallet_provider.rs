@@ -199,7 +199,7 @@ impl InjectedWallet {
         
         // Get the wallet object from window
         let wallet_obj = js_sys::Reflect::get(&window, &JsValue::from_str(&self.info.injection_key))
-            .map_err(|e| DeezelError::Wallet(format!("Wallet not found: {:?}", e)))?;
+            .map_err(|e| DeezelError::Wallet(format!("Wallet not found: {e:?}")))?;
         
         if wallet_obj.is_undefined() {
             return Err(DeezelError::Wallet(format!("Wallet {} not available", self.info.name)));
@@ -207,27 +207,27 @@ impl InjectedWallet {
         
         // Get the method
         let method_fn = js_sys::Reflect::get(&wallet_obj, &JsValue::from_str(method))
-            .map_err(|e| DeezelError::Wallet(format!("Method {} not found: {:?}", method, e)))?;
+            .map_err(|e| DeezelError::Wallet(format!("Method {method} not found: {e:?}")))?;
         
         if !method_fn.is_function() {
-            return Err(DeezelError::Wallet(format!("Method {} is not a function", method)));
+            return Err(DeezelError::Wallet(format!("Method {method} is not a function")));
         }
         
         // Call the method
         let function = method_fn.dyn_into::<js_sys::Function>()
-            .map_err(|e| DeezelError::Wallet(format!("Failed to cast to function: {:?}", e)))?;
+            .map_err(|e| DeezelError::Wallet(format!("Failed to cast to function: {e:?}")))?;
         
         let result = function.apply(&wallet_obj, &js_sys::Array::from_iter(args.iter()))
-            .map_err(|e| DeezelError::Wallet(format!("Method call failed: {:?}", e)))?;
+            .map_err(|e| DeezelError::Wallet(format!("Method call failed: {e:?}")))?;
         
         // If result is a promise, await it
         if result.has_type::<js_sys::Promise>() {
             let promise = result.dyn_into::<js_sys::Promise>()
-                .map_err(|e| DeezelError::Wallet(format!("Failed to cast to promise: {:?}", e)))?;
+                .map_err(|e| DeezelError::Wallet(format!("Failed to cast to promise: {e:?}")))?;
             
             JsFuture::from(promise)
                 .await
-                .map_err(|e| DeezelError::Wallet(format!("Promise rejected: {:?}", e)))
+                .map_err(|e| DeezelError::Wallet(format!("Promise rejected: {e:?}")))
         } else {
             Ok(result)
         }
@@ -255,7 +255,7 @@ impl WalletBackend for InjectedWallet {
         
         // Parse the result to get account information
         let accounts_array = result.dyn_into::<js_sys::Array>()
-            .map_err(|e| DeezelError::Wallet(format!("Invalid accounts response: {:?}", e)))?;
+            .map_err(|e| DeezelError::Wallet(format!("Invalid accounts response: {e:?}")))?;
         
         if accounts_array.length() == 0 {
             return Err(DeezelError::Wallet("No accounts returned".to_string()));
@@ -288,7 +288,7 @@ impl WalletBackend for InjectedWallet {
         let result = self.call_method("getAccounts", &[]).await?;
         
         let accounts_array = result.dyn_into::<js_sys::Array>()
-            .map_err(|e| DeezelError::Wallet(format!("Invalid accounts response: {:?}", e)))?;
+            .map_err(|e| DeezelError::Wallet(format!("Invalid accounts response: {e:?}")))?;
         
         let mut accounts = Vec::new();
         for i in 0..accounts_array.length() {
@@ -350,24 +350,24 @@ impl WalletBackend for InjectedWallet {
             let options_obj = js_sys::Object::new();
             
             js_sys::Reflect::set(&options_obj, &"autoFinalized".into(), &JsValue::from_bool(opts.auto_finalized))
-                .map_err(|e| DeezelError::Wallet(format!("Failed to set options: {:?}", e)))?;
+                .map_err(|e| DeezelError::Wallet(format!("Failed to set options: {e:?}")))?;
             
             if let Some(to_sign) = opts.to_sign_inputs {
                 let to_sign_array = js_sys::Array::new();
                 for input in to_sign {
                     let input_obj = js_sys::Object::new();
                     js_sys::Reflect::set(&input_obj, &"index".into(), &JsValue::from_f64(input.index as f64))
-                        .map_err(|e| DeezelError::Wallet(format!("Failed to set input index: {:?}", e)))?;
+                        .map_err(|e| DeezelError::Wallet(format!("Failed to set input index: {e:?}")))?;
                     
                     if let Some(addr) = input.address {
                         js_sys::Reflect::set(&input_obj, &"address".into(), &JsValue::from_str(&addr))
-                            .map_err(|e| DeezelError::Wallet(format!("Failed to set input address: {:?}", e)))?;
+                            .map_err(|e| DeezelError::Wallet(format!("Failed to set input address: {e:?}")))?;
                     }
                     
                     to_sign_array.push(&input_obj);
                 }
                 js_sys::Reflect::set(&options_obj, &"toSignInputs".into(), &to_sign_array)
-                    .map_err(|e| DeezelError::Wallet(format!("Failed to set toSignInputs: {:?}", e)))?;
+                    .map_err(|e| DeezelError::Wallet(format!("Failed to set toSignInputs: {e:?}")))?;
             }
             
             vec![psbt_value, options_obj.into()]
@@ -390,7 +390,7 @@ impl WalletBackend for InjectedWallet {
         let args = if let Some(opts) = options {
             let options_obj = js_sys::Object::new();
             js_sys::Reflect::set(&options_obj, &"autoFinalized".into(), &JsValue::from_bool(opts.auto_finalized))
-                .map_err(|e| DeezelError::Wallet(format!("Failed to set options: {:?}", e)))?;
+                .map_err(|e| DeezelError::Wallet(format!("Failed to set options: {e:?}")))?;
             
             vec![psbts_array.into(), options_obj.into()]
         } else {
@@ -400,7 +400,7 @@ impl WalletBackend for InjectedWallet {
         let result = self.call_method("signPsbts", &args).await?;
         
         let result_array = result.dyn_into::<js_sys::Array>()
-            .map_err(|e| DeezelError::Wallet(format!("Invalid PSBTs signature response: {:?}", e)))?;
+            .map_err(|e| DeezelError::Wallet(format!("Invalid PSBTs signature response: {e:?}")))?;
         
         let mut signed_psbts = Vec::new();
         for i in 0..result_array.length() {
@@ -442,7 +442,7 @@ impl WalletBackend for InjectedWallet {
                 if let Some(balance_str) = result.as_string() {
                     balance_str.parse::<u64>()
                         .map(Some)
-                        .map_err(|e| DeezelError::Wallet(format!("Invalid balance format: {}", e)))
+                        .map_err(|e| DeezelError::Wallet(format!("Invalid balance format: {e}")))
                 } else if let Some(balance_num) = result.as_f64() {
                     Ok(Some(balance_num as u64))
                 } else {
@@ -467,12 +467,12 @@ impl WalletBackend for InjectedWallet {
         
         // Convert JsValue to JsonValue
         let result_str = js_sys::JSON::stringify(&result)
-            .map_err(|e| DeezelError::Wallet(format!("Failed to stringify inscriptions: {:?}", e)))?
+            .map_err(|e| DeezelError::Wallet(format!("Failed to stringify inscriptions: {e:?}")))?
             .as_string()
             .ok_or_else(|| DeezelError::Wallet("Invalid inscriptions response".to_string()))?;
         
         serde_json::from_str(&result_str)
-            .map_err(|e| DeezelError::Wallet(format!("Failed to parse inscriptions JSON: {}", e)))
+            .map_err(|e| DeezelError::Wallet(format!("Failed to parse inscriptions JSON: {e}")))
     }
 }
 
@@ -601,14 +601,14 @@ impl WalletConnector {
         let window = window().ok_or_else(|| DeezelError::Wallet("No window object".to_string()))?;
         
         let wallet_obj = js_sys::Reflect::get(&window, &JsValue::from_str(&wallet_info.injection_key))
-            .map_err(|e| DeezelError::Wallet(format!("Wallet not found: {:?}", e)))?;
+            .map_err(|e| DeezelError::Wallet(format!("Wallet not found: {e:?}")))?;
         
         if wallet_obj.is_undefined() {
             return Err(DeezelError::Wallet(format!("Wallet {} not available", wallet_info.name)));
         }
         
         let js_object = wallet_obj.dyn_into::<js_sys::Object>()
-            .map_err(|e| DeezelError::Wallet(format!("Invalid wallet object: {:?}", e)))?;
+            .map_err(|e| DeezelError::Wallet(format!("Invalid wallet object: {e:?}")))?;
         
         Ok(InjectedWallet::new(wallet_info, js_object))
     }
@@ -897,7 +897,7 @@ impl WalletProvider for BrowserWalletProvider {
             addresses.push(AddressInfo {
                 address: account.address.clone(),
                 script_type: account.address_type.clone(),
-                derivation_path: format!("m/84'/0'/0'/0/{}", i), // Estimated path
+                derivation_path: format!("m/84'/0'/0'/0/{i}"), // Estimated path
                 index: i as u32,
                 used: true, // Assume used since it's from the wallet
             });
@@ -1107,10 +1107,10 @@ impl WalletProvider for BrowserWalletProvider {
         
         // Parse the signed PSBT back
         let signed_psbt_bytes = hex::decode(&signed_psbt_hex)
-            .map_err(|e| DeezelError::Wallet(format!("Invalid signed PSBT hex: {}", e)))?;
+            .map_err(|e| DeezelError::Wallet(format!("Invalid signed PSBT hex: {e}")))?;
         
         Psbt::deserialize(&signed_psbt_bytes)
-            .map_err(|e| DeezelError::Wallet(format!("Failed to deserialize signed PSBT: {}", e)))
+            .map_err(|e| DeezelError::Wallet(format!("Failed to deserialize signed PSBT: {e}")))
     }
     
     async fn get_keypair(&self) -> Result<Keypair> {

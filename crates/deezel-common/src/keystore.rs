@@ -114,9 +114,9 @@ impl Keystore {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn from_file(path: &Path) -> Result<Self> {
         let data = std::fs::read_to_string(path)
-            .map_err(|e| DeezelError::Wallet(format!("Failed to read keystore file: {}", e)))?;
+            .map_err(|e| DeezelError::Wallet(format!("Failed to read keystore file: {e}")))?;
         serde_json::from_str(&data)
-            .map_err(|e| DeezelError::Wallet(format!("Failed to parse keystore: {}", e)))
+            .map_err(|e| DeezelError::Wallet(format!("Failed to parse keystore: {e}")))
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -132,7 +132,7 @@ impl Keystore {
     pub fn decrypt_mnemonic(&self, passphrase: &str) -> Result<String> {
         // 1. Dearmor the encrypted mnemonic
         let (_, _, encrypted_bytes) = deezel_asc::armor::reader::decode(self.encrypted_mnemonic.as_bytes())
-            .map_err(|e| DeezelError::Crypto(format!("Failed to dearmor mnemonic: {}", e)))?;
+            .map_err(|e| DeezelError::Crypto(format!("Failed to dearmor mnemonic: {e}")))?;
 
         // 2. Decode salt and nonce from hex
         let salt = hex::decode(&self.pbkdf2_params.salt)?;
@@ -145,11 +145,11 @@ impl Keystore {
         let decrypted_bytes = crate::crypto::decrypt(&encrypted_bytes, passphrase, &salt, &nonce)?;
 
         let mnemonic_str = String::from_utf8(decrypted_bytes)
-            .map_err(|e| DeezelError::Wallet(format!("Failed to convert decrypted data to string: {}", e)))?;
+            .map_err(|e| DeezelError::Wallet(format!("Failed to convert decrypted data to string: {e}")))?;
 
         // 4. Validate that it's a valid mnemonic before returning
         Mnemonic::from_phrase(&mnemonic_str, bip39::Language::English)
-            .map_err(|e| DeezelError::Wallet(format!("Decrypted data is not a valid mnemonic: {}", e)))?;
+            .map_err(|e| DeezelError::Wallet(format!("Decrypted data is not a valid mnemonic: {e}")))?;
 
         Ok(mnemonic_str)
     }
@@ -166,7 +166,7 @@ impl Keystore {
         let mut addresses = Vec::new();
 
         for i in start_index..start_index + count {
-            let path_str = format!("m/{}/{}", chain, i);
+            let path_str = format!("m/{chain}/{i}");
             let path = DerivationPath::from_str(&path_str)?;
             let derived_xpub = xpub.derive_pub(&secp, &path)?;
             let (internal_key, _) = derived_xpub.public_key.x_only_public_key();
@@ -203,13 +203,13 @@ use core::str::FromStr;
 /// Derives a Bitcoin address from a mnemonic and a derivation path.
 pub fn derive_address(mnemonic_str: &str, path: &DerivationPath, network: Network) -> Result<Address> {
     let mnemonic = Mnemonic::from_phrase(mnemonic_str, bip39::Language::English)
-        .map_err(|e| DeezelError::Wallet(format!("Invalid mnemonic: {}", e)))?;
+        .map_err(|e| DeezelError::Wallet(format!("Invalid mnemonic: {e}")))?;
     let seed = Seed::new(&mnemonic, "");
     let secp = Secp256k1::<All>::new();
     let root = Xpriv::new_master(network, seed.as_bytes())
-        .map_err(|e| DeezelError::Wallet(format!("Failed to create master key: {}", e)))?;
+        .map_err(|e| DeezelError::Wallet(format!("Failed to create master key: {e}")))?;
     let derived_xpriv = root.derive_priv(&secp, path)
-        .map_err(|e| DeezelError::Wallet(format!("Failed to derive private key: {}", e)))?;
+        .map_err(|e| DeezelError::Wallet(format!("Failed to derive private key: {e}")))?;
     let keypair = derived_xpriv.to_keypair(&secp);
     let (internal_key, _parity) = keypair.public_key().x_only_public_key();
     
@@ -221,12 +221,12 @@ pub fn derive_address(mnemonic_str: &str, path: &DerivationPath, network: Networ
 pub fn derive_address_from_public_key(master_public_key: &str, path: &DerivationPath, network: Network) -> Result<Address> {
     let secp = Secp256k1::<All>::new();
     let root = Xpub::from_str(master_public_key)
-        .map_err(|e| DeezelError::Wallet(format!("Invalid master public key: {}", e)))?;
+        .map_err(|e| DeezelError::Wallet(format!("Invalid master public key: {e}")))?;
 
     // We can only derive non-hardened keys from a public key.
     // The path provided should be relative to the master public key and contain only non-hardened components.
     let derived_xpub = root.derive_pub(&secp, path)
-        .map_err(|e| DeezelError::Wallet(format!("Failed to derive public key: {}. Note: Hardened derivation from a public key is not possible.", e)))?;
+        .map_err(|e| DeezelError::Wallet(format!("Failed to derive public key: {e}. Note: Hardened derivation from a public key is not possible.")))?;
     
     let (internal_key, _parity) = derived_xpub.public_key.x_only_public_key();
     
@@ -259,7 +259,7 @@ impl DeezelWallet {
     /// Derives and returns a P2TR address for a given index.
     pub fn get_address(&self, index: u32) -> Result<Address> {
         // Using a standard P2TR derivation path for regtest (coin_type = 1)
-        let path_str = format!("m/86'/1'/0'/0/{}", index);
+        let path_str = format!("m/86'/1'/0'/0/{index}");
         let path = DerivationPath::from_str(&path_str)?;
         derive_address(self.mnemonic.phrase(), &path, self.network)
     }

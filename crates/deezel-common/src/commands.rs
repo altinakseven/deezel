@@ -51,6 +51,10 @@ pub struct Args {
     #[arg(long)]
     pub passphrase: Option<String>,
 
+    /// HD derivation path
+    #[arg(long)]
+    pub hd_path: Option<String>,
+
     /// Keystore file path (alternative to wallet-file and passphrase)
     #[arg(long)]
     pub keystore: Option<String>,

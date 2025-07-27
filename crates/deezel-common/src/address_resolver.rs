@@ -136,7 +136,7 @@ impl<P: DeezelProvider> AddressResolver<P> {
                         .map_err(|_| DeezelError::Parse("Invalid address index".to_string()))?;
                     Ok(AddressIdentifier::SelfWallet { address_type, index })
                 } else {
-                    Err(DeezelError::Parse(format!("Unknown identifier format: {}", identifier)))
+                    Err(DeezelError::Parse(format!("Unknown identifier format: {identifier}")))
                 }
             },
             3 => {
@@ -147,10 +147,10 @@ impl<P: DeezelProvider> AddressResolver<P> {
                         .map_err(|_| DeezelError::Parse("Invalid address index".to_string()))?;
                     Ok(AddressIdentifier::SelfWallet { address_type, index })
                 } else {
-                    Err(DeezelError::Parse(format!("Unknown identifier format: {}", identifier)))
+                    Err(DeezelError::Parse(format!("Unknown identifier format: {identifier}")))
                 }
             },
-            _ => Err(DeezelError::Parse(format!("Invalid identifier format: {}", identifier))),
+            _ => Err(DeezelError::Parse(format!("Invalid identifier format: {identifier}"))),
         }
     }
     
@@ -268,7 +268,7 @@ impl StandaloneAddressResolver {
         self.addresses.get(identifier)
             .cloned()
             .ok_or_else(|| DeezelError::AddressResolution(
-                format!("Unknown address identifier: {}", identifier)
+                format!("Unknown address identifier: {identifier}")
             ))
     }
     
