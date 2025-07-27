@@ -153,10 +153,21 @@ impl SystemWallet for SystemDeezel {
            WalletCommands::Create { mnemonic, passphrase } => {
                println!("🔐 Creating encrypted keystore...");
 
+               let final_passphrase = if let Some(pass) = passphrase {
+                   pass
+               } else {
+                   let pass = rpassword::prompt_password("Enter passphrase: ")?;
+                   let confirmation = rpassword::prompt_password("Confirm passphrase: ")?;
+                   if pass != confirmation {
+                       return Err(DeezelError::Wallet("Passphrases do not match".to_string()));
+                   }
+                   pass
+               };
+
                // Create keystore parameters, including the passphrase from CLI args
                let keystore_params = KeystoreCreateParams {
                    mnemonic: mnemonic.clone(),
-                   passphrase: passphrase.clone(),
+                   passphrase: Some(final_passphrase),
                    network: provider.get_network(),
                    address_count: 5, // This parameter is now unused but kept for compatibility
                    hd_path: None,

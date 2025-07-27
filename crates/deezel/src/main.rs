@@ -20,18 +20,13 @@ use pretty_print::*;
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
     // Parse command-line arguments
-    let mut args = DeezelCommands::parse();
+    let args = DeezelCommands::parse();
 
     // Initialize logger
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .init();
 
     // Handle keystore logic
-    if let Some(_wallet_path) = &args.wallet_file {
-        if args.passphrase.is_none() {
-            args.passphrase = Some(rpassword::prompt_password("Enter passphrase: ")?);
-        }
-    }
 
     // Create a new SystemDeezel instance
     let mut system = SystemDeezel::new(&deezel_common::commands::Args::from(&args)).await?;
