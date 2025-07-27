@@ -6,15 +6,10 @@
 use deezel_common::alkanes::types::{
     AlkaneMetadata, AlkanesInspectResult, FuzzingResults, ReadyToSignRevealTx, ReadyToSignTx,
 };
-use tabled::{settings::Style, Table};
-
 /// Pretty-prints the analysis for a transaction that is ready to be signed.
 pub fn pretty_print_ready_to_sign(state: &ReadyToSignTx) {
     println!("Transaction Preview:");
-    println!(
-        "{}",
-        Table::new(vec![state.analysis.clone()]).with(Style::markdown())
-    );
+    state.analysis.pretty_print();
 
     if let Some(inspection_result) = &state.inspection_result {
         pretty_print_inspection_preview(inspection_result);
@@ -24,10 +19,7 @@ pub fn pretty_print_ready_to_sign(state: &ReadyToSignTx) {
 /// Pretty-prints the analysis for a reveal transaction that is ready to be signed.
 pub fn pretty_print_reveal_analysis(state: &ReadyToSignRevealTx) {
     println!("Transaction Preview:");
-    println!(
-        "{}",
-        Table::new(vec![state.analysis.clone()]).with(Style::markdown())
-    );
+    state.analysis.pretty_print();
 
     if let Some(inspection_result) = &state.inspection_result {
         pretty_print_inspection_preview(inspection_result);

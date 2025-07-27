@@ -14,6 +14,9 @@ pub struct DeezelCommands {
     /// Path to the keystore file
     #[arg(long)]
     pub keystore: Option<String>,
+    /// Sandshrew RPC URL
+    #[arg(long)]
+    pub sandshrew_rpc_url: Option<String>,
     /// Bitcoin RPC URL
     #[arg(long)]
     pub bitcoin_rpc_url: Option<String>,
@@ -40,6 +43,9 @@ pub enum Commands {
     /// Bitcoin Core RPC commands
     #[command(subcommand)]
     Bitcoind(BitcoindCommands),
+    /// Esplora API commands
+    #[command(subcommand)]
+    Esplora(EsploraCommands),
     /// Ord subcommands
     #[command(subcommand)]
     Ord(OrdCommands),
@@ -59,101 +65,229 @@ pub enum Commands {
 
 /// Bitcoin Core RPC subcommands
 #[derive(Subcommand, Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum BitcoindCommands {
-    /// Get information about the blockchain state.
-    GetBlockchainInfo {
-        /// Show raw JSON output
-        #[arg(long)]
-        raw: bool,
-    },
-    /// Get information about the network.
-    GetNetworkInfo {
-        /// Show raw JSON output
-        #[arg(long)]
-        raw: bool,
-    },
-    /// Get a raw transaction from the mempool or a block.
-    GetRawTransaction {
-        /// The transaction id
-        txid: String,
-        /// The block hash
-        #[arg(long)]
-        block_hash: Option<String>,
-        /// Show raw JSON output
-        #[arg(long)]
-        raw: bool,
-    },
-    /// Get a block from the blockchain.
-    GetBlock {
-        /// The block hash
-        hash: String,
-        /// Show raw JSON output
-        #[arg(long)]
-        raw: bool,
-    },
-    /// Get the hash of the block at a given height.
-    GetBlockHash {
-        /// The block height
-        height: u64,
-    },
-    /// Get a block header from the blockchain.
-    GetBlockHeader {
-        /// The block hash
-        hash: String,
-        /// Show raw JSON output
-        #[arg(long)]
-        raw: bool,
-    },
-    /// Get statistics about a block.
-    GetBlockStats {
-        /// The block hash
-        hash: String,
-        /// Show raw JSON output
-        #[arg(long)]
-        raw: bool,
-    },
-    /// Get the tips of all chains.
-    GetChainTips {
-        /// Show raw JSON output
-        #[arg(long)]
-        raw: bool,
-    },
-    /// Get information about the mempool.
-    GetMempoolInfo {
-        /// Show raw JSON output
-        #[arg(long)]
-        raw: bool,
-    },
-    /// Get the raw mempool.
-    GetRawMempool {
-        /// Show raw JSON output
-        #[arg(long)]
-        raw: bool,
-    },
-    /// Get a transaction output.
-    GetTxOut {
-        /// The transaction id
-        txid: String,
-        /// The vout
-        vout: u32,
-        /// Include mempool
-        #[arg(long)]
-        include_mempool: bool,
-        /// Show raw JSON output
-        #[arg(long)]
-        raw: bool,
-    },
-    /// Send a raw transaction.
-    SendRawTransaction {
-        /// The raw transaction hex
-        tx_hex: String,
-    },
+    /// Get current block count
+    Getblockcount,
     /// Generate blocks to an address (regtest only)
-    GenerateToAddress {
+    Generatetoaddress {
         /// Number of blocks to generate
         nblocks: u32,
         /// Address to generate to
         address: String,
+    },
+    Getblockchaininfo {
+        #[arg(long)]
+        raw: bool,
+    },
+    Getnetworkinfo {
+        #[arg(long)]
+        raw: bool,
+    },
+    Getrawtransaction {
+        txid: String,
+        #[arg(long)]
+        block_hash: Option<String>,
+        #[arg(long)]
+        raw: bool,
+    },
+    Getblock {
+        hash: String,
+        #[arg(long)]
+        raw: bool,
+    },
+    Getblockhash {
+        height: u64,
+    },
+    Getblockheader {
+        hash: String,
+        #[arg(long)]
+        raw: bool,
+    },
+    Getblockstats {
+        hash: String,
+        #[arg(long)]
+        raw: bool,
+    },
+    Getchaintips {
+        #[arg(long)]
+        raw: bool,
+    },
+    Getmempoolinfo {
+        #[arg(long)]
+        raw: bool,
+    },
+    Getrawmempool {
+        #[arg(long)]
+        raw: bool,
+    },
+    Gettxout {
+        txid: String,
+        vout: u32,
+        #[arg(long)]
+        include_mempool: bool,
+        #[arg(long)]
+        raw: bool,
+    },
+    Sendrawtransaction {
+        tx_hex: String,
+    },
+}
+
+/// Esplora API subcommands
+#[derive(Subcommand, Debug, Clone, Serialize, Deserialize)]
+pub enum EsploraCommands {
+    BlocksTipHash {
+        #[arg(long)]
+        raw: bool,
+    },
+    BlocksTipHeight {
+        #[arg(long)]
+        raw: bool,
+    },
+    Blocks {
+        start_height: Option<u64>,
+        #[arg(long)]
+        raw: bool,
+    },
+    BlockHeight {
+        height: u64,
+        #[arg(long)]
+        raw: bool,
+    },
+    Block {
+        hash: String,
+        #[arg(long)]
+        raw: bool,
+    },
+    BlockStatus {
+        hash: String,
+        #[arg(long)]
+        raw: bool,
+    },
+    BlockTxids {
+        hash: String,
+        #[arg(long)]
+        raw: bool,
+    },
+    BlockHeader {
+        hash: String,
+        #[arg(long)]
+        raw: bool,
+    },
+    BlockRaw {
+        hash: String,
+        #[arg(long)]
+        raw: bool,
+    },
+    BlockTxid {
+        hash: String,
+        index: u32,
+        #[arg(long)]
+        raw: bool,
+    },
+    BlockTxs {
+        hash: String,
+        start_index: Option<u32>,
+        #[arg(long)]
+        raw: bool,
+    },
+    Address {
+        params: String,
+        #[arg(long)]
+        raw: bool,
+    },
+    AddressTxs {
+        params: String,
+        #[arg(long)]
+        raw: bool,
+    },
+    AddressTxsChain {
+        params: String,
+        #[arg(long)]
+        raw: bool,
+    },
+    AddressTxsMempool {
+        address: String,
+        #[arg(long)]
+        raw: bool,
+    },
+    AddressUtxo {
+        address: String,
+        #[arg(long)]
+        raw: bool,
+    },
+    AddressPrefix {
+        prefix: String,
+        #[arg(long)]
+        raw: bool,
+    },
+    Tx {
+        txid: String,
+        #[arg(long)]
+        raw: bool,
+    },
+    TxHex {
+        txid: String,
+        #[arg(long)]
+        raw: bool,
+    },
+    TxRaw {
+        txid: String,
+        #[arg(long)]
+        raw: bool,
+    },
+    TxStatus {
+        txid: String,
+        #[arg(long)]
+        raw: bool,
+    },
+    TxMerkleProof {
+        txid: String,
+        #[arg(long)]
+        raw: bool,
+    },
+    TxMerkleblockProof {
+        txid: String,
+        #[arg(long)]
+        raw: bool,
+    },
+    TxOutspend {
+        txid: String,
+        index: u32,
+        #[arg(long)]
+        raw: bool,
+    },
+    TxOutspends {
+        txid: String,
+        #[arg(long)]
+        raw: bool,
+    },
+    Broadcast {
+        tx_hex: String,
+        #[arg(long)]
+        raw: bool,
+    },
+    PostTx {
+        tx_hex: String,
+        #[arg(long)]
+        raw: bool,
+    },
+    Mempool {
+        #[arg(long)]
+        raw: bool,
+    },
+    MempoolTxids {
+        #[arg(long)]
+        raw: bool,
+    },
+    MempoolRecent {
+        #[arg(long)]
+        raw: bool,
+    },
+    FeeEstimates {
+        #[arg(long)]
+        raw: bool,
     },
 }
 
@@ -307,6 +441,14 @@ pub enum Alkanes {
         #[arg(long)]
         raw: bool,
     },
+    /// Trace an alkanes transaction
+    Trace {
+        /// The outpoint of the transaction to trace
+        outpoint: String,
+        /// Show raw JSON output
+        #[arg(long)]
+        raw: bool,
+    },
 }
 
 /// Runestone subcommands
@@ -445,6 +587,12 @@ impl From<BitcoindCommands> for deezel_common::commands::BitcoindCommands {
     }
 }
 
+impl From<EsploraCommands> for deezel_common::commands::EsploraCommands {
+    fn from(cmd: EsploraCommands) -> Self {
+        serde_json::from_value(serde_json::to_value(cmd).unwrap()).unwrap()
+    }
+}
+
 impl From<OrdCommands> for deezel_common::commands::OrdCommands {
     fn from(cmd: OrdCommands) -> Self {
         serde_json::from_value(serde_json::to_value(cmd).unwrap()).unwrap()
@@ -463,7 +611,7 @@ impl From<&DeezelCommands> for deezel_common::commands::Args {
             keystore: args.keystore.clone(),
             wallet_file: None,
             passphrase: None,
-            sandshrew_rpc_url: None,
+            sandshrew_rpc_url: args.sandshrew_rpc_url.clone(),
             bitcoin_rpc_url: args.bitcoin_rpc_url.clone(),
             esplora_url: args.esplora_api_url.clone(),
             ord_url: args.ord_server_url.clone(),

@@ -26,8 +26,7 @@ pub struct Trace {
 /// Represents a single call within a transaction trace.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Call {
-    #[serde(with = "hex_serde")]
-    pub caller: Vec<u8>,
+    pub caller: ContractId,
     #[serde(rename = "id")]
     pub contract_id: Option<ContractId>,
     #[serde(rename = "inputData", with = "hex_serde")]
@@ -38,17 +37,58 @@ pub struct Call {
 }
 
 /// Represents a contract identifier (block and transaction index).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct ContractId {
-    pub block: Option<U64>,
-    pub tx: Option<U64>,
+    pub block: Option<U128>,
+    pub tx: Option<U128>,
 }
 
 /// Represents an event emitted during a call.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Event {
-    #[serde(with = "hex_serde")]
-    pub data: Vec<u8>,
+#[serde(untagged)]
+pub enum Event {
+    Enter(EnterContext),
+    Exit(ExitContext),
+    Create(Create),
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct EnterContext {
+    pub call_type: String,
+    pub context: TraceContext,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ExitContext {
+    pub status: String,
+    // Omitting response for now as it's complex and not immediately needed for display
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Create {
+    pub new_alkane: ContractId,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TraceContext {
+    pub inner: Context,
+    pub fuel: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Context {
+    pub myself: ContractId,
+    pub caller: ContractId,
+    pub inputs: Vec<U128>,
+    pub vout: u32,
+    pub incoming_alkanes: Vec<AlkaneTransfer>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AlkaneTransfer {
+    pub id: ContractId,
+    pub value: U128,
 }
 
 /// Represents a 64-bit unsigned integer, used for block and tx numbers.
@@ -58,7 +98,7 @@ pub struct U64 {
 }
 
 /// Represents a 128-bit unsigned integer, used for token values.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct U128 {
     pub lo: u64,
     pub hi: u64,
@@ -66,24 +106,154 @@ pub struct U128 {
 
 impl fmt::Display for Trace {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "Trace:")?;
         for (i, call) in self.calls.iter().enumerate() {
-            writeln!(f, "  Call {}:", i)?;
-            writeln!(f, "    Caller: {}", hex::encode(&call.caller))?;
+            writeln!(f, "Call {}:", i)?;
+            if let (Some(b), Some(t)) = (call.caller.block.as_ref(), call.caller.tx.as_ref()) {
+                writeln!(f, "  Caller: {}.{}", b.lo, t.lo)?;
+            }
             if let Some(id) = &call.contract_id {
-                writeln!(f, "    Contract: {}:{}", id.block.as_ref().map_or(0, |b| b.lo), id.tx.as_ref().map_or(0, |t| t.lo))?;
+                 if let (Some(b), Some(t)) = (id.block.as_ref(), id.tx.as_ref()) {
+                    writeln!(f, "  Contract: {}.{}", b.lo, t.lo)?;
+                }
             }
-            writeln!(f, "    Input Data: {}", hex::encode(&call.input_data))?;
+            writeln!(f, "  Input Data: {}", hex::encode(&call.input_data))?;
             if let Some(value) = &call.value {
-                 writeln!(f, "    Value: {}", value.lo)?;
+                 writeln!(f, "  Value: hi: {}, lo: {}", value.hi, value.lo)?;
             }
-            writeln!(f, "    Events:")?;
+            writeln!(f, "  Events:")?;
             for (j, event) in call.events.iter().enumerate() {
-                writeln!(f, "      Event {}:", j)?;
-                writeln!(f, "        Data: {}", hex::encode(&event.data))?;
+                writeln!(f, "    Event {}: {:?}", j, event)?;
             }
         }
         Ok(())
+    }
+}
+
+impl From<alkanes_support::proto::alkanes::Trace> for Trace {
+    fn from(trace: alkanes_support::proto::alkanes::Trace) -> Self {
+        let calls = trace.trace.iter().map(|c| c.clone().into()).collect();
+        Self { calls }
+    }
+}
+
+impl From<alkanes_support::proto::alkanes::AlkanesTrace> for Call {
+    fn from(trace: alkanes_support::proto::alkanes::AlkanesTrace) -> Self {
+        let mut caller = ContractId::default();
+        let mut contract_id = None;
+        let mut input_data = Vec::new();
+        let mut value = None;
+
+        // The first event is expected to be EnterContext, which contains the call details
+        if let Some(first_event) = trace.events.first() {
+            if let Some(alkanes_support::proto::alkanes::alkanes_trace_event::Event::EnterContext(enter_context)) = &first_event.event {
+                let trace_ctx = enter_context.context.get_or_default();
+                let ctx = trace_ctx.inner.get_or_default();
+                caller = ctx.caller.get_or_default().clone().into();
+                contract_id = Some(ctx.myself.get_or_default().clone().into());
+                
+                // Extract input data
+                input_data = ctx.inputs.iter().flat_map(|u| {
+                    let val: u128 = (u.hi as u128) << 64 | u.lo as u128;
+                    val.to_le_bytes().to_vec()
+                }).collect();
+
+                // Extract value from the first incoming alkane transfer
+                if let Some(transfer) = ctx.incoming_alkanes.first() {
+                    value = transfer.value.as_ref().map(|v| v.clone().into());
+                }
+            }
+        }
+
+
+        Self {
+            caller,
+            contract_id,
+            input_data,
+            value,
+            events: trace.events.into_iter().filter_map(|e| e.event).map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<alkanes_support::proto::alkanes::alkanes_trace_event::Event> for Event {
+    fn from(event: alkanes_support::proto::alkanes::alkanes_trace_event::Event) -> Self {
+        match event {
+            alkanes_support::proto::alkanes::alkanes_trace_event::Event::EnterContext(e) => Event::Enter(e.into()),
+            alkanes_support::proto::alkanes::alkanes_trace_event::Event::ExitContext(e) => Event::Exit(e.into()),
+            alkanes_support::proto::alkanes::alkanes_trace_event::Event::CreateAlkane(e) => Event::Create(e.into()),
+            _ => Event::Unknown,
+        }
+    }
+}
+
+impl From<alkanes_support::proto::alkanes::AlkanesEnterContext> for EnterContext {
+    fn from(e: alkanes_support::proto::alkanes::AlkanesEnterContext) -> Self {
+        Self {
+            call_type: format!("{:?}", e.call_type),
+            context: e.context.into_option().unwrap().into(),
+        }
+    }
+}
+
+impl From<alkanes_support::proto::alkanes::AlkanesExitContext> for ExitContext {
+    fn from(e: alkanes_support::proto::alkanes::AlkanesExitContext) -> Self {
+        Self {
+            status: format!("{:?}", e.status),
+        }
+    }
+}
+
+impl From<alkanes_support::proto::alkanes::AlkanesCreate> for Create {
+    fn from(e: alkanes_support::proto::alkanes::AlkanesCreate) -> Self {
+        Self {
+            new_alkane: e.new_alkane.into_option().unwrap().into(),
+        }
+    }
+}
+
+impl From<alkanes_support::proto::alkanes::TraceContext> for TraceContext {
+    fn from(t: alkanes_support::proto::alkanes::TraceContext) -> Self {
+        Self {
+            inner: t.inner.into_option().unwrap().into(),
+            fuel: t.fuel,
+        }
+    }
+}
+
+impl From<alkanes_support::proto::alkanes::Context> for Context {
+    fn from(c: alkanes_support::proto::alkanes::Context) -> Self {
+        Self {
+            myself: c.myself.into_option().unwrap().into(),
+            caller: c.caller.into_option().unwrap().into(),
+            inputs: c.inputs.into_iter().map(Into::into).collect(),
+            vout: c.vout,
+            incoming_alkanes: c.incoming_alkanes.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<alkanes_support::proto::alkanes::AlkaneTransfer> for AlkaneTransfer {
+    fn from(t: alkanes_support::proto::alkanes::AlkaneTransfer) -> Self {
+        Self {
+            id: t.id.into_option().unwrap().into(),
+            value: t.value.into_option().unwrap().into(),
+        }
+    }
+}
+
+
+impl From<alkanes_support::proto::alkanes::AlkaneId> for ContractId {
+    fn from(id: alkanes_support::proto::alkanes::AlkaneId) -> Self {
+        Self {
+            block: id.block.into_option().map(Into::into),
+            tx: id.tx.into_option().map(Into::into),
+        }
+    }
+}
+
+impl From<alkanes_support::proto::alkanes::Uint128> for U128 {
+    fn from(u: alkanes_support::proto::alkanes::Uint128) -> Self {
+        Self { lo: u.lo, hi: u.hi }
     }
 }
 

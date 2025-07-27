@@ -6,7 +6,6 @@
 //! utilize alkanes on the backend.
 
 use anyhow::{anyhow, Context};
-use std::str::FromStr;
 use deezel_common::{Result, DeezelError};
 use async_trait::async_trait;
 use deezel_common::provider::ConcreteProvider;
@@ -87,24 +86,11 @@ impl SystemDeezel {
                 .context("Failed to create wallet directory")?;
         }
 
-        // Implement the new URL selection logic
-        let sandshrew_rpc_url = args.sandshrew_rpc_url.clone().unwrap_or_else(|| {
-            match args.provider.as_str() {
-                "mainnet" => "https://mainnet.sandshrew.io/v2/lasereyes".to_string(),
-                "signet" => "https://signet.sandshrew.io/v2/lasereyes".to_string(),
-                "regtest" => "http://localhost:18888".to_string(),
-                _ => "http://localhost:18888".to_string(), // Default for unknown providers
-            }
-        });
-
-        let bitcoin_rpc_url = args.bitcoin_rpc_url.clone().unwrap_or_else(|| sandshrew_rpc_url.clone());
-        let metashrew_rpc_url = args.metashrew_rpc_url.clone().unwrap_or_else(|| sandshrew_rpc_url.clone());
-
         // Create provider with the resolved URLs
         let mut provider = ConcreteProvider::new(
-            bitcoin_rpc_url,
-            metashrew_rpc_url,
-            sandshrew_rpc_url,
+            args.bitcoin_rpc_url.clone(),
+            args.metashrew_rpc_url.clone().unwrap_or_else(|| "http://localhost:18888".to_string()),
+            args.sandshrew_rpc_url.clone(),
             args.esplora_url.clone(),
             args.provider.clone(),
             Some(std::path::PathBuf::from(&wallet_file)),
@@ -1932,32 +1918,3 @@ fn expand_tilde(path: &str) -> Result<String> {
 
 
 
-/// Derives a new, unused address from the keystore.
-/// This is useful for mining rewards to avoid address reuse.
-async fn get_new_address(provider: &ConcreteProvider) -> anyhow::Result<String> {
-    let keystore = provider.get_keystore().ok_or_else(|| anyhow!("Keystore not loaded"))?;
-    let network = provider.get_network();
-    
-    // For simplicity, we'll just derive a new P2TR address from the receive chain.
-    // A more robust implementation might track used addresses.
-    // We'll derive from a high, likely unused index. A better way would be to track the last used index.
-    let last_used_index = provider.get_last_used_address_index().await.unwrap_or(0);
-    let new_index = last_used_index + 1;
-
-    let master_xpub_str = &keystore.account_xpub;
-    let master_xpub = bitcoin::bip32::Xpub::from_str(master_xpub_str)
-        .context("Failed to parse master xpub")?;
-    
-    let secp = bitcoin::secp256k1::Secp256k1::new();
-    
-    let new_address = KeystoreManager::new().derive_single_address(
-        &master_xpub,
-        &secp,
-        network,
-        "p2tr", // Default to P2TR for mining rewards
-        0,      // Receive chain
-        new_index,
-    )?;
-
-    Ok(new_address.address)
-}

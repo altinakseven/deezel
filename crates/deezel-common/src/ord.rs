@@ -33,7 +33,7 @@ use bitcoin::{
     ScriptBuf, TxMerkleNode, Txid,
 };
 use alloc::{
-    string::{String, ToString},
+    string::{String},
     vec::Vec,
     collections::BTreeMap,
 };
@@ -44,8 +44,6 @@ use crate::vendored_ord::{InscriptionId, SpacedRune};
 use crate::vendored_ord::{InscriptionId, SpacedRune};
 use ordinals::{Rarity, Sat, SatPoint};
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "native-deps")]
-use tabled::Tabled;
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 pub struct Block {
@@ -55,7 +53,6 @@ pub struct Block {
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
-#[cfg_attr(feature = "native-deps", derive(Tabled))]
 pub struct BlockInfo {
     pub hash: BlockHash,
     pub confirmations: i32,
@@ -76,10 +73,8 @@ pub struct BlockInfo {
     #[serde(rename = "nTx")]
     pub n_tx: u32,
     #[serde(rename = "previousblockhash")]
-    #[cfg_attr(feature = "native-deps", tabled(display_with = "display_option"))]
     pub previous_block_hash: Option<BlockHash>,
     #[serde(rename = "nextblockhash")]
-    #[cfg_attr(feature = "native-deps", tabled(display_with = "display_option"))]
     pub next_block_hash: Option<BlockHash>,
 }
 
@@ -112,40 +107,26 @@ pub struct ParentInscriptions {
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
-#[cfg_attr(feature = "native-deps", derive(Tabled))]
 pub struct Inscription {
-    #[cfg_attr(feature = "native-deps", tabled(display_with = "display_option"))]
     pub address: Option<String>,
-    #[cfg_attr(feature = "native-deps", tabled(display_with = "display_vec"))]
     pub charms: Vec<Charm>,
     pub child_count: u64,
-    #[cfg_attr(feature = "native-deps", tabled(skip))]
     pub children: Vec<InscriptionId>,
-    #[cfg_attr(feature = "native-deps", tabled(display_with = "display_option"))]
     pub content_length: Option<usize>,
-    #[cfg_attr(feature = "native-deps", tabled(display_with = "display_option"))]
     pub content_type: Option<String>,
-    #[cfg_attr(feature = "native-deps", tabled(display_with = "display_option"))]
     pub effective_content_type: Option<String>,
     pub fee: u64,
     pub height: u32,
     pub id: InscriptionId,
-    #[cfg_attr(feature = "native-deps", tabled(display_with = "display_option"))]
     pub next: Option<InscriptionId>,
     pub number: i32,
-    #[cfg_attr(feature = "native-deps", tabled(skip))]
     pub parents: Vec<InscriptionId>,
-    #[cfg_attr(feature = "native-deps", tabled(display_with = "display_option"))]
     pub previous: Option<InscriptionId>,
-    #[cfg_attr(feature = "native-deps", tabled(display_with = "display_option"))]
     pub rune: Option<SpacedRune>,
-    #[cfg_attr(feature = "native-deps", tabled(display_with = "display_option"))]
     pub sat: Option<Sat>,
     pub satpoint: SatPoint,
     pub timestamp: i64,
-    #[cfg_attr(feature = "native-deps", tabled(display_with = "display_option"))]
     pub value: Option<u64>,
-    #[cfg_attr(feature = "native-deps", tabled(display_with = "display_option"))]
     pub metaprotocol: Option<String>,
 }
 
@@ -168,16 +149,13 @@ pub struct InscriptionRecursive {
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
-#[cfg_attr(feature = "native-deps", derive(Tabled))]
 pub struct RelativeInscriptionRecursive {
-    #[cfg_attr(feature = "native-deps", tabled(display_with = "display_vec"))]
     pub charms: Vec<Charm>,
     pub fee: u64,
     pub height: u32,
     pub id: InscriptionId,
     pub number: i32,
     pub output: OutPoint,
-    #[cfg_attr(feature = "native-deps", tabled(display_with = "display_option"))]
     pub sat: Option<Sat>,
     pub satpoint: SatPoint,
     pub timestamp: i64,
@@ -199,18 +177,13 @@ pub struct UtxoRecursive {
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
-#[cfg_attr(feature = "native-deps", derive(Tabled))]
 pub struct Output {
-    #[cfg_attr(feature = "native-deps", tabled(display_with = "display_option"))]
     pub address: Option<String>,
     pub confirmations: u32,
     pub indexed: bool,
-    #[cfg_attr(feature = "native-deps", tabled(display_with = "display_option_vec"))]
     pub inscriptions: Option<Vec<InscriptionId>>,
     pub outpoint: OutPoint,
-    #[cfg_attr(feature = "native-deps", tabled(skip))]
     pub runes: Option<BTreeMap<SpacedRune, Pile>>,
-    #[cfg_attr(feature = "native-deps", tabled(skip))]
     pub sat_ranges: Option<Vec<(u64, u64)>>,
     pub script_pubkey: ScriptBuf,
     pub spent: bool,
@@ -219,18 +192,14 @@ pub struct Output {
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
-#[cfg_attr(feature = "native-deps", derive(Tabled))]
 pub struct SatResponse {
-    #[cfg_attr(feature = "native-deps", tabled(display_with = "display_option"))]
     pub address: Option<String>,
     pub block: u32,
-    #[cfg_attr(feature = "native-deps", tabled(display_with = "display_vec"))]
     pub charms: Vec<Charm>,
     pub cycle: u32,
     pub decimal: String,
     pub degree: String,
     pub epoch: u32,
-    #[cfg_attr(feature = "native-deps", tabled(display_with = "display_vec"))]
     pub inscriptions: Vec<InscriptionId>,
     pub name: String,
     pub number: u64,
@@ -238,7 +207,6 @@ pub struct SatResponse {
     pub percentile: String,
     pub period: u32,
     pub rarity: Rarity,
-    #[cfg_attr(feature = "native-deps", tabled(display_with = "display_option"))]
     pub satpoint: Option<SatPoint>,
     pub timestamp: i64,
 }
@@ -256,19 +224,14 @@ pub struct SatInscriptions {
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
-#[cfg_attr(feature = "native-deps", derive(Tabled))]
 pub struct AddressInfo {
-    #[cfg_attr(feature = "native-deps", tabled(display_with = "display_vec"))]
     pub outputs: Vec<OutPoint>,
-    #[cfg_attr(feature = "native-deps", tabled(display_with = "display_option_vec"))]
     pub inscriptions: Option<Vec<InscriptionId>>,
     pub sat_balance: u64,
-    #[cfg_attr(feature = "native-deps", tabled(skip))]
     pub runes_balances: Option<Vec<(SpacedRune, String, Option<char>)>>,
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
-#[cfg_attr(feature = "native-deps", derive(Tabled))]
 pub struct RuneInfo {
     pub burned: String,
     pub divisibility: u8,
@@ -280,7 +243,6 @@ pub struct RuneInfo {
     pub number: u64,
     pub rune: SpacedRune,
     pub supply: String,
-    #[cfg_attr(feature = "native-deps", tabled(display_with = "display_option"))]
     pub symbol: Option<char>,
     pub timestamp: i64,
 }
@@ -292,14 +254,10 @@ pub struct Runes {
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
-#[cfg_attr(feature = "native-deps", derive(Tabled))]
 pub struct TxInfo {
     pub chain: String,
-    #[cfg_attr(feature = "native-deps", tabled(display_with = "display_option"))]
     pub etching: Option<SpacedRune>,
-    #[cfg_attr(feature = "native-deps", tabled(display_with = "display_vec"))]
     pub inscriptions: Vec<InscriptionId>,
-    #[cfg_attr(feature = "native-deps", tabled(skip))]
     pub transaction: bitcoin::Transaction,
     pub txid: Txid,
 }
@@ -360,27 +318,4 @@ impl OrdJsonRpcMethods {
     pub const TX: &'static str = "ord_tx";
 }
 
-#[cfg(feature = "native-deps")]
-fn display_option<T: Display>(option: &Option<T>) -> String {
-    match option {
-        Some(value) => value.to_string(),
-        None => String::new(),
-    }
-}
-
-#[cfg(feature = "native-deps")]
-fn display_vec<T: Display>(vec: &Vec<T>) -> String {
-    vec.iter()
-        .map(|item| item.to_string())
-        .collect::<Vec<String>>()
-        .join(", ")
-}
-
-#[cfg(feature = "native-deps")]
-fn display_option_vec<T: Display>(option: &Option<Vec<T>>) -> String {
-    match option {
-        Some(vec) => display_vec(vec),
-        None => String::new(),
-    }
-}
 

@@ -693,6 +693,7 @@ checksum = "092966b41edc516079bdf31ec78a2e0588d1d0c08f78b91d8307215928642b2b"
 name = "deezel"
 version = "0.1.0"
 dependencies = [
+ "alkanes-support",
  "anyhow",
  "assert_cmd",
  "async-trait",
@@ -716,7 +717,6 @@ dependencies = [
  "serde_json",
  "sha2",
  "sha3",
- "tabled",
  "tempfile",
  "tokio",
 ]
@@ -751,6 +751,7 @@ dependencies = [
  "clap",
  "deezel-asc",
  "deezel-common",
+ "deezel-pretty-print-macro",
  "dirs",
  "env_logger 0.10.2",
  "flate2",
@@ -781,7 +782,6 @@ dependencies = [
  "sha3",
  "smallvec",
  "spin",
- "tabled",
  "tempfile",
  "thiserror 1.0.69",
  "tiny-bip39",
@@ -795,6 +795,15 @@ dependencies = [
  "wat",
  "web-sys",
  "wiremock",
+]
+
+[[package]]
+name = "deezel-pretty-print-macro"
+version = "0.1.0"
+dependencies = [
+ "quote",
+ "serde_json",
+ "syn 2.0.104",
 ]
 
 [[package]]

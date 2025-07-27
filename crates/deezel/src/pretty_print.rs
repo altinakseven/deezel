@@ -7,110 +7,53 @@ use deezel_common::{
     alkanes::protorunes::{ProtoruneOutpointResponse, ProtoruneWalletResponse},
     ord::*,
 };
-use tabled::{builder::Builder, settings::Style, Table};
 
 pub fn print_inscription(inscription: &Inscription) {
-    println!("Inscription {}", inscription.id);
-    let mut table = Table::new(vec![inscription]);
-    table.with(Style::modern());
-    println!("{}", table);
+    println!("{}", serde_json::to_string_pretty(inscription).unwrap());
 }
 
 pub fn print_inscriptions(inscriptions: &[Inscription]) {
-    if inscriptions.is_empty() {
-        println!("No inscriptions found.");
-        return;
-    }
-    let mut table = Table::new(inscriptions);
-    table.with(Style::modern());
-    println!("{}", table);
+    println!("{}", serde_json::to_string_pretty(inscriptions).unwrap());
 }
 
 pub fn print_address_info(address_info: &AddressInfo) {
-    let mut table = Table::new(vec![address_info]);
-    table.with(Style::modern());
-    println!("{}", table);
+    println!("{}", serde_json::to_string_pretty(address_info).unwrap());
 }
 
 pub fn print_block_info(block_info: &BlockInfo) {
-    let mut table = Table::new(vec![block_info]);
-    table.with(Style::modern());
-    println!("{}", table);
+    println!("{}", serde_json::to_string_pretty(block_info).unwrap());
 }
 
 pub fn print_output(output: &Output) {
-    let mut table = Table::new(vec![output]);
-    table.with(Style::modern());
-    println!("{}", table);
+    println!("{}", serde_json::to_string_pretty(output).unwrap());
 }
 
 pub fn print_sat_response(sat_response: &SatResponse) {
-    let mut table = Table::new(vec![sat_response]);
-    table.with(Style::modern());
-    println!("{}", table);
+    println!("{}", serde_json::to_string_pretty(sat_response).unwrap());
 }
 
 pub fn print_children(inscriptions: &[Inscription]) {
-    if inscriptions.is_empty() {
-        println!("No children found.");
-        return;
-    }
-    println!("Children:");
-    let mut table = Table::new(inscriptions);
-    table.with(Style::modern());
-    println!("{}", table);
+    println!("{}", serde_json::to_string_pretty(inscriptions).unwrap());
 }
 
 pub fn print_parents(parents: &ParentInscriptions) {
-    if parents.parents.is_empty() {
-        println!("No parents found.");
-        return;
-    }
-    println!("Parents:");
-    let mut table = Table::new(&parents.parents);
-    table.with(Style::modern());
-    println!("{}", table);
+    println!("{}", serde_json::to_string_pretty(parents).unwrap());
 }
 
 pub fn print_rune(rune_info: &RuneInfo) {
-    let mut table = Table::new(vec![rune_info]);
-    table.with(Style::modern());
-    println!("{}", table);
+    println!("{}", serde_json::to_string_pretty(rune_info).unwrap());
 }
 
 pub fn print_blocks(blocks: &Blocks) {
-    println!("Last block: {}", blocks.last);
-    println!("Blocks:");
-    for block_hash in &blocks.blocks {
-        println!("  {}", block_hash);
-    }
-    if !blocks.featured_blocks.is_empty() {
-        println!("Featured Blocks:");
-        for (block_hash, inscriptions) in &blocks.featured_blocks {
-            println!("  {}:", block_hash);
-            for inscription_id in inscriptions {
-                println!("    {}", inscription_id);
-            }
-        }
-    }
+    println!("{}", serde_json::to_string_pretty(blocks).unwrap());
 }
 
 pub fn print_runes(runes: &Runes) {
-    if runes.runes.is_empty() {
-        println!("No runes found.");
-        return;
-    }
-    let rune_infos: Vec<&RuneInfo> = runes.runes.values().collect();
-    let mut table = Table::new(rune_infos);
-    table.with(Style::modern());
-    println!("{}", table);
+    println!("{}", serde_json::to_string_pretty(runes).unwrap());
 }
 
-
 pub fn print_tx_info(tx_info: &TxInfo) {
-    let mut table = Table::new(vec![tx_info]);
-    table.with(Style::modern());
-    println!("{}", table);
+    println!("{}", serde_json::to_string_pretty(tx_info).unwrap());
 }
 
 pub fn print_protorune_outpoint_response(response: &ProtoruneOutpointResponse) {

@@ -10,6 +10,7 @@
 //! - REST: `/tx/{txid}/outspend/{index}` → JSON-RPC: `esplora_tx::outspend` params: [txid, index]
 
 use serde::{Deserialize, Serialize};
+use deezel_pretty_print_macro::PrettyPrint;
 use alloc::string::String;
 use alloc::vec::Vec;
 use alloc::collections::BTreeMap as HashMap;
@@ -66,7 +67,7 @@ pub struct EsploraTxOut {
 }
 
 /// Complete transaction information
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PrettyPrint)]
 pub struct EsploraTransaction {
     pub txid: String,
     pub version: u32,
@@ -80,7 +81,7 @@ pub struct EsploraTransaction {
 }
 
 /// Transaction status information
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PrettyPrint)]
 pub struct EsploraTransactionStatus {
     pub confirmed: bool,
     pub block_height: Option<u32>,
@@ -89,7 +90,7 @@ pub struct EsploraTransactionStatus {
 }
 
 /// UTXO information
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PrettyPrint)]
 pub struct EsploraUtxo {
     pub txid: String,
     pub vout: u32,

@@ -1,2 +1,2 @@
 #!/bin/bash
-./target/release/deezel -p signet protorunes by-outpoint 5a800cb5cc7bdf49d1f0861c4fec423b94e395440b8ad727561a4646ebf7a72f 0
+./target/release/deezel -p signet protorunes by-outpoint 2fa7f7eb46461a5627d78a0b4495e3943b42ec4f1c86f0d149df7bccb50c805a:0

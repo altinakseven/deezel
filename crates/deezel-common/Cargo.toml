@@ -32,6 +32,7 @@ bitcoin_hashes = { workspace = true, package = "bitcoin-hashes" }
 ordinals = { workspace = true }
 protorune-support = { workspace = true }
 deezel-asc = { path = "../deezel-asc", default-features = false, features = ["std"] }
+deezel-pretty-print-macro = { path = "../deezel-pretty-print-macro" }
  
 # Cryptography and wallet functionality
 secp256k1 = { workspace = true }
@@ -90,13 +91,12 @@ reqwest = { workspace = true, features = ["json", "rustls-tls"], optional = true
 url = { version = "2.5.0", optional = true }
 clap = { workspace = true, features = ["derive"], default-features = false }
 bitcoincore-rpc = { workspace = true, optional = true }
-tabled = { workspace = true, optional = true }
 
 [features]
 default = ["wasm-inspection", "native-deps", "std"]
 std = []
 wasm-inspection = ["wasmi", "wasmprinter", "wat", "spin", "wasmparser"]
-native-deps = ["dirs", "tempfile", "tokio", "reqwest", "url", "bitcoincore-rpc", "tabled", "std"]
+native-deps = ["dirs", "tempfile", "tokio", "reqwest", "url", "bitcoincore-rpc", "std"]
 web-compat = ["spin"]
 
 test-utils = []

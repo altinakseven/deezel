@@ -41,7 +41,7 @@ async fn main() -> Result<()> {
         let mut temp_args = args.clone();
         temp_args.keystore = Some(temp_wallet_path.to_str().unwrap().to_string());
         
-        let mut temp_provider = SystemDeezel::new(&deezel_common::commands::Args::from(&temp_args)).await?;
+        let temp_provider = SystemDeezel::new(&deezel_common::commands::Args::from(&temp_args)).await?;
         temp_provider.execute_wallet_command(deezel_common::commands::WalletCommands::Create {
             passphrase: Some(passphrase.clone()),
             mnemonic: Some(mnemonic),
@@ -62,9 +62,10 @@ async fn execute_command<T: System + SystemOrd>(system: &mut T, command: Command
         Commands::Bitcoind(cmd) => system.execute_bitcoind_command(cmd.into()).await.map_err(|e| e.into()),
         Commands::Wallet(cmd) => system.execute_wallet_command(cmd.into()).await.map_err(|e| e.into()),
         Commands::Alkanes(cmd) => execute_alkanes_command(system, cmd).await,
-        Commands::Runestone(cmd) => system.execute_runestone_command(cmd.into()).await.map_err(|e| e.into()),
+        Commands::Runestone(cmd) => execute_runestone_command(system, cmd).await,
         Commands::Protorunes(cmd) => execute_protorunes_command(system.provider(), cmd).await,
-        Commands::Ord(cmd) => system.execute_ord_command(cmd.into()).await.map_err(|e| e.into()),
+        Commands::Ord(cmd) => execute_ord_command(system.provider(), cmd.into()).await,
+        Commands::Esplora(cmd) => execute_esplora_command(system.provider(), cmd.into()).await,
     }
 }
 
@@ -141,6 +142,23 @@ async fn execute_alkanes_command<T: System>(system: &mut T, command: Alkanes) ->
                 pretty_print::print_inspection_result(&result);
             }
             Ok(())
+        },
+        Alkanes::Trace { outpoint, raw } => {
+            let result = system.provider().trace(&outpoint).await;
+            match result {
+                Ok(trace_val) => {
+                    let trace: deezel_common::alkanes::trace::Trace = trace_val.into();
+                    if raw {
+                        println!("{}", serde_json::to_string_pretty(&trace)?);
+                    } else {
+                        println!("{}", trace);
+                    }
+                }
+                Err(e) => {
+                    println!("Error: {}", e);
+                }
+            }
+            Ok(())
         }
     }
 }
@@ -165,7 +183,7 @@ fn to_enhanced_execute_params(args: AlkanesExecute) -> Result<alkanes::types::En
     })
 }
 
-async fn execute_runestone_command(system: &SystemDeezel, command: Runestone) -> Result<()> {
+async fn execute_runestone_command<T: System>(system: &mut T, command: Runestone) -> Result<()> {
     match command {
         Runestone::Analyze { txid, raw } => {
             let tx_hex = system.provider().get_transaction_hex(&txid).await?;
@@ -184,6 +202,245 @@ async fn execute_runestone_command(system: &SystemDeezel, command: Runestone) ->
 }
 
 
+
+async fn execute_esplora_command(
+    provider: &dyn DeezelProvider,
+    command: deezel_common::commands::EsploraCommands,
+) -> anyhow::Result<()> {
+    match command {
+        deezel_common::commands::EsploraCommands::BlocksTipHash { raw } => {
+            let hash = provider.get_blocks_tip_hash().await?;
+            if raw {
+                println!("{}", hash);
+            } else {
+                println!("⛓️ Tip Hash: {}", hash);
+            }
+        }
+        deezel_common::commands::EsploraCommands::BlocksTipHeight { raw } => {
+            let height = provider.get_blocks_tip_height().await?;
+            if raw {
+                println!("{}", height);
+            } else {
+                println!("📈 Tip Height: {}", height);
+            }
+        }
+        deezel_common::commands::EsploraCommands::Blocks { start_height, raw } => {
+            let result = provider.get_blocks(start_height).await?;
+            if raw {
+                println!("{}", serde_json::to_string_pretty(&result)?);
+            } else {
+                println!("📦 Blocks:\n{}", serde_json::to_string_pretty(&result)?);
+            }
+        }
+        deezel_common::commands::EsploraCommands::BlockHeight { height, raw } => {
+            let hash = provider.get_block_by_height(height).await?;
+            if raw {
+                println!("{}", hash);
+            } else {
+                println!("🔗 Block Hash at {}: {}", height, hash);
+            }
+        }
+        deezel_common::commands::EsploraCommands::Block { hash, raw } => {
+            let block = <dyn DeezelProvider as EsploraProvider>::get_block(provider, &hash).await?;
+            if raw {
+                println!("{}", serde_json::to_string_pretty(&block)?);
+            } else {
+                println!("📦 Block {}:\n{}", hash, serde_json::to_string_pretty(&block)?);
+            }
+        }
+        deezel_common::commands::EsploraCommands::BlockStatus { hash, raw } => {
+            let status = provider.get_block_status(&hash).await?;
+            if raw {
+                println!("{}", serde_json::to_string_pretty(&status)?);
+            } else {
+                println!("ℹ️ Block Status {}:\n{}", hash, serde_json::to_string_pretty(&status)?);
+            }
+        }
+        deezel_common::commands::EsploraCommands::BlockTxids { hash, raw } => {
+            let txids = provider.get_block_txids(&hash).await?;
+            if raw {
+                println!("{}", serde_json::to_string_pretty(&txids)?);
+            } else {
+                println!("📄 Block Txids {}:\n{}", hash, serde_json::to_string_pretty(&txids)?);
+            }
+        }
+        deezel_common::commands::EsploraCommands::BlockHeader { hash, raw } => {
+            let header = provider.get_block_header(&hash).await?;
+            if raw {
+                println!("{}", header);
+            } else {
+                println!("📄 Block Header {}: {}", hash, header);
+            }
+        }
+        deezel_common::commands::EsploraCommands::BlockRaw { hash, raw } => {
+            let raw_block = provider.get_block_raw(&hash).await?;
+            if raw {
+                println!("{}", raw_block);
+            } else {
+                println!("📦 Raw Block {}: {}", hash, raw_block);
+            }
+        }
+        deezel_common::commands::EsploraCommands::BlockTxid { hash, index, raw } => {
+            let txid = provider.get_block_txid(&hash, index).await?;
+            if raw {
+                println!("{}", txid);
+            } else {
+                println!("📄 Txid at index {} in block {}: {}", index, hash, txid);
+            }
+        }
+        deezel_common::commands::EsploraCommands::BlockTxs { hash, start_index, raw } => {
+            let txs = provider.get_block_txs(&hash, start_index).await?;
+            if raw {
+                println!("{}", serde_json::to_string_pretty(&txs)?);
+            } else {
+                println!("📄 Transactions in block {}:\n{}", hash, serde_json::to_string_pretty(&txs)?);
+            }
+        }
+        deezel_common::commands::EsploraCommands::Address { params, raw } => {
+            let result = <dyn DeezelProvider as EsploraProvider>::get_address(provider, &params).await?;
+            if raw {
+                println!("{}", serde_json::to_string_pretty(&result)?);
+            } else {
+                println!("🏠 Address {}:\n{}", params, serde_json::to_string_pretty(&result)?);
+            }
+        }
+        deezel_common::commands::EsploraCommands::AddressTxs { params, raw } => {
+            let result = provider.get_address_txs(&params).await?;
+            if raw {
+                println!("{}", serde_json::to_string_pretty(&result)?);
+            } else {
+                println!("📄 Transactions for address {}:\n{}", params, serde_json::to_string_pretty(&result)?);
+            }
+        }
+        deezel_common::commands::EsploraCommands::AddressTxsChain { params, raw } => {
+            let result = provider.get_address_txs_chain(&params, None).await?;
+            if raw {
+                println!("{}", serde_json::to_string_pretty(&result)?);
+            } else {
+                println!("⛓️ Chain transactions for address {}:\n{}", params, serde_json::to_string_pretty(&result)?);
+            }
+        }
+        deezel_common::commands::EsploraCommands::AddressTxsMempool { address, raw } => {
+            let result = provider.get_address_txs_mempool(&address).await?;
+            if raw {
+                println!("{}", serde_json::to_string_pretty(&result)?);
+            } else {
+                println!("⏳ Mempool transactions for address {}:\n{}", address, serde_json::to_string_pretty(&result)?);
+            }
+        }
+        deezel_common::commands::EsploraCommands::AddressUtxo { address, raw } => {
+            let result = provider.get_address_utxo(&address).await?;
+            if raw {
+                println!("{}", serde_json::to_string_pretty(&result)?);
+            } else {
+                println!("💰 UTXOs for address {}:\n{}", address, serde_json::to_string_pretty(&result)?);
+            }
+        }
+        deezel_common::commands::EsploraCommands::AddressPrefix { prefix, raw } => {
+            let result = provider.get_address_prefix(&prefix).await?;
+            if raw {
+                println!("{}", serde_json::to_string_pretty(&result)?);
+            } else {
+                println!("🔍 Addresses with prefix '{}':\n{}", prefix, serde_json::to_string_pretty(&result)?);
+            }
+        }
+        deezel_common::commands::EsploraCommands::Tx { txid, raw } => {
+            let tx = provider.get_tx(&txid).await?;
+            if raw {
+                println!("{}", serde_json::to_string_pretty(&tx)?);
+            } else {
+                println!("📄 Transaction {}:\n{}", txid, serde_json::to_string_pretty(&tx)?);
+            }
+        }
+        deezel_common::commands::EsploraCommands::TxHex { txid, .. } => {
+            let hex = provider.get_tx_hex(&txid).await?;
+            println!("{}", hex);
+        }
+        deezel_common::commands::EsploraCommands::TxRaw { txid, .. } => {
+            let raw_tx = provider.get_tx_raw(&txid).await?;
+            println!("{}", hex::encode(raw_tx));
+        }
+        deezel_common::commands::EsploraCommands::TxStatus { txid, raw } => {
+            let status = provider.get_tx_status(&txid).await?;
+            if raw {
+                println!("{}", serde_json::to_string_pretty(&status)?);
+            } else {
+                println!("ℹ️ Status for tx {}:\n{}", txid, serde_json::to_string_pretty(&status)?);
+            }
+        }
+        deezel_common::commands::EsploraCommands::TxMerkleProof { txid, raw } => {
+            let proof = provider.get_tx_merkle_proof(&txid).await?;
+            if raw {
+                println!("{}", serde_json::to_string_pretty(&proof)?);
+            } else {
+                println!("🧾 Merkle proof for tx {}:\n{}", txid, serde_json::to_string_pretty(&proof)?);
+            }
+        }
+        deezel_common::commands::EsploraCommands::TxMerkleblockProof { txid, .. } => {
+            let proof = provider.get_tx_merkleblock_proof(&txid).await?;
+            println!("{}", proof);
+        }
+        deezel_common::commands::EsploraCommands::TxOutspend { txid, index, raw } => {
+            let outspend = provider.get_tx_outspend(&txid, index).await?;
+            if raw {
+                println!("{}", serde_json::to_string_pretty(&outspend)?);
+            } else {
+                println!("💸 Outspend for tx {}, vout {}:\n{}", txid, index, serde_json::to_string_pretty(&outspend)?);
+            }
+        }
+        deezel_common::commands::EsploraCommands::TxOutspends { txid, raw } => {
+            let outspends = provider.get_tx_outspends(&txid).await?;
+            if raw {
+                println!("{}", serde_json::to_string_pretty(&outspends)?);
+            } else {
+                println!("💸 Outspends for tx {}:\n{}", txid, serde_json::to_string_pretty(&outspends)?);
+            }
+        }
+        deezel_common::commands::EsploraCommands::Broadcast { tx_hex, .. } => {
+            let txid = provider.broadcast(&tx_hex).await?;
+            println!("✅ Transaction broadcast successfully!");
+            println!("🔗 Transaction ID: {}", txid);
+        }
+        deezel_common::commands::EsploraCommands::PostTx { tx_hex, .. } => {
+            let txid = provider.broadcast(&tx_hex).await?;
+            println!("✅ Transaction posted successfully!");
+            println!("🔗 Transaction ID: {}", txid);
+        }
+        deezel_common::commands::EsploraCommands::Mempool { raw } => {
+            let mempool = provider.get_mempool().await?;
+            if raw {
+                println!("{}", serde_json::to_string_pretty(&mempool)?);
+            } else {
+                println!("⏳ Mempool Info:\n{}", serde_json::to_string_pretty(&mempool)?);
+            }
+        }
+        deezel_common::commands::EsploraCommands::MempoolTxids { raw } => {
+            let txids = provider.get_mempool_txids().await?;
+            if raw {
+                println!("{}", serde_json::to_string_pretty(&txids)?);
+            } else {
+                println!("📄 Mempool Txids:\n{}", serde_json::to_string_pretty(&txids)?);
+            }
+        }
+        deezel_common::commands::EsploraCommands::MempoolRecent { raw } => {
+            let recent = provider.get_mempool_recent().await?;
+            if raw {
+                println!("{}", serde_json::to_string_pretty(&recent)?);
+            } else {
+                println!("📄 Recent Mempool Txs:\n{}", serde_json::to_string_pretty(&recent)?);
+            }
+        }
+        deezel_common::commands::EsploraCommands::FeeEstimates { raw } => {
+            let estimates = provider.get_fee_estimates().await?;
+            if raw {
+                println!("{}", serde_json::to_string_pretty(&estimates)?);
+            } else {
+                println!("💰 Fee Estimates:\n{}", serde_json::to_string_pretty(&estimates)?);
+            }
+        }
+    }
+    Ok(())
+}
 
 async fn execute_ord_command(
     provider: &dyn DeezelProvider,
