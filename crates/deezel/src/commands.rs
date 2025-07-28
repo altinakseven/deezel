@@ -70,6 +70,26 @@ pub enum Commands {
     /// Wallet subcommands
     #[command(subcommand)]
     Wallet(WalletCommands),
+    /// Metashrew subcommands
+    #[command(subcommand)]
+    Metashrew(MetashrewCommands),
+}
+
+/// Metashrew subcommands
+#[derive(Subcommand, Debug, Clone, Serialize, Deserialize)]
+pub enum MetashrewCommands {
+    /// Get the current block height
+    Height,
+    /// Get the block hash for a given height
+    Getblockhash {
+        /// The block height
+        height: u64,
+    },
+    /// Get the state root for a given height
+    Getstateroot {
+        /// The block height, or "latest"
+        height: Option<String>,
+    },
 }
 
 /// Bitcoin Core RPC subcommands
@@ -458,6 +478,56 @@ pub enum Alkanes {
         #[arg(long)]
         raw: bool,
     },
+    /// Simulate an alkanes transaction
+    Simulate {
+        /// The contract ID to simulate
+        contract_id: String,
+        /// The parameters to pass to the contract
+        params: Option<String>,
+        /// Show raw JSON output
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Get the sequence for an outpoint
+    Sequence {
+        /// The outpoint to get the sequence for
+        outpoint: String,
+        /// Show raw JSON output
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Get spendable outpoints for an address
+    Spendables {
+        /// The address to get spendables for
+        address: String,
+        /// Show raw JSON output
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Trace a block
+    TraceBlock {
+        /// The height of the block to trace
+        height: u64,
+        /// Show raw JSON output
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Get the bytecode for an alkane
+    GetBytecode {
+        /// The alkane ID to get the bytecode for
+        alkane_id: String,
+        /// Show raw JSON output
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Get the balance of an address
+    GetBalance {
+        /// The address to get the balance for
+        address: Option<String>,
+        /// Show raw JSON output
+        #[arg(long)]
+        raw: bool,
+    },
 }
 
 /// Runestone subcommands
@@ -516,19 +586,29 @@ pub enum WalletCommands {
         mnemonic: Option<String>,
     },
     /// Get an address from the wallet
-    Address {
-        /// The index of the address to get
-        #[arg(long, default_value = "0")]
-        index: u32,
-    },
-    /// List UTXOs in the wallet
-    Utxos {
-        /// Show all UTXOs, including frozen ones
-        #[arg(long)]
-        all: bool,
+    Addresses {
+        /// Address range specifications (e.g., "p2tr:0-1000", "p2sh:0-500")
+        /// If not provided, shows first 5 addresses of each type for current network
+        #[arg(value_delimiter = ' ', num_args = 0..)]
+        ranges: Option<Vec<String>>,
         /// Show raw JSON output
         #[arg(long)]
         raw: bool,
+        /// Show addresses for all networks
+        #[arg(long)]
+        all_networks: bool,
+    },
+    /// List UTXOs in the wallet
+    Utxos {
+        /// Address specifications (e.g., "p2tr:0-100", "bc1q...")
+        #[arg()]
+        addresses: Option<String>,
+        /// Show raw JSON output
+        #[arg(long)]
+        raw: bool,
+        /// Include frozen UTXOs
+        #[arg(long)]
+        include_frozen: bool,
     },
     /// Freeze a UTXO
     Freeze {
@@ -545,6 +625,91 @@ pub enum WalletCommands {
         /// The PSBT to sign, as a base64 string
         psbt: String,
     },
+    /// Send a transaction
+    Send {
+        /// The address to send to
+        address: String,
+        /// The amount to send in satoshis
+        amount: u64,
+        /// The fee rate in sat/vB
+        #[arg(long)]
+        fee_rate: Option<f32>,
+        /// Send all funds
+        #[arg(long)]
+        send_all: bool,
+        /// The addresses to send from
+        #[arg(long, num_args = 1..)]
+        from: Option<Vec<String>>,
+        /// The change address
+        #[arg(long)]
+        change_address: Option<String>,
+        /// Automatically confirm the transaction
+        #[arg(long, short = 'y')]
+        auto_confirm: bool,
+    },
+    /// Get the balance of the wallet
+    Balance {
+        /// The addresses to get the balance for
+        #[arg(num_args = 0..)]
+        addresses: Option<Vec<String>>,
+        /// Show raw JSON output
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Get the history of the wallet
+    History {
+        /// The number of transactions to get
+        #[arg(long, default_value = "10")]
+        count: u32,
+        /// The address to get the history for
+        address: Option<String>,
+        /// Show raw JSON output
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Create a transaction
+    CreateTx {
+        /// The address to send to
+        address: String,
+        /// The amount to send in satoshis
+        amount: u64,
+        /// The fee rate in sat/vB
+        #[arg(long)]
+        fee_rate: Option<f32>,
+        /// Send all funds
+        #[arg(long)]
+        send_all: bool,
+        /// The addresses to send from
+        #[arg(long, num_args = 1..)]
+        from: Option<Vec<String>>,
+        /// The change address
+        #[arg(long)]
+        change_address: Option<String>,
+    },
+    /// Sign a transaction
+    SignTx {
+        /// The transaction hex to sign
+        tx_hex: String,
+    },
+    /// Broadcast a transaction
+    BroadcastTx {
+        /// The transaction hex to broadcast
+        tx_hex: String,
+    },
+    /// Estimate the fee for a transaction
+    EstimateFee {
+        /// The target number of blocks for confirmation
+        #[arg(long, default_value = "6")]
+        target: u32,
+    },
+    /// Get the current fee rates
+    FeeRates,
+    /// Sync the wallet with the blockchain
+    Sync,
+    /// Backup the wallet
+    Backup,
+    /// Get the mnemonic for the wallet
+    Mnemonic,
 }
 
 /// Arguments for the `alkanes execute` command
@@ -586,7 +751,21 @@ pub struct AlkanesExecute {
 
 impl From<WalletCommands> for deezel_common::commands::WalletCommands {
     fn from(cmd: WalletCommands) -> Self {
-        serde_json::from_value(serde_json::to_value(cmd).unwrap()).unwrap()
+        match cmd {
+            WalletCommands::Addresses {
+                ranges,
+                raw,
+                all_networks,
+            } => deezel_common::commands::WalletCommands::Addresses {
+                ranges,
+                hd_path: None,
+                network: None,
+                all_networks,
+                magic: None,
+                raw,
+            },
+            _ => serde_json::from_value(serde_json::to_value(cmd).unwrap()).unwrap(),
+        }
     }
 }
 

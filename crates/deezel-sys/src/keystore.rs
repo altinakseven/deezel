@@ -36,6 +36,7 @@ pub struct KeystoreCreateParams {
 }
 
 /// Keystore manager that handles creation and management
+#[derive(Clone)]
 pub struct KeystoreManager {
     #[allow(dead_code)]
     _marker: core::marker::PhantomData<()>,
@@ -341,6 +342,10 @@ impl KeystoreManager {
 /// Implementation of KeystoreProvider trait for KeystoreManager
 #[async_trait(?Send)]
 impl KeystoreProvider for KeystoreManager {
+    async fn get_address(&self, _address_type: &str, _index: u32) -> CommonResult<String> {
+        Err(DeezelError::NotImplemented("get_address is not implemented for KeystoreManager".to_string()))
+    }
+
     async fn derive_addresses(&self, master_public_key: &str, network: Network, script_types: &[&str], start_index: u32, count: u32) -> CommonResult<Vec<KeystoreAddress>> {
         let master_xpub = Xpub::from_str(master_public_key)
             .map_err(|e| DeezelError::Crypto(format!("Failed to parse master public key: {e}")))?;

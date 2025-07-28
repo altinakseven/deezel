@@ -136,7 +136,6 @@ pub enum WalletCommands {
         /// Optional mnemonic phrase (if not provided, a new one will be generated)
         #[arg(long)]
         mnemonic: Option<String>,
-        passphrase: Option<String>,
     },
     /// Restore wallet from mnemonic
     Restore {

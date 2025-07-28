@@ -43,7 +43,70 @@ use crate::vendored_ord::{InscriptionId, SpacedRune};
 #[cfg(not(feature = "std"))]
 use crate::vendored_ord::{InscriptionId, SpacedRune};
 use ordinals::{Rarity, Sat, SatPoint};
+use crate::{
+    address_parser::AddressParser,
+    traits::{AddressResolver, Utxo, UtxoProvider},
+    Result,
+};
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+
+#[derive(Clone)]
+pub struct OrdProvider<R: AddressResolver> {
+    address_parser: AddressParser<R>,
+}
+
+impl<R: AddressResolver> OrdProvider<R> {
+    pub fn new(address_resolver: R) -> Self {
+        Self {
+            address_parser: AddressParser::new(address_resolver),
+        }
+    }
+
+    async fn get_address_info(&self, _address: &str) -> Result<AddressInfo> {
+        // Placeholder for actual API call
+        Ok(AddressInfo {
+            outputs: vec![],
+            inscriptions: None,
+            sat_balance: 0,
+            runes_balances: None,
+        })
+    }
+
+    async fn get_output(&self, _outpoint: &OutPoint) -> Result<Output> {
+        // Placeholder for actual API call
+        unimplemented!()
+    }
+}
+
+#[async_trait(?Send)]
+impl<R: AddressResolver + Send + Sync> UtxoProvider for OrdProvider<R> {
+    async fn get_utxos_by_spec(&self, spec: &[String]) -> Result<Vec<Utxo>> {
+        let mut addresses = Vec::new();
+        for s in spec {
+            addresses.extend(self.address_parser.parse(s).await?);
+        }
+
+        let mut utxos = Vec::new();
+        for address in addresses {
+            let address_info = self.get_address_info(&address).await?;
+            for outpoint in address_info.outputs {
+                let output = self.get_output(&outpoint).await?;
+                if !output.spent {
+                    utxos.push(Utxo {
+                        txid: outpoint.txid.to_string(),
+                        vout: outpoint.vout,
+                        amount: output.value,
+                        address: address.clone(),
+                    });
+                }
+            }
+        }
+
+        Ok(utxos)
+    }
+}
+
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 pub struct Block {

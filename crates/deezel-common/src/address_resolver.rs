@@ -817,6 +817,9 @@ impl MonitorProvider for StandaloneAddressResolver {
 #[cfg(not(target_arch = "wasm32"))]
 #[async_trait(?Send)]
 impl KeystoreProvider for StandaloneAddressResolver {
+    async fn get_address(&self, _address_type: &str, _index: u32) -> Result<String> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support keystore operations".to_string()))
+    }
     async fn derive_addresses(&self, _master_public_key: &str, _network: bitcoin::Network, _script_types: &[&str], _start_index: u32, _count: u32) -> Result<Vec<KeystoreAddress>> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support keystore operations".to_string()))
     }
@@ -947,6 +950,15 @@ impl Clone for StandaloneAddressResolver {
 #[cfg(not(target_arch = "wasm32"))]
 #[async_trait(?Send)]
 impl DeezelProvider for StandaloneAddressResolver {
+    fn get_bitcoin_rpc_url(&self) -> Option<String> {
+        None
+    }
+    fn get_esplora_api_url(&self) -> Option<String> {
+        None
+    }
+    fn get_ord_server_url(&self) -> Option<String> {
+        None
+    }
     fn provider_name(&self) -> &str {
         "StandaloneAddressResolver"
     }
@@ -963,6 +975,20 @@ impl DeezelProvider for StandaloneAddressResolver {
     }
     async fn sign_taproot_script_spend(&self, _sighash: bitcoin::secp256k1::Message) -> Result<bitcoin::secp256k1::schnorr::Signature> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support sign_taproot_script_spend".to_string()))
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[async_trait(?Send)]
+impl MetashrewProvider for StandaloneAddressResolver {
+    async fn get_height(&self) -> Result<u64> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Metashrew operations".to_string()))
+    }
+    async fn get_block_hash(&self, _height: u64) -> Result<String> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Metashrew operations".to_string()))
+    }
+    async fn get_state_root(&self, _height: serde_json::Value) -> Result<String> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Metashrew operations".to_string()))
     }
 }
 }

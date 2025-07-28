@@ -635,8 +635,8 @@ impl WalletProvider for ConcreteProvider {
         let addrs_to_check = if let Some(provided_addresses) = addresses {
             provided_addresses
         } else {
-            // If no addresses are provided, derive the first 101 from the public key to find the coinbase UTXO.
-            let derived_infos = self.get_addresses(101).await?;
+            // If no addresses are provided, derive the first 20 from the public key.
+            let derived_infos = self.get_addresses(20).await?;
             derived_infos.into_iter().map(|info| info.address).collect()
         };
 
@@ -645,72 +645,49 @@ impl WalletProvider for ConcreteProvider {
         }
 
         let mut all_utxos = Vec::new();
+
         for address in addrs_to_check {
-            log::info!("Checking UTXOs for address: {address}");
-            let utxos_json = self.get_address_utxo(&address).await;
+            log::info!("Fetching UTXOs for address: {address}");
+            let utxos_json = self.get_address_utxo(&address).await?;
             
-            if let Err(e) = utxos_json {
-                log::warn!("Failed to get UTXOs for address {address}: {e}");
-                continue;
-            }
-            let utxos_json = utxos_json.unwrap();
-
             if let Some(utxos_array) = utxos_json.as_array() {
-                log::info!("Found {} UTXOs for address {}", utxos_array.len(), address);
-                for utxo in utxos_array {
-                    if let (Some(txid_str), Some(vout), Some(value)) = (
-                        utxo.get("txid").and_then(|t| t.as_str()),
-                        utxo.get("vout").and_then(|v| v.as_u64()),
-                        utxo.get("value").and_then(|v| v.as_u64()),
-                    ) {
-                        let status = utxo.get("status");
-                        let confirmed = status.and_then(|s| s.get("confirmed")).and_then(|c| c.as_bool()).unwrap_or(false);
-                        let block_height = status.and_then(|s| s.get("block_height")).and_then(|h| h.as_u64());
-                        
-                        let outpoint = OutPoint::from_str(&format!("{txid_str}:{vout}"))?;
-                        let addr = Address::from_str(&address)?.require_network(self.get_network())?;
-                        let tx_info = self.get_tx(txid_str).await?;
-                        let is_coinbase = tx_info
-                            .get("vin")
-                            .and_then(|v| v.as_array())
-                            .is_some_and(|vin| {
-                                vin.len() == 1 && vin[0].get("is_coinbase").and_then(|v| v.as_bool()).unwrap_or(false)
-                            });
-                        
-                        let utxo_info = UtxoInfo {
-                            txid: txid_str.to_string(),
-                            vout: vout as u32,
-                            amount: value,
-                            address: address.clone(),
-                            script_pubkey: Some(addr.script_pubkey()),
-                            confirmations: if confirmed {
-                                if let Some(bh) = block_height {
-                                    let current_height = self.get_block_count().await.unwrap_or(bh);
-                                    current_height.saturating_sub(bh) as u32 + 1
-                                } else {
-                                    1
-                                }
-                            } else { 0 },
-                            frozen: false,
-                            freeze_reason: None,
-                            block_height,
-                            has_inscriptions: false,
-                            has_runes: false,
-                            has_alkanes: false,
-                            is_coinbase,
-                        };
+                for utxo_json in utxos_array {
+                    let txid_str = utxo_json.get("txid").and_then(|t| t.as_str()).ok_or_else(|| DeezelError::Other("Missing txid in UTXO".to_string()))?;
+                    let vout = utxo_json.get("vout").and_then(|v| v.as_u64()).ok_or_else(|| DeezelError::Other("Missing vout in UTXO".to_string()))? as u32;
+                    let value = utxo_json.get("value").and_then(|v| v.as_u64()).ok_or_else(|| DeezelError::Other("Missing value in UTXO".to_string()))?;
+                    
+                    let status = utxo_json.get("status");
+                    let confirmed = status.and_then(|s| s.get("confirmed")).and_then(|c| c.as_bool()).unwrap_or(false);
+                    let block_height = status.and_then(|s| s.get("block_height")).and_then(|h| h.as_u64());
 
-                        if utxo_info.is_coinbase && utxo_info.confirmations < 100 {
-                            log::info!("Skipping immature coinbase UTXO: {txid_str}:{vout}");
-                            continue;
-                        }
+                    let confirmations = if confirmed {
+                        if let Some(bh) = block_height {
+                            let current_height = self.get_block_count().await.unwrap_or(bh);
+                            current_height.saturating_sub(bh) as u32 + 1
+                        } else { 1 }
+                    } else { 0 };
 
-                        log::info!("Found UTXO: {}:{} - {} sats", utxo_info.txid, utxo_info.vout, utxo_info.amount);
-                        all_utxos.push((outpoint, utxo_info));
-                    }
+                    let outpoint = OutPoint::from_str(&format!("{}:{}", txid_str, vout))?;
+                    let utxo_info = UtxoInfo {
+                        txid: txid_str.to_string(),
+                        vout,
+                        amount: value,
+                        address: address.clone(),
+                        script_pubkey: Some(Address::from_str(&address)?.require_network(self.get_network())?.script_pubkey()),
+                        confirmations,
+                        frozen: false, // TODO: Implement frozen UTXO logic
+                        freeze_reason: None,
+                        block_height,
+                        has_inscriptions: false, // Placeholder
+                        has_runes: false, // Placeholder
+                        has_alkanes: false, // Placeholder
+                        is_coinbase: false, // Placeholder, would need to check vin
+                    };
+                    all_utxos.push((outpoint, utxo_info));
                 }
             }
         }
+
         Ok(all_utxos)
     }
     
@@ -1162,8 +1139,7 @@ impl WalletProvider for ConcreteProvider {
         Ok(xpriv.to_keypair(&secp))
     }
 
-    fn set_passphrase(&mut self, passphrase: Option<String>) {
-        self.passphrase = passphrase;
+    fn set_passphrase(&mut self, _passphrase: Option<String>) {
     }
 
     async fn get_last_used_address_index(&self) -> Result<u32> {
@@ -2247,11 +2223,60 @@ impl DeezelProvider for ConcreteProvider {
         Ok(signature)
     }
 
+    fn get_bitcoin_rpc_url(&self) -> Option<String> {
+        Some(self.rpc_url.clone())
+    }
+
+    fn get_esplora_api_url(&self) -> Option<String> {
+        self.esplora_url.clone()
+    }
+
+    fn get_ord_server_url(&self) -> Option<String> {
+        // Assuming ord server url is the same as rpc_url for now
+        Some(self.rpc_url.clone())
+    }
+}
+
+#[async_trait(?Send)]
+impl MetashrewProvider for ConcreteProvider {
+    async fn get_height(&self) -> Result<u64> {
+        <Self as MetashrewRpcProvider>::get_metashrew_height(self).await
+    }
+
+    async fn get_block_hash(&self, height: u64) -> Result<String> {
+        <Self as BitcoinRpcProvider>::get_block_hash(self, height).await
+    }
+
+    async fn get_state_root(&self, _height: JsonValue) -> Result<String> {
+        // Placeholder implementation.
+        // In a real scenario, this would call a specific RPC method like `getstateroot`.
+        Err(DeezelError::NotImplemented("get_state_root is not implemented for ConcreteProvider".to_string()))
+    }
+}
+
+#[async_trait(?Send)]
+impl UtxoProvider for ConcreteProvider {
+    async fn get_utxos_by_spec(&self, spec: &[String]) -> Result<Vec<Utxo>> {
+        let utxos = self.get_utxos(false, Some(spec.to_vec())).await?;
+        let result = utxos
+            .into_iter()
+            .map(|(_outpoint, utxo_info)| Utxo {
+                txid: utxo_info.txid,
+                vout: utxo_info.vout,
+                amount: utxo_info.amount,
+                address: utxo_info.address,
+            })
+            .collect();
+        Ok(result)
+    }
 }
 
 // Implement KeystoreProvider trait for ConcreteProvider
 #[async_trait(?Send)]
 impl KeystoreProvider for ConcreteProvider {
+    async fn get_address(&self, address_type: &str, index: u32) -> Result<String> {
+        <Self as AddressResolver>::get_address(self, address_type, index).await
+    }
     async fn derive_addresses(&self, _master_public_key: &str, _network: Network, _script_types: &[&str], _start_index: u32, _count: u32) -> Result<Vec<KeystoreAddress>> {
         Err(DeezelError::NotImplemented("KeystoreProvider derive_addresses not yet implemented".to_string()))
     }

@@ -217,8 +217,20 @@ impl OrdProvider for WebProvider {
     }
 }
 
-// DeezelProvider implementation
 #[async_trait(?Send)]
+impl MetashrewProvider for WebProvider {
+    async fn get_height(&self) -> Result<u64> {
+        Err(DeezelError::NotImplemented("Metashrew operations not implemented for web provider".to_string()))
+    }
+    async fn get_block_hash(&self, _height: u64) -> Result<String> {
+        Err(DeezelError::NotImplemented("Metashrew operations not implemented for web provider".to_string()))
+    }
+    async fn get_state_root(&self, _height: JsonValue) -> Result<String> {
+        Err(DeezelError::NotImplemented("Metashrew operations not implemented for web provider".to_string()))
+    }
+}
+
+// DeezelProvider implementation
 #[async_trait(?Send)]
 impl KeystoreProvider for WebProvider {
     async fn derive_addresses(&self, _master_public_key: &str, _network: Network, _script_types: &[&str], _start_index: u32, _count: u32) -> Result<Vec<KeystoreAddress>> {
@@ -234,6 +246,9 @@ impl KeystoreProvider for WebProvider {
     }
     
     async fn get_keystore_info(&self, _master_fingerprint: &str, _created_at: u64, _version: &str) -> Result<KeystoreInfo> {
+        Err(DeezelError::NotImplemented("Keystore operations not implemented for web provider".to_string()))
+    }
+    async fn get_address(&self, _address_type: &str, _index: u32) -> Result<String> {
         Err(DeezelError::NotImplemented("Keystore operations not implemented for web provider".to_string()))
     }
 }
@@ -268,5 +283,14 @@ impl DeezelProvider for WebProvider {
 
     async fn sign_taproot_script_spend(&self, _msg: Message) -> Result<Signature> {
         todo!()
+    }
+    fn get_bitcoin_rpc_url(&self) -> Option<String> {
+        Some(self.sandshrew_rpc_url().to_string())
+    }
+    fn get_esplora_api_url(&self) -> Option<String> {
+        self.esplora_rpc_url().map(|s| s.to_string())
+    }
+    fn get_ord_server_url(&self) -> Option<String> {
+        Some(self.sandshrew_rpc_url().to_string())
     }
 }

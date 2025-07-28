@@ -1226,6 +1226,19 @@ impl MetashrewRpcProvider for BrowserWalletProvider {
 }
 
 #[async_trait(?Send)]
+impl MetashrewProvider for BrowserWalletProvider {
+    async fn get_height(&self) -> Result<u64> {
+        self.web_provider.get_height().await
+    }
+    async fn get_block_hash(&self, height: u64) -> Result<String> {
+        deezel_common::MetashrewProvider::get_block_hash(&self.web_provider, height).await
+    }
+    async fn get_state_root(&self, height: JsonValue) -> Result<String> {
+        self.web_provider.get_state_root(height).await
+    }
+}
+
+#[async_trait(?Send)]
 impl EsploraProvider for BrowserWalletProvider {
     async fn get_blocks_tip_hash(&self) -> Result<String> {
         self.web_provider.get_blocks_tip_hash().await
@@ -1531,6 +1544,9 @@ impl KeystoreProvider for BrowserWalletProvider {
     async fn get_keystore_info(&self, _master_fingerprint: &str, _created_at: u64, _version: &str) -> Result<KeystoreInfo> {
         Err(DeezelError::NotImplemented("Keystore operations not implemented for browser wallet provider".to_string()))
     }
+    async fn get_address(&self, _address_type: &str, _index: u32) -> Result<String> {
+        Err(DeezelError::NotImplemented("Keystore operations not implemented for browser wallet provider".to_string()))
+    }
 }
 
 #[async_trait(?Send)]
@@ -1571,5 +1587,14 @@ impl DeezelProvider for BrowserWalletProvider {
 
     async fn sign_taproot_script_spend(&self, msg: Message) -> Result<Signature> {
         self.web_provider.sign_taproot_script_spend(msg).await
+    }
+    fn get_bitcoin_rpc_url(&self) -> Option<String> {
+        self.web_provider.get_bitcoin_rpc_url()
+    }
+    fn get_esplora_api_url(&self) -> Option<String> {
+        self.web_provider.get_esplora_api_url()
+    }
+    fn get_ord_server_url(&self) -> Option<String> {
+        self.web_provider.get_ord_server_url()
     }
 }

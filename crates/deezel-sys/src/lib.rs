@@ -127,6 +127,565 @@ impl System for SystemDeezel {
     }
 }
 
+#[async_trait(?Send)]
+impl DeezelProvider for SystemDeezel {
+    fn provider_name(&self) -> &str {
+        self.provider.provider_name()
+    }
+
+    fn get_bitcoin_rpc_url(&self) -> Option<String> {
+        self.provider.get_bitcoin_rpc_url()
+    }
+
+    fn get_esplora_api_url(&self) -> Option<String> {
+        self.provider.get_esplora_api_url()
+    }
+
+    fn get_ord_server_url(&self) -> Option<String> {
+        self.provider.get_ord_server_url()
+    }
+
+    fn clone_box(&self) -> Box<dyn DeezelProvider> {
+        Box::new(self.clone())
+    }
+
+    async fn initialize(&self) -> Result<()> {
+        self.provider.initialize().await
+    }
+
+    async fn shutdown(&self) -> Result<()> {
+        self.provider.shutdown().await
+    }
+
+    fn secp(&self) -> &bitcoin::secp256k1::Secp256k1<bitcoin::secp256k1::All> {
+        self.provider.secp()
+    }
+
+    async fn get_utxo(&self, outpoint: &bitcoin::OutPoint) -> Result<Option<bitcoin::TxOut>> {
+        self.provider.get_utxo(outpoint).await
+    }
+
+    async fn sign_taproot_script_spend(
+        &self,
+        sighash: bitcoin::secp256k1::Message,
+    ) -> Result<bitcoin::secp256k1::schnorr::Signature> {
+        self.provider.sign_taproot_script_spend(sighash).await
+    }
+}
+
+#[async_trait(?Send)]
+impl JsonRpcProvider for SystemDeezel {
+    async fn call(&self, url: &str, method: &str, params: deezel_common::JsonValue, id: u64) -> Result<deezel_common::JsonValue> {
+        self.provider.call(url, method, params, id).await
+    }
+    async fn get_bytecode(&self, block: &str, tx: &str) -> Result<String> {
+        <ConcreteProvider as JsonRpcProvider>::get_bytecode(&self.provider, block, tx).await
+    }
+}
+
+#[async_trait(?Send)]
+impl StorageProvider for SystemDeezel {
+    async fn read(&self, key: &str) -> Result<Vec<u8>> {
+        self.provider.read(key).await
+    }
+    async fn write(&self, key: &str, data: &[u8]) -> Result<()> {
+        self.provider.write(key, data).await
+    }
+    async fn exists(&self, key: &str) -> Result<bool> {
+        self.provider.exists(key).await
+    }
+    async fn delete(&self, key: &str) -> Result<()> {
+        self.provider.delete(key).await
+    }
+    async fn list_keys(&self, prefix: &str) -> Result<Vec<String>> {
+        self.provider.list_keys(prefix).await
+    }
+    fn storage_type(&self) -> &'static str {
+        self.provider.storage_type()
+    }
+}
+
+#[async_trait(?Send)]
+impl NetworkProvider for SystemDeezel {
+    async fn get(&self, url: &str) -> Result<Vec<u8>> {
+        self.provider.get(url).await
+    }
+    async fn post(&self, url: &str, body: &[u8], content_type: &str) -> Result<Vec<u8>> {
+        self.provider.post(url, body, content_type).await
+    }
+    async fn is_reachable(&self, url: &str) -> bool {
+        self.provider.is_reachable(url).await
+    }
+}
+
+#[async_trait(?Send)]
+impl CryptoProvider for SystemDeezel {
+    fn random_bytes(&self, len: usize) -> Result<Vec<u8>> {
+        self.provider.random_bytes(len)
+    }
+    fn sha256(&self, data: &[u8]) -> Result<[u8; 32]> {
+        self.provider.sha256(data)
+    }
+    fn sha3_256(&self, data: &[u8]) -> Result<[u8; 32]> {
+        self.provider.sha3_256(data)
+    }
+    async fn encrypt_aes_gcm(&self, data: &[u8], key: &[u8], nonce: &[u8]) -> Result<Vec<u8>> {
+        self.provider.encrypt_aes_gcm(data, key, nonce).await
+    }
+    async fn decrypt_aes_gcm(&self, data: &[u8], key: &[u8], nonce: &[u8]) -> Result<Vec<u8>> {
+        self.provider.decrypt_aes_gcm(data, key, nonce).await
+    }
+    async fn pbkdf2_derive(&self, password: &[u8], salt: &[u8], iterations: u32, key_len: usize) -> Result<Vec<u8>> {
+        self.provider.pbkdf2_derive(password, salt, iterations, key_len).await
+    }
+}
+
+#[async_trait(?Send)]
+impl TimeProvider for SystemDeezel {
+    fn now_secs(&self) -> u64 {
+        self.provider.now_secs()
+    }
+    fn now_millis(&self) -> u64 {
+        self.provider.now_millis()
+    }
+    async fn sleep_ms(&self, ms: u64) {
+        self.provider.sleep_ms(ms).await
+    }
+}
+
+impl LogProvider for SystemDeezel {
+    fn debug(&self, message: &str) {
+        self.provider.debug(message)
+    }
+    fn info(&self, message: &str) {
+        self.provider.info(message)
+    }
+    fn warn(&self, message: &str) {
+        self.provider.warn(message)
+    }
+    fn error(&self, message: &str) {
+        self.provider.error(message)
+    }
+}
+
+#[async_trait(?Send)]
+impl WalletProvider for SystemDeezel {
+    async fn create_wallet(&mut self, config: WalletConfig, mnemonic: Option<String>, passphrase: Option<String>) -> Result<WalletInfo> {
+        self.provider.create_wallet(config, mnemonic, passphrase).await
+    }
+    async fn load_wallet(&mut self, config: WalletConfig, passphrase: Option<String>) -> Result<WalletInfo> {
+        self.provider.load_wallet(config, passphrase).await
+    }
+    async fn get_balance(&self, addresses: Option<Vec<String>>) -> Result<WalletBalance> {
+        <ConcreteProvider as WalletProvider>::get_balance(&self.provider, addresses).await
+    }
+    async fn get_address(&self) -> Result<String> {
+        <ConcreteProvider as WalletProvider>::get_address(&self.provider).await
+    }
+    async fn get_addresses(&self, count: u32) -> Result<Vec<deezel_common::traits::AddressInfo>> {
+        self.provider.get_addresses(count).await
+    }
+    async fn send(&mut self, params: SendParams) -> Result<String> {
+        self.provider.send(params).await
+    }
+    async fn get_utxos(&self, include_frozen: bool, addresses: Option<Vec<String>>) -> Result<Vec<(bitcoin::OutPoint, deezel_common::traits::UtxoInfo)>> {
+        self.provider.get_utxos(include_frozen, addresses).await
+    }
+    async fn get_history(&self, count: u32, address: Option<String>) -> Result<Vec<TransactionInfo>> {
+        self.provider.get_history(count, address).await
+    }
+    async fn freeze_utxo(&self, utxo: String, reason: Option<String>) -> Result<()> {
+        self.provider.freeze_utxo(utxo, reason).await
+    }
+    async fn unfreeze_utxo(&self, utxo: String) -> Result<()> {
+        self.provider.unfreeze_utxo(utxo).await
+    }
+    async fn create_transaction(&self, params: SendParams) -> Result<String> {
+        self.provider.create_transaction(params).await
+    }
+    async fn sign_transaction(&mut self, tx_hex: String) -> Result<String> {
+        self.provider.sign_transaction(tx_hex).await
+    }
+    async fn broadcast_transaction(&self, tx_hex: String) -> Result<String> {
+        self.provider.broadcast_transaction(tx_hex).await
+    }
+    async fn estimate_fee(&self, target: u32) -> Result<FeeEstimate> {
+        self.provider.estimate_fee(target).await
+    }
+    async fn get_fee_rates(&self) -> Result<FeeRates> {
+        self.provider.get_fee_rates().await
+    }
+    async fn sync(&self) -> Result<()> {
+        self.provider.sync().await
+    }
+    async fn backup(&self) -> Result<String> {
+        self.provider.backup().await
+    }
+    async fn get_mnemonic(&self) -> Result<Option<String>> {
+        self.provider.get_mnemonic().await
+    }
+    fn get_network(&self) -> bitcoin::Network {
+        self.provider.get_network()
+    }
+    async fn get_internal_key(&self) -> Result<(bitcoin::XOnlyPublicKey, (bitcoin::bip32::Fingerprint, bitcoin::bip32::DerivationPath))> {
+        self.provider.get_internal_key().await
+    }
+    async fn sign_psbt(&mut self, psbt: &bitcoin::psbt::Psbt) -> Result<bitcoin::psbt::Psbt> {
+        self.provider.sign_psbt(psbt).await
+    }
+    async fn get_keypair(&self) -> Result<bitcoin::secp256k1::Keypair> {
+        self.provider.get_keypair().await
+    }
+    fn set_passphrase(&mut self, passphrase: Option<String>) {
+        self.provider.set_passphrase(passphrase)
+    }
+    async fn get_last_used_address_index(&self) -> Result<u32> {
+        self.provider.get_last_used_address_index().await
+    }
+}
+
+#[async_trait(?Send)]
+impl AddressResolver for SystemDeezel {
+    async fn resolve_all_identifiers(&self, input: &str) -> Result<String> {
+        self.provider.resolve_all_identifiers(input).await
+    }
+    fn contains_identifiers(&self, input: &str) -> bool {
+        self.provider.contains_identifiers(input)
+    }
+    async fn get_address(&self, address_type: &str, index: u32) -> Result<String> {
+        <ConcreteProvider as AddressResolver>::get_address(&self.provider, address_type, index).await
+    }
+    async fn list_identifiers(&self) -> Result<Vec<String>> {
+        self.provider.list_identifiers().await
+    }
+}
+
+#[async_trait(?Send)]
+impl BitcoinRpcProvider for SystemDeezel {
+    async fn get_block_count(&self) -> Result<u64> {
+        self.provider.get_block_count().await
+    }
+    async fn generate_to_address(&self, nblocks: u32, address: &str) -> Result<deezel_common::JsonValue> {
+        self.provider.generate_to_address(nblocks, address).await
+    }
+    async fn get_new_address(&self) -> Result<deezel_common::JsonValue> {
+        self.provider.get_new_address().await
+    }
+    async fn get_transaction_hex(&self, txid: &str) -> Result<String> {
+        self.provider.get_transaction_hex(txid).await
+    }
+    async fn get_block(&self, hash: &str, raw: bool) -> Result<deezel_common::JsonValue> {
+        <ConcreteProvider as BitcoinRpcProvider>::get_block(&self.provider, hash, raw).await
+    }
+    async fn get_block_hash(&self, height: u64) -> Result<String> {
+        <ConcreteProvider as BitcoinRpcProvider>::get_block_hash(&self.provider, height).await
+    }
+    async fn send_raw_transaction(&self, tx_hex: &str) -> Result<String> {
+        self.provider.send_raw_transaction(tx_hex).await
+    }
+    async fn get_mempool_info(&self) -> Result<deezel_common::JsonValue> {
+        self.provider.get_mempool_info().await
+    }
+    async fn estimate_smart_fee(&self, target: u32) -> Result<deezel_common::JsonValue> {
+        self.provider.estimate_smart_fee(target).await
+    }
+    async fn get_esplora_blocks_tip_height(&self) -> Result<u64> {
+        self.provider.get_esplora_blocks_tip_height().await
+    }
+    async fn trace_transaction(&self, txid: &str, vout: u32, block: Option<&str>, tx: Option<&str>) -> Result<deezel_common::JsonValue> {
+        self.provider.trace_transaction(txid, vout, block, tx).await
+    }
+}
+
+#[async_trait(?Send)]
+impl MetashrewRpcProvider for SystemDeezel {
+    async fn get_metashrew_height(&self) -> Result<u64> {
+        self.provider.get_metashrew_height().await
+    }
+    async fn get_contract_meta(&self, block: &str, tx: &str) -> Result<deezel_common::JsonValue> {
+        self.provider.get_contract_meta(block, tx).await
+    }
+    async fn trace_outpoint(&self, txid: &str, vout: u32) -> Result<deezel_common::JsonValue> {
+        self.provider.trace_outpoint(txid, vout).await
+    }
+    async fn get_spendables_by_address(&self, address: &str) -> Result<deezel_common::JsonValue> {
+        self.provider.get_spendables_by_address(address).await
+    }
+    async fn get_protorunes_by_address(&self, address: &str, block_tag: Option<String>, protocol_tag: u128) -> Result<deezel_common::alkanes::protorunes::ProtoruneWalletResponse> {
+        self.provider.get_protorunes_by_address(address, block_tag, protocol_tag).await
+    }
+    async fn get_protorunes_by_outpoint(&self, txid: &str, vout: u32, block_tag: Option<String>, protocol_tag: u128) -> Result<deezel_common::alkanes::protorunes::ProtoruneOutpointResponse> {
+        self.provider.get_protorunes_by_outpoint(txid, vout, block_tag, protocol_tag).await
+    }
+}
+
+#[async_trait(?Send)]
+impl MetashrewProvider for SystemDeezel {
+    async fn get_height(&self) -> Result<u64> {
+        self.provider.get_height().await
+    }
+    async fn get_block_hash(&self, height: u64) -> Result<String> {
+        <ConcreteProvider as MetashrewProvider>::get_block_hash(&self.provider, height).await
+    }
+    async fn get_state_root(&self, height: deezel_common::JsonValue) -> Result<String> {
+        self.provider.get_state_root(height).await
+    }
+}
+
+#[async_trait(?Send)]
+impl EsploraProvider for SystemDeezel {
+    async fn get_blocks_tip_hash(&self) -> Result<String> {
+        self.provider.get_blocks_tip_hash().await
+    }
+    async fn get_blocks_tip_height(&self) -> Result<u64> {
+        self.provider.get_blocks_tip_height().await
+    }
+    async fn get_blocks(&self, start_height: Option<u64>) -> Result<deezel_common::JsonValue> {
+        self.provider.get_blocks(start_height).await
+    }
+    async fn get_block_by_height(&self, height: u64) -> Result<String> {
+        self.provider.get_block_by_height(height).await
+    }
+    async fn get_block(&self, hash: &str) -> Result<deezel_common::JsonValue> {
+        <ConcreteProvider as EsploraProvider>::get_block(&self.provider, hash).await
+    }
+    async fn get_block_status(&self, hash: &str) -> Result<deezel_common::JsonValue> {
+        self.provider.get_block_status(hash).await
+    }
+    async fn get_block_txids(&self, hash: &str) -> Result<deezel_common::JsonValue> {
+        self.provider.get_block_txids(hash).await
+    }
+    async fn get_block_header(&self, hash: &str) -> Result<String> {
+        self.provider.get_block_header(hash).await
+    }
+    async fn get_block_raw(&self, hash: &str) -> Result<String> {
+        self.provider.get_block_raw(hash).await
+    }
+    async fn get_block_txid(&self, hash: &str, index: u32) -> Result<String> {
+        self.provider.get_block_txid(hash, index).await
+    }
+    async fn get_block_txs(&self, hash: &str, start_index: Option<u32>) -> Result<deezel_common::JsonValue> {
+        self.provider.get_block_txs(hash, start_index).await
+    }
+    async fn get_address_info(&self, address: &str) -> Result<deezel_common::JsonValue> {
+        self.provider.get_address_info(address).await
+    }
+    async fn get_address(&self, address: &str) -> Result<deezel_common::JsonValue> {
+        <ConcreteProvider as EsploraProvider>::get_address(&self.provider, address).await
+    }
+    async fn get_address_txs(&self, address: &str) -> Result<deezel_common::JsonValue> {
+        self.provider.get_address_txs(address).await
+    }
+    async fn get_address_txs_chain(&self, address: &str, last_seen_txid: Option<&str>) -> Result<deezel_common::JsonValue> {
+        self.provider.get_address_txs_chain(address, last_seen_txid).await
+    }
+    async fn get_address_txs_mempool(&self, address: &str) -> Result<deezel_common::JsonValue> {
+        self.provider.get_address_txs_mempool(address).await
+    }
+    async fn get_address_utxo(&self, address: &str) -> Result<deezel_common::JsonValue> {
+        self.provider.get_address_utxo(address).await
+    }
+    async fn get_address_prefix(&self, prefix: &str) -> Result<deezel_common::JsonValue> {
+        self.provider.get_address_prefix(prefix).await
+    }
+    async fn get_tx(&self, txid: &str) -> Result<deezel_common::JsonValue> {
+        self.provider.get_tx(txid).await
+    }
+    async fn get_tx_hex(&self, txid: &str) -> Result<String> {
+        self.provider.get_tx_hex(txid).await
+    }
+    async fn get_tx_raw(&self, txid: &str) -> Result<String> {
+        self.provider.get_tx_raw(txid).await
+    }
+    async fn get_tx_status(&self, txid: &str) -> Result<deezel_common::JsonValue> {
+        self.provider.get_tx_status(txid).await
+    }
+    async fn get_tx_merkle_proof(&self, txid: &str) -> Result<deezel_common::JsonValue> {
+        self.provider.get_tx_merkle_proof(txid).await
+    }
+    async fn get_tx_merkleblock_proof(&self, txid: &str) -> Result<String> {
+        self.provider.get_tx_merkleblock_proof(txid).await
+    }
+    async fn get_tx_outspend(&self, txid: &str, index: u32) -> Result<deezel_common::JsonValue> {
+        self.provider.get_tx_outspend(txid, index).await
+    }
+    async fn get_tx_outspends(&self, txid: &str) -> Result<deezel_common::JsonValue> {
+        self.provider.get_tx_outspends(txid).await
+    }
+    async fn broadcast(&self, tx_hex: &str) -> Result<String> {
+        self.provider.broadcast(tx_hex).await
+    }
+    async fn get_mempool(&self) -> Result<deezel_common::JsonValue> {
+        self.provider.get_mempool().await
+    }
+    async fn get_mempool_txids(&self) -> Result<deezel_common::JsonValue> {
+        self.provider.get_mempool_txids().await
+    }
+    async fn get_mempool_recent(&self) -> Result<deezel_common::JsonValue> {
+        self.provider.get_mempool_recent().await
+    }
+    async fn get_fee_estimates(&self) -> Result<deezel_common::JsonValue> {
+        self.provider.get_fee_estimates().await
+    }
+}
+
+#[async_trait(?Send)]
+impl RunestoneProvider for SystemDeezel {
+    async fn decode_runestone(&self, tx: &bitcoin::Transaction) -> Result<deezel_common::JsonValue> {
+        self.provider.decode_runestone(tx).await
+    }
+    async fn format_runestone_with_decoded_messages(&self, tx: &bitcoin::Transaction) -> Result<deezel_common::JsonValue> {
+        self.provider.format_runestone_with_decoded_messages(tx).await
+    }
+    async fn analyze_runestone(&self, txid: &str) -> Result<deezel_common::JsonValue> {
+        self.provider.analyze_runestone(txid).await
+    }
+}
+
+#[async_trait(?Send)]
+impl AlkanesProvider for SystemDeezel {
+    async fn execute(&mut self, params: deezel_common::alkanes::types::EnhancedExecuteParams) -> Result<deezel_common::alkanes::types::ExecutionState> {
+        self.provider.execute(params).await
+    }
+    async fn resume_execution(&mut self, state: deezel_common::alkanes::types::ReadyToSignTx, params: &deezel_common::alkanes::types::EnhancedExecuteParams) -> Result<deezel_common::alkanes::types::EnhancedExecuteResult> {
+        self.provider.resume_execution(state, params).await
+    }
+    async fn resume_commit_execution(&mut self, state: deezel_common::alkanes::types::ReadyToSignCommitTx) -> Result<deezel_common::alkanes::types::ExecutionState> {
+        self.provider.resume_commit_execution(state).await
+    }
+    async fn resume_reveal_execution(&mut self, state: deezel_common::alkanes::types::ReadyToSignRevealTx) -> Result<deezel_common::alkanes::types::EnhancedExecuteResult> {
+        self.provider.resume_reveal_execution(state).await
+    }
+    async fn protorunes_by_address(&self, address: &str, block_tag: Option<String>, protocol_tag: u128) -> Result<deezel_common::alkanes::protorunes::ProtoruneWalletResponse> {
+        self.provider.protorunes_by_address(address, block_tag, protocol_tag).await
+    }
+    async fn protorunes_by_outpoint(&self, txid: &str, vout: u32, block_tag: Option<String>, protocol_tag: u128) -> Result<deezel_common::alkanes::protorunes::ProtoruneOutpointResponse> {
+        self.provider.protorunes_by_outpoint(txid, vout, block_tag, protocol_tag).await
+    }
+    async fn simulate(&self, contract_id: &str, params: Option<&str>) -> Result<deezel_common::JsonValue> {
+        self.provider.simulate(contract_id, params).await
+    }
+    async fn trace(&self, outpoint: &str) -> Result<deezel_common::alkanes_pb::Trace> {
+        self.provider.trace(outpoint).await
+    }
+    async fn get_block(&self, height: u64) -> Result<deezel_common::alkanes_pb::BlockResponse> {
+        <ConcreteProvider as AlkanesProvider>::get_block(&self.provider, height).await
+    }
+    async fn sequence(&self, txid: &str, vout: u32) -> Result<deezel_common::JsonValue> {
+        self.provider.sequence(txid, vout).await
+    }
+    async fn spendables_by_address(&self, address: &str) -> Result<deezel_common::JsonValue> {
+        self.provider.spendables_by_address(address).await
+    }
+    async fn trace_block(&self, height: u64) -> Result<deezel_common::alkanes_pb::Trace> {
+        self.provider.trace_block(height).await
+    }
+    async fn get_bytecode(&self, alkane_id: &str) -> Result<String> {
+        <ConcreteProvider as AlkanesProvider>::get_bytecode(&self.provider, alkane_id).await
+    }
+    async fn inspect(&self, target: &str, config: deezel_common::alkanes::AlkanesInspectConfig) -> Result<deezel_common::alkanes::AlkanesInspectResult> {
+        self.provider.inspect(target, config).await
+    }
+    async fn get_balance(&self, address: Option<&str>) -> Result<Vec<deezel_common::alkanes::AlkaneBalance>> {
+        <ConcreteProvider as AlkanesProvider>::get_balance(&self.provider, address).await
+    }
+}
+
+#[async_trait(?Send)]
+impl MonitorProvider for SystemDeezel {
+    async fn monitor_blocks(&self, start: Option<u64>) -> Result<()> {
+        self.provider.monitor_blocks(start).await
+    }
+    async fn get_block_events(&self, height: u64) -> Result<Vec<BlockEvent>> {
+        self.provider.get_block_events(height).await
+    }
+}
+
+#[async_trait(?Send)]
+impl KeystoreProvider for SystemDeezel {
+    async fn derive_addresses(&self, master_public_key: &str, network: bitcoin::Network, script_types: &[&str], start_index: u32, count: u32) -> Result<Vec<KeystoreAddress>> {
+        self.provider.derive_addresses(master_public_key, network, script_types, start_index, count).await
+    }
+    async fn get_default_addresses(&self, master_public_key: &str, network: bitcoin::Network) -> Result<Vec<KeystoreAddress>> {
+        self.provider.get_default_addresses(master_public_key, network).await
+    }
+    fn parse_address_range(&self, range_spec: &str) -> Result<(String, u32, u32)> {
+        self.provider.parse_address_range(range_spec)
+    }
+    async fn get_keystore_info(&self, master_fingerprint: &str, created_at: u64, version: &str) -> Result<KeystoreInfo> {
+        self.provider.get_keystore_info(master_fingerprint, created_at, version).await
+    }
+    async fn get_address(&self, address_type: &str, index: u32) -> Result<String> {
+        <ConcreteProvider as KeystoreProvider>::get_address(&self.provider, address_type, index).await
+    }
+}
+
+#[async_trait(?Send)]
+impl OrdProvider for SystemDeezel {
+    async fn get_inscription(&self, inscription_id: &str) -> Result<deezel_common::ord::Inscription> {
+        self.provider.get_inscription(inscription_id).await
+    }
+    async fn get_inscriptions_in_block(&self, block_hash: &str) -> Result<deezel_common::ord::Inscriptions> {
+        self.provider.get_inscriptions_in_block(block_hash).await
+    }
+    async fn get_ord_address_info(&self, address: &str) -> Result<deezel_common::ord::AddressInfo> {
+        self.provider.get_ord_address_info(address).await
+    }
+    async fn get_block_info(&self, query: &str) -> Result<deezel_common::ord::Block> {
+        self.provider.get_block_info(query).await
+    }
+    async fn get_ord_block_count(&self) -> Result<u64> {
+        self.provider.get_ord_block_count().await
+    }
+    async fn get_ord_blocks(&self) -> Result<deezel_common::ord::Blocks> {
+        self.provider.get_ord_blocks().await
+    }
+    async fn get_children(&self, inscription_id: &str, page: Option<u32>) -> Result<deezel_common::ord::Children> {
+        self.provider.get_children(inscription_id, page).await
+    }
+    async fn get_content(&self, inscription_id: &str) -> Result<Vec<u8>> {
+        self.provider.get_content(inscription_id).await
+    }
+    async fn get_inscriptions(&self, page: Option<u32>) -> Result<deezel_common::ord::Inscriptions> {
+        self.provider.get_inscriptions(page).await
+    }
+    async fn get_output(&self, output: &str) -> Result<deezel_common::ord::Output> {
+        self.provider.get_output(output).await
+    }
+    async fn get_parents(&self, inscription_id: &str, page: Option<u32>) -> Result<deezel_common::ord::ParentInscriptions> {
+        self.provider.get_parents(inscription_id, page).await
+    }
+    async fn get_rune(&self, rune: &str) -> Result<deezel_common::ord::RuneInfo> {
+        self.provider.get_rune(rune).await
+    }
+    async fn get_runes(&self, page: Option<u32>) -> Result<deezel_common::ord::Runes> {
+        self.provider.get_runes(page).await
+    }
+    async fn get_sat(&self, sat: u64) -> Result<deezel_common::ord::SatResponse> {
+        self.provider.get_sat(sat).await
+    }
+    async fn get_tx_info(&self, txid: &str) -> Result<deezel_common::ord::TxInfo> {
+        self.provider.get_tx_info(txid).await
+    }
+}
+
+#[async_trait(?Send)]
+impl UtxoProvider for SystemDeezel {
+    async fn get_utxos_by_spec(&self, spec: &[String]) -> Result<Vec<Utxo>> {
+        self.provider.get_utxos_by_spec(spec).await
+    }
+}
+
+impl Clone for SystemDeezel {
+    fn clone(&self) -> Self {
+        Self {
+            provider: self.provider.clone(),
+            keystore_manager: self.keystore_manager.clone(),
+            args: self.args.clone(),
+        }
+    }
+}
+
 // Implement the individual system traits
 #[async_trait(?Send)]
 impl SystemWallet for SystemDeezel {
@@ -150,10 +709,10 @@ impl SystemWallet for SystemDeezel {
         }
 
        let res: anyhow::Result<()> = match command {
-           WalletCommands::Create { mnemonic, passphrase } => {
+           WalletCommands::Create { mnemonic } => {
                println!("🔐 Creating encrypted keystore...");
 
-               let final_passphrase = if let Some(pass) = passphrase {
+               let final_passphrase = if let Some(pass) = self.args.passphrase.clone() {
                    pass
                } else {
                    let pass = rpassword::prompt_password("Enter passphrase: ")?;

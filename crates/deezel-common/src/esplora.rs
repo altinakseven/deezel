@@ -14,6 +14,62 @@ use deezel_pretty_print_macro::PrettyPrint;
 use alloc::string::String;
 use alloc::vec::Vec;
 use alloc::collections::BTreeMap as HashMap;
+use serde_json::json;
+
+use crate::{
+    address_parser::AddressParser,
+    traits::{AddressResolver, Utxo, UtxoProvider},
+    Result,
+};
+use async_trait::async_trait;
+use serde_json::Value as JsonValue;
+
+#[derive(Clone)]
+pub struct EsploraProvider<R: AddressResolver> {
+    address_parser: AddressParser<R>,
+}
+
+impl<R: AddressResolver> EsploraProvider<R> {
+    pub fn new(address_resolver: R) -> Self {
+        Self {
+            address_parser: AddressParser::new(address_resolver),
+        }
+    }
+
+    async fn get(&self, _path: &str) -> Result<JsonValue> {
+        // This is a placeholder for the actual HTTP GET logic.
+        // In a real implementation, this would use an HTTP client to send the request.
+        Ok(json!([]))
+    }
+}
+
+#[async_trait(?Send)]
+impl<R: AddressResolver + Send + Sync> UtxoProvider for EsploraProvider<R> {
+    async fn get_utxos_by_spec(&self, spec: &[String]) -> Result<Vec<Utxo>> {
+        let mut addresses = Vec::new();
+        for s in spec {
+            addresses.extend(self.address_parser.parse(s).await?);
+        }
+
+        let mut utxos = Vec::new();
+        for address in addresses {
+            let path = format!("/address/{}/utxo", address);
+            let esplora_utxos_json = self.get(&path).await?;
+            let esplora_utxos: Vec<EsploraUtxo> = serde_json::from_value(esplora_utxos_json)?;
+            for u in esplora_utxos {
+                utxos.push(Utxo {
+                    txid: u.txid,
+                    vout: u.vout,
+                    amount: u.value,
+                    address: address.clone(),
+                });
+            }
+        }
+
+        Ok(utxos)
+    }
+}
+
 
 /// Block information response
 #[derive(Debug, Clone, Serialize, Deserialize)]

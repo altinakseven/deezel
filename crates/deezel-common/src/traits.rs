@@ -303,7 +303,7 @@ pub struct SendParams {
 }
 
 /// UTXO information
-#[derive(Debug, Clone, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct UtxoInfo {
     pub txid: String,
     pub vout: u32,
@@ -320,8 +320,23 @@ pub struct UtxoInfo {
     pub is_coinbase: bool,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Utxo {
+    pub txid: String,
+    pub vout: u32,
+    pub amount: u64,
+    pub address: String,
+}
+
+/// Trait for providing UTXOs
+#[async_trait(?Send)]
+pub trait UtxoProvider {
+    async fn get_utxos_by_spec(&self, spec: &[String]) -> Result<Vec<Utxo>>;
+}
+
+
 /// Transaction information
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TransactionInfo {
     pub txid: String,
     pub block_height: Option<u64>,
@@ -333,7 +348,7 @@ pub struct TransactionInfo {
 }
 
 /// Transaction input
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TransactionInput {
     pub txid: String,
     pub vout: u32,
@@ -342,7 +357,7 @@ pub struct TransactionInput {
 }
 
 /// Transaction output
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TransactionOutput {
     pub address: Option<String>,
     pub amount: u64,
@@ -400,6 +415,9 @@ pub trait KeystoreProvider {
     
     /// Get default addresses for display (first 5 of each type for given network)
     async fn get_default_addresses(&self, master_public_key: &str, network: Network) -> Result<Vec<KeystoreAddress>>;
+
+    /// Get address for specific type and index
+    async fn get_address(&self, address_type: &str, index: u32) -> Result<String>;
     
     /// Parse address range specification (e.g., "p2tr:0-1000", "p2sh:0-500")
     fn parse_address_range(&self, range_spec: &str) -> Result<(String, u32, u32)>;
@@ -501,6 +519,17 @@ pub trait MetashrewRpcProvider {
         block_tag: Option<String>,
         protocol_tag: u128,
     ) -> Result<ProtoruneOutpointResponse>;
+}
+
+/// Trait for Metashrew provider operations
+#[async_trait(?Send)]
+pub trait MetashrewProvider {
+    /// Get the current block height.
+    async fn get_height(&self) -> Result<u64>;
+    /// Get the block hash for a given height.
+    async fn get_block_hash(&self, height: u64) -> Result<String>;
+    /// Get the state root for a given height.
+    async fn get_state_root(&self, height: JsonValue) -> Result<String>;
 }
 
 /// Trait for Esplora API operations
@@ -728,6 +757,7 @@ pub trait DeezelProvider:
     AddressResolver +
     BitcoinRpcProvider +
     MetashrewRpcProvider +
+    MetashrewProvider +
     EsploraProvider +
     RunestoneProvider +
     AlkanesProvider +
@@ -737,6 +767,15 @@ pub trait DeezelProvider:
 {
     /// Get provider name/type
     fn provider_name(&self) -> &str;
+
+    /// Get the Bitcoin RPC URL
+    fn get_bitcoin_rpc_url(&self) -> Option<String>;
+
+    /// Get the Esplora API URL
+    fn get_esplora_api_url(&self) -> Option<String>;
+
+    /// Get the Ord server URL
+    fn get_ord_server_url(&self) -> Option<String>;
 
     /// Create a boxed, clonable version of the provider
     fn clone_box(&self) -> Box<dyn DeezelProvider>;
@@ -1025,6 +1064,19 @@ impl<T: DeezelProvider + ?Sized> MetashrewRpcProvider for Box<T> {
 }
 
 #[async_trait(?Send)]
+impl<T: DeezelProvider + ?Sized> MetashrewProvider for Box<T> {
+    async fn get_height(&self) -> Result<u64> {
+        (**self).get_height().await
+    }
+    async fn get_block_hash(&self, height: u64) -> Result<String> {
+        <T as MetashrewProvider>::get_block_hash(self, height).await
+    }
+    async fn get_state_root(&self, height: JsonValue) -> Result<String> {
+        (**self).get_state_root(height).await
+    }
+}
+
+#[async_trait(?Send)]
 impl<T: DeezelProvider + ?Sized> EsploraProvider for Box<T> {
    async fn get_blocks_tip_hash(&self) -> Result<String> {
        (**self).get_blocks_tip_hash().await
@@ -1060,7 +1112,7 @@ impl<T: DeezelProvider + ?Sized> EsploraProvider for Box<T> {
        (**self).get_block_txs(hash, start_index).await
    }
    async fn get_address(&self, address: &str) -> Result<serde_json::Value> {
-       <Self as EsploraProvider>::get_address(self, address).await
+       EsploraProvider::get_address(&**self, address).await
    }
    async fn get_address_info(&self, address: &str) -> Result<serde_json::Value> {
        (**self).get_address_info(address).await
@@ -1266,6 +1318,9 @@ impl<T: DeezelProvider + ?Sized> MonitorProvider for Box<T> {
 
 #[async_trait(?Send)]
 impl<T: DeezelProvider + ?Sized> KeystoreProvider for Box<T> {
+    async fn get_address(&self, address_type: &str, index: u32) -> Result<String> {
+        <T as KeystoreProvider>::get_address(self, address_type, index).await
+    }
    async fn derive_addresses(&self, master_public_key: &str, network: Network, script_types: &[&str], start_index: u32, count: u32) -> Result<Vec<KeystoreAddress>> {
        (**self).derive_addresses(master_public_key, network, script_types, start_index, count).await
    }
@@ -1284,6 +1339,15 @@ impl<T: DeezelProvider + ?Sized> KeystoreProvider for Box<T> {
 impl<T: DeezelProvider + ?Sized> DeezelProvider for Box<T> {
     fn provider_name(&self) -> &str {
         (**self).provider_name()
+    }
+    fn get_bitcoin_rpc_url(&self) -> Option<String> {
+        (**self).get_bitcoin_rpc_url()
+    }
+    fn get_esplora_api_url(&self) -> Option<String> {
+        (**self).get_esplora_api_url()
+    }
+    fn get_ord_server_url(&self) -> Option<String> {
+        (**self).get_ord_server_url()
     }
     fn clone_box(&self) -> Box<dyn DeezelProvider> {
         (**self).clone_box()

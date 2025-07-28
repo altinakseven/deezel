@@ -56,6 +56,7 @@ pub mod rpc;
 pub mod alkanes;
 pub mod wallet;
 pub mod address_resolver;
+pub mod address_parser;
 pub mod runestone;
 pub mod runestone_analysis;
 pub mod runestone_enhanced;
@@ -67,6 +68,7 @@ pub mod keystore;
 pub mod esplora;
 pub mod bitcoind;
 pub mod ord;
+pub mod metashrew;
 pub mod index_pointer;
 
 #[cfg(any(test, feature = "test-utils"))]
@@ -84,6 +86,7 @@ pub use bitcoin::{Network, Transaction, Address, ScriptBuf};
 pub use ordinals::Runestone;
 pub use protorune_support::protostone::Protostone;
 pub use serde_json::Value as JsonValue;
+pub use alkanes_support::proto::alkanes as alkanes_pb;
 
 /// Error types for the deezel-common library
 #[derive(Debug)]

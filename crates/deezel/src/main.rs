@@ -9,10 +9,11 @@ use clap::Parser;
 use deezel_sys::{SystemDeezel, SystemOrd};
 use deezel_common::traits::*;
 use futures::future::join_all;
+use serde_json::json;
 
 mod commands;
 mod pretty_print;
-use commands::{Alkanes, AlkanesExecute, Commands, DeezelCommands, Protorunes, Runestone};
+use commands::{Alkanes, AlkanesExecute, Commands, DeezelCommands, MetashrewCommands, Protorunes, Runestone, WalletCommands};
 use deezel_common::alkanes;
 use pretty_print::*;
 
@@ -35,16 +36,93 @@ async fn main() -> Result<()> {
     execute_command(&mut system, args.command).await
 }
 
-async fn execute_command<T: System + SystemOrd>(system: &mut T, command: Commands) -> Result<()> {
+async fn execute_command<T: System + SystemOrd + UtxoProvider>(system: &mut T, command: Commands) -> Result<()> {
     match command {
         Commands::Bitcoind(cmd) => system.execute_bitcoind_command(cmd.into()).await.map_err(|e| e.into()),
-        Commands::Wallet(cmd) => system.execute_wallet_command(cmd.into()).await.map_err(|e| e.into()),
+        Commands::Wallet(cmd) => execute_wallet_command(system, cmd).await,
         Commands::Alkanes(cmd) => execute_alkanes_command(system, cmd).await,
         Commands::Runestone(cmd) => execute_runestone_command(system, cmd).await,
         Commands::Protorunes(cmd) => execute_protorunes_command(system.provider(), cmd).await,
         Commands::Ord(cmd) => execute_ord_command(system.provider(), cmd.into()).await,
         Commands::Esplora(cmd) => execute_esplora_command(system.provider(), cmd.into()).await,
+        Commands::Metashrew(cmd) => execute_metashrew_command(system.provider(), cmd).await,
     }
+}
+
+async fn execute_metashrew_command(provider: &dyn DeezelProvider, command: MetashrewCommands) -> Result<()> {
+    match command {
+        MetashrewCommands::Height => {
+            let height = provider.get_height().await?;
+            println!("{height}");
+        }
+        MetashrewCommands::Getblockhash { height } => {
+            let hash = <dyn DeezelProvider as MetashrewProvider>::get_block_hash(provider, height).await?;
+            println!("{hash}");
+        }
+        MetashrewCommands::Getstateroot { height } => {
+            let param = match height {
+                Some(h) if h.to_lowercase() == "latest" => json!("latest"),
+                Some(h) => json!(h.parse::<u64>()?),
+                None => json!("latest"),
+            };
+            let root = provider.get_state_root(param).await?;
+            println!("{root}");
+        }
+    }
+    Ok(())
+}
+
+async fn execute_wallet_command<T: System + UtxoProvider>(system: &mut T, command: WalletCommands) -> Result<()> {
+    match command {
+        WalletCommands::Utxos { addresses, raw, include_frozen } => {
+            let resolved_addresses = if let Some(addrs) = addresses {
+                let resolved = system.provider().resolve_all_identifiers(&addrs).await?;
+                Some(resolved.split(',').map(|s| s.trim().to_string()).collect())
+            } else {
+                None
+            };
+            let utxos = system.provider().get_utxos(include_frozen, resolved_addresses).await?;
+            if raw {
+                println!("{}", serde_json::to_string_pretty(&utxos)?);
+            } else {
+                print_utxos(&utxos);
+            }
+        }
+        WalletCommands::Send { address, amount, fee_rate, send_all, from, change_address, auto_confirm } => {
+            let params = deezel_common::traits::SendParams {
+                address,
+                amount,
+                fee_rate,
+                send_all,
+                from,
+                change_address,
+                auto_confirm,
+            };
+            let txid = system.provider_mut().send(params).await?;
+            println!("Transaction sent: {txid}");
+        }
+        WalletCommands::Balance { addresses, raw } => {
+            let balance = WalletProvider::get_balance(system.provider(), addresses).await?;
+            if raw {
+                println!("{}", serde_json::to_string_pretty(&balance)?);
+            } else {
+                println!("Confirmed: {}", balance.confirmed);
+                println!("Pending:   {}", balance.pending);
+            }
+        }
+        WalletCommands::History { count, address, raw } => {
+            let history = system.provider().get_history(count, address).await?;
+            if raw {
+                println!("{}", serde_json::to_string_pretty(&history)?);
+            } else {
+                print_history(&history);
+            }
+        }
+        _ => {
+            system.execute_wallet_command(command.into()).await?;
+        }
+    }
+    Ok(())
 }
 
 async fn execute_alkanes_command<T: System>(system: &mut T, command: Alkanes) -> Result<()> {
@@ -127,7 +205,7 @@ async fn execute_alkanes_command<T: System>(system: &mut T, command: Alkanes) ->
                 Ok(trace_val) => {
                     let trace: deezel_common::alkanes::trace::Trace = trace_val.into();
                     if raw {
-                        println!("{}", serde_json::to_string_pretty(&trace)?);
+                        println!("{:?}", trace);
                     } else {
                         println!("{trace}");
                     }
@@ -135,6 +213,66 @@ async fn execute_alkanes_command<T: System>(system: &mut T, command: Alkanes) ->
                 Err(e) => {
                     println!("Error: {e}");
                 }
+            }
+            Ok(())
+        },
+        Alkanes::Simulate { contract_id, params, raw } => {
+            let result = system.provider().simulate(&contract_id, params.as_deref()).await?;
+            if raw {
+                println!("{}", serde_json::to_string_pretty(&result)?);
+            } else {
+                println!("Simulation result: {}", serde_json::to_string_pretty(&result)?);
+            }
+            Ok(())
+        },
+        Alkanes::Sequence { outpoint, raw } => {
+            let parts: Vec<&str> = outpoint.split(':').collect();
+            if parts.len() != 2 {
+                return Err(anyhow::anyhow!("Invalid outpoint format. Expected txid:vout"));
+            }
+            let txid = parts[0];
+            let vout = parts[1].parse::<u32>()?;
+            let result = system.provider().sequence(txid, vout).await?;
+            if raw {
+                println!("{}", serde_json::to_string_pretty(&result)?);
+            } else {
+                println!("Sequence: {}", serde_json::to_string_pretty(&result)?);
+            }
+            Ok(())
+        },
+        Alkanes::Spendables { address, raw } => {
+            let result = system.provider().spendables_by_address(&address).await?;
+            if raw {
+                println!("{}", serde_json::to_string_pretty(&result)?);
+            } else {
+                println!("Spendables: {}", serde_json::to_string_pretty(&result)?);
+            }
+            Ok(())
+        },
+        Alkanes::TraceBlock { height, raw } => {
+            let result = system.provider().trace_block(height).await?;
+            if raw {
+                println!("{:?}", result);
+            } else {
+                println!("Trace: {:?}", result);
+            }
+            Ok(())
+        },
+        Alkanes::GetBytecode { alkane_id, raw } => {
+            let result = AlkanesProvider::get_bytecode(system.provider(), &alkane_id).await?;
+            if raw {
+                println!("{result}");
+            } else {
+                println!("Bytecode: {result}");
+            }
+            Ok(())
+        },
+        Alkanes::GetBalance { address, raw } => {
+            let result = AlkanesProvider::get_balance(system.provider(), address.as_deref()).await?;
+            if raw {
+                println!("{}", serde_json::to_string_pretty(&result)?);
+            } else {
+                print_alkane_balances(&result);
             }
             Ok(())
         }
@@ -219,7 +357,7 @@ async fn execute_esplora_command(
             }
         }
         deezel_common::commands::EsploraCommands::Block { hash, raw } => {
-            let block = <dyn DeezelProvider as EsploraProvider>::get_block(provider, &hash).await?;
+            let block = <dyn EsploraProvider>::get_block(provider, &hash).await?;
             if raw {
                 println!("{}", serde_json::to_string_pretty(&block)?);
             } else {
@@ -275,7 +413,7 @@ async fn execute_esplora_command(
             }
         }
         deezel_common::commands::EsploraCommands::Address { params, raw } => {
-            let result = <dyn DeezelProvider as EsploraProvider>::get_address(provider, &params).await?;
+            let result = <dyn EsploraProvider>::get_address(provider, &params).await?;
             if raw {
                 println!("{}", serde_json::to_string_pretty(&result)?);
             } else {
