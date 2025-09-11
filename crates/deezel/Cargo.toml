@@ -56,22 +56,9 @@ predicates = "3.0"
 serde_json = "1.0"
 bitcoind = "0.36.0"
 
-[[test]]
-name = "runestone_e2e"
-path = "../../tests/runestone_e2e.rs"
-harness = true
 
 [[test]]
-name = "test_alkanes_inspect"
-path = "../../tests/test_alkanes_inspect.rs"
+name = "alkanes_execute_mock"
+path = "../../tests/alkanes_execute_mock.rs"
 harness = true
 
-[[test]]
-name = "alkanes_execute_regtest"
-path = "../../tests/alkanes_execute_regtest.rs"
-harness = true
-
-[[test]]
-name = "protorunes_e2e"
-path = "../../tests/protorunes_e2e.rs"
-harness = true

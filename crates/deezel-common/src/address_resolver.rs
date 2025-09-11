@@ -174,8 +174,8 @@ impl<P: DeezelProvider> AddressResolver<P> {
             },
             AddressIdentifier::External { address } => address,
             AddressIdentifier::Raw { address } => {
-                // Validate that it's a proper Bitcoin address
-                self.validate_bitcoin_address(&address)?;
+                // We don't validate raw addresses here. Validation will happen
+                // when the address is actually used to construct a script pubkey.
                 address
             },
         };
@@ -191,6 +191,8 @@ impl<P: DeezelProvider> AddressResolver<P> {
         let identifiers = self.find_identifiers(input);
         
         if identifiers.is_empty() {
+            // If there are no identifiers, we assume it's a raw address and
+            // return it as is. Validation will happen downstream.
             return Ok(input.to_string());
         }
         

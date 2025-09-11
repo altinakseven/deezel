@@ -108,6 +108,7 @@ reqwest = { workspace = true, features = ["json", "rustls-tls"], optional = true
 url = { version = "2.5.0", optional = true }
 clap = { workspace = true, features = ["derive"], default-features = false }
 bitcoincore-rpc = { workspace = true, optional = true }
+bech32.workspace = true
 
 [features]
 default = ["std", "wasm-inspection", "native-deps"]

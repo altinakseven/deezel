@@ -45,6 +45,10 @@ impl MockProvider {
         }
     }
     
+    pub fn set_keypair(&mut self, secret_key: SecretKey, public_key: bitcoin::PublicKey) {
+        self.secret_key = secret_key;
+        self.internal_key = public_key.inner.x_only_public_key().0;
+    }
 }
 
 #[async_trait(?Send)]

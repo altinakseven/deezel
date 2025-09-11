@@ -129,7 +129,25 @@ async fn execute_wallet_command<T: System + UtxoProvider>(system: &mut T, comman
 
 async fn execute_alkanes_command<T: System>(system: &mut T, command: Alkanes) -> Result<()> {
     match command {
-        Alkanes::Execute(exec_args) => {
+        Alkanes::Execute(mut exec_args) => {
+            // Resolve any address identifiers before passing them to the executor
+            if let Some(change) = &exec_args.change {
+                exec_args.change = Some(system.provider().resolve_all_identifiers(change).await?);
+            }
+            let mut resolved_to = Vec::new();
+            for addr in &exec_args.to {
+                resolved_to.push(system.provider().resolve_all_identifiers(addr).await?);
+            }
+            exec_args.to = resolved_to;
+
+            if let Some(from_addrs) = &exec_args.from {
+                let mut resolved_from = Vec::new();
+                for addr in from_addrs {
+                    resolved_from.push(system.provider().resolve_all_identifiers(addr).await?);
+                }
+                exec_args.from = Some(resolved_from);
+            }
+
             let params = to_enhanced_execute_params(exec_args)?;
             let mut executor = alkanes::execute::EnhancedAlkanesExecutor::new(system.provider_mut());
             let mut state = executor.execute(params.clone()).await?;
