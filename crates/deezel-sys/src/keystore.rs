@@ -346,7 +346,7 @@ impl KeystoreProvider for KeystoreManager {
         Err(DeezelError::NotImplemented("get_address is not implemented for KeystoreManager".to_string()))
     }
 
-    async fn derive_addresses(&self, master_public_key: &str, network: Network, script_types: &[&str], start_index: u32, count: u32) -> CommonResult<Vec<KeystoreAddress>> {
+    async fn derive_addresses(&self, master_public_key: &str, network_params: &deezel_common::network::NetworkParams, script_types: &[&str], start_index: u32, count: u32) -> CommonResult<Vec<KeystoreAddress>> {
         let master_xpub = Xpub::from_str(master_public_key)
             .map_err(|e| DeezelError::Crypto(format!("Failed to parse master public key: {e}")))?;
         
@@ -355,7 +355,7 @@ impl KeystoreProvider for KeystoreManager {
         
         for script_type in script_types {
             for index in start_index..(start_index + count) {
-                let address = self.derive_single_address(&master_xpub, &secp, network, script_type, 0, index)
+                let address = self.derive_single_address(&master_xpub, &secp, network_params.network, script_type, 0, index)
                     .map_err(|e| DeezelError::Crypto(format!("Failed to derive address: {e}")))?;
                 addresses.push(address);
             }
@@ -364,10 +364,10 @@ impl KeystoreProvider for KeystoreManager {
         Ok(addresses)
     }
     
-    async fn get_default_addresses(&self, master_public_key: &str, network: Network) -> CommonResult<Vec<KeystoreAddress>> {
+    async fn get_default_addresses(&self, master_public_key: &str, network_params: &deezel_common::network::NetworkParams) -> CommonResult<Vec<KeystoreAddress>> {
         let script_types = ["p2pkh", "p2sh", "p2wpkh", "p2wsh", "p2tr"];
         // Call the trait method, not the struct method
-        KeystoreProvider::derive_addresses(self, master_public_key, network, &script_types, 0, 5).await
+        KeystoreProvider::derive_addresses(self, master_public_key, network_params, &script_types, 0, 5).await
     }
     
     fn parse_address_range(&self, range_spec: &str) -> CommonResult<(String, u32, u32)> {
@@ -382,6 +382,9 @@ impl KeystoreProvider for KeystoreManager {
             created_at,
             version: version.to_string(),
         })
+    }
+    async fn derive_address_from_path(&self, _master_public_key: &str, _path: &DerivationPath, _script_type: &str, _network_params: &deezel_common::network::NetworkParams) -> CommonResult<KeystoreAddress> {
+        unimplemented!()
     }
 }
 

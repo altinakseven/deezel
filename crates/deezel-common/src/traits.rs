@@ -226,6 +226,9 @@ pub trait WalletProvider {
     
     /// Get network
     fn get_network(&self) -> Network;
+
+    /// Get master public key (xpub) if available
+    async fn get_master_public_key(&self) -> Result<Option<String>>;
     
     /// Get internal key for wallet
     async fn get_internal_key(&self) -> Result<(bitcoin::XOnlyPublicKey, (Fingerprint, DerivationPath))>;
@@ -241,6 +244,11 @@ pub trait WalletProvider {
 
     /// Get the index of the last used address.
     async fn get_last_used_address_index(&self) -> Result<u32>;
+
+    async fn get_enriched_utxos(&self, addresses: Option<Vec<String>>) -> Result<Vec<crate::provider::EnrichedUtxo>>;
+
+    async fn get_all_balances(&self, addresses: Option<Vec<String>>) -> Result<crate::provider::AllBalances>;
+
 }
 
 /// Wallet configuration
@@ -274,7 +282,7 @@ pub struct WalletInfo {
 }
 
 /// Wallet balance information
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct WalletBalance {
     pub confirmed: u64,
     pub pending: i64,
@@ -343,8 +351,12 @@ pub struct TransactionInfo {
     pub block_time: Option<u64>,
     pub confirmed: bool,
     pub fee: Option<u64>,
+    pub weight: Option<u64>,
     pub inputs: Vec<TransactionInput>,
     pub outputs: Vec<TransactionOutput>,
+    pub is_op_return: bool,
+    pub has_protostones: bool,
+    pub is_rbf: bool,
 }
 
 /// Transaction input
@@ -372,7 +384,7 @@ pub struct FeeEstimate {
 }
 
 /// Fee rates
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct FeeRates {
     pub fast: f32,
     pub medium: f32,
@@ -411,10 +423,10 @@ pub trait AddressResolver {
 #[async_trait(?Send)]
 pub trait KeystoreProvider {
     /// Derive addresses dynamically from master public key
-    async fn derive_addresses(&self, master_public_key: &str, network: Network, script_types: &[&str], start_index: u32, count: u32) -> Result<Vec<KeystoreAddress>>;
+    async fn derive_addresses(&self, master_public_key: &str, network_params: &crate::network::NetworkParams, script_types: &[&str], start_index: u32, count: u32) -> Result<Vec<KeystoreAddress>>;
     
     /// Get default addresses for display (first 5 of each type for given network)
-    async fn get_default_addresses(&self, master_public_key: &str, network: Network) -> Result<Vec<KeystoreAddress>>;
+    async fn get_default_addresses(&self, master_public_key: &str, network_params: &crate::network::NetworkParams) -> Result<Vec<KeystoreAddress>>;
 
     /// Get address for specific type and index
     async fn get_address(&self, address_type: &str, index: u32) -> Result<String>;
@@ -424,10 +436,13 @@ pub trait KeystoreProvider {
     
     /// Get keystore info from master public key
     async fn get_keystore_info(&self, master_fingerprint: &str, created_at: u64, version: &str) -> Result<KeystoreInfo>;
+
+    /// Derive a single address from a full derivation path
+    async fn derive_address_from_path(&self, master_public_key: &str, path: &DerivationPath, script_type: &str, network_params: &crate::network::NetworkParams) -> Result<KeystoreAddress>;
 }
 
 /// Address information for keystore operations
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct KeystoreAddress {
     /// The Bitcoin address
     pub address: String,
@@ -570,8 +585,10 @@ pub trait EsploraProvider {
     
     /// Get address information
     async fn get_address_info(&self, address: &str) -> Result<JsonValue>;
-    async fn get_address(&self, address: &str) -> Result<JsonValue>;
-    
+
+    /// Get address UTXOs
+    async fn get_address_utxo(&self, address: &str) -> Result<JsonValue>;
+
     /// Get address transactions
     async fn get_address_txs(&self, address: &str) -> Result<JsonValue>;
     
@@ -580,9 +597,6 @@ pub trait EsploraProvider {
     
     /// Get address mempool transactions
     async fn get_address_txs_mempool(&self, address: &str) -> Result<JsonValue>;
-    
-    /// Get address UTXOs
-    async fn get_address_utxo(&self, address: &str) -> Result<JsonValue>;
     
     /// Search addresses by prefix
     async fn get_address_prefix(&self, prefix: &str) -> Result<JsonValue>;
@@ -714,7 +728,12 @@ pub trait AlkanesProvider {
         block_tag: Option<String>,
         protocol_tag: u128,
     ) -> Result<ProtoruneOutpointResponse>;
-    async fn simulate(&self, contract_id: &str, params: Option<&str>) -> Result<JsonValue>;
+    async fn view(&self, contract_id: &str, view_fn: &str, params: Option<&[u8]>) -> Result<JsonValue>;
+    async fn simulate(&self, contract_id: &str, context: &alkanes_support::proto::alkanes::MessageContextParcel) -> Result<JsonValue> {
+        let mut buf = Vec::new();
+        <alkanes_support::proto::alkanes::MessageContextParcel as protobuf::Message>::write_to_writer(context, &mut buf)?;
+        self.view(contract_id, "simulate", Some(&buf)).await
+    }
     async fn trace(&self, outpoint: &str) -> Result<alkanes_pb::Trace>;
     async fn get_block(&self, height: u64) -> Result<alkanes_pb::BlockResponse>;
     async fn sequence(&self, txid: &str, vout: u32) -> Result<JsonValue>;
@@ -777,6 +796,9 @@ pub trait DeezelProvider:
     /// Get the Ord server URL
     fn get_ord_server_url(&self) -> Option<String>;
 
+    /// Get the Metashrew RPC URL
+    fn get_metashrew_rpc_url(&self) -> Option<String>;
+
     /// Create a boxed, clonable version of the provider
     fn clone_box(&self) -> Box<dyn DeezelProvider>;
     
@@ -795,11 +817,14 @@ pub trait DeezelProvider:
     /// Sign a taproot script spend sighash
     async fn sign_taproot_script_spend(&self, sighash: bitcoin::secp256k1::Message) -> Result<bitcoin::secp256k1::schnorr::Signature>;
 
+    async fn wrap(&mut self, amount: u64, address: Option<String>, fee_rate: Option<f32>) -> Result<String>;
+
+    async fn unwrap(&mut self, amount: u64, address: Option<String>) -> Result<String>;
 }
 
 impl Clone for Box<dyn DeezelProvider> {
    fn clone(&self) -> Self {
-       self.clone_box()
+       DeezelProvider::clone_box(self)
    }
 }
 
@@ -958,6 +983,9 @@ impl<T: DeezelProvider + ?Sized> WalletProvider for Box<T> {
    fn get_network(&self) -> bitcoin::Network {
        (**self).get_network()
    }
+   async fn get_master_public_key(&self) -> Result<Option<String>> {
+       (**self).get_master_public_key().await
+   }
    async fn get_internal_key(&self) -> Result<(bitcoin::XOnlyPublicKey, (Fingerprint, DerivationPath))> {
        (**self).get_internal_key().await
    }
@@ -973,6 +1001,14 @@ impl<T: DeezelProvider + ?Sized> WalletProvider for Box<T> {
 
    async fn get_last_used_address_index(&self) -> Result<u32> {
        (**self).get_last_used_address_index().await
+   }
+
+   async fn get_enriched_utxos(&self, addresses: Option<Vec<String>>) -> Result<Vec<crate::provider::EnrichedUtxo>> {
+       (**self).get_enriched_utxos(addresses).await
+   }
+
+   async fn get_all_balances(&self, addresses: Option<Vec<String>>) -> Result<crate::provider::AllBalances> {
+       (**self).get_all_balances(addresses).await
    }
 }
 
@@ -1111,12 +1147,12 @@ impl<T: DeezelProvider + ?Sized> EsploraProvider for Box<T> {
    async fn get_block_txs(&self, hash: &str, start_index: Option<u32>) -> Result<serde_json::Value> {
        (**self).get_block_txs(hash, start_index).await
    }
-   async fn get_address(&self, address: &str) -> Result<serde_json::Value> {
-       EsploraProvider::get_address(&**self, address).await
-   }
-   async fn get_address_info(&self, address: &str) -> Result<serde_json::Value> {
+   async fn get_address_info(&self, address: &str) -> Result<JsonValue> {
        (**self).get_address_info(address).await
    }
+    async fn get_address_utxo(&self, address: &str) -> Result<JsonValue> {
+        (**self).get_address_utxo(address).await
+    }
    async fn get_address_txs(&self, address: &str) -> Result<serde_json::Value> {
        (**self).get_address_txs(address).await
    }
@@ -1125,9 +1161,6 @@ impl<T: DeezelProvider + ?Sized> EsploraProvider for Box<T> {
    }
    async fn get_address_txs_mempool(&self, address: &str) -> Result<serde_json::Value> {
        (**self).get_address_txs_mempool(address).await
-   }
-   async fn get_address_utxo(&self, address: &str) -> Result<serde_json::Value> {
-       (**self).get_address_utxo(address).await
    }
    async fn get_address_prefix(&self, prefix: &str) -> Result<serde_json::Value> {
        (**self).get_address_prefix(prefix).await
@@ -1277,8 +1310,11 @@ impl<T: DeezelProvider + ?Sized> AlkanesProvider for Box<T> {
     ) -> Result<ProtoruneOutpointResponse> {
         AlkanesProvider::protorunes_by_outpoint(&**self, txid, vout, block_tag, protocol_tag).await
     }
-    async fn simulate(&self, contract_id: &str, params: Option<&str>) -> Result<JsonValue> {
-        (**self).simulate(contract_id, params).await
+    async fn view(&self, contract_id: &str, view_fn: &str, params: Option<&[u8]>) -> Result<JsonValue> {
+        (**self).view(contract_id, view_fn, params).await
+    }
+    async fn simulate(&self, contract_id: &str, context: &alkanes_support::proto::alkanes::MessageContextParcel) -> Result<JsonValue> {
+        (**self).simulate(contract_id, context).await
     }
     async fn trace(&self, outpoint: &str) -> Result<alkanes_pb::Trace> {
         (**self).trace(outpoint).await
@@ -1321,17 +1357,20 @@ impl<T: DeezelProvider + ?Sized> KeystoreProvider for Box<T> {
     async fn get_address(&self, address_type: &str, index: u32) -> Result<String> {
         <T as KeystoreProvider>::get_address(self, address_type, index).await
     }
-   async fn derive_addresses(&self, master_public_key: &str, network: Network, script_types: &[&str], start_index: u32, count: u32) -> Result<Vec<KeystoreAddress>> {
-       (**self).derive_addresses(master_public_key, network, script_types, start_index, count).await
+   async fn derive_addresses(&self, master_public_key: &str, network_params: &crate::network::NetworkParams, script_types: &[&str], start_index: u32, count: u32) -> Result<Vec<KeystoreAddress>> {
+       (**self).derive_addresses(master_public_key, network_params, script_types, start_index, count).await
    }
-   async fn get_default_addresses(&self, master_public_key: &str, network: Network) -> Result<Vec<KeystoreAddress>> {
-       (**self).get_default_addresses(master_public_key, network).await
+   async fn get_default_addresses(&self, master_public_key: &str, network_params: &crate::network::NetworkParams) -> Result<Vec<KeystoreAddress>> {
+       (**self).get_default_addresses(master_public_key, network_params).await
    }
    fn parse_address_range(&self, range_spec: &str) -> Result<(String, u32, u32)> {
        (**self).parse_address_range(range_spec)
    }
    async fn get_keystore_info(&self, master_fingerprint: &str, created_at: u64, version: &str) -> Result<KeystoreInfo> {
        (**self).get_keystore_info(master_fingerprint, created_at, version).await
+   }
+   async fn derive_address_from_path(&self, master_public_key: &str, path: &DerivationPath, script_type: &str, network_params: &crate::network::NetworkParams) -> Result<KeystoreAddress> {
+       (**self).derive_address_from_path(master_public_key, path, script_type, network_params).await
    }
 }
 
@@ -1349,8 +1388,11 @@ impl<T: DeezelProvider + ?Sized> DeezelProvider for Box<T> {
     fn get_ord_server_url(&self) -> Option<String> {
         (**self).get_ord_server_url()
     }
+    fn get_metashrew_rpc_url(&self) -> Option<String> {
+        (**self).get_metashrew_rpc_url()
+    }
     fn clone_box(&self) -> Box<dyn DeezelProvider> {
-        (**self).clone_box()
+        DeezelProvider::clone_box(&**self)
     }
     async fn initialize(&self) -> Result<()> {
         (**self).initialize().await
@@ -1366,6 +1408,14 @@ impl<T: DeezelProvider + ?Sized> DeezelProvider for Box<T> {
     }
     async fn sign_taproot_script_spend(&self, sighash: bitcoin::secp256k1::Message) -> Result<bitcoin::secp256k1::schnorr::Signature> {
         (**self).sign_taproot_script_spend(sighash).await
+    }
+
+    async fn wrap(&mut self, amount: u64, address: Option<String>, fee_rate: Option<f32>) -> Result<String> {
+        (**self).wrap(amount, address, fee_rate).await
+    }
+
+    async fn unwrap(&mut self, amount: u64, address: Option<String>) -> Result<String> {
+        (**self).unwrap(amount, address).await
     }
 }
 

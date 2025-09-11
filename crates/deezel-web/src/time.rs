@@ -50,7 +50,10 @@ use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 #[cfg(target_arch = "wasm32")]
+extern crate alloc;
+#[cfg(target_arch = "wasm32")]
 use alloc::string::ToString;
+#[cfg(target_arch = "wasm32")]
 use alloc::boxed::Box;
 
 /// Web time implementation using Performance API

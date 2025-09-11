@@ -118,7 +118,7 @@ pub(crate) fn disassemble_wasm(wasm_bytes: &[u8]) -> Result<Option<String>> {
 
 /// Perform fuzzing analysis using optimized batch execution
 #[cfg(feature = "wasm-inspection")]
-pub(crate) async fn perform_fuzzing_analysis(
+pub async fn perform_fuzzing_analysis(
     alkane_id: &AlkaneId,
     wasm_bytes: &[u8],
     fuzz_ranges: Option<&str>,

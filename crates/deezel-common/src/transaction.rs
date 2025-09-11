@@ -312,7 +312,7 @@ pub struct TransactionOutput {
 /// Envelope transaction parameters
 #[derive(Debug, Clone)]
 pub struct EnvelopeTransactionParams {
-    pub utxos: Vec<UtxoInfo>,
+    pub utxos: Vec<crate::traits::UtxoInfo>,
     pub outputs: Vec<TransactionOutput>,
     pub envelope_data: Option<Vec<u8>>,
     pub change_script: ScriptBuf,

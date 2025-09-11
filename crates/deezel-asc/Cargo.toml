@@ -12,7 +12,6 @@ anyhow = "1.0"
 thiserror = { workspace = true, optional = true }
 nom = "7.1"
 crc24 = "0.1.6"
-buffer-redux = "1.0.2"
 base64 = "0.22"
 
 [dev-dependencies]

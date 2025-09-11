@@ -492,7 +492,7 @@ pub(crate) fn decode_cellpack_info(caller: &mut Caller<'_, AlkanesState>, cellpa
 /// Decode ExtendedCallResponse structure from WASM memory
 #[cfg(feature = "wasm-inspection")]
 pub(crate) fn decode_extended_call_response(store: &Store<AlkanesState>, memory: Memory, ptr: usize) -> Result<(Vec<u8>, Option<String>)> {
-    let memory_size = (memory.size(store) * 65536) as usize;
+    let memory_size = memory.data(store).len();
     
     if ptr < 4 || ptr >= memory_size {
         return Err(anyhow::anyhow!("Response pointer 0x{:x} is invalid (memory size: {})", ptr, memory_size));
@@ -586,7 +586,7 @@ pub(crate) fn decode_extended_call_response(store: &Store<AlkanesState>, memory:
 #[cfg(feature = "wasm-inspection")]
 pub(crate) fn read_metadata_from_memory(store: &Store<AlkanesState>, memory: Memory, ptr: usize) -> Result<AlkaneMetadata> {
     // Get memory size for bounds checking
-    let memory_size = (memory.size(store) * 65536) as usize;
+    let memory_size = memory.data(store).len();
     
     if ptr < 4 || ptr >= memory_size {
         return Err(anyhow::anyhow!("Pointer 0x{:x} is invalid (memory size: {})", ptr, memory_size));

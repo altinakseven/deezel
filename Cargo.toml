@@ -12,8 +12,11 @@ members = [
   "crates/deezel",
   "crates/deezel-common",
   "crates/deezel-web",
-  "crates/deezel-sys"
-, "crates/deezel-asc", "crates/deezel-pretty-print-macro"]
+  "crates/deezel-sys",
+  "crates/deezel-asc",
+  "crates/deezel-pretty-print-macro",
+  "crates/deezel-leptos",
+]
 exclude = ["reference"]
 resolver = "2"
 
@@ -67,6 +70,10 @@ spin = "0.9.8"
 url = "2.5.0"
 smallvec = "1.13"
 
+# Leptos framework
+leptos = { version = "0.6.12", features = ["csr"] }
+leptos_router = { version = "0.6.12", features = ["csr"] }
+
 # Testing-specific dependencies
 mockall = "0.13.0"
 
@@ -75,6 +82,8 @@ alkanes-support = { git = "https://github.com/kungfuflex/alkanes-rs", branch = "
 metashrew-support = { git = "https://github.com/sandshrewmetaprotocols/metashrew" }
 protobuf = "3.7.2"
 protobuf-json-mapping = "3.7.2"
+prost = "0.13.1"
+prost-build = "0.13.1"
 
 # WASM runtime for alkane inspection
 wasmi = "0.47.0"

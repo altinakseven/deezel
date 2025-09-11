@@ -9,6 +9,8 @@ use clap::Parser;
 use deezel_sys::{SystemDeezel, SystemOrd};
 use deezel_common::traits::*;
 use futures::future::join_all;
+use deezel_common::alkanes_pb;
+use protobuf_json_mapping::parse_from_str;
 use serde_json::json;
 
 mod commands;
@@ -217,7 +219,12 @@ async fn execute_alkanes_command<T: System>(system: &mut T, command: Alkanes) ->
             Ok(())
         },
         Alkanes::Simulate { contract_id, params, raw } => {
-            let result = system.provider().simulate(&contract_id, params.as_deref()).await?;
+            let context = if let Some(p) = params {
+                parse_from_str(&p)?
+            } else {
+                alkanes_pb::MessageContextParcel::new()
+            };
+            let result = system.provider().simulate(&contract_id, &context).await?;
             if raw {
                 println!("{}", serde_json::to_string_pretty(&result)?);
             } else {
@@ -413,7 +420,7 @@ async fn execute_esplora_command(
             }
         }
         deezel_common::commands::EsploraCommands::Address { params, raw } => {
-            let result = <dyn EsploraProvider>::get_address(provider, &params).await?;
+            let result = provider.get_address_info(&params).await?;
             if raw {
                 println!("{}", serde_json::to_string_pretty(&result)?);
             } else {

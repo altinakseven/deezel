@@ -9,6 +9,8 @@ use wasm_bindgen::prelude::*;
 use web_sys::{window, Document, Location, Navigator, Window};
 
 #[cfg(target_arch = "wasm32")]
+extern crate alloc;
+#[cfg(target_arch = "wasm32")]
 use alloc::{
     format,
     string::{String, ToString},

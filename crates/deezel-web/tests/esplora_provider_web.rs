@@ -11,8 +11,8 @@ use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_test::*;
 wasm_bindgen_test_configure!(run_in_browser);
-use deezel_web::WebProvider;
 use deezel_common::{EsploraProvider, Result};
+use deezel_web::provider::WebProvider;
 use serde_json::json;
 use web_sys::{Response, ResponseInit};
 
@@ -44,7 +44,7 @@ impl FetchMock {
             }
 
             let promise = js_sys::Promise::new(&mut |resolve, _| {
-                let response_init = ResponseInit::new();
+                let mut response_init = ResponseInit::new();
                 response_init.set_status(200);
                 let response_body = MOCK_RESPONSE.with(|cell| {
                     let js_val = cell.borrow().clone();
@@ -115,7 +115,7 @@ pub async fn test_get_blocks_tip_hash_web() {
     assert_eq!(result.unwrap(), mock_hash);
 
     // Verify the request details
-    assert_eq!(mock.last_request_url(), provider.esplora_rpc_url());
+    assert_eq!(mock.last_request_url(), provider.esplora_rpc_url().unwrap());
     let body: serde_json::Value = serde_json::from_str(&mock.last_request_body()).unwrap();
     assert_eq!(body["method"], "esplora_blocks:tip:hash");
     assert_eq!(body["params"], json!([]));

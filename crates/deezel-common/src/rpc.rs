@@ -9,6 +9,7 @@ use crate::traits::*;
 use crate::alkanes::protorunes::{ProtoruneWalletResponse, ProtoruneOutpointResponse};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+use protobuf::Message;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::{vec, string::String};
@@ -178,29 +179,28 @@ impl<P: DeezelProvider> RpcClient<P> {
     /// Get bytecode for an alkane contract
     pub async fn get_bytecode(&self, block: &str, tx: &str) -> Result<String> {
         use alkanes_support::proto::alkanes::{BytecodeRequest, AlkaneId, Uint128};
-        use protobuf::Message;
         use crate::DeezelError;
 
-        let mut bytecode_request = BytecodeRequest::new();
-        let mut alkane_id = AlkaneId::new();
+        let mut bytecode_request = BytecodeRequest::default();
+        let mut alkane_id = AlkaneId::default();
 
         let block_u128 = block.parse::<u128>().map_err(|e| DeezelError::Other(e.to_string()))?;
         let tx_u128 = tx.parse::<u128>().map_err(|e| DeezelError::Other(e.to_string()))?;
 
-        let mut block_uint128 = Uint128::new();
+        let mut block_uint128 = Uint128::default();
         block_uint128.lo = (block_u128 & 0xFFFFFFFFFFFFFFFF) as u64;
         block_uint128.hi = (block_u128 >> 64) as u64;
 
-        let mut tx_uint128 = Uint128::new();
+        let mut tx_uint128 = Uint128::default();
         tx_uint128.lo = (tx_u128 & 0xFFFFFFFFFFFFFFFF) as u64;
         tx_uint128.hi = (tx_u128 >> 64) as u64;
 
-        alkane_id.block = protobuf::MessageField::some(block_uint128);
-        alkane_id.tx = protobuf::MessageField::some(tx_uint128);
+        alkane_id.block = Some(block_uint128).into();
+        alkane_id.tx = Some(tx_uint128).into();
 
-        bytecode_request.id = protobuf::MessageField::some(alkane_id);
+        bytecode_request.id = Some(alkane_id).into();
 
-        let encoded_bytes = bytecode_request.write_to_bytes().map_err(|e| DeezelError::Other(e.to_string()))?;
+        let encoded_bytes = bytecode_request.write_to_bytes()?;
         let hex_input = format!("0x{}", hex::encode(encoded_bytes));
 
         let result = self.sandshrew_call(

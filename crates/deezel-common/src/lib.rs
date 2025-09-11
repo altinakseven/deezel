@@ -18,6 +18,7 @@
 //! - `wallet`: Bitcoin wallet functionality with BDK integration
 //! - `alkanes`: Smart contract operations and inspection
 pub mod crypto;
+pub mod crypto_worker;
 /// - `runestone`: Runestone analysis and decoding
 /// - `network`: Network parameter management
 /// - `rpc`: RPC client abstractions
@@ -70,6 +71,7 @@ pub mod bitcoind;
 pub mod ord;
 pub mod metashrew;
 pub mod index_pointer;
+pub mod blizzard;
 
 #[cfg(any(test, feature = "test-utils"))]
 pub mod mock_provider;
@@ -89,7 +91,8 @@ pub use serde_json::Value as JsonValue;
 pub use alkanes_support::proto::alkanes as alkanes_pb;
 
 /// Error types for the deezel-common library
-#[derive(Debug)]
+use serde::{Deserialize, Serialize};
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DeezelError {
     JsonRpc(String),
     RpcError(String),
@@ -103,6 +106,7 @@ pub enum DeezelError {
     Configuration(String),
     InvalidParameters(String),
     AddressResolution(String),
+    InvalidUrl(String),
     Transaction(String),
     Monitor(String),
     WasmExecution(String),
@@ -111,9 +115,15 @@ pub enum DeezelError {
     Parse(String),
     Pgp(String),
     Hex(String),
+    Armor(String),
     NotImplemented(String),
     NotConfigured(String),
+    WalletNotAvailable(String),
+    JsError(String),
+    NoAddressFound,
+    UncompressedPublicKey,
     Other(String),
+    Protobuf(String),
 }
 
 impl core::fmt::Display for DeezelError {
@@ -131,6 +141,7 @@ impl core::fmt::Display for DeezelError {
             DeezelError::Configuration(msg) => write!(f, "Configuration error: {msg}"),
             DeezelError::InvalidParameters(msg) => write!(f, "Invalid parameters: {msg}"),
             DeezelError::AddressResolution(msg) => write!(f, "Address resolution error: {msg}"),
+            DeezelError::InvalidUrl(msg) => write!(f, "Invalid URL: {msg}"),
             DeezelError::Transaction(msg) => write!(f, "Transaction error: {msg}"),
             DeezelError::Monitor(msg) => write!(f, "Monitoring error: {msg}"),
             DeezelError::WasmExecution(msg) => write!(f, "WASM execution error: {msg}"),
@@ -139,10 +150,34 @@ impl core::fmt::Display for DeezelError {
             DeezelError::Parse(msg) => write!(f, "Parse error: {msg}"),
             DeezelError::Pgp(msg) => write!(f, "PGP error: {msg}"),
             DeezelError::Hex(msg) => write!(f, "Hex error: {msg}"),
+            DeezelError::Armor(msg) => write!(f, "Armor error: {msg}"),
             DeezelError::NotImplemented(msg) => write!(f, "Not implemented: {msg}"),
             DeezelError::NotConfigured(msg) => write!(f, "Not configured: {msg}"),
+            DeezelError::WalletNotAvailable(msg) => write!(f, "Wallet not available: {msg}"),
+            DeezelError::JsError(msg) => write!(f, "JavaScript error: {msg}"),
+            DeezelError::NoAddressFound => write!(f, "No address found"),
+            DeezelError::UncompressedPublicKey => write!(f, "Uncompressed public key error"),
             DeezelError::Other(msg) => write!(f, "Other error: {msg}"),
+            DeezelError::Protobuf(msg) => write!(f, "Protobuf error: {msg}"),
         }
+    }
+}
+
+impl From<protobuf::Error> for DeezelError {
+    fn from(err: protobuf::Error) -> Self {
+        DeezelError::Protobuf(err.to_string())
+    }
+}
+
+impl From<bitcoin::key::UncompressedPublicKeyError> for DeezelError {
+    fn from(_: bitcoin::key::UncompressedPublicKeyError) -> Self {
+        DeezelError::UncompressedPublicKey
+    }
+}
+
+impl From<core::convert::Infallible> for DeezelError {
+    fn from(never: core::convert::Infallible) -> Self {
+        match never {}
     }
 }
 
@@ -180,15 +215,15 @@ impl From<serde_json::Error> for DeezelError {
     }
 }
 
-impl From<protobuf::Error> for DeezelError {
-    fn from(err: protobuf::Error) -> Self {
-        DeezelError::Serialization(alloc::format!("Protobuf error: {err}"))
+impl From<prost::DecodeError> for DeezelError {
+    fn from(err: prost::DecodeError) -> Self {
+        DeezelError::Serialization(format!("Prost decode error: {err}"))
     }
 }
 
-impl From<protobuf_json_mapping::PrintError> for DeezelError {
-    fn from(err: protobuf_json_mapping::PrintError) -> Self {
-        DeezelError::Serialization(format!("Protobuf JSON mapping error: {err}"))
+impl From<prost::EncodeError> for DeezelError {
+    fn from(err: prost::EncodeError) -> Self {
+        DeezelError::Serialization(format!("Prost encode error: {err}"))
     }
 }
 

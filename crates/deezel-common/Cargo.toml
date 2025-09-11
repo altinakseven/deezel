@@ -25,28 +25,39 @@ categories = ["cryptography::cryptocurrencies", "web-programming", "wasm"]
 name = "deezel_common"
 crate-type = ["cdylib", "rlib"]
 
+[[bin]]
+name = "deezel-common-worker"
+path = "src/worker_entry.rs"
+required-features = ["worker"]
+
 [dependencies]
 # Core Bitcoin functionality
 bitcoin = { workspace = true }
-bitcoin_hashes = { workspace = true, package = "bitcoin-hashes" }
+bitcoin_hashes = { workspace = true }
 ordinals = { workspace = true }
 protorune-support = { workspace = true }
-deezel-asc = { path = "../deezel-asc", default-features = false, features = ["std"] }
+deezel-asc = { path = "../deezel-asc" }
 deezel-pretty-print-macro = { path = "../deezel-pretty-print-macro" }
  
 # Cryptography and wallet functionality
 secp256k1 = { workspace = true }
 bip39 = { workspace = true }
-pbkdf2 = { workspace = true }
+pbkdf2 = { version = "0.12" }
 aes-gcm = { workspace = true }
 rand = { workspace = true }
 rand_core = { workspace = true, features = ["getrandom"] }
 sha2 = { workspace = true }
  
 psbt-v2 = { workspace = true }
+
+# FROST-related dependencies
+frost-secp256k1-tr = { version = "2.1.0", features = ["serde"], optional = true }
+frost-core = { version = "2.1.0", features = ["serde"], optional = true }
+elliptic-curve = { version = "0.13.8", features = ["sec1"], optional = true }
+ff = { version = "0.13.0", optional = true }
  
-# Async runtime (WASM-compatible features only)
-futures = { workspace = true }
+ # Async runtime (WASM-compatible features only)
+ futures = { workspace = true }
 
 # Serialization/Deserialization
 serde = { workspace = true }
@@ -71,8 +82,8 @@ leb128 = { version = "0.2.5", default-features = false }
 # Alkanes-rs crates
 alkanes-support = { workspace = true }
 metashrew-support = { workspace = true }
+prost = { workspace = true }
 protobuf = { workspace = true }
-protobuf-json-mapping = { workspace = true }
 
 # WASM runtime for alkane inspection
 wasmi = { workspace = true, optional = true }
@@ -81,6 +92,12 @@ wat = { workspace = true, optional = true }
 sha3 = { workspace = true }
 spin = { workspace = true, optional = true }
 wasmparser = { workspace = true, optional = true }
+web-sys = { version = "0.3", features = ["SubtleCrypto", "CryptoKey", "CryptoKeyPair", "Pbkdf2Params", "AesGcmParams", "Crypto", "Window"], optional = true }
+gloo-worker = { version = "0.5", features = [ "futures" ] }
+gloo-worker-macros = "0.1"
+js-sys = { version = "0.3", optional = true }
+wasm-bindgen = { version = "0.2" }
+wasm-bindgen-futures = { version = "0.4", optional = true }
 
 # Additional dependencies for comprehensive functionality
 dirs = { workspace = true, optional = true }
@@ -93,11 +110,13 @@ clap = { workspace = true, features = ["derive"], default-features = false }
 bitcoincore-rpc = { workspace = true, optional = true }
 
 [features]
-default = ["wasm-inspection", "native-deps", "std"]
-std = []
-wasm-inspection = ["wasmi", "wasmprinter", "wat", "spin", "wasmparser"]
-native-deps = ["dirs", "tempfile", "tokio", "reqwest", "url", "bitcoincore-rpc", "std"]
-web-compat = ["spin"]
+default = ["std", "wasm-inspection", "native-deps"]
+std = ["tokio", "reqwest", "url", "bitcoincore-rpc", "dirs", "tempfile"]
+wasm-inspection = ["wasmi", "wasmprinter", "wat", "spin", "wasmparser", "web-sys", "js-sys", "wasm-bindgen-futures"]
+native-deps = []
+web-compat = ["spin", "std"]
+worker = []
+frost = ["frost-secp256k1-tr", "frost-core", "elliptic-curve", "ff"]
 
 test-utils = []
 
@@ -112,10 +131,6 @@ tempfile = { workspace = true }
 
 # WASM-specific configuration
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-wasm-bindgen = "0.2"
-wasm-bindgen-futures = "0.4"
-js-sys = "0.3"
-web-sys = "0.3"
 serde-wasm-bindgen = "0.6"
 gloo-timers = { version = "0.3.0", features = ["futures"] }
 

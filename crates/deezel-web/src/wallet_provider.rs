@@ -46,6 +46,8 @@
 //! ```
 
 #[cfg(target_arch = "wasm32")]
+extern crate alloc;
+#[cfg(target_arch = "wasm32")]
 use alloc::{
     vec,
     vec::Vec,
@@ -58,14 +60,18 @@ use async_trait::async_trait;
 use bitcoin::{
     secp256k1::{schnorr::Signature, All, Keypair, Secp256k1, Message},
     Network, OutPoint, Psbt, Transaction, TxOut, XOnlyPublicKey,
+    address::Address,
+    Amount, TxIn, Witness, Sequence, ScriptBuf,
 };
-use core::str::FromStr;
-use deezel_common::{*, alkanes::{AlkanesInspectConfig, AlkanesInspectResult, AlkaneBalance}};
+use deezel_common::{*, alkanes::{AlkanesInspectConfig, AlkanesInspectResult, AlkaneBalance}, provider::{AllBalances, AssetBalance, EnrichedUtxo}};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{window, js_sys};
+use hex;
+use core::str::FromStr;
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 
 use crate::provider::WebProvider;
 use deezel_common::ord::{
@@ -74,6 +80,7 @@ use deezel_common::ord::{
     Output as OrdOutput, ParentInscriptions as OrdParents, SatResponse as OrdSat,
     RuneInfo as OrdRuneInfo, Runes as OrdRunes, TxInfo as OrdTxInfo,
 };
+use deezel_common::alkanes::execute::EnhancedAlkanesExecutor;
 
 /// Information about an available wallet
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -178,6 +185,18 @@ pub trait WalletBackend {
     
     /// Get inscriptions (if supported by wallet)
     async fn get_inscriptions(&self, cursor: Option<u32>, size: Option<u32>) -> Result<JsonValue>;
+
+    /// Get enriched UTXOs with asset information
+    async fn get_enriched_utxos(&self, addresses: Option<Vec<String>>) -> Result<Vec<EnrichedUtxo>> {
+        let _ = addresses;
+        Err(DeezelError::NotImplemented("get_enriched_utxos is not supported by this wallet".to_string()))
+    }
+
+    /// Get all balances, including BTC and other assets
+    async fn get_all_balances(&self, addresses: Option<Vec<String>>) -> Result<AllBalances> {
+        let _ = addresses;
+        Err(DeezelError::NotImplemented("get_all_balances is not supported by this wallet".to_string()))
+    }
 }
 
 /// Wrapper for browser-injected wallet objects
@@ -477,6 +496,7 @@ impl WalletBackend for InjectedWallet {
 }
 
 /// Wallet connector for detecting and connecting to available wallets
+#[derive(Clone)]
 pub struct WalletConnector {
     supported_wallets: Vec<WalletInfo>,
 }
@@ -501,8 +521,8 @@ impl WalletConnector {
             WalletInfo {
                 id: "unisat".to_string(),
                 name: "Unisat Wallet".to_string(),
-                icon: "https://unisat.io/favicon.ico".to_string(),
-                website: "https://unisat.io".to_string(),
+                icon: "/assets/wallets/unisat.svg".to_string(),
+                website: "https://unisat.io/download".to_string(),
                 injection_key: "unisat".to_string(),
                 supports_psbt: true,
                 supports_taproot: true,
@@ -513,8 +533,8 @@ impl WalletConnector {
             WalletInfo {
                 id: "xverse".to_string(),
                 name: "Xverse Wallet".to_string(),
-                icon: "https://xverse.app/favicon.ico".to_string(),
-                website: "https://xverse.app".to_string(),
+                icon: "/assets/wallets/xverse.svg".to_string(),
+                website: "https://www.xverse.app/download".to_string(),
                 injection_key: "XverseProviders".to_string(),
                 supports_psbt: true,
                 supports_taproot: true,
@@ -525,8 +545,8 @@ impl WalletConnector {
             WalletInfo {
                 id: "phantom".to_string(),
                 name: "Phantom Wallet".to_string(),
-                icon: "https://phantom.app/favicon.ico".to_string(),
-                website: "https://phantom.app".to_string(),
+                icon: "/assets/wallets/phantom.svg".to_string(),
+                website: "https://phantom.app/download".to_string(),
                 injection_key: "phantom".to_string(),
                 supports_psbt: true,
                 supports_taproot: true,
@@ -537,8 +557,8 @@ impl WalletConnector {
             WalletInfo {
                 id: "okx".to_string(),
                 name: "OKX Wallet".to_string(),
-                icon: "https://okx.com/favicon.ico".to_string(),
-                website: "https://okx.com".to_string(),
+                icon: "/assets/wallets/okx.svg".to_string(),
+                website: "https://chromewebstore.google.com/detail/okx-wallet/mcohilncbfahbmgdjkbpemcciiolgcge".to_string(),
                 injection_key: "okxwallet".to_string(),
                 supports_psbt: true,
                 supports_taproot: true,
@@ -549,8 +569,8 @@ impl WalletConnector {
             WalletInfo {
                 id: "leather".to_string(),
                 name: "Leather Wallet".to_string(),
-                icon: "https://leather.io/favicon.ico".to_string(),
-                website: "https://leather.io".to_string(),
+                icon: "/assets/wallets/leather.svg".to_string(),
+                website: "https://leather.io/install-extension".to_string(),
                 injection_key: "LeatherProvider".to_string(),
                 supports_psbt: true,
                 supports_taproot: true,
@@ -559,10 +579,10 @@ impl WalletConnector {
                 deep_link_scheme: None,
             },
             WalletInfo {
-                id: "magic_eden".to_string(),
+                id: "magic-eden".to_string(),
                 name: "Magic Eden Wallet".to_string(),
-                icon: "https://magiceden.io/favicon.ico".to_string(),
-                website: "https://magiceden.io".to_string(),
+                icon: "/assets/wallets/magiceden.svg".to_string(),
+                website: "https://wallet.magiceden.io/".to_string(),
                 injection_key: "magicEden".to_string(),
                 supports_psbt: true,
                 supports_taproot: true,
@@ -570,7 +590,66 @@ impl WalletConnector {
                 mobile_support: true,
                 deep_link_scheme: Some("magiceden://".to_string()),
             },
-            // Add more wallets as needed...
+            WalletInfo {
+                id: "wizz".to_string(),
+                name: "Wizz Wallet".to_string(),
+                icon: "/assets/wallets/wizz.svg".to_string(),
+                website: "https://wizzwallet.io/#extension".to_string(),
+                injection_key: "wizz".to_string(),
+                supports_psbt: true,
+                supports_taproot: true,
+                supports_ordinals: true,
+                mobile_support: false,
+                deep_link_scheme: None,
+            },
+            WalletInfo {
+                id: "orange".to_string(),
+                name: "Orange Wallet".to_string(),
+                icon: "/assets/wallets/orange.svg".to_string(),
+                website: "https://www.orangewallet.com/".to_string(),
+                injection_key: "orange".to_string(), // Educated guess
+                supports_psbt: false, // Unknown
+                supports_taproot: false, // Unknown
+                supports_ordinals: false, // Unknown
+                mobile_support: false,
+                deep_link_scheme: None,
+            },
+            WalletInfo {
+                id: "tokeo".to_string(),
+                name: "Tokeo Wallet".to_string(),
+                icon: "/assets/wallets/tokeo.svg".to_string(),
+                website: "https://tokeo.io/".to_string(),
+                injection_key: "tokeo".to_string(), // Educated guess
+                supports_psbt: false, // Unknown
+                supports_taproot: false, // Unknown
+                supports_ordinals: false, // Unknown
+                mobile_support: false,
+                deep_link_scheme: None,
+            },
+            WalletInfo {
+                id: "keplr".to_string(),
+                name: "Keplr Wallet".to_string(),
+                icon: "/assets/wallets/keplr.svg".to_string(),
+                website: "https://keplr.app/download".to_string(),
+                injection_key: "keplr".to_string(),
+                supports_psbt: false, // Primarily a Cosmos wallet
+                supports_taproot: false,
+                supports_ordinals: false,
+                mobile_support: true,
+                deep_link_scheme: Some("keplr://".to_string()),
+            },
+            WalletInfo {
+                id: "keystore".to_string(),
+                name: "Keystore".to_string(),
+                icon: "/assets/wallets/default.svg".to_string(),
+                website: "".to_string(),
+                injection_key: "keystore".to_string(),
+                supports_psbt: true,
+                supports_taproot: true,
+                supports_ordinals: true,
+                mobile_support: false,
+                deep_link_scheme: None,
+            },
         ]
     }
     
@@ -644,6 +723,24 @@ impl BrowserWalletProvider {
         
         Ok(Self {
             wallet: Box::new(injected_wallet),
+            web_provider,
+            connection_status: WalletConnectionStatus::Connected,
+            current_account: Some(account),
+        })
+    }
+
+    pub async fn connect_local(
+        wallet: Box<dyn WalletBackend>,
+        network_str: String,
+    ) -> Result<Self> {
+        // Create the underlying web provider for blockchain operations
+        let web_provider = WebProvider::new(network_str).await?;
+        
+        // Connect to the wallet
+        let account = wallet.connect().await?;
+        
+        Ok(Self {
+            wallet,
             web_provider,
             connection_status: WalletConnectionStatus::Connected,
             current_account: Some(account),
@@ -845,39 +942,7 @@ impl WalletProvider for BrowserWalletProvider {
     }
     
     async fn get_balance(&self, addresses: Option<Vec<String>>) -> Result<WalletBalance> {
-        // Use our sandshrew RPC to get accurate balance information
-        // rather than relying on the wallet's potentially limited balance API
-        let addrs_to_check = if let Some(provided_addresses) = addresses {
-            provided_addresses
-        } else if let Some(account) = &self.current_account {
-            vec![account.address.clone()]
-        } else {
-            return Err(DeezelError::Wallet("No wallet connected and no addresses provided".to_string()));
-        };
-
-        let mut total_confirmed = 0;
-        let mut total_pending = 0_i64;
-
-        for address in addrs_to_check {
-            let address_info = EsploraProvider::get_address_info(&self.web_provider, &address).await?;
-            
-            if let Some(chain_stats) = address_info.get("chain_stats") {
-                let funded = chain_stats.get("funded_txo_sum").and_then(|v| v.as_u64()).unwrap_or(0);
-                let spent = chain_stats.get("spent_txo_sum").and_then(|v| v.as_u64()).unwrap_or(0);
-                total_confirmed += funded.saturating_sub(spent);
-            }
-
-            if let Some(mempool_stats) = address_info.get("mempool_stats") {
-                let funded = mempool_stats.get("funded_txo_sum").and_then(|v| v.as_i64()).unwrap_or(0);
-                let spent = mempool_stats.get("spent_txo_sum").and_then(|v| v.as_i64()).unwrap_or(0);
-                total_pending += funded - spent;
-            }
-        }
-        
-        Ok(WalletBalance {
-            confirmed: total_confirmed,
-            pending: total_pending,
-        })
+        deezel_common::WalletProvider::get_balance(&self.web_provider, addresses).await
     }
     
     async fn get_address(&self) -> Result<String> {
@@ -914,102 +979,14 @@ impl WalletProvider for BrowserWalletProvider {
         self.broadcast_transaction(signed_tx_hex).await
     }
     
-    async fn get_utxos(&self, _include_frozen: bool, addresses: Option<Vec<String>>) -> Result<Vec<(OutPoint, UtxoInfo)>> {
-        // Use our Esplora provider for accurate UTXO information
-        let addresses_to_check = if let Some(addrs) = addresses {
-            addrs
-        } else if let Some(account) = &self.current_account {
-            vec![account.address.clone()]
-        } else {
-            return Err(DeezelError::Wallet("No addresses to check".to_string()));
-        };
-        
-        let mut all_utxos = Vec::new();
-        
-        for address in addresses_to_check {
-            let utxos_json = EsploraProvider::get_address_utxo(&self.web_provider, &address).await?;
-            
-            if let Some(utxos_array) = utxos_json.as_array() {
-                for utxo in utxos_array {
-                    if let (Some(txid_str), Some(vout), Some(value)) = (
-                        utxo.get("txid").and_then(|t| t.as_str()),
-                        utxo.get("vout").and_then(|v| v.as_u64()),
-                        utxo.get("value").and_then(|v| v.as_u64()),
-                    ) {
-                        let txid = bitcoin::Txid::from_str(txid_str).map_err(|e| DeezelError::Transaction(e.to_string()))?;
-                        let outpoint = OutPoint::new(txid, vout as u32);
-                        let status = utxo.get("status");
-                        let confirmations = status
-                            .and_then(|s| s.get("block_height"))
-                            .and_then(|h| h.as_u64())
-                            .map(|height| {
-                                // Calculate confirmations based on current height
-                                let current_height: u64 = 800000; // This should come from our RPC
-                                current_height.saturating_sub(height) as u32
-                            })
-                            .unwrap_or(0);
-                        
-                        let utxo_info = UtxoInfo {
-                            txid: txid.to_string(),
-                            vout: vout as u32,
-                            amount: value,
-                            address: address.clone(),
-                            script_pubkey: None, // Would need to derive from address
-                            confirmations,
-                            frozen: false, // Browser wallets don't typically support freezing
-                            freeze_reason: None,
-                            block_height: status.and_then(|s| s.get("block_height")).and_then(|h| h.as_u64()),
-                            has_inscriptions: false, // Would need additional API calls to determine
-                            has_runes: false,
-                            has_alkanes: false,
-                            is_coinbase: false,
-                        };
-                        all_utxos.push((outpoint, utxo_info));
-                    }
-                }
-            }
-        }
-        
-        Ok(all_utxos)
+    async fn get_utxos(&self, include_frozen: bool, addresses: Option<Vec<String>>) -> Result<Vec<(OutPoint, UtxoInfo)>> {
+        self.web_provider.get_utxos(include_frozen, addresses).await
     }
     
     async fn get_history(&self, count: u32, address: Option<String>) -> Result<Vec<TransactionInfo>> {
-        // Use our Esplora provider for transaction history
-        let addr = address.unwrap_or_else(|| {
-            self.current_account.as_ref().map(|a| a.address.clone()).unwrap_or_default()
-        });
-        
-        if addr.is_empty() {
-            return Err(DeezelError::Wallet("No address specified".to_string()));
-        }
-        
-        let txs_json = EsploraProvider::get_address_txs(&self.web_provider, &addr).await?;
-        
-        let mut transactions = Vec::new();
-        
-        if let Some(txs_array) = txs_json.as_array() {
-            for (_i, tx) in txs_array.iter().enumerate().take(count as usize) {
-                if let Some(txid) = tx.get("txid").and_then(|t| t.as_str()) {
-                    let status = tx.get("status");
-                    let block_height = status.and_then(|s| s.get("block_height")).and_then(|h| h.as_u64());
-                    let block_time = status.and_then(|s| s.get("block_time")).and_then(|t| t.as_u64());
-                    let confirmed = status.and_then(|s| s.get("confirmed")).and_then(|c| c.as_bool()).unwrap_or(false);
-                    let fee = tx.get("fee").and_then(|f| f.as_u64());
-                    
-                    transactions.push(TransactionInfo {
-                        txid: txid.to_string(),
-                        block_height,
-                        block_time,
-                        confirmed,
-                        fee,
-                        inputs: vec![], // Would need to parse vin array
-                        outputs: vec![], // Would need to parse vout array
-                    });
-                }
-            }
-        }
-        
-        Ok(transactions)
+        // Use our web provider for transaction history, which is more detailed
+        let addr = address.or_else(|| self.current_account.as_ref().map(|a| a.address.clone()));
+        self.web_provider.get_history(count, addr).await
     }
     
     async fn freeze_utxo(&self, _utxo: String, _reason: Option<String>) -> Result<()> {
@@ -1024,9 +1001,60 @@ impl WalletProvider for BrowserWalletProvider {
     }
     
     async fn create_transaction(&self, params: SendParams) -> Result<String> {
-        // Use our web provider to create the transaction
-        // This leverages our sandshrew RPC and UTXO selection logic
-        self.web_provider.create_transaction(params).await
+        let recipient = Address::from_str(&params.address)?.assume_checked();
+        let amount = Amount::from_sat(params.amount);
+
+        let address = <Self as WalletProvider>::get_address(self).await?;
+        let utxos = self.get_utxos(false, Some(vec![address])).await?;
+        if utxos.is_empty() {
+            return Err(DeezelError::Wallet("No UTXOs available".to_string()));
+        }
+
+        let mut inputs = vec![];
+        let mut total_input = 0;
+
+        for (outpoint, utxo_info) in &utxos {
+            inputs.push(TxIn {
+                previous_output: *outpoint,
+                script_sig: ScriptBuf::new(),
+                sequence: Sequence::MAX,
+                witness: Witness::new(),
+            });
+            total_input += utxo_info.amount;
+        }
+
+        let mut outputs = vec![];
+        outputs.push(TxOut {
+            value: amount,
+            script_pubkey: recipient.script_pubkey(),
+        });
+        
+        let fee_rate = params.fee_rate.unwrap_or(1.0) as u64;
+        let estimated_vsize = 150; // Super rough estimate
+        let fee = fee_rate * estimated_vsize;
+
+        if total_input < amount.to_sat() + fee {
+            return Err(DeezelError::Wallet("Insufficient funds".to_string()));
+        }
+
+        let change_address = <Self as WalletProvider>::get_address(self).await?;
+        let change_address = Address::from_str(&change_address)?.assume_checked();
+        let change_amount = total_input - amount.to_sat() - fee;
+        outputs.push(TxOut {
+            value: Amount::from_sat(change_amount),
+            script_pubkey: change_address.script_pubkey(),
+        });
+
+        let unsigned_tx = Transaction {
+            version: bitcoin::transaction::Version(2),
+            lock_time: bitcoin::locktime::absolute::LockTime::ZERO,
+            input: inputs,
+            output: outputs,
+        };
+
+        let psbt = Psbt::from_unsigned_tx(unsigned_tx)?;
+
+        Ok(STANDARD.encode(&psbt.serialize()))
     }
     
     async fn sign_transaction(&mut self, tx_hex: String) -> Result<String> {
@@ -1128,6 +1156,57 @@ impl WalletProvider for BrowserWalletProvider {
         // Browser wallets don't typically expose this information.
         // We can return a default value or try to infer it if needed.
         Ok(0)
+    }
+
+    async fn get_master_public_key(&self) -> Result<Option<String>> {
+        // Browser wallets expose the account's public key, which we can use here.
+        // It's not a "master" key in the HD sense, but it's the main public key available.
+        match self.wallet.get_public_key().await {
+            Ok(pk) => Ok(Some(pk)),
+            Err(_) => Ok(None),
+        }
+    }
+
+    async fn get_enriched_utxos(&self, addresses: Option<Vec<String>>) -> Result<Vec<EnrichedUtxo>> {
+        let addrs_to_fetch = match addresses {
+            Some(a) => a,
+            None => vec![<Self as WalletProvider>::get_address(self).await?],
+        };
+        self.web_provider.get_enriched_utxos(Some(addrs_to_fetch)).await
+    }
+
+    async fn get_all_balances(&self, addresses: Option<Vec<String>>) -> Result<AllBalances> {
+        let btc_balance = WalletProvider::get_balance(self, addresses.clone()).await?;
+        
+        let mut asset_balances: std::collections::HashMap<String, u128> = std::collections::HashMap::new();
+
+        if let Some(addr_list) = addresses.clone() {
+            for address in addr_list {
+                let alkanes_bals = <Self as AlkanesProvider>::get_balance(self, Some(&address)).await?;
+                for alkane_bal in alkanes_bals {
+                    *asset_balances.entry(alkane_bal.symbol).or_insert(0) += alkane_bal.balance as u128;
+                }
+            }
+        } else {
+            let address = WalletProvider::get_address(self).await?;
+            let alkanes_bals = <Self as AlkanesProvider>::get_balance(self, Some(&address)).await?;
+            for alkane_bal in alkanes_bals {
+                *asset_balances.entry(alkane_bal.symbol).or_insert(0) += alkane_bal.balance as u128;
+            }
+        };
+
+        let other_assets = asset_balances.into_iter().map(|(symbol, balance)| {
+            AssetBalance {
+                name: symbol.clone(), // Assuming symbol is also the name for now
+                symbol,
+                balance,
+            }
+        }).collect();
+
+        Ok(AllBalances {
+            btc: btc_balance,
+            other: other_assets,
+        })
     }
 }
 
@@ -1284,12 +1363,13 @@ impl EsploraProvider for BrowserWalletProvider {
         self.web_provider.get_block_txs(hash, start_index).await
     }
     
-    async fn get_address(&self, address: &str) -> Result<JsonValue> {
-        EsploraProvider::get_address(&self.web_provider, address).await
-    }
     
     async fn get_address_info(&self, address: &str) -> Result<JsonValue> {
         self.web_provider.get_address_info(address).await
+    }
+
+    async fn get_address_utxo(&self, address: &str) -> Result<JsonValue> {
+        self.web_provider.get_address_utxo(address).await
     }
     
     async fn get_address_txs(&self, address: &str) -> Result<JsonValue> {
@@ -1304,9 +1384,6 @@ impl EsploraProvider for BrowserWalletProvider {
         self.web_provider.get_address_txs_mempool(address).await
     }
     
-    async fn get_address_utxo(&self, address: &str) -> Result<JsonValue> {
-        self.web_provider.get_address_utxo(address).await
-    }
     
     async fn get_address_prefix(&self, prefix: &str) -> Result<JsonValue> {
         self.web_provider.get_address_prefix(prefix).await
@@ -1478,8 +1555,12 @@ impl AlkanesProvider for BrowserWalletProvider {
         self.web_provider.protorunes_by_outpoint(txid, vout, block_tag, protocol_tag).await
     }
 
-    async fn simulate(&self, contract_id: &str, params: Option<&str>) -> Result<JsonValue> {
-        self.web_provider.simulate(contract_id, params).await
+    async fn view(&self, contract_id: &str, view_fn: &str, params: Option<&[u8]>) -> Result<JsonValue> {
+        self.web_provider.view(contract_id, view_fn, params).await
+    }
+
+    async fn simulate(&self, contract_id: &str, context: &deezel_common::alkanes_pb::MessageContextParcel) -> Result<JsonValue> {
+        self.web_provider.simulate(contract_id, context).await
     }
 
     async fn trace(&self, outpoint: &str) -> Result<alkanes_support::proto::alkanes::Trace> {
@@ -1529,11 +1610,11 @@ impl MonitorProvider for BrowserWalletProvider {
 #[async_trait(?Send)]
 #[async_trait(?Send)]
 impl KeystoreProvider for BrowserWalletProvider {
-    async fn derive_addresses(&self, _master_public_key: &str, _network: Network, _script_types: &[&str], _start_index: u32, _count: u32) -> Result<Vec<KeystoreAddress>> {
+    async fn derive_addresses(&self, _master_public_key: &str, _network_params: &deezel_common::network::NetworkParams, _script_types: &[&str], _start_index: u32, _count: u32) -> Result<Vec<KeystoreAddress>> {
         Err(DeezelError::NotImplemented("Keystore operations not implemented for browser wallet provider".to_string()))
     }
     
-    async fn get_default_addresses(&self, _master_public_key: &str, _network: Network) -> Result<Vec<KeystoreAddress>> {
+    async fn get_default_addresses(&self, _master_public_key: &str, _network_params: &deezel_common::network::NetworkParams) -> Result<Vec<KeystoreAddress>> {
         Err(DeezelError::NotImplemented("Keystore operations not implemented for browser wallet provider".to_string()))
     }
     
@@ -1545,9 +1626,28 @@ impl KeystoreProvider for BrowserWalletProvider {
         Err(DeezelError::NotImplemented("Keystore operations not implemented for browser wallet provider".to_string()))
     }
     async fn get_address(&self, _address_type: &str, _index: u32) -> Result<String> {
-        Err(DeezelError::NotImplemented("Keystore operations not implemented for browser wallet provider".to_string()))
+       // We can't derive, but we can ask the wallet for its accounts.
+       // This doesn't match the function signature perfectly (no index/type used),
+       // but it's the best we can do.
+       let accounts = self.wallet.get_accounts().await?;
+       accounts.first()
+           .map(|acc| acc.address.clone())
+           .ok_or_else(|| DeezelError::Wallet("No accounts found in browser wallet.".to_string()))
     }
-}
+   
+       async fn derive_address_from_path(&self, _master_public_key: &str, _path: &bitcoin::bip32::DerivationPath, _script_type: &str, network_params: &deezel_common::network::NetworkParams) -> Result<KeystoreAddress> {
+           // This is the core issue. Browser wallets don't expose this.
+           // We will return the primary address instead, ignoring the path.
+           let address = WalletProvider::get_address(self).await?;
+           Ok(KeystoreAddress {
+               address,
+               derivation_path: "N/A".to_string(),
+               index: 0,
+               script_type: "unknown".to_string(),
+               network: Some(network_params.network.to_string()),
+           })
+       }
+   }
 
 #[async_trait(?Send)]
 impl DeezelProvider for BrowserWalletProvider {
@@ -1573,6 +1673,76 @@ impl DeezelProvider for BrowserWalletProvider {
         self.web_provider.shutdown().await
     }
 
+    async fn wrap(&mut self, amount: u64, address: Option<String>, fee_rate: Option<f32>) -> Result<String> {
+        use deezel_common::alkanes::types::{ProtostoneSpec, BitcoinTransfer, EnhancedExecuteParams};
+        use alkanes_support::cellpack::Cellpack;
+
+        let is_regtest = self.get_network() == Network::Regtest;
+        let mut executor = EnhancedAlkanesExecutor::new(self);
+        let params = EnhancedExecuteParams {
+            fee_rate,
+            to_addresses: vec![],
+            from_addresses: address.map(|a| vec![a]),
+            change_address: None,
+            input_requirements: vec![],
+            protostones: vec![ProtostoneSpec {
+                cellpack: Some(Cellpack::try_from(vec![2, 0, 1]).unwrap()), // wrap frBTC
+                edicts: vec![],
+                bitcoin_transfer: Some(BitcoinTransfer { amount, target: deezel_common::alkanes::types::OutputTarget::Split }),
+            }],
+            envelope_data: None,
+            raw_output: false,
+            trace_enabled: false,
+            mine_enabled: is_regtest,
+            auto_confirm: false,
+        };
+
+        match executor.execute(params).await? {
+            deezel_common::alkanes::types::ExecutionState::ReadyToSign(ready_tx) => {
+                let signed_psbt = self.sign_psbt(&ready_tx.psbt).await?;
+                let tx = signed_psbt.extract_tx()?;
+                let tx_hex = bitcoin::consensus::encode::serialize_hex(&tx);
+                self.broadcast_transaction(tx_hex).await
+            }
+            _ => Err(DeezelError::Other("Unexpected execution state".to_string())),
+        }
+    }
+
+    async fn unwrap(&mut self, amount: u64, address: Option<String>) -> Result<String> {
+        use deezel_common::alkanes::types::{ProtostoneSpec, BitcoinTransfer, EnhancedExecuteParams};
+        use alkanes_support::cellpack::Cellpack;
+
+        let is_regtest = self.get_network() == Network::Regtest;
+        let mut executor = EnhancedAlkanesExecutor::new(self);
+        let params = EnhancedExecuteParams {
+            fee_rate: None,
+            to_addresses: vec![],
+            from_addresses: address.map(|a| vec![a]),
+            change_address: None,
+            input_requirements: vec![],
+            protostones: vec![ProtostoneSpec {
+                cellpack: Some(Cellpack::try_from(vec![2, 0, 2]).unwrap()), // unwrap frBTC
+                edicts: vec![],
+                bitcoin_transfer: Some(BitcoinTransfer { amount, target: deezel_common::alkanes::types::OutputTarget::Split }),
+            }],
+            envelope_data: None,
+            raw_output: false,
+            trace_enabled: false,
+            mine_enabled: is_regtest,
+            auto_confirm: false,
+        };
+
+        match executor.execute(params).await? {
+            deezel_common::alkanes::types::ExecutionState::ReadyToSign(ready_tx) => {
+                let signed_psbt = self.sign_psbt(&ready_tx.psbt).await?;
+                let tx = signed_psbt.extract_tx()?;
+                let tx_hex = bitcoin::consensus::encode::serialize_hex(&tx);
+                self.broadcast_transaction(tx_hex).await
+            }
+            _ => Err(DeezelError::Other("Unexpected execution state".to_string())),
+        }
+    }
+
     fn clone_box(&self) -> Box<dyn DeezelProvider> {
         Box::new(self.clone())
     }
@@ -1596,5 +1766,8 @@ impl DeezelProvider for BrowserWalletProvider {
     }
     fn get_ord_server_url(&self) -> Option<String> {
         self.web_provider.get_ord_server_url()
+    }
+    fn get_metashrew_rpc_url(&self) -> Option<String> {
+        self.web_provider.get_metashrew_rpc_url()
     }
 }

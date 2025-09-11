@@ -29,7 +29,6 @@ pub use super::types::{
     ProtostoneSpec, ReadyToSignCommitTx, ReadyToSignRevealTx, ReadyToSignTx,
 };
 use super::envelope::AlkanesEnvelope;
-use crate::utils::protostone::Protostones as _;
 use anyhow::anyhow;
 use ordinals::Runestone;
 use protorune_support::protostone::{Protostone, ProtostoneEdict};
@@ -150,7 +149,16 @@ impl<'a> EnhancedAlkanesExecutor<'a> {
         let analysis =
             crate::transaction::analysis::analyze_transaction(&reveal_psbt.unsigned_tx);
 
-        let inspection_result = self.inspect_from_envelope(&state.envelope).await.ok();
+        let inspection_result = {
+            #[cfg(feature = "wasm-inspection")]
+            {
+                self.inspect_from_envelope(&state.envelope).await.ok()
+            }
+            #[cfg(not(feature = "wasm-inspection"))]
+            {
+                None
+            }
+        };
 
         // 4. Return the next state
         Ok(ExecutionState::ReadyToSignReveal(ReadyToSignRevealTx {
@@ -502,7 +510,15 @@ impl<'a> EnhancedAlkanesExecutor<'a> {
         let converted_protostones = self.convert_protostone_specs(protostones)?;
 
         let runestone = Runestone {
-            protocol: Some(converted_protostones.encipher()?),
+            protocol: Some(
+                converted_protostones
+                    .iter()
+                    .map(|p| p.to_integers().map_err(|e| DeezelError::Other(e.to_string())))
+                    .collect::<Result<Vec<_>>>()?
+                    .into_iter()
+                    .flatten()
+                    .collect::<Vec<u128>>(),
+            ),
             ..Default::default()
         };
 
@@ -936,6 +952,7 @@ impl<'a> EnhancedAlkanesExecutor<'a> {
         self.provider.inspect(&format!("{}:{}", alkane_id.block, alkane_id.tx), config).await
     }
 
+    #[cfg(feature = "wasm-inspection")]
     async fn inspect_from_envelope(&self, envelope: &AlkanesEnvelope) -> Result<super::types::AlkanesInspectResult> {
         use super::types::{AlkaneId, AlkanesInspectResult};
         use wasmparser::{Parser, Payload};

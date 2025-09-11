@@ -149,6 +149,18 @@ impl DeezelProvider for SystemDeezel {
         Box::new(self.clone())
     }
 
+    fn get_metashrew_rpc_url(&self) -> Option<String> {
+        unimplemented!()
+    }
+
+    async fn wrap(&mut self, _amount: u64, _address: Option<String>, _fee_rate: Option<f32>) -> Result<String> {
+        unimplemented!()
+    }
+
+    async fn unwrap(&mut self, _amount: u64, _address: Option<String>) -> Result<String> {
+        unimplemented!()
+    }
+
     async fn initialize(&self) -> Result<()> {
         self.provider.initialize().await
     }
@@ -342,6 +354,18 @@ impl WalletProvider for SystemDeezel {
     async fn get_last_used_address_index(&self) -> Result<u32> {
         self.provider.get_last_used_address_index().await
     }
+
+    async fn get_master_public_key(&self) -> Result<Option<String>> {
+        unimplemented!()
+    }
+
+    async fn get_enriched_utxos(&self, _addresses: Option<Vec<String>>) -> Result<Vec<deezel_common::provider::EnrichedUtxo>> {
+        unimplemented!()
+    }
+
+    async fn get_all_balances(&self, _addresses: Option<Vec<String>>) -> Result<deezel_common::provider::AllBalances> {
+        unimplemented!()
+    }
 }
 
 #[async_trait(?Send)]
@@ -470,9 +494,6 @@ impl EsploraProvider for SystemDeezel {
     async fn get_address_info(&self, address: &str) -> Result<deezel_common::JsonValue> {
         self.provider.get_address_info(address).await
     }
-    async fn get_address(&self, address: &str) -> Result<deezel_common::JsonValue> {
-        <ConcreteProvider as EsploraProvider>::get_address(&self.provider, address).await
-    }
     async fn get_address_txs(&self, address: &str) -> Result<deezel_common::JsonValue> {
         self.provider.get_address_txs(address).await
     }
@@ -562,8 +583,12 @@ impl AlkanesProvider for SystemDeezel {
     async fn protorunes_by_outpoint(&self, txid: &str, vout: u32, block_tag: Option<String>, protocol_tag: u128) -> Result<deezel_common::alkanes::protorunes::ProtoruneOutpointResponse> {
         self.provider.protorunes_by_outpoint(txid, vout, block_tag, protocol_tag).await
     }
-    async fn simulate(&self, contract_id: &str, params: Option<&str>) -> Result<deezel_common::JsonValue> {
-        self.provider.simulate(contract_id, params).await
+    async fn view(&self, _contract_id: &str, _view_fn: &str, _params: Option<&[u8]>) -> Result<deezel_common::JsonValue> {
+        unimplemented!()
+    }
+
+    async fn simulate(&self, contract_id: &str, context: &deezel_common::alkanes_pb::MessageContextParcel) -> Result<deezel_common::JsonValue> {
+        self.provider.simulate(contract_id, context).await
     }
     async fn trace(&self, outpoint: &str) -> Result<deezel_common::alkanes_pb::Trace> {
         self.provider.trace(outpoint).await
@@ -603,11 +628,11 @@ impl MonitorProvider for SystemDeezel {
 
 #[async_trait(?Send)]
 impl KeystoreProvider for SystemDeezel {
-    async fn derive_addresses(&self, master_public_key: &str, network: bitcoin::Network, script_types: &[&str], start_index: u32, count: u32) -> Result<Vec<KeystoreAddress>> {
-        self.provider.derive_addresses(master_public_key, network, script_types, start_index, count).await
+    async fn derive_addresses(&self, master_public_key: &str, network_params: &deezel_common::network::NetworkParams, script_types: &[&str], start_index: u32, count: u32) -> Result<Vec<KeystoreAddress>> {
+        self.provider.derive_addresses(master_public_key, network_params, script_types, start_index, count).await
     }
-    async fn get_default_addresses(&self, master_public_key: &str, network: bitcoin::Network) -> Result<Vec<KeystoreAddress>> {
-        self.provider.get_default_addresses(master_public_key, network).await
+    async fn get_default_addresses(&self, master_public_key: &str, network_params: &deezel_common::network::NetworkParams) -> Result<Vec<KeystoreAddress>> {
+        self.provider.get_default_addresses(master_public_key, network_params).await
     }
     fn parse_address_range(&self, range_spec: &str) -> Result<(String, u32, u32)> {
         self.provider.parse_address_range(range_spec)
@@ -617,6 +642,9 @@ impl KeystoreProvider for SystemDeezel {
     }
     async fn get_address(&self, address_type: &str, index: u32) -> Result<String> {
         <ConcreteProvider as KeystoreProvider>::get_address(&self.provider, address_type, index).await
+    }
+    async fn derive_address_from_path(&self, _master_public_key: &str, _path: &bitcoin::bip32::DerivationPath, _script_type: &str, _network_params: &deezel_common::network::NetworkParams) -> Result<KeystoreAddress> {
+        unimplemented!()
     }
 }
 
@@ -1782,7 +1810,8 @@ impl SystemAlkanes for SystemDeezel {
                 params,
                 raw,
             } => {
-                let result = provider.simulate(&contract_id, params.as_deref()).await?;
+                let context = deezel_common::alkanes::simulation::simulate_cellpack(&[]);
+                let result = provider.simulate(&contract_id, &context).await?;
 
                 if raw {
                     println!("{}", serde_json::to_string_pretty(&result)?);
@@ -2069,7 +2098,7 @@ impl SystemEsplora for SystemDeezel {
             },
             EsploraCommands::Address { params, raw } => {
                 let resolved_params = provider.resolve_all_identifiers(&params).await?;
-                let result = EsploraProvider::get_address(provider, &resolved_params).await?;
+                let result = EsploraProvider::get_address_info(provider, &resolved_params).await?;
                 if raw {
                     if let Some(s) = result.as_str() {
                         println!("{}", s.trim_matches('"'));

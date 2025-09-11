@@ -225,10 +225,10 @@ impl EsploraJsonRpcMethods {
     // Address endpoints
     pub const ADDRESS: &'static str = "esplora_address";
     pub const ADDRESS_TXS: &'static str = "esplora_address::txs";
-    pub const ADDRESS_TXS_CHAIN: &'static str = "esplora_address::txs::chain";
-    pub const ADDRESS_TXS_MEMPOOL: &'static str = "esplora_address::txs::mempool";
+    pub const ADDRESS_TXS_CHAIN: &'static str = "esplora_address::txs:chain";
+    pub const ADDRESS_TXS_MEMPOOL: &'static str = "esplora_address::txs:mempool";
     pub const ADDRESS_UTXO: &'static str = "esplora_address::utxo";
-    pub const ADDRESS_PREFIX: &'static str = "esplora_address::prefix";
+    pub const ADDRESS_PREFIX: &'static str = "esplora_address-prefix";
 
     // Transaction endpoints
     pub const TX: &'static str = "esplora_tx";

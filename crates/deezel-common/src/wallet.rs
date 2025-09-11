@@ -32,12 +32,12 @@ pub struct WalletConfig {
 }
 
 /// Wallet manager that works with any provider
-pub struct WalletManager<P: DeezelProvider> {
+pub struct Wallet<P: DeezelProvider> {
     provider: P,
     _config: WalletConfig,
 }
 
-impl<P: DeezelProvider> WalletManager<P> {
+impl<P: DeezelProvider> Wallet<P> {
     /// Create a new wallet manager
     pub fn new(provider: P, config: WalletConfig) -> Self {
         Self { provider, _config: config }

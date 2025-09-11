@@ -31,7 +31,7 @@ async fn test_alkanes_execute_commit_reveal_flow_with_mock_provider() -> anyhow:
         change_address: None,
         fee_rate: Some(1.0),
         envelope_data: Some(b"dummy envelope data".to_vec()),
-        protostones: alkanes::parsing::parse_protostones("[800000,1,0,0],[1:1:100:v0]")?,
+        protostones: alkanes::parsing::parse_protostones("[800000,1,0,0],[1,1,100,0]:v0:v0")?,
         raw_output: false,
         trace_enabled: true,
         mine_enabled: false, // Cannot mine with mock provider

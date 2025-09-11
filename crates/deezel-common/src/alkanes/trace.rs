@@ -146,10 +146,10 @@ impl From<alkanes_support::proto::alkanes::AlkanesTrace> for Call {
         // The first event is expected to be EnterContext, which contains the call details
         if let Some(first_event) = trace.events.first() {
             if let Some(alkanes_support::proto::alkanes::alkanes_trace_event::Event::EnterContext(enter_context)) = &first_event.event {
-                let trace_ctx = enter_context.context.get_or_default();
-                let ctx = trace_ctx.inner.get_or_default();
-                caller = ctx.caller.get_or_default().clone().into();
-                contract_id = Some(ctx.myself.get_or_default().clone().into());
+                let trace_ctx = enter_context.context.as_ref().cloned().unwrap_or_default();
+                let ctx = trace_ctx.inner.as_ref().cloned().unwrap_or_default();
+                caller = ctx.caller.into_option().unwrap_or_default().into();
+                contract_id = Some(ctx.myself.into_option().unwrap_or_default().into());
                 
                 // Extract input data
                 input_data = ctx.inputs.iter().flat_map(|u| {
@@ -159,7 +159,7 @@ impl From<alkanes_support::proto::alkanes::AlkanesTrace> for Call {
 
                 // Extract value from the first incoming alkane transfer
                 if let Some(transfer) = ctx.incoming_alkanes.first() {
-                    value = transfer.value.as_ref().map(|v| v.clone().into());
+                    value = transfer.value.clone().into_option().map(|v| v.into());
                 }
             }
         }
@@ -175,6 +175,7 @@ impl From<alkanes_support::proto::alkanes::AlkanesTrace> for Call {
     }
 }
 
+#[allow(unreachable_patterns)]
 impl From<alkanes_support::proto::alkanes::alkanes_trace_event::Event> for Event {
     fn from(event: alkanes_support::proto::alkanes::alkanes_trace_event::Event) -> Self {
         match event {

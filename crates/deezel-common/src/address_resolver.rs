@@ -544,6 +544,18 @@ impl WalletProvider for StandaloneAddressResolver {
     async fn get_last_used_address_index(&self) -> Result<u32> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support get_last_used_address_index".to_string()))
     }
+
+    async fn get_enriched_utxos(&self, _addresses: Option<Vec<String>>) -> Result<Vec<crate::provider::EnrichedUtxo>> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support get_enriched_utxos".to_string()))
+    }
+
+    async fn get_all_balances(&self, _addresses: Option<Vec<String>>) -> Result<crate::provider::AllBalances> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support get_all_balances".to_string()))
+    }
+
+    async fn get_master_public_key(&self) -> Result<Option<String>> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support get_master_public_key".to_string()))
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -565,6 +577,7 @@ impl crate::traits::AddressResolver for StandaloneAddressResolver {
 #[async_trait(?Send)]
 impl BitcoinRpcProvider for StandaloneAddressResolver {
     async fn get_block_count(&self) -> Result<u64> {
+        
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Bitcoin RPC".to_string()))
     }
     async fn generate_to_address(&self, _nblocks: u32, _address: &str) -> Result<serde_json::Value> {
@@ -675,10 +688,10 @@ impl EsploraProvider for StandaloneAddressResolver {
     async fn get_block_txs(&self, _hash: &str, _start_index: Option<u32>) -> Result<serde_json::Value> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Esplora API".to_string()))
     }
-    async fn get_address(&self, _address: &str) -> Result<serde_json::Value> {
+    async fn get_address_info(&self, _address: &str) -> Result<serde_json::Value> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Esplora API".to_string()))
     }
-    async fn get_address_info(&self, _address: &str) -> Result<serde_json::Value> {
+    async fn get_address_utxo(&self, _address: &str) -> Result<serde_json::Value> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Esplora API".to_string()))
     }
     async fn get_address_txs(&self, _address: &str) -> Result<serde_json::Value> {
@@ -688,9 +701,6 @@ impl EsploraProvider for StandaloneAddressResolver {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Esplora API".to_string()))
     }
     async fn get_address_txs_mempool(&self, _address: &str) -> Result<serde_json::Value> {
-        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Esplora API".to_string()))
-    }
-    async fn get_address_utxo(&self, _address: &str) -> Result<serde_json::Value> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Esplora API".to_string()))
     }
     async fn get_address_prefix(&self, _prefix: &str) -> Result<serde_json::Value> {
@@ -820,11 +830,11 @@ impl KeystoreProvider for StandaloneAddressResolver {
     async fn get_address(&self, _address_type: &str, _index: u32) -> Result<String> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support keystore operations".to_string()))
     }
-    async fn derive_addresses(&self, _master_public_key: &str, _network: bitcoin::Network, _script_types: &[&str], _start_index: u32, _count: u32) -> Result<Vec<KeystoreAddress>> {
+    async fn derive_addresses(&self, _master_public_key: &str, _network_params: &crate::network::NetworkParams, _script_types: &[&str], _start_index: u32, _count: u32) -> Result<Vec<KeystoreAddress>> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support keystore operations".to_string()))
     }
     
-    async fn get_default_addresses(&self, _master_public_key: &str, _network: bitcoin::Network) -> Result<Vec<KeystoreAddress>> {
+    async fn get_default_addresses(&self, _master_public_key: &str, _network_params: &crate::network::NetworkParams) -> Result<Vec<KeystoreAddress>> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support keystore operations".to_string()))
     }
     
@@ -833,6 +843,10 @@ impl KeystoreProvider for StandaloneAddressResolver {
     }
     
     async fn get_keystore_info(&self, _master_fingerprint: &str, _created_at: u64, _version: &str) -> Result<KeystoreInfo> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support keystore operations".to_string()))
+    }
+
+    async fn derive_address_from_path(&self, _master_public_key: &str, _path: &bitcoin::bip32::DerivationPath, _script_type: &str, _network_params: &crate::network::NetworkParams) -> Result<KeystoreAddress> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support keystore operations".to_string()))
     }
 }
@@ -900,7 +914,11 @@ impl AlkanesProvider for StandaloneAddressResolver {
         ))
     }
 
-    async fn simulate(&self, _contract_id: &str, _params: Option<&str>) -> Result<crate::JsonValue> {
+    async fn simulate(&self, _contract_id: &str, _context: &alkanes_support::proto::alkanes::MessageContextParcel) -> Result<crate::JsonValue> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
+    }
+
+    async fn view(&self, _contract_id: &str, _view_fn: &str, _params: Option<&[u8]>) -> Result<crate::JsonValue> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
     }
 
@@ -959,6 +977,9 @@ impl DeezelProvider for StandaloneAddressResolver {
     fn get_ord_server_url(&self) -> Option<String> {
         None
     }
+    fn get_metashrew_rpc_url(&self) -> Option<String> {
+        None
+    }
     fn provider_name(&self) -> &str {
         "StandaloneAddressResolver"
     }
@@ -975,6 +996,14 @@ impl DeezelProvider for StandaloneAddressResolver {
     }
     async fn sign_taproot_script_spend(&self, _sighash: bitcoin::secp256k1::Message) -> Result<bitcoin::secp256k1::schnorr::Signature> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support sign_taproot_script_spend".to_string()))
+    }
+
+    async fn wrap(&mut self, _amount: u64, _address: Option<String>, _fee_rate: Option<f32>) -> Result<String> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support wrap".to_string()))
+    }
+
+    async fn unwrap(&mut self, _amount: u64, _address: Option<String>) -> Result<String> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support unwrap".to_string()))
     }
 }
 

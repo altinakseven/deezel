@@ -55,6 +55,8 @@ use wasm_bindgen_futures::JsFuture;
 use web_sys::{Request, RequestInit, RequestMode, Response, window, Headers};
 
 #[cfg(target_arch = "wasm32")]
+extern crate alloc;
+#[cfg(target_arch = "wasm32")]
 use alloc::{
     boxed::Box,
     format,

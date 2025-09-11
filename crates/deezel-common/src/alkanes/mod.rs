@@ -12,5 +12,7 @@ pub mod types;
 pub mod envelope;
 pub mod inspector;
 pub mod protorunes;
+pub mod protoburn;
+pub mod simulation;
 
 pub use types::*;

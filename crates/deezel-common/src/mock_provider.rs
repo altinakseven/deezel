@@ -201,9 +201,9 @@ impl WalletProvider for MockProvider {
         Ok("mock_txid".to_string())
     }
     
-    async fn get_utxos(&self, _include_frozen: bool, _addresses: Option<Vec<String>>) -> Result<Vec<(OutPoint, UtxoInfo)>> {
+    async fn get_utxos(&self, _include_frozen: bool, addresses: Option<Vec<String>>) -> Result<Vec<(OutPoint, UtxoInfo)>> {
         let utxos = self.utxos.lock().unwrap();
-        let utxo_infos = utxos.iter().map(|(outpoint, tx_out)| {
+        let mut utxo_infos: Vec<(OutPoint, UtxoInfo)> = utxos.iter().map(|(outpoint, tx_out)| {
             let address = Address::from_script(&tx_out.script_pubkey, self.network)
                 .map(|addr| addr.to_string())
                 .unwrap_or_else(|_| "unknown_script".to_string()); // Handle unrecognized scripts
@@ -225,6 +225,13 @@ impl WalletProvider for MockProvider {
             };
             (*outpoint, info)
         }).collect();
+
+        if let Some(addresses) = addresses {
+            if !addresses.is_empty() {
+                utxo_infos.retain(|(_, info)| addresses.contains(&info.address));
+            }
+        }
+
         Ok(utxo_infos)
     }
     
@@ -235,8 +242,12 @@ impl WalletProvider for MockProvider {
             block_time: Some(1640995200),
             confirmed: true,
             fee: Some(1000),
+            weight: Some(0),
             inputs: vec![],
             outputs: vec![],
+            has_protostones: false,
+            is_op_return: false,
+            is_rbf: false,
         }])
     }
     
@@ -326,6 +337,17 @@ impl WalletProvider for MockProvider {
 
     async fn get_last_used_address_index(&self) -> Result<u32> {
         Ok(0)
+    }
+
+    async fn get_enriched_utxos(&self, _addresses: Option<Vec<String>>) -> Result<Vec<crate::provider::EnrichedUtxo>> {
+        unimplemented!("get_enriched_utxos is not implemented for MockProvider")
+    }
+
+    async fn get_all_balances(&self, _addresses: Option<Vec<String>>) -> Result<crate::provider::AllBalances> {
+        unimplemented!("get_all_balances is not implemented for MockProvider")
+    }
+    async fn get_master_public_key(&self) -> Result<Option<String>> {
+        Ok(None)
     }
 }
 
@@ -430,10 +452,20 @@ impl MetashrewRpcProvider for MockProvider {
 }
 
 #[async_trait(?Send)]
-impl EsploraProvider for MockProvider {
-    async fn get_address_info(&self, _address: &str) -> Result<JsonValue> {
-        todo!()
+impl MetashrewProvider for MockProvider {
+    async fn get_height(&self) -> Result<u64> {
+        Ok(800000)
     }
+    async fn get_block_hash(&self, _height: u64) -> Result<String> {
+        Ok("mock_block_hash".to_string())
+    }
+    async fn get_state_root(&self, _height: JsonValue) -> Result<String> {
+        Ok("mock_state_root".to_string())
+    }
+}
+
+#[async_trait(?Send)]
+impl EsploraProvider for MockProvider {
     async fn get_blocks_tip_hash(&self) -> Result<String> {
         Ok("mock_tip_hash".to_string())
     }
@@ -478,8 +510,17 @@ impl EsploraProvider for MockProvider {
         Ok(serde_json::json!([]))
     }
     
-    async fn get_address(&self, _address: &str) -> Result<JsonValue> {
-        Ok(serde_json::json!({"balance": 100000000}))
+    
+    async fn get_address_info(&self, address: &str) -> Result<JsonValue> {
+        Ok(serde_json::json!({
+            "address": address,
+            "chain_stats": { "funded_txo_count": 0, "funded_txo_sum": 0, "spent_txo_count": 0, "spent_txo_sum": 0, "tx_count": 0 },
+            "mempool_stats": { "funded_txo_count": 0, "funded_txo_sum": 0, "spent_txo_count": 0, "spent_txo_sum": 0, "tx_count": 0 }
+        }))
+    }
+
+    async fn get_address_utxo(&self, _address: &str) -> Result<JsonValue> {
+        Ok(serde_json::json!([]))
     }
     
     async fn get_address_txs(&self, _address: &str) -> Result<JsonValue> {
@@ -494,9 +535,6 @@ impl EsploraProvider for MockProvider {
         Ok(serde_json::json!([]))
     }
     
-    async fn get_address_utxo(&self, _address: &str) -> Result<JsonValue> {
-        Ok(serde_json::json!([]))
-    }
     
     async fn get_address_prefix(&self, _prefix: &str) -> Result<JsonValue> {
         Ok(serde_json::json!([]))
@@ -623,7 +661,10 @@ impl AlkanesProvider for MockProvider {
             "protorunes_by_outpoint".to_string(),
         ))
     }
-    async fn simulate(&self, _contract_id: &str, _params: Option<&str>) -> Result<JsonValue> {
+    async fn simulate(&self, _contract_id: &str, _context: &alkanes_pb::MessageContextParcel) -> Result<JsonValue> {
+        todo!()
+    }
+    async fn view(&self, _contract_id: &str, _view_fn: &str, _params: Option<&[u8]>) -> Result<JsonValue> {
         todo!()
     }
     async fn trace(&self, _outpoint: &str) -> Result<alkanes_support::proto::alkanes::Trace> {
@@ -670,11 +711,11 @@ impl MonitorProvider for MockProvider {
 
 #[async_trait(?Send)]
 impl KeystoreProvider for MockProvider {
-    async fn derive_addresses(&self, _master_public_key: &str, _network: Network, _script_types: &[&str], _start_index: u32, _count: u32) -> Result<Vec<KeystoreAddress>> {
+    async fn derive_addresses(&self, _master_public_key: &str, _network_params: &crate::network::NetworkParams, _script_types: &[&str], _start_index: u32, _count: u32) -> Result<Vec<KeystoreAddress>> {
         Ok(vec![])
     }
     
-    async fn get_default_addresses(&self, _master_public_key: &str, _network: Network) -> Result<Vec<KeystoreAddress>> {
+    async fn get_default_addresses(&self, _master_public_key: &str, _network_params: &crate::network::NetworkParams) -> Result<Vec<KeystoreAddress>> {
         Ok(vec![])
     }
     
@@ -687,6 +728,19 @@ impl KeystoreProvider for MockProvider {
             master_fingerprint: "mock_fingerprint".to_string(),
             created_at: 0,
             version: "1".to_string(),
+        })
+    }
+    
+    async fn get_address(&self, _address_type: &str, _index: u32) -> Result<String> {
+        Ok("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4".to_string())
+    }
+    async fn derive_address_from_path(&self, _master_public_key: &str, _path: &DerivationPath, _script_type: &str, _network_params: &crate::network::NetworkParams) -> Result<KeystoreAddress> {
+        Ok(KeystoreAddress {
+            address: "mock_address".to_string(),
+            derivation_path: "m/0/0".to_string(),
+            index: 0,
+            script_type: "p2wpkh".to_string(),
+            network: Some("regtest".to_string()),
         })
     }
 }
@@ -765,6 +819,22 @@ impl DeezelProvider for MockProvider {
         Box::new(self.clone())
     }
 
+    fn get_bitcoin_rpc_url(&self) -> Option<String> {
+        None
+    }
+
+    fn get_esplora_api_url(&self) -> Option<String> {
+        None
+    }
+
+    fn get_ord_server_url(&self) -> Option<String> {
+        None
+    }
+
+    fn get_metashrew_rpc_url(&self) -> Option<String> {
+        None
+    }
+
     fn secp(&self) -> &Secp256k1<All> {
         &self.secp
     }
@@ -780,5 +850,13 @@ impl DeezelProvider for MockProvider {
     ) -> Result<schnorr::Signature> {
         let keypair = Keypair::from_secret_key(&self.secp, &self.secret_key);
         Ok(self.secp.sign_schnorr_with_rng(&sighash, &keypair, &mut rand::thread_rng()))
+    }
+
+    async fn wrap(&mut self, _amount: u64, _address: Option<String>, _fee_rate: Option<f32>) -> Result<String> {
+        unimplemented!("wrap is not implemented for MockProvider")
+    }
+
+    async fn unwrap(&mut self, _amount: u64, _address: Option<String>) -> Result<String> {
+        unimplemented!("unwrap is not implemented for MockProvider")
     }
 }

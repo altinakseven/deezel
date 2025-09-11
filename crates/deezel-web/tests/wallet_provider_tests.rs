@@ -8,7 +8,8 @@ use deezel_web::wallet_provider::{
     WalletInfo as LocalWalletInfo, PsbtSigningOptions, PsbtSigningInput,
     WalletAccount, WalletConnectionStatus, WalletNetworkInfo
 };
-use deezel_web::prelude::*;
+use deezel_web::provider::WebProvider;
+use deezel_common::{DeezelProvider, LogProvider, TimeProvider, CryptoProvider, StorageProvider};
 use wasm_bindgen_test::*;
 
 wasm_bindgen_test_configure!(run_in_browser);
@@ -148,7 +149,7 @@ async fn test_web_provider_creation() {
     
     assert!(provider.is_ok());
     let provider = provider.unwrap();
-    assert_eq!(provider.provider_name(), "web");
+    assert_eq!(provider.provider_name(), "WebProvider");
 }
 
 #[wasm_bindgen_test]

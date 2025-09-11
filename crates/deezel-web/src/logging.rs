@@ -54,6 +54,8 @@ use deezel_common::LogProvider;
 use web_sys::console;
 
 #[cfg(target_arch = "wasm32")]
+extern crate alloc;
+#[cfg(target_arch = "wasm32")]
 use alloc::{format, string::String};
 /// Web logging implementation using console API
 #[derive(Clone)]
@@ -184,7 +186,6 @@ macro_rules! web_error {
 
 #[cfg(test)]
 mod tests {
-    use alloc::vec;
     use super::*;
     use wasm_bindgen_test::*;
 

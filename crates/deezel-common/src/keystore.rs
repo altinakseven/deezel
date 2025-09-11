@@ -54,6 +54,8 @@ use std::path::Path;
 
 impl Keystore {
     // TODO: This is a temporary, insecure implementation. The seed is not encrypted.
+    // This `new` function is now primarily for non-WASM contexts.
+    // The `deezel-web` crate has its own `encrypt_mnemonic` for WASM.
     pub fn new(
         mnemonic: &Mnemonic,
         network: Network,
@@ -62,7 +64,7 @@ impl Keystore {
     ) -> Result<Self> {
         // 1. Encrypt the mnemonic phrase
         let (encrypted_mnemonic_bytes, salt, nonce) =
-            crate::crypto::encrypt(mnemonic.phrase().as_bytes(), passphrase)?;
+            crate::crypto::encrypt_sync(mnemonic.phrase().as_bytes(), passphrase)?;
 
         // 2. Armor the encrypted mnemonic
         let mut armored_mnemonic = Vec::new();
@@ -94,10 +96,8 @@ impl Keystore {
         Ok(Self {
             encrypted_mnemonic: String::from_utf8(armored_mnemonic)?,
             master_fingerprint: root.fingerprint(&secp).to_string(),
-            created_at: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs(),
+            // `created_at` should be set by the caller, as `std::time` is not always available.
+            created_at: 0,
             version: env!("CARGO_PKG_VERSION").to_string(),
             pbkdf2_params: PbkdfParams {
                 salt: hex::encode(salt),
@@ -142,7 +142,7 @@ impl Keystore {
         };
 
         // 3. Decrypt using the crypto module
-        let decrypted_bytes = crate::crypto::decrypt(&encrypted_bytes, passphrase, &salt, &nonce)?;
+        let decrypted_bytes = crate::crypto::decrypt_sync(&encrypted_bytes, passphrase, &salt, &nonce)?;
 
         let mnemonic_str = String::from_utf8(decrypted_bytes)
             .map_err(|e| DeezelError::Wallet(format!("Failed to convert decrypted data to string: {e}")))?;
@@ -218,19 +218,47 @@ pub fn derive_address(mnemonic_str: &str, path: &DerivationPath, network: Networ
 }
 
 /// Derives a Bitcoin address from a master public key and a derivation path.
-pub fn derive_address_from_public_key(master_public_key: &str, path: &DerivationPath, network: Network) -> Result<Address> {
+pub fn derive_address_from_public_key(
+    master_public_key: &str,
+    path: &DerivationPath,
+    network_params: &crate::network::NetworkParams,
+    address_type: &str,
+) -> Result<String> {
+    use metashrew_support::address::{AddressEncoding, Payload};
+    use bitcoin::bech32::Hrp;
+
     let secp = Secp256k1::<All>::new();
     let root = Xpub::from_str(master_public_key)
         .map_err(|e| DeezelError::Wallet(format!("Invalid master public key: {e}")))?;
 
-    // We can only derive non-hardened keys from a public key.
-    // The path provided should be relative to the master public key and contain only non-hardened components.
     let derived_xpub = root.derive_pub(&secp, path)
         .map_err(|e| DeezelError::Wallet(format!("Failed to derive public key: {e}. Note: Hardened derivation from a public key is not possible.")))?;
     
-    let (internal_key, _parity) = derived_xpub.public_key.x_only_public_key();
-    
-    Ok(Address::p2tr(&secp, internal_key, None, network))
+    let public_key = derived_xpub.public_key;
+    let pk = bitcoin::PublicKey::new(public_key);
+
+    let payload = match address_type {
+        "p2tr" => {
+            let (internal_key, _) = public_key.x_only_public_key();
+            Payload::p2tr(&secp, internal_key, None)
+        }
+        "p2wpkh" => Payload::p2wpkh(&pk)?,
+        "p2sh-p2wpkh" => Payload::p2shwpkh(&pk)?,
+        "p2pkh" => Payload::p2pkh(&pk),
+        _ => return Err(DeezelError::InvalidParameters(format!("Unsupported address type: {}", address_type))),
+    };
+
+    let hrp = Hrp::parse(&network_params.bech32_prefix)
+        .map_err(|e| DeezelError::InvalidParameters(format!("Invalid bech32 HRP: {}", e)))?;
+
+    let address = AddressEncoding {
+        payload: &payload,
+        p2pkh_prefix: network_params.p2pkh_prefix,
+        p2sh_prefix: network_params.p2sh_prefix,
+        hrp,
+    }.to_string();
+
+    Ok(address)
 }
 
 /// A simple wallet structure for managing mnemonics and deriving addresses.
@@ -267,11 +295,18 @@ impl DeezelWallet {
 
 /// Information about a derived address.
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct AddressInfo {
+pub struct KeystoreAddress {
     /// The derivation path for the address.
     pub path: String,
     /// The address string.
     pub address: String,
     /// The type of address (e.g., "p2wpkh", "p2tr").
     pub address_type: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct KeystoreInfo {
+    pub master_fingerprint: String,
+    pub created_at: u64,
+    pub version: String,
 }

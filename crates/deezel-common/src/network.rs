@@ -253,9 +253,9 @@ impl NetworkParams {
             bech32_prefix: "bc".to_string(),
             p2pkh_prefix: 0x00,
             p2sh_prefix: 0x05,
-            bitcoin_rpc_url: "http://bitcoinrpc:bitcoinrpc@localhost:8332".to_string(),
-            metashrew_rpc_url: "http://localhost:8080".to_string(),
-            esplora_url: Some("https://blockstream.info/api".to_string()),
+            bitcoin_rpc_url: "https://mainnet.sandshrew.io/v2/lasereyes".to_string(),
+            metashrew_rpc_url: "https://mainnet.sandshrew.io/v2/lasereyes".to_string(),
+            esplora_url: Some("https://mainnet.sandshrew.io/v2/lasereyes".to_string()),
             custom_params: HashMap::new(),
         }
     }
@@ -268,9 +268,9 @@ impl NetworkParams {
             bech32_prefix: "tb".to_string(),
             p2pkh_prefix: 0x6f,
             p2sh_prefix: 0xc4,
-            bitcoin_rpc_url: "http://bitcoinrpc:bitcoinrpc@localhost:18332".to_string(),
-            metashrew_rpc_url: "http://localhost:8080".to_string(),
-            esplora_url: Some("https://blockstream.info/testnet/api".to_string()),
+            bitcoin_rpc_url: "https://testnet4.sandshrew.io/v2/lasereyes".to_string(),
+            metashrew_rpc_url: "https://testnet4.sandshrew.io/v2/lasereyes".to_string(),
+            esplora_url: Some("https://testnet4.sandshrew.io/v2/lasereyes".to_string()),
             custom_params: HashMap::new(),
         }
     }
@@ -283,9 +283,9 @@ impl NetworkParams {
             bech32_prefix: "tb".to_string(),
             p2pkh_prefix: 0x6f,
             p2sh_prefix: 0xc4,
-            bitcoin_rpc_url: "http://bitcoinrpc:bitcoinrpc@localhost:38332".to_string(),
-            metashrew_rpc_url: "http://localhost:8080".to_string(),
-            esplora_url: Some("https://mempool.space/signet/api".to_string()),
+            bitcoin_rpc_url: "https://signet.sandshrew.io/v2/lasereyes".to_string(),
+            metashrew_rpc_url: "https://signet.sandshrew.io/v2/lasereyes".to_string(),
+            esplora_url: Some("https://signet.sandshrew.io/v2/lasereyes".to_string()),
             custom_params: HashMap::new(),
         }
     }
@@ -298,9 +298,9 @@ impl NetworkParams {
             bech32_prefix: "bcrt".to_string(),
             p2pkh_prefix: 0x6f,
             p2sh_prefix: 0xc4,
-            bitcoin_rpc_url: "http://bitcoinrpc:bitcoinrpc@localhost:18443".to_string(),
-            metashrew_rpc_url: "http://localhost:8080".to_string(),
-            esplora_url: None,
+            bitcoin_rpc_url: "http://localhost:18888".to_string(),
+            metashrew_rpc_url: "http://localhost:18888".to_string(),
+            esplora_url: Some("http://localhost:18888".to_string()),
             custom_params: HashMap::new(),
         }
     }
@@ -357,8 +357,8 @@ impl NetworkParams {
         bech32_prefix: String,
         p2pkh_prefix: u8,
         p2sh_prefix: u8,
-        bitcoin_rpc_url: String,
         metashrew_rpc_url: String,
+        esplora_url: String,
     ) -> Self {
         Self {
             network,
@@ -366,9 +366,9 @@ impl NetworkParams {
             bech32_prefix,
             p2pkh_prefix,
             p2sh_prefix,
-            bitcoin_rpc_url,
+            bitcoin_rpc_url: metashrew_rpc_url.clone(),
             metashrew_rpc_url,
-            esplora_url: None,
+            esplora_url: Some(esplora_url),
             custom_params: HashMap::new(),
         }
     }
