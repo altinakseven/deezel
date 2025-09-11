@@ -75,13 +75,18 @@ impl KeystoreManager {
         let mnemonic_str = mnemonic.to_string();
 
         // 3. Create the encrypted keystore
-        let keystore = Keystore::new(
+        let mut keystore = Keystore::new(
             &mnemonic,
             params.network,
             &passphrase,
             params.hd_path.as_deref(),
         )
         .context("Failed to create and encrypt keystore")?;
+
+        keystore.created_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .context("Time went backwards")?
+            .as_secs();
 
         Ok((keystore, mnemonic_str))
     }
