@@ -281,3 +281,23 @@ fn compress_opcode_ranges(opcodes: &[u128]) -> String {
 
     ranges.join(", ")
 }
+
+pub fn pretty_print_blockchain_info(info: &serde_json::Value) -> anyhow::Result<()> {
+    println!("Blockchain Info:");
+    if let Some(obj) = info.as_object() {
+        for (key, value) in obj {
+            println!("  {}: {}", key, value);
+        }
+    }
+    Ok(())
+}
+
+pub fn pretty_print_network_info(info: &serde_json::Value) -> anyhow::Result<()> {
+    println!("Network Info:");
+    if let Some(obj) = info.as_object() {
+        for (key, value) in obj {
+            println!("  {}: {}", key, value);
+        }
+    }
+    Ok(())
+}

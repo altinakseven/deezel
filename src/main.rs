@@ -287,6 +287,7 @@ enum BitcoindCommands {
         /// Address to generate to
         address: String,
     },
+    Getblockchaininfo
 }
 
 /// Metashrew RPC subcommands
@@ -1012,6 +1013,10 @@ async fn main() -> Result<()> {
             BitcoindCommands::Getblockcount => {
                 let count = rpc_client.get_block_count().await?;
                 println!("{}", count);
+            },
+            BitcoindCommands::Getblockchaininfo {raw: _}=> {
+                let info = rpc_client.get_blockchain_info().await?;
+                println!("{}", info);
             },
             BitcoindCommands::Generatetoaddress { nblocks, address } => {
                 // Resolve address identifiers if wallet is available

@@ -153,6 +153,11 @@ impl<P: DeezelProvider> RpcClient<P> {
         result.as_u64()
             .ok_or_else(|| DeezelError::RpcError("Invalid block count response".to_string()))
     }
+
+    // Returns an object containing blockchain state info
+    pub async fn get_blockchain_info(&self) -> Result<JsonValue> {
+        self.sandshrew_call("getblockchaininfo", JsonValue::Array(vec![])).await
+    }
     
     /// Generate blocks to address (regtest only)
     pub async fn generate_to_address(&self, nblocks: u32, address: &str) -> Result<JsonValue> {

@@ -1251,6 +1251,10 @@ impl BitcoinRpcProvider for ConcreteProvider {
         self.call(&self.rpc_url, "generatetoaddress", params, 1).await
     }
 
+    async fn get_blockchain_info(&self) -> Result<serde_json::Value> {
+        self.call(&self.rpc_url, "getblockchaininfo", serde_json::Value::Null, 1).await
+    }
+
     async fn get_new_address(&self) -> Result<JsonValue> {
         self.call(&self.rpc_url, "getnewaddress", serde_json::Value::Null, 1).await
     }
@@ -1311,6 +1315,38 @@ impl BitcoinRpcProvider for ConcreteProvider {
     
     async fn trace_transaction(&self, txid: &str, vout: u32, _block: Option<&str>, _tx: Option<&str>) -> Result<serde_json::Value> {
         <Self as MetashrewRpcProvider>::trace_outpoint(self, txid, vout).await
+    }
+
+    async fn get_network_info(&self) -> Result<JsonValue> {
+        self.call(&self.rpc_url, "getnetworkinfo", serde_json::Value::Null, 1).await
+    }
+
+    async fn get_raw_transaction(&self, txid: &str, block_hash: Option<&str>) -> Result<JsonValue> {
+        let params = serde_json::json!([txid, true, block_hash]);
+        self.call(&self.rpc_url, "getrawtransaction", params, 1).await
+    }
+
+    async fn get_block_header(&self, hash: &str) -> Result<JsonValue> {
+        let params = serde_json::json!([hash, false]);
+        self.call(&self.rpc_url, "getblockheader", params, 1).await
+    }
+
+    async fn get_block_stats(&self, hash: &str) -> Result<JsonValue> {
+        let params = serde_json::json!([hash]);
+        self.call(&self.rpc_url, "getblockstats", params, 1).await
+    }
+
+    async fn get_chain_tips(&self) -> Result<JsonValue> {
+        self.call(&self.rpc_url, "getchaintips", serde_json::Value::Null, 1).await
+    }
+
+    async fn get_raw_mempool(&self) -> Result<JsonValue> {
+        self.call(&self.rpc_url, "getrawmempool", serde_json::json!([false]), 1).await
+    }
+
+    async fn get_tx_out(&self, txid: &str, vout: u32, include_mempool: bool) -> Result<JsonValue> {
+        let params = serde_json::json!([txid, vout, include_mempool]);
+        self.call(&self.rpc_url, "gettxout", params, 1).await
     }
 }
 

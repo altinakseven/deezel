@@ -400,7 +400,7 @@ async fn execute_esplora_command(
             }
         }
         deezel_common::commands::EsploraCommands::BlockHeader { hash, raw } => {
-            let header = provider.get_block_header(&hash).await?;
+            let header = deezel_common::traits::EsploraProvider::get_block_header(provider, &hash).await?;
             if raw {
                 println!("{header}");
             } else {

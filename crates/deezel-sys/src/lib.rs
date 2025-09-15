@@ -407,6 +407,9 @@ impl BitcoinRpcProvider for SystemDeezel {
     async fn generate_to_address(&self, nblocks: u32, address: &str) -> Result<deezel_common::JsonValue> {
         self.provider.generate_to_address(nblocks, address).await
     }
+    async fn get_blockchain_info(&self) -> Result<deezel_common::JsonValue> {
+        self.provider.get_blockchain_info().await
+    }
     async fn get_new_address(&self) -> Result<deezel_common::JsonValue> {
         self.provider.get_new_address().await
     }
@@ -433,6 +436,34 @@ impl BitcoinRpcProvider for SystemDeezel {
     }
     async fn trace_transaction(&self, txid: &str, vout: u32, block: Option<&str>, tx: Option<&str>) -> Result<deezel_common::JsonValue> {
         self.provider.trace_transaction(txid, vout, block, tx).await
+    }
+
+    async fn get_network_info(&self) -> Result<deezel_common::JsonValue> {
+        self.provider.get_network_info().await
+    }
+
+    async fn get_raw_transaction(&self, txid: &str, block_hash: Option<&str>) -> Result<deezel_common::JsonValue> {
+        self.provider.get_raw_transaction(txid, block_hash).await
+    }
+
+    async fn get_block_header(&self, hash: &str) -> Result<deezel_common::JsonValue> {
+        deezel_common::BitcoinRpcProvider::get_block_header(&self.provider, hash).await
+    }
+
+    async fn get_block_stats(&self, hash: &str) -> Result<deezel_common::JsonValue> {
+        self.provider.get_block_stats(hash).await
+    }
+
+    async fn get_chain_tips(&self) -> Result<deezel_common::JsonValue> {
+        self.provider.get_chain_tips().await
+    }
+
+    async fn get_raw_mempool(&self) -> Result<deezel_common::JsonValue> {
+        self.provider.get_raw_mempool().await
+    }
+
+    async fn get_tx_out(&self, txid: &str, vout: u32, include_mempool: bool) -> Result<deezel_common::JsonValue> {
+        self.provider.get_tx_out(txid, vout, include_mempool).await
     }
 }
 
@@ -495,7 +526,7 @@ impl EsploraProvider for SystemDeezel {
         self.provider.get_block_txids(hash).await
     }
     async fn get_block_header(&self, hash: &str) -> Result<String> {
-        self.provider.get_block_header(hash).await
+        deezel_common::EsploraProvider::get_block_header(&self.provider, hash).await
     }
     async fn get_block_raw(&self, hash: &str) -> Result<String> {
         self.provider.get_block_raw(hash).await
@@ -1520,7 +1551,7 @@ impl SystemBitcoind for SystemDeezel {
                 println!("{count}");
                 Ok(())
             },
-           BitcoindCommands::Generatetoaddress { nblocks, address } => {
+            BitcoindCommands::Generatetoaddress { nblocks, address } => {
               // Resolve address identifiers if needed
               let resolved_address = provider.resolve_all_identifiers(&address).await?;
               
@@ -1535,12 +1566,107 @@ impl SystemBitcoind for SystemDeezel {
                   }
               }
               Ok(())
-          },
-           // Catch-all for other bitcoind commands that are not yet implemented in deezel-sys
-           _ => {
-               println!("This bitcoind command is not yet implemented in deezel-sys.");
-               Ok(())
-           }
+            },
+            BitcoindCommands::Getblockchaininfo { raw } => {
+                let info = <ConcreteProvider as BitcoinRpcProvider>::get_blockchain_info(provider).await?;
+                if raw {
+                    println!("{}", serde_json::to_string_pretty(&info)?);
+                } else {
+                    pretty_print::pretty_print_blockchain_info(&info)?;
+                }
+                Ok(())
+            },
+            BitcoindCommands::Getnetworkinfo { raw } => {
+                let info = <ConcreteProvider as BitcoinRpcProvider>::get_network_info(provider).await?;
+                if raw {
+                    println!("{}", serde_json::to_string_pretty(&info)?);
+                } else {
+                    pretty_print::pretty_print_network_info(&info)?;
+                }
+                Ok(())
+            },
+            BitcoindCommands::Getrawtransaction { txid, block_hash, raw } => {
+                let result = <ConcreteProvider as BitcoinRpcProvider>::get_raw_transaction(provider, &txid, block_hash.as_deref()).await?;
+                if raw {
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                } else {
+                    println!("{result}");
+                }
+                Ok(())
+            },
+            BitcoindCommands::Getblock { hash, raw } => {
+                let result = <ConcreteProvider as BitcoinRpcProvider>::get_block(provider, &hash, raw).await?;
+                if raw {
+                    println!("{}", result.as_str().unwrap_or(""));
+                } else {
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                }
+                Ok(())
+            },
+            BitcoindCommands::Getblockhash { height } => {
+                let result = <ConcreteProvider as BitcoinRpcProvider>::get_block_hash(provider, height).await?;
+                println!("{result}");
+                Ok(())
+            },
+            BitcoindCommands::Getblockheader { hash, raw } => {
+                let result = <ConcreteProvider as BitcoinRpcProvider>::get_block_header(provider, &hash).await?;
+                if raw {
+                    println!("{}", result.as_str().unwrap_or(""));
+                } else {
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                }
+                Ok(())
+            },
+            BitcoindCommands::Getblockstats { hash, raw } => {
+                let result = <ConcreteProvider as BitcoinRpcProvider>::get_block_stats(provider, &hash).await?;
+                if raw {
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                } else {
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                }
+                Ok(())
+            },
+            BitcoindCommands::Getchaintips { raw } => {
+                let result = <ConcreteProvider as BitcoinRpcProvider>::get_chain_tips(provider).await?;
+                if raw {
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                } else {
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                }
+                Ok(())
+            },
+            BitcoindCommands::Getmempoolinfo { raw } => {
+                let result = <ConcreteProvider as BitcoinRpcProvider>::get_mempool_info(provider).await?;
+                if raw {
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                } else {
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                }
+                Ok(())
+            },
+            BitcoindCommands::Getrawmempool { raw } => {
+                let result = <ConcreteProvider as BitcoinRpcProvider>::get_raw_mempool(provider).await?;
+                if raw {
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                } else {
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                }
+                Ok(())
+            },
+            BitcoindCommands::Gettxout { txid, vout, include_mempool, raw } => {
+                let result = <ConcreteProvider as BitcoinRpcProvider>::get_tx_out(provider, &txid, vout, include_mempool).await?;
+                if raw {
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                } else {
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                }
+                Ok(())
+            },
+            BitcoindCommands::Sendrawtransaction { tx_hex } => {
+                let result = <ConcreteProvider as BitcoinRpcProvider>::send_raw_transaction(provider, &tx_hex).await?;
+                println!("{result}");
+                Ok(())
+            },
        };
        res.map_err(|e| DeezelError::Wallet(e.to_string()))
    }

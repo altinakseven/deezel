@@ -470,6 +470,9 @@ pub trait BitcoinRpcProvider {
     /// Generate blocks to address (regtest only)
     async fn generate_to_address(&self, nblocks: u32, address: &str) -> Result<JsonValue>;
 
+    // Get the state info
+    async fn get_blockchain_info(&self) -> Result<JsonValue>;
+
     /// Get a new address from the node's wallet
     async fn get_new_address(&self) -> Result<JsonValue>;
     
@@ -496,6 +499,27 @@ pub trait BitcoinRpcProvider {
     
     /// Trace transaction
     async fn trace_transaction(&self, txid: &str, vout: u32, block: Option<&str>, tx: Option<&str>) -> Result<serde_json::Value>;
+
+    /// Get network info
+    async fn get_network_info(&self) -> Result<JsonValue>;
+
+    /// Get raw transaction
+    async fn get_raw_transaction(&self, txid: &str, block_hash: Option<&str>) -> Result<JsonValue>;
+
+    /// Get block header
+    async fn get_block_header(&self, hash: &str) -> Result<JsonValue>;
+
+    /// Get block stats
+    async fn get_block_stats(&self, hash: &str) -> Result<JsonValue>;
+
+    /// Get chain tips
+    async fn get_chain_tips(&self) -> Result<JsonValue>;
+
+    /// Get raw mempool
+    async fn get_raw_mempool(&self) -> Result<JsonValue>;
+
+    /// Get tx out
+    async fn get_tx_out(&self, txid: &str, vout: u32, include_mempool: bool) -> Result<JsonValue>;
 }
 
 /// Trait for bitcoind RPC operations using bitcoincore_rpc_json types
@@ -1030,6 +1054,9 @@ impl<T: DeezelProvider + ?Sized> BitcoinRpcProvider for Box<T> {
    async fn generate_to_address(&self, nblocks: u32, address: &str) -> Result<serde_json::Value> {
        (**self).generate_to_address(nblocks, address).await
    }
+   async fn get_blockchain_info(&self) -> Result<serde_json::Value> {
+        <T as BitcoinRpcProvider>::get_blockchain_info(self).await
+   }
    async fn get_new_address(&self) -> Result<JsonValue> {
        (**self).get_new_address().await
    }
@@ -1056,6 +1083,34 @@ impl<T: DeezelProvider + ?Sized> BitcoinRpcProvider for Box<T> {
    }
    async fn trace_transaction(&self, txid: &str, vout: u32, block: Option<&str>, tx: Option<&str>) -> Result<serde_json::Value> {
        (**self).trace_transaction(txid, vout, block, tx).await
+   }
+
+   async fn get_network_info(&self) -> Result<JsonValue> {
+       (**self).get_network_info().await
+   }
+
+   async fn get_raw_transaction(&self, txid: &str, block_hash: Option<&str>) -> Result<JsonValue> {
+       (**self).get_raw_transaction(txid, block_hash).await
+   }
+
+   async fn get_block_header(&self, hash: &str) -> Result<JsonValue> {
+       <Self as BitcoinRpcProvider>::get_block_header(self, hash).await
+   }
+
+   async fn get_block_stats(&self, hash: &str) -> Result<JsonValue> {
+       (**self).get_block_stats(hash).await
+   }
+
+   async fn get_chain_tips(&self) -> Result<JsonValue> {
+       (**self).get_chain_tips().await
+   }
+
+   async fn get_raw_mempool(&self) -> Result<JsonValue> {
+       (**self).get_raw_mempool().await
+   }
+
+   async fn get_tx_out(&self, txid: &str, vout: u32, include_mempool: bool) -> Result<JsonValue> {
+       (**self).get_tx_out(txid, vout, include_mempool).await
    }
 }
 
