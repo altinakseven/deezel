@@ -496,10 +496,6 @@ pub enum AlkanesCommands {
     },
     /// Get sequence of an outpoint
     Sequence {
-        /// Transaction ID
-        txid: String,
-        /// Output index
-        vout: u32,
         /// Show raw JSON output
         #[arg(long)]
         raw: bool,

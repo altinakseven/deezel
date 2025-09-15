@@ -929,7 +929,7 @@ impl AlkanesProvider for StandaloneAddressResolver {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
     }
 
-    async fn sequence(&self, _txid: &str, _vout: u32) -> Result<crate::JsonValue> {
+    async fn sequence(&self) -> Result<crate::JsonValue> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
     }
 

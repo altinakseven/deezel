@@ -503,8 +503,6 @@ pub enum Alkanes {
     },
     /// Get the sequence for an outpoint
     Sequence {
-        /// The outpoint to get the sequence for
-        outpoint: String,
         /// Show raw JSON output
         #[arg(long)]
         raw: bool,

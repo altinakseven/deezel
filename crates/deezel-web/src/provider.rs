@@ -1548,8 +1548,8 @@ impl AlkanesProvider for WebProvider {
         let bytes = hex::decode(hex_str.strip_prefix("0x").unwrap_or(hex_str))?;
         alkanes_pb::BlockResponse::parse_from_bytes(&bytes[..]).map_err(|e| DeezelError::Serialization(e.to_string()))
     }
-    async fn sequence(&self, txid: &str, vout: u32) -> Result<JsonValue> {
-        self.call(&self.sandshrew_rpc_url, "alkanes_sequence", serde_json::json!([txid, vout]), 1).await
+    async fn sequence(&self) -> Result<JsonValue> {
+        self.call(&self.sandshrew_rpc_url, "alkanes_sequence", serde_json::json!(["0x"]), 1).await
     }
     async fn spendables_by_address(&self, address: &str) -> Result<JsonValue> {
         self.call(&self.sandshrew_rpc_url, "alkanes_spendables_by_address", serde_json::json!([address]), 1).await

@@ -733,7 +733,7 @@ pub trait AlkanesProvider {
     }
     async fn trace(&self, outpoint: &str) -> Result<alkanes_pb::Trace>;
     async fn get_block(&self, height: u64) -> Result<alkanes_pb::BlockResponse>;
-    async fn sequence(&self, txid: &str, vout: u32) -> Result<JsonValue>;
+    async fn sequence(&self) -> Result<JsonValue>;
     async fn spendables_by_address(&self, address: &str) -> Result<JsonValue>;
     async fn trace_block(&self, height: u64) -> Result<alkanes_pb::Trace>;
     async fn get_bytecode(&self, alkane_id: &str, block_tag: Option<String>) -> Result<String>;
@@ -1316,8 +1316,8 @@ impl<T: DeezelProvider + ?Sized> AlkanesProvider for Box<T> {
     async fn get_block(&self, height: u64) -> Result<alkanes_pb::BlockResponse> {
         AlkanesProvider::get_block(&**self, height).await
     }
-    async fn sequence(&self, txid: &str, vout: u32) -> Result<JsonValue> {
-        (**self).sequence(txid, vout).await
+    async fn sequence(&self) -> Result<JsonValue> {
+        (**self).sequence().await
     }
     async fn spendables_by_address(&self, address: &str) -> Result<JsonValue> {
         (**self).spendables_by_address(address).await

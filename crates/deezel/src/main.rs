@@ -250,14 +250,8 @@ async fn execute_alkanes_command<T: System>(system: &mut T, command: Alkanes) ->
             }
             Ok(())
         },
-        Alkanes::Sequence { outpoint, raw } => {
-            let parts: Vec<&str> = outpoint.split(':').collect();
-            if parts.len() != 2 {
-                return Err(anyhow::anyhow!("Invalid outpoint format. Expected txid:vout"));
-            }
-            let txid = parts[0];
-            let vout = parts[1].parse::<u32>()?;
-            let result = system.provider().sequence(txid, vout).await?;
+        Alkanes::Sequence { raw, .. } => {
+            let result = system.provider().sequence().await?;
             if raw {
                 println!("{}", serde_json::to_string_pretty(&result)?);
             } else {

@@ -611,8 +611,8 @@ impl AlkanesProvider for SystemDeezel {
     async fn get_block(&self, height: u64) -> Result<deezel_common::alkanes_pb::BlockResponse> {
         <ConcreteProvider as AlkanesProvider>::get_block(&self.provider, height).await
     }
-    async fn sequence(&self, txid: &str, vout: u32) -> Result<deezel_common::JsonValue> {
-        self.provider.sequence(txid, vout).await
+    async fn sequence(&self) -> Result<deezel_common::JsonValue> {
+        self.provider.sequence().await
     }
     async fn spendables_by_address(&self, address: &str) -> Result<deezel_common::JsonValue> {
         self.provider.spendables_by_address(address).await
@@ -1847,12 +1847,12 @@ impl SystemAlkanes for SystemDeezel {
                 }
                 Ok(())
             }
-            AlkanesCommands::Sequence { txid, vout, raw } => {
-                let result = provider.sequence(&txid, vout).await?;
+            AlkanesCommands::Sequence { raw } => {
+                let result = provider.sequence().await?;
                 if raw {
                     println!("{}", serde_json::to_string_pretty(&result)?);
                 } else {
-                    println!("🔢 Sequence for {}:{}:\n{}", txid, vout, serde_json::to_string_pretty(&result)?);
+                    println!("🔢 Sequence:\n{}", serde_json::to_string_pretty(&result)?);
                 }
                 Ok(())
             }

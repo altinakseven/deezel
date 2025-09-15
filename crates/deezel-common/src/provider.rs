@@ -2033,9 +2033,13 @@ impl AlkanesProvider for ConcreteProvider {
         Ok(block_response)
     }
 
-    async fn sequence(&self, txid: &str, vout: u32) -> Result<JsonValue> {
-        let params = serde_json::json!([txid, vout]);
-        self.call(&self.metashrew_rpc_url, "alkanes_sequence", params, 1).await
+    async fn sequence(&self) -> Result<JsonValue> {
+        let response_bytes = self.metashrew_view_call("sequence", "0x", "latest").await?;
+        if response_bytes.len() == 16 {
+            let val = u128::from_le_bytes(response_bytes.try_into().unwrap());
+            return Ok(serde_json::json!(val));
+        }
+        Ok(serde_json::json!(format!("0x{}", hex::encode(response_bytes))))
     }
 
     async fn spendables_by_address(&self, address: &str) -> Result<JsonValue> {
