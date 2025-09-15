@@ -86,20 +86,33 @@ impl SystemDeezel {
                 .context("Failed to create wallet directory")?;
         }
 
-        // Determine the correct metashrew RPC URL
-        let metashrew_rpc_url = args.metashrew_rpc_url.clone()
+        // Determine the correct RPC URLs, prioritizing command-line args over network defaults.
+        let bitcoin_rpc_url = args
+            .bitcoin_rpc_url
+            .clone()
+            .or_else(|| Some(network_params.bitcoin_rpc_url.clone()));
+
+        let metashrew_rpc_url = args
+            .metashrew_rpc_url
+            .clone()
             .or_else(|| args.sandshrew_rpc_url.clone())
-            .unwrap_or_else(|| "http://localhost:18888".to_string());
+            .unwrap_or_else(|| network_params.metashrew_rpc_url.clone());
+
+        let esplora_url = args
+            .esplora_url
+            .clone()
+            .or_else(|| network_params.esplora_url.clone());
 
         // Create provider with the resolved URLs
         let mut provider = ConcreteProvider::new(
-            args.bitcoin_rpc_url.clone(),
+            bitcoin_rpc_url,
             metashrew_rpc_url,
             args.sandshrew_rpc_url.clone(),
-            args.esplora_url.clone(),
+            esplora_url,
             args.provider.clone(),
             Some(std::path::PathBuf::from(&wallet_file)),
-        ).await?;
+        )
+        .await?;
 
         if let Some(passphrase) = &args.passphrase {
             provider.set_passphrase(Some(passphrase.clone()));
