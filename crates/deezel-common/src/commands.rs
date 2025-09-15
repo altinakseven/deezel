@@ -396,6 +396,9 @@ pub enum AlkanesCommands {
     GetBytecode {
         /// Alkane ID (format: block:tx)
         alkane_id: String,
+        /// Block tag to query (e.g., "latest" or a block height)
+        #[arg(long)]
+        block_tag: Option<String>,
         /// Show raw JSON output
         #[arg(long)]
         raw: bool,

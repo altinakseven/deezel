@@ -1580,8 +1580,8 @@ impl AlkanesProvider for BrowserWalletProvider {
         self.web_provider.trace_block(height).await
     }
 
-    async fn get_bytecode(&self, alkane_id: &str) -> Result<String> {
-        AlkanesProvider::get_bytecode(&self.web_provider, alkane_id).await
+    async fn get_bytecode(&self, alkane_id: &str, block_tag: Option<String>) -> Result<String> {
+        AlkanesProvider::get_bytecode(&self.web_provider, alkane_id, block_tag).await
     }
 
     async fn inspect(&self, target: &str, config: AlkanesInspectConfig) -> Result<AlkanesInspectResult> {

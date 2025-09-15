@@ -1560,7 +1560,7 @@ impl AlkanesProvider for WebProvider {
         let bytes = hex::decode(hex_str.strip_prefix("0x").unwrap_or(hex_str))?;
         alkanes_pb::Trace::parse_from_bytes(&bytes[..]).map_err(|e| DeezelError::Serialization(e.to_string()))
     }
-    async fn get_bytecode(&self, alkane_id: &str) -> Result<String> {
+    async fn get_bytecode(&self, alkane_id: &str, block_tag: Option<String>) -> Result<String> {
         use alkanes_support::proto::alkanes::BytecodeRequest;
         let parts: Vec<&str> = alkane_id.split(':').collect();
         if parts.len() != 2 {
@@ -1580,12 +1580,12 @@ impl AlkanesProvider for WebProvider {
         request.id = Some(id).into();
         let hex_input = hex::encode(request.write_to_bytes()?);
 
-        let params = serde_json::json!(["getbytecode", format!("0x{}", hex_input), "latest"]);
+        let params = serde_json::json!(["getbytecode", format!("0x{}", hex_input), block_tag.as_deref().unwrap_or("latest")]);
         let result = self.call(&self.sandshrew_rpc_url, "metashrew_view", params, 1).await?;
         
         let hex_str = result.as_str().ok_or_else(|| DeezelError::RpcError("Invalid bytecode response: not a string".to_string()))?;
         let bytes = hex::decode(hex_str.strip_prefix("0x").unwrap_or(hex_str))?;
-        Ok(hex::encode(bytes))
+        Ok(format!("0x{}", hex::encode(bytes)))
     }
     async fn inspect(&self, target: &str, config: AlkanesInspectConfig) -> Result<AlkanesInspectResult> {
         let params = serde_json::json!([target, config]);

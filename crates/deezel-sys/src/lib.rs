@@ -607,8 +607,8 @@ impl AlkanesProvider for SystemDeezel {
     async fn trace_block(&self, height: u64) -> Result<deezel_common::alkanes_pb::Trace> {
         self.provider.trace_block(height).await
     }
-    async fn get_bytecode(&self, alkane_id: &str) -> Result<String> {
-        <ConcreteProvider as AlkanesProvider>::get_bytecode(&self.provider, alkane_id).await
+    async fn get_bytecode(&self, alkane_id: &str, block_tag: Option<String>) -> Result<String> {
+        <ConcreteProvider as AlkanesProvider>::get_bytecode(&self.provider, alkane_id, block_tag).await
     }
     async fn inspect(&self, target: &str, config: deezel_common::alkanes::AlkanesInspectConfig) -> Result<deezel_common::alkanes::AlkanesInspectResult> {
         self.provider.inspect(target, config).await
@@ -1775,8 +1775,8 @@ impl SystemAlkanes for SystemDeezel {
                 }
                 Ok(())
             }
-            AlkanesCommands::GetBytecode { alkane_id, raw } => {
-                let bytecode = AlkanesProvider::get_bytecode(&provider, &alkane_id).await?;
+            AlkanesCommands::GetBytecode { alkane_id, raw, block_tag } => {
+                let bytecode = AlkanesProvider::get_bytecode(&provider, &alkane_id, block_tag).await?;
 
                 if raw {
                     let json_result = serde_json::json!({

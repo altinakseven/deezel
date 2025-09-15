@@ -8,6 +8,7 @@ use crate::{
     alkanes::types::{ExecutionState, ReadyToSignCommitTx, ReadyToSignRevealTx, ReadyToSignTx},
     DeezelError, JsonValue, Result,
 };
+use serde_json::json;
 use crate::ord;
 use crate::alkanes::execute::EnhancedAlkanesExecutor;
 #[cfg(feature = "wasm-inspection")]
@@ -285,11 +286,16 @@ impl ConcreteProvider {
         hex_input: &str,
         block_tag: &str,
     ) -> Result<Vec<u8>> {
+        let block_param = if block_tag == "latest" {
+            json!("latest")
+        } else {
+            json!(block_tag.parse::<u64>()?)
+        };
         let result = self
             .call(
                 &self.metashrew_rpc_url,
                 "metashrew_view",
-                serde_json::json!([method, hex_input, block_tag]),
+                serde_json::json!([method, hex_input, block_param]),
                 1, // Using a static ID for simplicity, can be made dynamic if needed
             )
             .await?;
@@ -351,6 +357,11 @@ impl JsonRpcProvider for ConcreteProvider {
             let response_text = response.text().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             
             log::debug!("Raw RPC response: {response_text}");
+            
+            if response_text.starts_with("Json deserialize error") {
+                return Err(DeezelError::RpcError(format!("Server-side JSON deserialization error: {}", response_text)));
+            }
+
             // First, try to parse as a standard RpcResponse
             // A more robust parsing logic that handles different RPC response structures.
             if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(&response_text) {
@@ -1306,15 +1317,29 @@ impl BitcoinRpcProvider for ConcreteProvider {
 #[async_trait(?Send)]
 impl MetashrewRpcProvider for ConcreteProvider {
     async fn get_metashrew_height(&self) -> Result<u64> {
-        let json = self.call(&self.metashrew_rpc_url, "metashrew_height", serde_json::Value::Null, 1).await?;
+        let json = self.call(&self.metashrew_rpc_url, "metashrew_height", json!([]), 1).await?;
         log::debug!("get_metashrew_height response: {:?}", json);
         if let Some(count) = json.as_u64() {
             return Ok(count);
         }
         if let Some(count_str) = json.as_str() {
-            return count_str.parse::<u64>().map_err(|_| DeezelError::RpcError("Invalid metashrew height string response".to_string()));
+            if let Ok(val) = count_str.parse::<u64>() {
+                return Ok(val);
+            }
         }
-        Err(DeezelError::RpcError("Invalid metashrew height response: not a u64 or string".to_string()))
+        if let Some(obj) = json.as_object() {
+            if let Some(result) = obj.get("result") {
+                if let Some(count) = result.as_u64() {
+                    return Ok(count);
+                }
+                if let Some(count_str) = result.as_str() {
+                    if let Ok(val) = count_str.parse::<u64>() {
+                        return Ok(val);
+                    }
+                }
+            }
+        }
+        Err(DeezelError::RpcError(format!("Invalid metashrew height response: not a u64 or string, got: {}", json)))
     }
     
     async fn get_contract_meta(&self, block: &str, tx: &str) -> Result<serde_json::Value> {
@@ -2057,7 +2082,7 @@ impl AlkanesProvider for ConcreteProvider {
         Ok(trace)
     }
 
-    async fn get_bytecode(&self, alkane_id: &str) -> Result<String> {
+    async fn get_bytecode(&self, alkane_id: &str, block_tag: Option<String>) -> Result<String> {
         let parts: Vec<&str> = alkane_id.split(':').collect();
         if parts.len() != 2 {
             return Err(DeezelError::InvalidParameters("Invalid alkane_id format. Expected 'block:tx'".to_string()));
@@ -2081,7 +2106,7 @@ impl AlkanesProvider for ConcreteProvider {
             "[get_bytecode] Calling metashrew_view with view_fn: getbytecode, params: {}",
             hex_input
         ));
-        let response_bytes = self.metashrew_view_call("getbytecode", &hex_input, "latest").await?;
+        let response_bytes = self.metashrew_view_call("getbytecode", &hex_input, block_tag.as_deref().unwrap_or("latest")).await?;
         self.info(&format!(
             "[get_bytecode] Received response: 0x{}",
             hex::encode(&response_bytes)

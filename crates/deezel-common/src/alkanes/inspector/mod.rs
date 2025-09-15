@@ -92,7 +92,7 @@ impl<P: AlkanesProvider> AlkaneInspector<P> {
 
     /// Get WASM bytecode for an alkane
     async fn get_alkane_bytecode(&self, alkane_id: &AlkaneId) -> Result<String> {
-        self.rpc_provider.get_bytecode(&alkane_id.to_string()).await
+        self.rpc_provider.get_bytecode(&alkane_id.to_string(), None).await
         .map_err(|e| anyhow::anyhow!("Failed to get bytecode: {}", e))
     }
 }

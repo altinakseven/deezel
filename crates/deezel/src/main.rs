@@ -274,7 +274,7 @@ async fn execute_alkanes_command<T: System>(system: &mut T, command: Alkanes) ->
             }
             Ok(())
         },
-        Alkanes::traceblock { height, raw } => {
+        Alkanes::TraceBlock { height, raw } => {
             let result = system.provider().trace_block(height).await?;
             if raw {
                 println!("{:?}", result);
@@ -283,8 +283,8 @@ async fn execute_alkanes_command<T: System>(system: &mut T, command: Alkanes) ->
             }
             Ok(())
         },
-        Alkanes::getbytecode { alkane_id, raw } => {
-            let result = AlkanesProvider::get_bytecode(system.provider(), &alkane_id).await?;
+        Alkanes::GetBytecode { alkane_id, block_tag, raw } => {
+            let result = AlkanesProvider::get_bytecode(system.provider(), &alkane_id, block_tag).await?;
             if raw {
                 println!("{result}");
             } else {
@@ -292,7 +292,7 @@ async fn execute_alkanes_command<T: System>(system: &mut T, command: Alkanes) ->
             }
             Ok(())
         },
-        Alkanes::getbalance { address, raw } => {
+        Alkanes::GetBalance { address, raw } => {
             let result = AlkanesProvider::get_balance(system.provider(), address.as_deref()).await?;
             if raw {
                 println!("{}", serde_json::to_string_pretty(&result)?);

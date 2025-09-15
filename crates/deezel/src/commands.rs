@@ -7,6 +7,19 @@
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 
+// Chad's Journal:
+//
+// The `clap` crate automatically converts subcommand names to kebab-case by default
+// (e.g., `GetBytecode` becomes `get-bytecode`). However, to maintain consistency
+// with the `metashrew_view` RPC method, which is named `getbytecode`, we need to
+// override this behavior.
+//
+// By adding `#[command(name = "getbytecode")]` to the `GetBytecode` variant,
+// we ensure the CLI accepts `getbytecode` as the subcommand, aligning the
+// developer experience with the underlying RPC method. This same approach is
+// applied to other subcommands like `traceblock` and `getbalance` to keep
+// the naming consistent across the board.
+
 /// Deezel is a command-line tool for interacting with Bitcoin and Ordinals
 #[derive(Parser, Debug, Clone, Serialize, Deserialize)]
 #[command(author, version, about, long_about = None)]
@@ -505,7 +518,8 @@ pub enum Alkanes {
         raw: bool,
     },
     /// Trace a block
-    traceblock {
+    #[command(name = "traceblock")]
+    TraceBlock {
         /// The height of the block to trace
         height: u64,
         /// Show raw JSON output
@@ -513,15 +527,20 @@ pub enum Alkanes {
         raw: bool,
     },
     /// Get the bytecode for an alkane
-    getbytecode {
+    #[command(name = "getbytecode")]
+    GetBytecode {
         /// The alkane ID to get the bytecode for
         alkane_id: String,
+        /// Block tag to query (e.g., "latest" or a block height)
+        #[arg(long)]
+        block_tag: Option<String>,
         /// Show raw JSON output
         #[arg(long)]
         raw: bool,
     },
     /// Get the balance of an address
-    getbalance {
+    #[command(name = "getbalance")]
+    GetBalance {
         /// The address to get the balance for
         address: Option<String>,
         /// Show raw JSON output

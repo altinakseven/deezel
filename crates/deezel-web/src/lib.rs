@@ -90,15 +90,20 @@ pub fn simulate_alkane_call(alkane_id_str: &str, wasm_hex: &str, cellpack_hex: &
 }
 
 #[wasm_bindgen]
-pub fn get_alkane_bytecode(network: &str, block: u64, tx: u32) -> Promise {
+pub fn get_alkane_bytecode(network: &str, block: f64, tx: f64, block_tag: &str) -> Promise {
     let network_str = network.to_string();
-    let alkane_id = format!("{}:{}", block, tx);
+    let alkane_id = format!("{}:{}", block as u64, tx as u32);
+    let block_tag_opt = if block_tag.is_empty() {
+        None
+    } else {
+        Some(block_tag.to_string())
+    };
 
     future_to_promise(async move {
         let provider = WebProvider::new(network_str).await
             .map_err(|e| JsValue::from_str(&format!("Failed to create provider: {:?}", e)))?;
 
-        match provider.get_bytecode(&alkane_id).await {
+        match provider.get_bytecode(&alkane_id, block_tag_opt).await {
             Ok(bytecode_hex) => {
                 Ok(JsValue::from_str(&bytecode_hex))
             }

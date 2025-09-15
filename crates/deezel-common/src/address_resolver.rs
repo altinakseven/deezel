@@ -941,7 +941,7 @@ impl AlkanesProvider for StandaloneAddressResolver {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
     }
 
-    async fn get_bytecode(&self, _alkane_id: &str) -> Result<String> {
+    async fn get_bytecode(&self, _alkane_id: &str, _block_tag: Option<String>) -> Result<String> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
     }
 
