@@ -470,10 +470,6 @@ impl JsonRpcProvider for WebProvider {
             .ok_or_else(|| DeezelError::JsonRpc("No result in JSON-RPC response".to_string()))
     }
 
-    async fn get_bytecode(&self, block: &str, tx: &str) -> Result<String> {
-        let alkane_id = format!("{}:{}", block, tx);
-        <Self as AlkanesProvider>::get_bytecode(self, &alkane_id).await
-    }
 }
 
 #[async_trait(?Send)]

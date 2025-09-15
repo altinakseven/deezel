@@ -86,10 +86,15 @@ impl SystemDeezel {
                 .context("Failed to create wallet directory")?;
         }
 
+        // Determine the correct metashrew RPC URL
+        let metashrew_rpc_url = args.metashrew_rpc_url.clone()
+            .or_else(|| args.sandshrew_rpc_url.clone())
+            .unwrap_or_else(|| "http://localhost:18888".to_string());
+
         // Create provider with the resolved URLs
         let mut provider = ConcreteProvider::new(
             args.bitcoin_rpc_url.clone(),
-            args.metashrew_rpc_url.clone().unwrap_or_else(|| "http://localhost:18888".to_string()),
+            metashrew_rpc_url,
             args.sandshrew_rpc_url.clone(),
             args.esplora_url.clone(),
             args.provider.clone(),
@@ -189,9 +194,6 @@ impl DeezelProvider for SystemDeezel {
 impl JsonRpcProvider for SystemDeezel {
     async fn call(&self, url: &str, method: &str, params: deezel_common::JsonValue, id: u64) -> Result<deezel_common::JsonValue> {
         self.provider.call(url, method, params, id).await
-    }
-    async fn get_bytecode(&self, block: &str, tx: &str) -> Result<String> {
-        <ConcreteProvider as JsonRpcProvider>::get_bytecode(&self.provider, block, tx).await
     }
 }
 

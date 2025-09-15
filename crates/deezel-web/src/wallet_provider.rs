@@ -811,9 +811,6 @@ impl JsonRpcProvider for BrowserWalletProvider {
         self.web_provider.call(url, method, params, id).await
     }
     
-    async fn get_bytecode(&self, block: &str, _tx: &str) -> Result<String> {
-        deezel_common::AlkanesProvider::get_bytecode(&self.web_provider, block).await
-    }
 }
 
 #[async_trait(?Send)]

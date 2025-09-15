@@ -20,6 +20,7 @@ use alkanes_support::proto::alkanes as alkanes_pb;
 use protorune_support::proto::protorune as protorune_pb;
 use std::collections::BTreeMap;
 use protobuf::Message;
+use log;
 use async_trait::async_trait;
 use alloc::format;
 use alloc::string::{String, ToString};
@@ -403,28 +404,6 @@ impl JsonRpcProvider for ConcreteProvider {
         }
     }
     
-    async fn get_bytecode(&self, block: &str, tx: &str) -> Result<String> {
-        let block = block.parse::<u64>()?;
-        let tx = tx.parse::<u64>()?;
-
-        let mut alkane_id_pb = alkanes_pb::AlkaneId::default();
-        let mut block_uint128 = alkanes_pb::Uint128::default();
-        block_uint128.lo = block;
-        let mut tx_uint128 = alkanes_pb::Uint128::default();
-        tx_uint128.lo = tx;
-        alkane_id_pb.block = Some(block_uint128).into();
-        alkane_id_pb.tx = Some(tx_uint128).into();
-
-        let mut request = alkanes_pb::BytecodeRequest::default();
-        request.id = Some(alkane_id_pb).into();
-
-        let hex_input = format!("0x{}", hex::encode(request.write_to_bytes()?));
-        let response_bytes = self
-            .metashrew_view_call("getbytecode", &hex_input, "latest")
-            .await?;
-
-        Ok(format!("0x{}", hex::encode(response_bytes)))
-    }
 }
 
 #[async_trait(?Send)]
@@ -528,20 +507,20 @@ impl TimeProvider for ConcreteProvider {
 }
 
 impl LogProvider for ConcreteProvider {
-    fn debug(&self, _message: &str) {
-        unimplemented!()
+    fn debug(&self, message: &str) {
+        log::debug!("{}", message);
     }
     
-    fn info(&self, _message: &str) {
-        unimplemented!()
+    fn info(&self, message: &str) {
+        log::info!("{}", message);
     }
     
-    fn warn(&self, _message: &str) {
-        unimplemented!()
+    fn warn(&self, message: &str) {
+        log::warn!("{}", message);
     }
     
-    fn error(&self, _message: &str) {
-        unimplemented!()
+    fn error(&self, message: &str) {
+        log::error!("{}", message);
     }
 }
 
@@ -2098,8 +2077,15 @@ impl AlkanesProvider for ConcreteProvider {
         request.id = Some(alkane_id_pb).into();
 
         let hex_input = format!("0x{}", hex::encode(request.write_to_bytes()?));
+        self.info(&format!(
+            "[get_bytecode] Calling metashrew_view with view_fn: getbytecode, params: {}",
+            hex_input
+        ));
         let response_bytes = self.metashrew_view_call("getbytecode", &hex_input, "latest").await?;
-
+        self.info(&format!(
+            "[get_bytecode] Received response: 0x{}",
+            hex::encode(&response_bytes)
+        ));
         Ok(format!("0x{}", hex::encode(response_bytes)))
     }
 

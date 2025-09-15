@@ -50,9 +50,6 @@ pub trait JsonRpcProvider {
         id: u64,
     ) -> Result<JsonValue>;
     
-    /// Get bytecode for an alkane contract (convenience method)
-    async fn get_bytecode(&self, block: &str, tx: &str) -> Result<String>;
-    
     /// Get the timeout for requests (in seconds)
     fn timeout_seconds(&self) -> u64 {
         600 // Default 10 minutes
@@ -832,9 +829,6 @@ impl Clone for Box<dyn DeezelProvider> {
 impl<T: DeezelProvider + ?Sized> JsonRpcProvider for Box<T> {
    async fn call(&self, url: &str, method: &str, params: serde_json::Value, id: u64) -> Result<serde_json::Value> {
        (**self).call(url, method, params, id).await
-   }
-   async fn get_bytecode(&self, block: &str, tx: &str) -> Result<String> {
-       <Self as JsonRpcProvider>::get_bytecode(self, block, tx).await
    }
 }
 

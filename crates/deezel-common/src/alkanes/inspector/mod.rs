@@ -13,7 +13,7 @@ pub mod runtime;
 pub mod analysis;
 
 use anyhow::{Context, Result};
-use crate::traits::JsonRpcProvider;
+use crate::traits::{AlkanesProvider, JsonRpcProvider};
 use crate::alkanes::types::AlkaneId;
 pub use types::{
     AlkaneMetadata, AlkaneMethod, AlkanesRuntimeContext, AlkanesState, ExecutionResult,
@@ -27,12 +27,12 @@ use std::string::ToString;
 
 /// Core alkanes inspector that works with trait abstractions
 #[cfg(feature = "wasm-inspection")]
-pub struct AlkaneInspector<P: JsonRpcProvider> {
+pub struct AlkaneInspector<P: AlkanesProvider> {
     rpc_provider: P,
 }
 
 #[cfg(feature = "wasm-inspection")]
-impl<P: JsonRpcProvider> AlkaneInspector<P> {
+impl<P: AlkanesProvider> AlkaneInspector<P> {
     /// Create a new alkane inspector
     pub fn new(rpc_provider: P) -> Self {
         Self { rpc_provider }
@@ -92,11 +92,7 @@ impl<P: JsonRpcProvider> AlkaneInspector<P> {
 
     /// Get WASM bytecode for an alkane
     async fn get_alkane_bytecode(&self, alkane_id: &AlkaneId) -> Result<String> {
-        crate::traits::JsonRpcProvider::get_bytecode(
-            &self.rpc_provider,
-            &alkane_id.block.to_string(),
-            &alkane_id.tx.to_string()
-        ).await
+        self.rpc_provider.get_bytecode(&alkane_id.to_string()).await
         .map_err(|e| anyhow::anyhow!("Failed to get bytecode: {}", e))
     }
 }
@@ -123,7 +119,7 @@ mod tests {
             Ok(serde_json::json!("0x"))
         }
 
-        async fn get_bytecode(&self, _block: &str, _tx: &str) -> Result<String, crate::DeezelError> {
+        async fn get_bytecode(&self, _alkane_id: &str) -> Result<String, crate::DeezelError> {
             Ok("0x".to_string())
         }
     }

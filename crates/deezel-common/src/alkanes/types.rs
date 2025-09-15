@@ -9,15 +9,21 @@ use bitcoin::{
 };
 
 #[cfg(not(target_arch = "wasm32"))]
-use std::{string::String, vec::Vec};
+use std::{fmt, string::String, vec::Vec};
 #[cfg(target_arch = "wasm32")]
-use alloc::{string::String, vec::Vec};
+use alloc::{string::String, vec::Vec, fmt};
 
 /// Alkane ID representing a smart contract or token
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AlkaneId {
     pub block: u64,
     pub tx: u64,
+}
+
+impl fmt::Display for AlkaneId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}:{}", self.block, self.tx)
+    }
 }
 
 /// Input requirement specification

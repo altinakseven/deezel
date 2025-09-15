@@ -385,9 +385,6 @@ mod standalone_impls {
     async fn call(&self, _url: &str, _method: &str, _params: serde_json::Value, _id: u64) -> Result<serde_json::Value> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support RPC calls".to_string()))
     }
-    async fn get_bytecode(&self, _block: &str, _tx: &str) -> Result<String> {
-        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support bytecode retrieval".to_string()))
-    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]

@@ -505,7 +505,7 @@ pub enum Alkanes {
         raw: bool,
     },
     /// Trace a block
-    TraceBlock {
+    traceblock {
         /// The height of the block to trace
         height: u64,
         /// Show raw JSON output
@@ -513,7 +513,7 @@ pub enum Alkanes {
         raw: bool,
     },
     /// Get the bytecode for an alkane
-    GetBytecode {
+    getbytecode {
         /// The alkane ID to get the bytecode for
         alkane_id: String,
         /// Show raw JSON output
@@ -521,7 +521,7 @@ pub enum Alkanes {
         raw: bool,
     },
     /// Get the balance of an address
-    GetBalance {
+    getbalance {
         /// The address to get the balance for
         address: Option<String>,
         /// Show raw JSON output
