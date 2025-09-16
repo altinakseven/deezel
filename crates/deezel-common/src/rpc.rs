@@ -260,6 +260,7 @@ impl<P: DeezelProvider> RpcClient<P> {
         // Parse method to determine which endpoint to use
         if method.starts_with("esplora_") {
             // Use metashrew endpoint for Esplora calls
+            // println!("the method: {}", method);
             self.sandshrew_call(method, params).await
         } else if method.starts_with("btc_") || method.starts_with("bitcoin_") {
             // Use Bitcoin RPC endpoint

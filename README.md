@@ -195,7 +195,7 @@ The monorepo uses a layered architecture that enables code sharing across platfo
 ./deezel --provider mainnet runestone <txid>
 
 # Trace an Alkanes transaction
-./deezel --provider mainnet view trace <txid:vout>
+./deezel --provider mainnet alkanes trace <txid:vout>
 
 # Inspect a smart contract
 ./deezel --provider mainnet inspect-alkane 2:0 --disasm --meta

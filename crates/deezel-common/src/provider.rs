@@ -326,7 +326,6 @@ impl JsonRpcProvider for ConcreteProvider {
             serde_json::to_string(&params).unwrap_or_else(|_| "INVALID_JSON".to_string()),
             id
         );
-        
         #[cfg(feature = "native-deps")]
         {
             use crate::rpc::RpcRequest;

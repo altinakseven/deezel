@@ -216,13 +216,6 @@ impl<P: DeezelProvider> AddressResolver<P> {
         self.provider.list_identifiers().await
     }
     
-    /// Validate Bitcoin address
-    fn validate_bitcoin_address(&self, address: &str) -> Result<()> {
-        // Try to parse as Bitcoin address using FromStr trait
-        bitcoin::Address::from_str(address)
-            .map(|_| ())
-            .map_err(|e| DeezelError::AddressResolution(e.to_string()))
-    }
     
     /// Clear the address cache
     pub fn clear_cache(&mut self) {

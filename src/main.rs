@@ -951,8 +951,11 @@ async fn main() -> Result<()> {
     // CRITICAL FIX: Always use unified Sandshrew endpoint for ALL RPC operations
     // Sandshrew is a superset of Bitcoin Core RPC and handles both Bitcoin and Metashrew calls
     // This ensures consistent endpoint usage and eliminates 404 errors from routing to wrong endpoints
-    let sandshrew_rpc_url = args.sandshrew_rpc_url.clone()
-        .unwrap_or_else(|| deezel::network::get_rpc_url(&args.provider));
+    let sandshrew_rpc_url = if network_params.network == bitcoin::Network::Regtest {
+        args.sandshrew_rpc_url.clone().unwrap_or_else(|| "http://localhost:18888".to_string())
+    } else {
+        args.sandshrew_rpc_url.clone().unwrap_or_else(|| deezel::network::get_rpc_url(&args.provider))
+    };
     
     // Journal: Updated RPC URL handling to ALWAYS use the unified Sandshrew endpoint for both
     // bitcoin_rpc_url and metashrew_rpc_url. This eliminates the routing confusion where btc_*
@@ -962,6 +965,8 @@ async fn main() -> Result<()> {
     let rpc_config = RpcConfig {
         bitcoin_rpc_url: sandshrew_rpc_url.clone(),  // Use Sandshrew for Bitcoin RPC calls
         metashrew_rpc_url: sandshrew_rpc_url.clone(), // Use Sandshrew for Metashrew RPC calls
+        esplora_rpc_url: sandshrew_rpc_url.clone(),
+        ..Default::default()
     };
     let rpc_client = Arc::new(RpcClient::new(rpc_config));
 

@@ -13,7 +13,7 @@ pub mod runtime;
 pub mod analysis;
 
 use anyhow::{Context, Result};
-use crate::traits::{AlkanesProvider, JsonRpcProvider};
+use crate::traits::AlkanesProvider;
 use crate::alkanes::types::AlkaneId;
 pub use types::{
     AlkaneMetadata, AlkaneMethod, AlkanesRuntimeContext, AlkanesState, ExecutionResult,

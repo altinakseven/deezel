@@ -238,10 +238,7 @@ mod tests {
         
         // Create RPC client
         // FIXED: Use Sandshrew RPC for all operations to avoid network mismatch
-        let rpc_config = RpcConfig {
-            bitcoin_rpc_url: "http://localhost:8080".to_string(), // Use Sandshrew endpoint
-            metashrew_rpc_url: "http://localhost:8080".to_string(),
-        };
+        let rpc_config = RpcConfig::default();
         let rpc_client = RpcClient::new(rpc_config);
         
         // Create transaction constructor

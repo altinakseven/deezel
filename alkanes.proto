@@ -1,0 +1,8 @@
+syntax = "proto3";
+
+package alkanes_pb;
+
+message Outpoint {
+  bytes txid = 1;
+  uint32 vout = 2;
+}

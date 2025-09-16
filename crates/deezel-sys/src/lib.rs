@@ -28,7 +28,7 @@ pub struct SystemDeezel {
 impl SystemDeezel {
     pub async fn new(args: &Args) -> anyhow::Result<Self> {
         // Determine network parameters based on provider and magic flags
-        let network_params = if let Some(magic_str) = args.magic.as_ref() {
+        let mut network_params = if let Some(magic_str) = args.magic.as_ref() {
             // Parse custom magic bytes
             match deezel_common::network::NetworkParams::from_magic_str(magic_str) {
                 Ok((p2pkh_prefix, p2sh_prefix, bech32_hrp)) => {
@@ -65,6 +65,15 @@ impl SystemDeezel {
             }
         };
 
+        // If a bitcoin_rpc_url is provided and the network is regtest, override the default.
+        if let Some(rpc_url) = &args.bitcoin_rpc_url {
+            if network_params.network == bitcoin::Network::Regtest {
+                network_params.bitcoin_rpc_url = rpc_url.clone();
+                network_params.metashrew_rpc_url = rpc_url.clone();
+                network_params.esplora_url = Some(rpc_url.clone());
+            }
+        }
+
         // FIXED: Use user-specified wallet file path or generate default
         let wallet_file = if let Some(ref path) = args.wallet_file {
             expand_tilde(path)?
@@ -98,10 +107,11 @@ impl SystemDeezel {
             .or_else(|| args.sandshrew_rpc_url.clone())
             .unwrap_or_else(|| network_params.metashrew_rpc_url.clone());
 
-        let esplora_url = args
-            .esplora_url
-            .clone()
-            .or_else(|| network_params.esplora_url.clone());
+        let esplora_url = if network_params.network == bitcoin::Network::Regtest {
+            args.sandshrew_rpc_url.clone().or(network_params.esplora_url.clone())
+        } else {
+            args.esplora_url.clone().or_else(|| network_params.esplora_url.clone())
+        };
 
         // Create provider with the resolved URLs
         let mut provider = ConcreteProvider::new(
@@ -1948,7 +1958,7 @@ impl SystemAlkanes for SystemDeezel {
             }
             AlkanesCommands::Simulate {
                 contract_id,
-                params,
+                params: _,
                 raw,
             } => {
                 let context = deezel_common::alkanes::simulation::simulate_cellpack(&[]);

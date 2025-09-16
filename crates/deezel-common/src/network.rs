@@ -523,6 +523,7 @@ impl NetworkParams {
         self.esplora_url = url;
         self
     }
+
     
     /// Add custom parameter
     pub fn with_custom_param(mut self, key: String, value: String) -> Self {
