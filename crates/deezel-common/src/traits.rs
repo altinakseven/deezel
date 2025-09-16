@@ -529,6 +529,9 @@ pub trait BitcoinRpcProvider {
 pub trait MetashrewRpcProvider {
     /// Get Metashrew height
     async fn get_metashrew_height(&self) -> Result<u64>;
+
+    /// Get the state root for a given height.
+    async fn get_state_root(&self, height: JsonValue) -> Result<String>;
     
     /// Get contract metadata
     async fn get_contract_meta(&self, block: &str, tx: &str) -> Result<JsonValue>;
@@ -1120,6 +1123,9 @@ impl<T: DeezelProvider + ?Sized> MetashrewRpcProvider for Box<T> {
    async fn get_metashrew_height(&self) -> Result<u64> {
        (**self).get_metashrew_height().await
    }
+   async fn get_state_root(&self, height: JsonValue) -> Result<String> {
+       <dyn MetashrewRpcProvider>::get_state_root(self, height).await
+   }
    async fn get_contract_meta(&self, block: &str, tx: &str) -> Result<serde_json::Value> {
        (**self).get_contract_meta(block, tx).await
    }
@@ -1157,7 +1163,7 @@ impl<T: DeezelProvider + ?Sized> MetashrewProvider for Box<T> {
         <T as MetashrewProvider>::get_block_hash(self, height).await
     }
     async fn get_state_root(&self, height: JsonValue) -> Result<String> {
-        (**self).get_state_root(height).await
+        <T as MetashrewProvider>::get_state_root(self, height).await
     }
 }
 

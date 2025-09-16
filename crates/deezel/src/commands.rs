@@ -392,15 +392,6 @@ pub enum OrdCommands {
         /// The inscription ID
         id: String,
     },
-    /// Get all inscriptions
-    Inscriptions {
-        /// Page number
-        #[arg(long)]
-        page: Option<u32>,
-        /// Show raw JSON output
-        #[arg(long)]
-        raw: bool,
-    },
     /// Get output information
     Output {
         /// The outpoint
@@ -424,15 +415,6 @@ pub enum OrdCommands {
     Rune {
         /// The rune name or ID
         rune: String,
-        /// Show raw JSON output
-        #[arg(long)]
-        raw: bool,
-    },
-    /// Get all runes
-    Runes {
-        /// Page number
-        #[arg(long)]
-        page: Option<u32>,
         /// Show raw JSON output
         #[arg(long)]
         raw: bool,

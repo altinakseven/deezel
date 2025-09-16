@@ -67,7 +67,7 @@ async fn execute_metashrew_command(provider: &dyn DeezelProvider, command: Metas
                 Some(h) => json!(h.parse::<u64>()?),
                 None => json!("latest"),
             };
-            let root = provider.get_state_root(param).await?;
+            let root = deezel_common::MetashrewProvider::get_state_root(provider, param).await?;
             println!("{root}");
         }
     }
@@ -691,26 +691,6 @@ async fn execute_ord_command(
             use std::io::{self, Write};
             io::stdout().write_all(&content)?;
         }
-        deezel_common::commands::OrdCommands::Inscriptions { page, raw } => {
-            if raw {
-                let inscriptions = provider.get_inscriptions(page).await?;
-                let json_value = serde_json::to_value(&inscriptions)?;
-                if let Some(s) = json_value.as_str() {
-                    println!("{s}");
-                } else {
-                    println!("{json_value}");
-                }
-            } else {
-                let inscriptions = provider.get_inscriptions(page).await?;
-                let inscription_futures = inscriptions.ids.into_iter().map(|id| {
-                    let provider = provider;
-                    async move { provider.get_inscription(&id.to_string()).await }
-                });
-                let results: Vec<_> = join_all(inscription_futures).await;
-                let fetched_inscriptions: Result<Vec<_>, _> = results.into_iter().collect();
-                print_inscriptions(&fetched_inscriptions?);
-            }
-        }
         deezel_common::commands::OrdCommands::Output { outpoint, raw } => {
             if raw {
                 let output = provider.get_output(&outpoint).await?;
@@ -751,20 +731,6 @@ async fn execute_ord_command(
             } else {
                 let rune_info = provider.get_rune(&rune).await?;
                 print_rune(&rune_info);
-            }
-        }
-        deezel_common::commands::OrdCommands::Runes { page, raw } => {
-            if raw {
-                let runes = provider.get_runes(page).await?;
-                let json_value = serde_json::to_value(&runes)?;
-                if let Some(s) = json_value.as_str() {
-                    println!("{s}");
-                } else {
-                    println!("{json_value}");
-                }
-            } else {
-                let runes = provider.get_runes(page).await?;
-                print_runes(&runes);
             }
         }
         deezel_common::commands::OrdCommands::Sat { sat, raw } => {

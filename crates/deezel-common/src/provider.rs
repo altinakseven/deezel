@@ -8,7 +8,7 @@ use crate::{
     alkanes::types::{ExecutionState, ReadyToSignCommitTx, ReadyToSignRevealTx, ReadyToSignTx},
     DeezelError, JsonValue, Result,
 };
-use serde_json::json;
+use serde_json::{json, Value};
 use crate::ord;
 use crate::alkanes::execute::EnhancedAlkanesExecutor;
 #[cfg(feature = "wasm-inspection")]
@@ -1376,7 +1376,13 @@ impl MetashrewRpcProvider for ConcreteProvider {
         }
         Err(DeezelError::RpcError(format!("Invalid metashrew height response: not a u64 or string, got: {}", json)))
     }
-    
+
+    async fn get_state_root(&self, height: JsonValue) -> Result<String> {
+        let params = serde_json::json!([height]);
+        let result = self.call(&self.metashrew_rpc_url, "metashrew_stateroot", params, 1).await?;
+        result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid state root response".to_string()))
+    }
+
     async fn get_contract_meta(&self, block: &str, tx: &str) -> Result<serde_json::Value> {
         let params = serde_json::json!([block, tx]);
         self.call(&self.metashrew_rpc_url, "metashrew_view", params, 1).await
@@ -1559,6 +1565,7 @@ impl MetashrewRpcProvider for ConcreteProvider {
             },
         })
     }
+
 }
 
 #[async_trait(?Send)]
@@ -2358,7 +2365,8 @@ impl MetashrewProvider for ConcreteProvider {
     async fn get_state_root(&self, _height: JsonValue) -> Result<String> {
         // Placeholder implementation.
         // In a real scenario, this would call a specific RPC method like `getstateroot`.
-        Err(DeezelError::NotImplemented("get_state_root is not implemented for ConcreteProvider".to_string()))
+        // Err(DeezelError::NotImplemented("get_state_root is not implemented for ConcreteProvider".to_string()))
+        <Self as MetashrewRpcProvider>::get_state_root(self, _height as serde_json::Value).await
     }
 }
 

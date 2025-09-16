@@ -642,6 +642,9 @@ impl MetashrewRpcProvider for StandaloneAddressResolver {
     async fn get_metashrew_height(&self) -> Result<u64> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Metashrew RPC".to_string()))
     }
+    async fn get_state_root(&self, _height: serde_json::Value) -> Result<String> {
+        Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Metashrew RPC".to_string()))
+    }
     async fn get_contract_meta(&self, _block: &str, _tx: &str) -> Result<serde_json::Value> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support Metashrew RPC".to_string()))
     }

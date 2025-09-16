@@ -482,6 +482,9 @@ impl MetashrewRpcProvider for SystemDeezel {
     async fn get_metashrew_height(&self) -> Result<u64> {
         self.provider.get_metashrew_height().await
     }
+    async fn get_state_root(&self, height: deezel_common::JsonValue) -> Result<String> {
+        deezel_common::MetashrewRpcProvider::get_state_root(self, height).await
+    }
     async fn get_contract_meta(&self, block: &str, tx: &str) -> Result<deezel_common::JsonValue> {
         self.provider.get_contract_meta(block, tx).await
     }
@@ -508,7 +511,7 @@ impl MetashrewProvider for SystemDeezel {
         <ConcreteProvider as MetashrewProvider>::get_block_hash(&self.provider, height).await
     }
     async fn get_state_root(&self, height: deezel_common::JsonValue) -> Result<String> {
-        self.provider.get_state_root(height).await
+        deezel_common::MetashrewProvider::get_state_root(self, height).await
     }
 }
 
@@ -2578,15 +2581,6 @@ impl SystemOrd for SystemDeezel {
                 io::stdout().write_all(&result)?;
                 Ok(())
             },
-            OrdCommands::Inscriptions { page, raw } => {
-                let result = provider.get_inscriptions(page).await?;
-                if raw {
-                    println!("{}", serde_json::to_string_pretty(&result)?);
-                } else {
-                    println!("Inscriptions:\n{}", serde_json::to_string_pretty(&result)?);
-                }
-                Ok(())
-            },
             OrdCommands::Output { outpoint, raw } => {
                 let result = provider.get_output(&outpoint).await?;
                 if raw {
@@ -2611,15 +2605,6 @@ impl SystemOrd for SystemDeezel {
                     println!("{}", serde_json::to_string_pretty(&result)?);
                 } else {
                     println!("Rune {}:\n{}", rune, serde_json::to_string_pretty(&result)?);
-                }
-                Ok(())
-            },
-            OrdCommands::Runes { page, raw } => {
-                let result = provider.get_runes(page).await?;
-                if raw {
-                    println!("{}", serde_json::to_string_pretty(&result)?);
-                } else {
-                    println!("Runes:\n{}", serde_json::to_string_pretty(&result)?);
                 }
                 Ok(())
             },
