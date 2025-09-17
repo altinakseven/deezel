@@ -134,6 +134,14 @@ impl ConcreteProvider {
             }
         };
 
+        log::info!(
+            "ConcreteProvider initialized with: Bitcoin RPC URL: {}, Metashrew RPC URL: {}, Esplora URL: {:?}, Provider: {}",
+            &rpc_url,
+            &metashrew_rpc_url,
+            &esplora_url,
+            &provider
+        );
+ 
        let mut new_self = Self {
            rpc_url,
            metashrew_rpc_url,
@@ -318,13 +326,12 @@ impl JsonRpcProvider for ConcreteProvider {
         params: serde_json::Value,
         id: u64,
     ) -> Result<serde_json::Value> {
-        // Debug logging for JsonRpcProvider call - logs all RPC payloads sent
-        log::debug!(
-            "JsonRpcProvider::call - URL: {}, Method: {}, Params: {}, ID: {}",
+        // Info logging for JsonRpcProvider call - logs all RPC payloads sent
+        log::info!(
+            "JsonRpcProvider::call -> URL: {}, Method: {}, Params: {}",
             url,
             method,
-            serde_json::to_string(&params).unwrap_or_else(|_| "INVALID_JSON".to_string()),
-            id
+            serde_json::to_string_pretty(&params).unwrap_or_else(|_| "INVALID_JSON".to_string()),
         );
         #[cfg(feature = "native-deps")]
         {
@@ -355,7 +362,7 @@ impl JsonRpcProvider for ConcreteProvider {
                 .map_err(|e| DeezelError::Network(e.to_string()))?;
             let response_text = response.text().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             
-            log::debug!("Raw RPC response: {response_text}");
+            log::info!("JsonRpcProvider::call <- Raw RPC response: {response_text}");
             
             if response_text.starts_with("Json deserialize error") {
                 return Err(DeezelError::RpcError(format!("Server-side JSON deserialization error: {}", response_text)));
@@ -602,6 +609,7 @@ impl WalletProvider for ConcreteProvider {
     }
     
     async fn get_balance(&self, addresses: Option<Vec<String>>) -> Result<WalletBalance> {
+        log::info!("[WalletProvider] Calling get_balance for addresses: {:?}", addresses);
         let addrs_to_check = if let Some(provided_addresses) = addresses {
             provided_addresses
         } else {
@@ -644,6 +652,7 @@ impl WalletProvider for ConcreteProvider {
     }
     
     async fn get_address(&self) -> Result<String> {
+        log::info!("[WalletProvider] Calling get_address");
         let addresses = self.get_addresses(1).await?;
         if let Some(address_info) = addresses.first() {
             Ok(address_info.address.clone())
@@ -653,12 +662,14 @@ impl WalletProvider for ConcreteProvider {
     }
     
     async fn get_addresses(&self, count: u32) -> Result<Vec<AddressInfo>> {
+        log::info!("[WalletProvider] Calling get_addresses with count: {}", count);
         let keystore = self.get_keystore().ok_or_else(|| DeezelError::Wallet("Keystore not loaded".to_string()))?;
         let addresses = keystore.get_addresses(self.get_network(), "p2tr", 0, 0, count)?;
         Ok(addresses)
     }
     
     async fn send(&mut self, params: SendParams) -> Result<String> {
+        log::info!("[WalletProvider] Calling send with params: {:?}", params);
         // 1. Create the transaction
         let tx_hex = self.create_transaction(params).await?;
 
@@ -670,6 +681,7 @@ impl WalletProvider for ConcreteProvider {
     }
     
     async fn get_utxos(&self, _include_frozen: bool, addresses: Option<Vec<String>>) -> Result<Vec<(OutPoint, UtxoInfo)>> {
+        log::info!("[WalletProvider] Calling get_utxos for addresses: {:?}", addresses);
         if addresses.is_none() || addresses.as_ref().unwrap().is_empty() {
             return Ok(Vec::new());
         }
@@ -716,6 +728,7 @@ impl WalletProvider for ConcreteProvider {
     }
     
     async fn get_history(&self, count: u32, address: Option<String>) -> Result<Vec<TransactionInfo>> {
+        log::info!("[WalletProvider] Calling get_history for address: {:?}, count: {}", address, count);
         let addr = address.ok_or_else(|| DeezelError::Wallet("get_history requires an address".to_string()))?;
         let txs_json = self.get_address_txs(&addr).await?;
         let mut transactions = Vec::new();
@@ -757,6 +770,7 @@ impl WalletProvider for ConcreteProvider {
     }
     
     async fn create_transaction(&self, params: SendParams) -> Result<String> {
+        log::info!("[WalletProvider] Calling create_transaction with params: {:?}", params);
         // 1. Determine which addresses to use for sourcing UTXOs
         let (address_strings, all_addresses) = if let Some(from_addresses) = &params.from {
             (from_addresses.clone(), from_addresses.iter().map(|s| AddressInfo {
@@ -841,6 +855,7 @@ impl WalletProvider for ConcreteProvider {
     }
 
     async fn sign_transaction(&mut self, tx_hex: String) -> Result<String> {
+        log::info!("[WalletProvider] Calling sign_transaction");
         // 1. Deserialize the transaction
         let hex_bytes = hex::decode(tx_hex)?;
         let mut tx: Transaction = bitcoin::consensus::deserialize(&hex_bytes)?;
@@ -922,6 +937,7 @@ impl WalletProvider for ConcreteProvider {
     }
     
     async fn broadcast_transaction(&self, tx_hex: String) -> Result<String> {
+        log::info!("[WalletProvider] Calling broadcast_transaction");
         self.send_raw_transaction(&tx_hex).await
     }
     
@@ -1571,31 +1587,41 @@ impl MetashrewRpcProvider for ConcreteProvider {
 #[async_trait(?Send)]
 impl EsploraProvider for ConcreteProvider {
     async fn get_blocks_tip_hash(&self) -> Result<String> {
+        log::info!("[EsploraProvider] Calling get_blocks_tip_hash");
         #[cfg(feature = "native-deps")]
         if let Some(esplora_url) = &self.esplora_url {
             let url = format!("{esplora_url}/blocks/tip/hash");
+            log::info!("[EsploraProvider] Using direct HTTP GET to {}", url);
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            return response.text().await.map_err(|e| DeezelError::Network(e.to_string()));
+            let text = response.text().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            log::info!("[EsploraProvider] get_blocks_tip_hash response: {}", text);
+            return Ok(text);
         }
-
+ 
+        log::info!("[EsploraProvider] Falling back to JSON-RPC call: {}", crate::esplora::EsploraJsonRpcMethods::BLOCKS_TIP_HASH);
         let result = self.call(&self.rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCKS_TIP_HASH, crate::esplora::params::empty(), 1).await?;
         result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid tip hash response".to_string()))
     }
 
     async fn get_blocks_tip_height(&self) -> Result<u64> {
+        log::info!("[EsploraProvider] Calling get_blocks_tip_height");
         #[cfg(feature = "native-deps")]
         if let Some(esplora_url) = &self.esplora_url {
             let url = format!("{esplora_url}/blocks/tip/height");
+            log::info!("[EsploraProvider] Using direct HTTP GET to {}", url);
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             let text = response.text().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            log::info!("[EsploraProvider] get_blocks_tip_height response: {}", text);
             return text.parse::<u64>().map_err(|e| DeezelError::RpcError(format!("Invalid tip height response from REST API: {e}")));
         }
         
+        log::info!("[EsploraProvider] Falling back to JSON-RPC call: {}", crate::esplora::EsploraJsonRpcMethods::BLOCKS_TIP_HEIGHT);
         let result = self.call(&self.rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCKS_TIP_HEIGHT, crate::esplora::params::empty(), 1).await?;
         result.as_u64().ok_or_else(|| DeezelError::RpcError("Invalid tip height response".to_string()))
     }
 
     async fn get_blocks(&self, start_height: Option<u64>) -> Result<serde_json::Value> {
+        log::info!("[EsploraProvider] Calling get_blocks with start_height: {:?}", start_height);
         #[cfg(feature = "native-deps")]
         if let Some(esplora_url) = &self.esplora_url {
             let url = if let Some(height) = start_height {
@@ -1603,21 +1629,30 @@ impl EsploraProvider for ConcreteProvider {
             } else {
                 format!("{esplora_url}/blocks")
             };
+            log::info!("[EsploraProvider] Using direct HTTP GET to {}", url);
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
+            let json = response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
+            log::info!("[EsploraProvider] get_blocks response: {:?}", json);
+            return json;
         }
         
+        log::info!("[EsploraProvider] Falling back to JSON-RPC call: {}", crate::esplora::EsploraJsonRpcMethods::BLOCKS);
         self.call(&self.rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCKS, crate::esplora::params::optional_single(start_height), 1).await
     }
 
     async fn get_block_by_height(&self, height: u64) -> Result<String> {
+        log::info!("[EsploraProvider] Calling get_block_by_height: {}", height);
         #[cfg(feature = "native-deps")]
         if let Some(esplora_url) = &self.esplora_url {
             let url = format!("{esplora_url}/block-height/{height}");
+            log::info!("[EsploraProvider] Using direct HTTP GET to {}", url);
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            return response.text().await.map_err(|e| DeezelError::Network(e.to_string()));
+            let text = response.text().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            log::info!("[EsploraProvider] get_block_by_height response: {}", text);
+            return Ok(text);
         }
         
+        log::info!("[EsploraProvider] Falling back to JSON-RPC call: {}", crate::esplora::EsploraJsonRpcMethods::BLOCK_HEIGHT);
         let result = self.call(&self.rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCK_HEIGHT, crate::esplora::params::single(height), 1).await?;
         result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid block hash response".to_string()))
     }
@@ -1681,13 +1716,18 @@ impl EsploraProvider for ConcreteProvider {
     }
 
     async fn get_block_txid(&self, hash: &str, index: u32) -> Result<String> {
+        log::info!("[EsploraProvider] Calling get_block_txid for hash: {}, index: {}", hash, index);
         #[cfg(feature = "native-deps")]
         if let Some(esplora_url) = &self.esplora_url {
             let url = format!("{esplora_url}/block/{hash}/txid/{index}");
+            log::info!("[EsploraProvider] Using direct HTTP GET to {}", url);
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            return response.text().await.map_err(|e| DeezelError::Network(e.to_string()));
+            let text = response.text().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            log::info!("[EsploraProvider] get_block_txid response: {}", text);
+            return Ok(text);
         }
         
+        log::info!("[EsploraProvider] Falling back to JSON-RPC call: {}", crate::esplora::EsploraJsonRpcMethods::BLOCK_TXID);
         let result = self.call(&self.rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCK_TXID, crate::esplora::params::dual(hash, index), 1).await?;
         result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid txid response".to_string()))
     }
@@ -1709,24 +1749,30 @@ impl EsploraProvider for ConcreteProvider {
 
 
    async fn get_address_info(&self, address: &str) -> Result<serde_json::Value> {
+        log::info!("[EsploraProvider] Calling get_address_info for address: {}", address);
        #[cfg(feature = "native-deps")]
        if let Some(esplora_url) = &self.esplora_url {
            let url = format!("{esplora_url}/address/{address}");
+            log::info!("[EsploraProvider] Using direct HTTP GET to {}", url);
            let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
        }
        
+        log::info!("[EsploraProvider] Falling back to JSON-RPC call: {}", crate::esplora::EsploraJsonRpcMethods::ADDRESS);
        self.call(&self.rpc_url, crate::esplora::EsploraJsonRpcMethods::ADDRESS, crate::esplora::params::single(address), 1).await
    }
 
    async fn get_address_utxo(&self, address: &str) -> Result<serde_json::Value> {
+        log::info!("[EsploraProvider] Calling get_address_utxo for address: {}", address);
        #[cfg(feature = "native-deps")]
        if let Some(esplora_url) = &self.esplora_url {
            let url = format!("{esplora_url}/address/{address}/utxo");
+            log::info!("[EsploraProvider] Using direct HTTP GET to {}", url);
            let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
        }
        
+        log::info!("[EsploraProvider] Falling back to JSON-RPC call: {}", crate::esplora::EsploraJsonRpcMethods::ADDRESS_UTXO);
        self.call(&self.rpc_url, crate::esplora::EsploraJsonRpcMethods::ADDRESS_UTXO, crate::esplora::params::single(address), 1).await
    }
 
@@ -1780,24 +1826,32 @@ impl EsploraProvider for ConcreteProvider {
     }
 
     async fn get_tx(&self, txid: &str) -> Result<serde_json::Value> {
+        log::info!("[EsploraProvider] Calling get_tx for txid: {}", txid);
         #[cfg(feature = "native-deps")]
         if let Some(esplora_url) = &self.esplora_url {
             let url = format!("{esplora_url}/tx/{txid}");
+            log::info!("[EsploraProvider] Using direct HTTP GET to {}", url);
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
         
+        log::info!("[EsploraProvider] Falling back to JSON-RPC call: {}", crate::esplora::EsploraJsonRpcMethods::TX);
         self.call(&self.rpc_url, crate::esplora::EsploraJsonRpcMethods::TX, crate::esplora::params::single(txid), 1).await
     }
 
     async fn get_tx_hex(&self, txid: &str) -> Result<String> {
+        log::info!("[EsploraProvider] Calling get_tx_hex for txid: {}", txid);
         #[cfg(feature = "native-deps")]
         if let Some(esplora_url) = &self.esplora_url {
             let url = format!("{esplora_url}/tx/{txid}/hex");
+            log::info!("[EsploraProvider] Using direct HTTP GET to {}", url);
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
-            return response.text().await.map_err(|e| DeezelError::Network(e.to_string()));
+            let text = response.text().await.map_err(|e| DeezelError::Network(e.to_string()))?;
+            log::info!("[EsploraProvider] get_tx_hex response: {}", text);
+            return Ok(text);
         }
         
+        log::info!("[EsploraProvider] Falling back to JSON-RPC call: {}", crate::esplora::EsploraJsonRpcMethods::TX_HEX);
         let result = self.call(&self.rpc_url, crate::esplora::EsploraJsonRpcMethods::TX_HEX, crate::esplora::params::single(txid), 1).await?;
         result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid tx hex response".to_string()))
     }

@@ -189,9 +189,14 @@ impl WebProvider {
         network_str: String,
     ) -> Result<Self> {
         let params = deezel_common::network::NetworkParams::from_network_str(&network_str)?;
-
-        Ok(Self {
-            sandshrew_rpc_url: params.metashrew_rpc_url,
+        let logger = WebLogger::new();
+        logger.info(&format!(
+            "WebProvider initialized with: Sandshrew RPC URL: {}, Esplora URL: {:?}, Network: {}",
+            &params.metashrew_rpc_url, &params.esplora_url, &params.network
+        ));
+ 
+         Ok(Self {
+             sandshrew_rpc_url: params.metashrew_rpc_url,
             esplora_rpc_url: params.esplora_url,
             network: params.network,
             storage: WebStorage::new(),
@@ -429,6 +434,12 @@ impl WebProvider {
 #[async_trait(?Send)]
 impl JsonRpcProvider for WebProvider {
     async fn call(&self, url: &str, method: &str, params: JsonValue, id: u64) -> Result<JsonValue> {
+        self.logger.info(&format!(
+            "JsonRpcProvider::call -> URL: {}, Method: {}, Params: {}",
+            url,
+            method,
+            serde_json::to_string_pretty(&params).unwrap_or_else(|_| "INVALID_JSON".to_string()),
+        ));
         let request_body = serde_json::json!({
             "jsonrpc": "2.0",
             "method": method,
@@ -459,6 +470,8 @@ impl JsonRpcProvider for WebProvider {
         let response_json: JsonValue = serde_json::from_str(&response_str)
             .map_err(|e| DeezelError::Serialization(format!("Failed to parse JSON: {e}")))?;
 
+        self.logger.info(&format!("JsonRpcProvider::call <- Raw RPC response: {}", response_str));
+ 
         if let Some(error) = response_json.get("error") {
             if !error.is_null() {
                 return Err(DeezelError::JsonRpc(format!("JSON-RPC error: {error}")));
@@ -577,13 +590,17 @@ impl LogProvider for WebProvider {
 #[async_trait(?Send)]
 impl EsploraProvider for WebProvider {
     async fn get_blocks_tip_hash(&self) -> Result<String> {
+        self.logger.info("[EsploraProvider] Calling get_blocks_tip_hash");
         let url = self.esplora_rpc_url.as_deref().unwrap_or(&self.sandshrew_rpc_url);
+        self.logger.info(&format!("[EsploraProvider] Using JSON-RPC to {} for method {}", url, esplora::EsploraJsonRpcMethods::BLOCKS_TIP_HASH));
         let result = self.call(url, esplora::EsploraJsonRpcMethods::BLOCKS_TIP_HASH, esplora::params::empty(), 1).await?;
         result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid tip hash response".to_string()))
     }
 
     async fn get_blocks_tip_height(&self) -> Result<u64> {
+        self.logger.info("[EsploraProvider] Calling get_blocks_tip_height");
         let url = self.esplora_rpc_url.as_deref().unwrap_or(&self.sandshrew_rpc_url);
+        self.logger.info(&format!("[EsploraProvider] Using JSON-RPC to {} for method {}", url, esplora::EsploraJsonRpcMethods::BLOCKS_TIP_HEIGHT));
         let result = self.call(url, esplora::EsploraJsonRpcMethods::BLOCKS_TIP_HEIGHT, esplora::params::empty(), 1).await?;
         result.as_u64().ok_or_else(|| DeezelError::RpcError("Invalid tip height response".to_string()))
     }
@@ -627,7 +644,9 @@ impl EsploraProvider for WebProvider {
     }
 
     async fn get_block_txid(&self, hash: &str, index: u32) -> Result<String> {
+        self.logger.info(&format!("[EsploraProvider] Calling get_block_txid for hash: {}, index: {}", hash, index));
         let url = self.esplora_rpc_url.as_deref().unwrap_or(&self.sandshrew_rpc_url);
+        self.logger.info(&format!("[EsploraProvider] Using JSON-RPC to {} for method {}", url, esplora::EsploraJsonRpcMethods::BLOCK_TXID));
         let result = self.call(url, esplora::EsploraJsonRpcMethods::BLOCK_TXID, esplora::params::dual(hash, index), 1).await?;
         result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid txid response".to_string()))
     }
@@ -638,16 +657,21 @@ impl EsploraProvider for WebProvider {
     }
 
     async fn get_address_info(&self, address: &str) -> Result<serde_json::Value> {
+        self.logger.info(&format!("[EsploraProvider] Calling get_address_info for address: {}", address));
         let url = self.esplora_rpc_url.as_deref().unwrap_or(&self.sandshrew_rpc_url);
+        self.logger.info(&format!("[EsploraProvider] Using JSON-RPC to {} for method {}", url, esplora::EsploraJsonRpcMethods::ADDRESS));
         self.call(url, esplora::EsploraJsonRpcMethods::ADDRESS, esplora::params::single(address), 1).await
     }
 
     async fn get_address_utxo(&self, address: &str) -> Result<serde_json::Value> {
+        self.logger.info(&format!("[EsploraProvider] Calling get_address_utxo for address: {}", address));
         if let Some(url) = self.esplora_rpc_url.as_deref() {
+            self.logger.info(&format!("[EsploraProvider] Using JSON-RPC to {} for method esplora_address::utxo", url));
             if let Ok(result) = self.call(url, "esplora_address::utxo", esplora::params::single(address), 1).await {
                 return Ok(result);
             }
         }
+        self.logger.info(&format!("[EsploraProvider] Falling back to JSON-RPC on sandshrew for method esplora_address::utxo"));
         // Fallback or error
         self.call(&self.sandshrew_rpc_url, "esplora_address::utxo", esplora::params::single(address), 1).await
     }
@@ -673,12 +697,16 @@ impl EsploraProvider for WebProvider {
     }
 
     async fn get_tx(&self, txid: &str) -> Result<serde_json::Value> {
+        self.logger.info(&format!("[EsploraProvider] Calling get_tx for txid: {}", txid));
         let url = self.esplora_rpc_url.as_deref().unwrap_or(&self.sandshrew_rpc_url);
+        self.logger.info(&format!("[EsploraProvider] Using JSON-RPC to {} for method {}", url, esplora::EsploraJsonRpcMethods::TX));
         self.call(url, esplora::EsploraJsonRpcMethods::TX, esplora::params::single(txid), 1).await
     }
 
     async fn get_tx_hex(&self, txid: &str) -> Result<String> {
+        self.logger.info(&format!("[EsploraProvider] Calling get_tx_hex for txid: {}", txid));
         let url = self.esplora_rpc_url.as_deref().unwrap_or(&self.sandshrew_rpc_url);
+        self.logger.info(&format!("[EsploraProvider] Using JSON-RPC to {} for method {}", url, esplora::EsploraJsonRpcMethods::TX_HEX));
         let result = self.call(url, esplora::EsploraJsonRpcMethods::TX_HEX, esplora::params::single(txid), 1).await?;
         result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid tx hex response".to_string()))
     }
@@ -796,6 +824,7 @@ impl WalletProvider for WebProvider {
     }
     
     async fn get_balance(&self, addresses: Option<Vec<String>>) -> Result<WalletBalance> {
+        self.logger.info(&format!("[WalletProvider] Calling get_balance for addresses: {:?}", addresses));
         let addrs = if let Some(a) = addresses {
             a
         } else {
@@ -821,6 +850,7 @@ impl WalletProvider for WebProvider {
     }
     
     async fn get_address(&self) -> Result<String> {
+        self.logger.info("[WalletProvider] Calling get_address");
         let keystore = self.keystore.as_ref().ok_or_else(|| DeezelError::Wallet("Wallet not loaded".to_string()))?;
         let network_params = self.network_params()?;
         let addresses = self.derive_addresses(&keystore.account_xpub, &network_params, &["p2tr"], 0, 1).await?;
@@ -831,6 +861,7 @@ impl WalletProvider for WebProvider {
     }
     
     async fn get_addresses(&self, count: u32) -> Result<Vec<AddressInfo>> {
+        self.logger.info(&format!("[WalletProvider] Calling get_addresses with count: {}", count));
         let keystore = self.keystore.as_ref().ok_or_else(|| DeezelError::Wallet("Wallet not loaded".to_string()))?;
         let network_params = self.network_params()?;
         let keystore_addresses = self.derive_addresses(&keystore.account_xpub, &network_params, &["p2tr"], 0, count).await?;
@@ -849,12 +880,14 @@ impl WalletProvider for WebProvider {
     }
     
     async fn send(&mut self, params: SendParams) -> Result<String> {
+        self.logger.info(&format!("[WalletProvider] Calling send with params: {:?}", params));
         let psbt_str = self.create_transaction(params).await?;
         let signed_tx_hex = self.sign_transaction(psbt_str).await?;
         self.broadcast_transaction(signed_tx_hex).await
     }
     
     async fn get_utxos(&self, _include_frozen: bool, addresses: Option<Vec<String>>) -> Result<Vec<(bitcoin::OutPoint, UtxoInfo)>> {
+        self.logger.info(&format!("[WalletProvider] Calling get_utxos for addresses: {:?}", addresses));
         let addrs = if let Some(a) = addresses {
             a
         } else {
@@ -902,6 +935,7 @@ impl WalletProvider for WebProvider {
     
     
     async fn get_history(&self, _count: u32, address: Option<String>) -> Result<Vec<TransactionInfo>> {
+        self.logger.info(&format!("[WalletProvider] Calling get_history for address: {:?}, count: {}", address, _count));
         let addr = if let Some(a) = address {
             a
         } else {
@@ -1039,6 +1073,7 @@ impl WalletProvider for WebProvider {
     }
     
     async fn create_transaction(&self, params: SendParams) -> Result<String> {
+        self.logger.info(&format!("[WalletProvider] Calling create_transaction with params: {:?}", params));
         use bitcoin::psbt::Psbt;
         use bitcoin::address::Address;
         use bitcoin::{Amount, TxOut, TxIn, Witness, Sequence};
@@ -1102,6 +1137,7 @@ impl WalletProvider for WebProvider {
     }
     
     async fn sign_transaction(&mut self, psbt_base64: String) -> Result<String> {
+        self.logger.info("[WalletProvider] Calling sign_transaction");
         use bitcoin::consensus::encode;
         use base64::{engine::general_purpose::STANDARD, Engine as _};
         use bitcoin::psbt::Psbt;
@@ -1115,6 +1151,7 @@ impl WalletProvider for WebProvider {
     }
     
     async fn broadcast_transaction(&self, tx_hex: String) -> Result<String> {
+        self.logger.info("[WalletProvider] Calling broadcast_transaction");
         if self.network == Network::Bitcoin {
             self.broadcast_via_rebar_shield(&tx_hex).await
         } else {

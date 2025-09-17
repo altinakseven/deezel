@@ -71,7 +71,6 @@ pub mod bitcoind;
 pub mod ord;
 pub mod metashrew;
 pub mod index_pointer;
-pub mod blizzard;
 
 #[cfg(any(test, feature = "test-utils"))]
 pub mod mock_provider;
