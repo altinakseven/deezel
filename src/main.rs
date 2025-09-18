@@ -965,7 +965,6 @@ async fn main() -> Result<()> {
     let rpc_config = RpcConfig {
         bitcoin_rpc_url: sandshrew_rpc_url.clone(),  // Use Sandshrew for Bitcoin RPC calls
         metashrew_rpc_url: sandshrew_rpc_url.clone(), // Use Sandshrew for Metashrew RPC calls
-        // esplora_rpc_url: sandshrew_rpc_url.clone(),
         ..Default::default()
     };
     let rpc_client = Arc::new(RpcClient::new(rpc_config));

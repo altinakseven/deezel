@@ -107,13 +107,19 @@ impl SystemDeezel {
             .or_else(|| args.sandshrew_rpc_url.clone())
             .unwrap_or_else(|| network_params.metashrew_rpc_url.clone());
 
-        let esplora_url = if network_params.network == bitcoin::Network::Regtest {
-            args.sandshrew_rpc_url.clone().or(network_params.esplora_url.clone())
-        } else {
-            args.esplora_url.clone().or_else(|| network_params.esplora_url.clone())
-        };
+        let esplora_url = args
+            .esplora_url
+            .clone()
+            .or_else(|| network_params.esplora_url.clone());
 
         // Create provider with the resolved URLs
+        log::info!(
+            "Creating ConcreteProvider with URLs: bitcoin_rpc: {:?}, metashrew_rpc: {:?}, sandshrew_rpc: {:?}, esplora: {:?}",
+            &bitcoin_rpc_url,
+            &metashrew_rpc_url,
+            &args.sandshrew_rpc_url,
+            &esplora_url
+        );
         let mut provider = ConcreteProvider::new(
             bitcoin_rpc_url,
             metashrew_rpc_url,

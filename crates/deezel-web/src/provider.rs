@@ -196,7 +196,7 @@ impl WebProvider {
         ));
  
          Ok(Self {
-             sandshrew_rpc_url: params.metashrew_rpc_url,
+            sandshrew_rpc_url: params.metashrew_rpc_url,
             esplora_rpc_url: params.esplora_url,
             network: params.network,
             storage: WebStorage::new(),
@@ -704,9 +704,7 @@ impl EsploraProvider for WebProvider {
     }
 
     async fn get_tx_hex(&self, txid: &str) -> Result<String> {
-        self.logger.info(&format!("[EsploraProvider] Calling get_tx_hex for txid: {}", txid));
         let url = self.esplora_rpc_url.as_deref().unwrap_or(&self.sandshrew_rpc_url);
-        self.logger.info(&format!("[EsploraProvider] Using JSON-RPC to {} for method {}", url, esplora::EsploraJsonRpcMethods::TX_HEX));
         let result = self.call(url, esplora::EsploraJsonRpcMethods::TX_HEX, esplora::params::single(txid), 1).await?;
         result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid tx hex response".to_string()))
     }
