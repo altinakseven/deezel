@@ -8,7 +8,7 @@ use crate::{
     alkanes::types::{ExecutionState, ReadyToSignCommitTx, ReadyToSignRevealTx, ReadyToSignTx},
     DeezelError, JsonValue, Result,
 };
-use serde_json::{json, Value};
+use serde_json::json;
 use crate::ord;
 use crate::alkanes::execute::EnhancedAlkanesExecutor;
 #[cfg(feature = "wasm-inspection")]
@@ -18,9 +18,7 @@ use crate::alkanes::types::{
 	AlkaneBalance, AlkaneId,
 };
 use crate::proto::alkanes as alkanes_pb;
-use crate::proto::alkanes::{BlockRequest, BlockResponse, BytecodeRequest, MessageContextParcel, Trace};
 use crate::proto::protorune as protorune_pb;
-use crate::proto::protorune::Uint128;
 use std::collections::BTreeMap;
 use protobuf::Message;
 use log;
@@ -54,7 +52,7 @@ use bip39::{Mnemonic, MnemonicType, Seed};
 use hex::{self, FromHex};
 use bitcoin::{
     Address, Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
-    bip32::{DerivationPath, Fingerprint, Xpriv, Xpub},
+    bip32::{DerivationPath, Fingerprint, Xpriv},
     key::{TapTweak, UntweakedKeypair},
     secp256k1::{All, Secp256k1},
     sighash::{Prevouts, SighashCache, TapSighashType},
@@ -119,7 +117,6 @@ pub struct ConcreteProvider {
     secp: Secp256k1<All>,
 }
 
-use crate::commands::Args;
 
 impl ConcreteProvider {
     #[cfg(test)]
@@ -180,7 +177,7 @@ impl ConcreteProvider {
         let base_vsize = 10;
         let input_vsize = 68; // P2TR input vsize
         let output_vsize = 43; // P2TR output vsize
-        (base_vsize + (num_inputs as u64 * input_vsize) + (tx.output.len() as u64 * output_vsize))
+        base_vsize + (num_inputs as u64 * input_vsize) + (tx.output.len() as u64 * output_vsize)
     }
 
     /// A helper function to find address info from the keystore.

@@ -191,7 +191,6 @@ impl Keystore {
     }
 }
 
-use crate::traits::{KeystoreAddress, KeystoreInfo};
 use bitcoin::bip32::{DerivationPath, Xpub};
 use bitcoin::{Network, Address};
 use bitcoin::bip32::{Xpriv};

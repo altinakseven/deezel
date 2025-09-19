@@ -10,7 +10,6 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use crate::network::RpcConfig;
-use bitcoin::Network;
 
 /// Main CLI arguments
 #[derive(Parser, Debug, Clone)]

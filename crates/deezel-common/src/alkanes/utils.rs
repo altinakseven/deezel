@@ -9,7 +9,7 @@ use bitcoin::{OutPoint, Txid};
 use metashrew_support::utils::{is_empty, remaining_slice};
 use ordinals::varint;
 use std::io::{BufRead, Read};
-use std::{io::Cursor, mem::size_of, string};
+use std::mem::size_of;
 
 pub fn consume_sized_int<T: ByteView>(cursor: &mut std::io::Cursor<Vec<u8>>) -> Result<T> {
     let buffer = consume_exact(cursor, size_of::<T>())?;
