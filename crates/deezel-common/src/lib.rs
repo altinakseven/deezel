@@ -71,21 +71,23 @@ pub mod bitcoind;
 pub mod ord;
 pub mod metashrew;
 pub mod index_pointer;
+pub mod byte_view;
+pub mod proto;
 
 #[cfg(any(test, feature = "test-utils"))]
 pub mod mock_provider;
 
 // Re-export key types and traits for convenience
 pub use traits::*;
-pub use network::NetworkParams;
-pub use rpc::{RpcClient, RpcConfig, RpcRequest, RpcResponse};
+
+pub use rpc::{RpcClient, RpcRequest, RpcResponse};
+pub use network::{RpcConfig, RpcError, DeezelNetwork};
 
 // Re-export common types for WASM compatibility - already imported above
 
 // Re-export external types for convenience
 pub use bitcoin::{Network, Transaction, Address, ScriptBuf};
-pub use ordinals::Runestone;
-pub use protorune_support::protostone::Protostone;
+pub use crate::alkanes::protostone::Protostone;
 pub use serde_json::Value as JsonValue;
 pub use alkanes_support::proto::alkanes as alkanes_pb;
 
@@ -368,11 +370,11 @@ pub mod prelude {
     pub use crate::index_pointer::{StubPointer};
     pub use crate::{DeezelError, Result};
     pub use crate::address::{DeezelAddress, NetworkConfig};
-    pub use crate::network::NetworkParams;
-    pub use crate::rpc::{RpcClient, RpcConfig};
+pub use crate::rpc::{RpcClient};
+pub use crate::network::{RpcConfig, DeezelNetwork};
     pub use bitcoin::{Network, Transaction, Address, ScriptBuf};
     pub use ordinals::Runestone;
-    pub use protorune_support::protostone::Protostone;
+    pub use crate::alkanes::protostone::Protostone;
 }
 
 #[cfg(test)]

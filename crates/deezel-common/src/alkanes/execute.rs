@@ -31,7 +31,7 @@ pub use super::types::{
 use super::envelope::AlkanesEnvelope;
 use anyhow::anyhow;
 use ordinals::Runestone;
-use protorune_support::protostone::{Protostone, ProtostoneEdict};
+use crate::alkanes::protostone::{Protostone, ProtostoneEdict};
 
 const MAX_FEE_SATS: u64 = 100_000; // 0.001 BTC. Cap to avoid "absurdly high fee rate" errors.
 const DUST_LIMIT: u64 = 546;
@@ -477,7 +477,7 @@ impl<'a> EnhancedAlkanesExecutor<'a> {
         specs.iter().map(|spec| {
             let edicts = spec.edicts.iter().map(|e| {
                 Ok(ProtostoneEdict {
-                    id: protorune_support::balance_sheet::ProtoruneRuneId {
+                    id: crate::alkanes::balance_sheet::ProtoruneRuneId {
                         block: e.alkane_id.block as u128,
                         tx: e.alkane_id.tx as u128,
                     },

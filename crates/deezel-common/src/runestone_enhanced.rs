@@ -15,8 +15,8 @@ use bitcoin::blockdata::opcodes;
 use log::{debug, trace};
 use serde_json::{json, Value};
 use ordinals::{Artifact, Runestone};
-use protorune_support::protostone::Protostone;
-use protorune_support::utils::decode_varint_list;
+use crate::alkanes::protostone::Protostone;
+use crate::alkanes::utils::decode_varint_list;
 use hex;
 use std::io::Cursor;
 

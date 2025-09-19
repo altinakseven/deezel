@@ -9,35 +9,18 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use crate::network::RpcConfig;
+use bitcoin::Network;
+
 /// Main CLI arguments
 #[derive(Parser, Debug, Clone)]
 #[command(name = "deezel")]
 #[command(about = "DEEZEL - Alkanes SDK")]
 #[command(version = "0.1.0")]
 pub struct Args {
-    /// Sandshrew RPC URL (defaults based on network if not provided)
-    #[arg(long)]
-    pub sandshrew_rpc_url: Option<String>,
+    #[clap(flatten)]
+    pub rpc_config: RpcConfig,
 
-    /// Bitcoin RPC URL (overrides Sandshrew for bitcoind calls)
-    #[arg(long)]
-    pub bitcoin_rpc_url: Option<String>,
-
-    /// Metashrew RPC URL (overrides Sandshrew for metashrew calls)
-    #[arg(long)]
-    pub metashrew_rpc_url: Option<String>,
-
-    /// Esplora API URL (overrides Sandshrew for Esplora calls, enables REST)
-    #[arg(long)]
-    pub esplora_url: Option<String>,
-
-    /// Ord API URL (overrides Sandshrew for ord calls, enables REST)
-    #[arg(long)]
-    pub ord_url: Option<String>,
-
-    /// Network provider
-    #[arg(short, long, default_value = "regtest")]
-    pub provider: String,
 
     /// Custom network magic (overrides provider)
     #[arg(long)]
@@ -128,7 +111,14 @@ impl From<RunestoneCommands> for Commands {
     }
 }
 
-/// Wallet subcommands
+impl Commands {
+    #[cfg(test)]
+    pub fn new_for_test() -> Self {
+        Commands::Wallet {
+            command: WalletCommands::Info,
+        }
+    }
+}/// Wallet subcommands
 #[derive(Subcommand, Debug, Clone, Serialize, Deserialize)]
 pub enum WalletCommands {
     /// Create a new wallet

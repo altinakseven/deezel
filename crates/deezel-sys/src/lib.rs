@@ -866,7 +866,8 @@ impl SystemWallet for SystemDeezel {
                 println!("📅 Created: {}", info.created_at);
                 println!("🏷️  Version: {}", info.version);
                 
-                println!("\n💡 Use 'deezel wallet addresses' to see all address types");
+                println!("
+💡 Use 'deezel wallet addresses' to see all address types");
                 println!("💡 Use 'deezel wallet addresses p2tr:0-10' for specific ranges");
                 
                 Ok(())
@@ -924,7 +925,8 @@ impl SystemWallet for SystemDeezel {
                 println!("📅 Created: {}", info.created_at);
                 println!("🏷️  Version: {}", info.version);
                 
-                println!("\n💡 Use 'deezel wallet addresses' to see all address types");
+                println!("
+💡 Use 'deezel wallet addresses' to see all address types");
                 println!("💡 Use 'deezel wallet addresses p2tr:0-10' for specific ranges");
                 
                 Ok(())
@@ -954,7 +956,8 @@ impl SystemWallet for SystemDeezel {
                 println!("🌐 Network: {network:?}");
 
                 // Display first 5 addresses of each type
-                println!("\n📋 Default Addresses (derived from public key):");
+                println!("
+📋 Default Addresses (derived from public key):");
                 let default_addresses = self.keystore_manager.get_default_addresses_from_metadata(&keystore_metadata, network, None)?;
                 
                 let mut grouped_addresses: std::collections::HashMap<String, Vec<&deezel_common::traits::KeystoreAddress>> = std::collections::HashMap::new();
@@ -963,13 +966,15 @@ impl SystemWallet for SystemDeezel {
                 }
 
                 for (script_type, addrs) in grouped_addresses {
-                    println!("\n  {}:", script_type.to_uppercase());
+                    println!("
+  {}:", script_type.to_uppercase());
                     for addr in addrs {
                         println!("    {}. {} (index: {})", addr.index, addr.address, addr.index);
                     }
                 }
 
-                println!("\n💡 To see balances or send transactions, unlock the wallet by providing the --passphrase argument or by running a command that requires signing (e.g., 'wallet send').");
+                println!("
+💡 To see balances or send transactions, unlock the wallet by providing the --passphrase argument or by running a command that requires signing (e.g., 'wallet send').");
 
                 Ok(())
             },
@@ -1357,7 +1362,8 @@ impl SystemWallet for SystemDeezel {
                        println!("No UTXOs found");
                    } else {
                        let total_amount: u64 = utxos.iter().map(|(_, u)| u.amount).sum();
-                       println!("📊 Total: {} UTXOs, {} sats\n", utxos.len(), total_amount);
+                       println!("📊 Total: {} UTXOs, {} sats
+", utxos.len(), total_amount);
                        
                        for (i, (outpoint, utxo_info)) in utxos.iter().enumerate() {
                            println!("{}. 🔗 {}:{}", i + 1, outpoint.txid, outpoint.vout);
@@ -1857,7 +1863,8 @@ impl SystemAlkanes for SystemDeezel {
                                 println!("💰 Reveal Fee: {} sats", result.reveal_fee);
                                 if let Some(traces) = result.traces {
                                     for (i, trace) in traces.iter().enumerate() {
-                                        println!("\n📊 Trace for protostone #{}:", i + 1);
+                                        println!("
+📊 Trace for protostone #{}:", i + 1);
                                         println!("{}", serde_json::to_string_pretty(&trace).unwrap_or_else(|_| format!("{trace:#?}")));
                                     }
                                 }
@@ -1988,7 +1995,8 @@ impl SystemAlkanes for SystemDeezel {
                 if raw {
                     println!("{result:#?}");
                 } else {
-                    println!("📦 Alkanes Block {height}:\n{result:#?}");
+                    println!("📦 Alkanes Block {height}:
+{result:#?}");
                 }
                 Ok(())
             }
@@ -1997,7 +2005,8 @@ impl SystemAlkanes for SystemDeezel {
                 if raw {
                     println!("{}", serde_json::to_string_pretty(&result)?);
                 } else {
-                    println!("🔢 Sequence:\n{}", serde_json::to_string_pretty(&result)?);
+                    println!("🔢 Sequence:
+{}", serde_json::to_string_pretty(&result)?);
                 }
                 Ok(())
             }
@@ -2006,7 +2015,8 @@ impl SystemAlkanes for SystemDeezel {
                 if raw {
                     println!("{}", serde_json::to_string_pretty(&result)?);
                 } else {
-                    println!("💰 Spendables for {}:\n{}", address, serde_json::to_string_pretty(&result)?);
+                    println!("💰 Spendables for {}:
+{}", address, serde_json::to_string_pretty(&result)?);
                 }
                 Ok(())
             }
@@ -2015,7 +2025,8 @@ impl SystemAlkanes for SystemDeezel {
                 if raw {
                     println!("{result:#?}");
                 } else {
-                    println!("📊 Trace for block {height}:\n{result:#?}");
+                    println!("📊 Trace for block {height}:
+{result:#?}");
                 }
                 Ok(())
             }
@@ -2164,7 +2175,8 @@ impl SystemEsplora for SystemDeezel {
                         println!("{result}");
                     }
                 } else {
-                    println!("📦 Blocks:\n{}", serde_json::to_string_pretty(&result)?);
+                    println!("📦 Blocks:
+{}", serde_json::to_string_pretty(&result)?);
                 }
                 Ok(())
             },
@@ -2186,7 +2198,8 @@ impl SystemEsplora for SystemDeezel {
                         println!("{block}");
                     }
                 } else {
-                    println!("📦 Block {}:\n{}", hash, serde_json::to_string_pretty(&block)?);
+                    println!("📦 Block {}:
+{}", hash, serde_json::to_string_pretty(&block)?);
                 }
                 Ok(())
             },
@@ -2199,7 +2212,8 @@ impl SystemEsplora for SystemDeezel {
                         println!("{status}");
                     }
                 } else {
-                    println!("ℹ️ Block Status {}:\n{}", hash, serde_json::to_string_pretty(&status)?);
+                    println!("ℹ️ Block Status {}:
+{}", hash, serde_json::to_string_pretty(&status)?);
                 }
                 Ok(())
             },
@@ -2212,7 +2226,8 @@ impl SystemEsplora for SystemDeezel {
                         println!("{txids}");
                     }
                 } else {
-                    println!("📄 Block Txids {}:\n{}", hash, serde_json::to_string_pretty(&txids)?);
+                    println!("📄 Block Txids {}:
+{}", hash, serde_json::to_string_pretty(&txids)?);
                 }
                 Ok(())
             },
@@ -2252,7 +2267,8 @@ impl SystemEsplora for SystemDeezel {
                         println!("{txs}");
                     }
                 } else {
-                    println!("📄 Transactions in block {}:\n{}", hash, serde_json::to_string_pretty(&txs)?);
+                    println!("📄 Transactions in block {}:
+{}", hash, serde_json::to_string_pretty(&txs)?);
                 }
                 Ok(())
             },
@@ -2266,7 +2282,8 @@ impl SystemEsplora for SystemDeezel {
                         println!("{result}");
                     }
                 } else {
-                    println!("🏠 Address {}:\n{}", params, serde_json::to_string_pretty(&result)?);
+                    println!("🏠 Address {}:
+{}", params, serde_json::to_string_pretty(&result)?);
                 }
                 Ok(())
             },
@@ -2280,7 +2297,8 @@ impl SystemEsplora for SystemDeezel {
                         println!("{result}");
                     }
                 } else {
-                    println!("📄 Transactions for address {}:\n{}", params, serde_json::to_string_pretty(&result)?);
+                    println!("📄 Transactions for address {}:
+{}", params, serde_json::to_string_pretty(&result)?);
                 }
                 Ok(())
             },
@@ -2305,7 +2323,8 @@ impl SystemEsplora for SystemDeezel {
                         println!("{result}");
                     }
                 } else {
-                    println!("⛓️ Chain transactions for address {}:\n{}", params, serde_json::to_string_pretty(&result)?);
+                    println!("⛓️ Chain transactions for address {}:
+{}", params, serde_json::to_string_pretty(&result)?);
                 }
                 Ok(())
             },
@@ -2319,7 +2338,8 @@ impl SystemEsplora for SystemDeezel {
                         println!("{result}");
                     }
                 } else {
-                    println!("⏳ Mempool transactions for address {}:\n{}", address, serde_json::to_string_pretty(&result)?);
+                    println!("⏳ Mempool transactions for address {}:
+{}", address, serde_json::to_string_pretty(&result)?);
                 }
                 Ok(())
             },
@@ -2333,7 +2353,8 @@ impl SystemEsplora for SystemDeezel {
                         println!("{result}");
                     }
                 } else {
-                    println!("💰 UTXOs for address {}:\n{}", address, serde_json::to_string_pretty(&result)?);
+                    println!("💰 UTXOs for address {}:
+{}", address, serde_json::to_string_pretty(&result)?);
                 }
                 Ok(())
             },
@@ -2346,7 +2367,8 @@ impl SystemEsplora for SystemDeezel {
                         println!("{result}");
                     }
                 } else {
-                    println!("🔍 Addresses with prefix '{}':\n{}", prefix, serde_json::to_string_pretty(&result)?);
+                    println!("🔍 Addresses with prefix '{}':
+{}", prefix, serde_json::to_string_pretty(&result)?);
                 }
                 Ok(())
             },
@@ -2359,7 +2381,8 @@ impl SystemEsplora for SystemDeezel {
                         println!("{tx}");
                     }
                 } else {
-                    println!("📄 Transaction {}:\n{}", txid, serde_json::to_string_pretty(&tx)?);
+                    println!("📄 Transaction {}:
+{}", txid, serde_json::to_string_pretty(&tx)?);
                 }
                 Ok(())
             },
@@ -2390,7 +2413,8 @@ impl SystemEsplora for SystemDeezel {
                         println!("{status}");
                     }
                 } else {
-                    println!("ℹ️ Status for tx {}:\n{}", txid, serde_json::to_string_pretty(&status)?);
+                    println!("ℹ️ Status for tx {}:
+{}", txid, serde_json::to_string_pretty(&status)?);
                 }
                 Ok(())
             },
@@ -2403,7 +2427,8 @@ impl SystemEsplora for SystemDeezel {
                         println!("{proof}");
                     }
                 } else {
-                    println!("🧾 Merkle proof for tx {}:\n{}", txid, serde_json::to_string_pretty(&proof)?);
+                    println!("🧾 Merkle proof for tx {}:
+{}", txid, serde_json::to_string_pretty(&proof)?);
                 }
                 Ok(())
             },
@@ -2425,7 +2450,8 @@ impl SystemEsplora for SystemDeezel {
                         println!("{outspend}");
                     }
                 } else {
-                    println!("💸 Outspend for tx {}, vout {}:\n{}", txid, index, serde_json::to_string_pretty(&outspend)?);
+                    println!("💸 Outspend for tx {}, vout {}:
+{}", txid, index, serde_json::to_string_pretty(&outspend)?);
                 }
                 Ok(())
             },
@@ -2438,7 +2464,8 @@ impl SystemEsplora for SystemDeezel {
                         println!("{outspends}");
                     }
                 } else {
-                    println!("💸 Outspends for tx {}:\n{}", txid, serde_json::to_string_pretty(&outspends)?);
+                    println!("💸 Outspends for tx {}:
+{}", txid, serde_json::to_string_pretty(&outspends)?);
                 }
                 Ok(())
             },
@@ -2463,7 +2490,8 @@ impl SystemEsplora for SystemDeezel {
                         println!("{mempool}");
                     }
                 } else {
-                    println!("⏳ Mempool Info:\n{}", serde_json::to_string_pretty(&mempool)?);
+                    println!("⏳ Mempool Info:
+{}", serde_json::to_string_pretty(&mempool)?);
                 }
                 Ok(())
             },
@@ -2476,7 +2504,8 @@ impl SystemEsplora for SystemDeezel {
                         println!("{txids}");
                     }
                 } else {
-                    println!("📄 Mempool Txids:\n{}", serde_json::to_string_pretty(&txids)?);
+                    println!("📄 Mempool Txids:
+{}", serde_json::to_string_pretty(&txids)?);
                 }
                 Ok(())
             },
@@ -2489,7 +2518,8 @@ impl SystemEsplora for SystemDeezel {
                         println!("{recent}");
                     }
                 } else {
-                    println!("📄 Recent Mempool Txs:\n{}", serde_json::to_string_pretty(&recent)?);
+                    println!("📄 Recent Mempool Txs:
+{}", serde_json::to_string_pretty(&recent)?);
                 }
                 Ok(())
             },
@@ -2502,7 +2532,8 @@ impl SystemEsplora for SystemDeezel {
                         println!("{estimates}");
                     }
                 } else {
-                    println!("💰 Fee Estimates:\n{}", serde_json::to_string_pretty(&estimates)?);
+                    println!("💰 Fee Estimates:
+{}", serde_json::to_string_pretty(&estimates)?);
                 }
                 Ok(())
             },
@@ -2527,7 +2558,8 @@ impl SystemOrd for SystemDeezel {
                 if raw {
                     println!("{}", serde_json::to_string_pretty(&inscription)?);
                 } else {
-                    println!("Inscription {}:\n{}", id, serde_json::to_string_pretty(&inscription)?);
+                    println!("Inscription {}:
+{}", id, serde_json::to_string_pretty(&inscription)?);
                 }
                 Ok(())
             },
@@ -2536,7 +2568,8 @@ impl SystemOrd for SystemDeezel {
                 if raw {
                     println!("{}", serde_json::to_string_pretty(&inscriptions)?);
                 } else {
-                    println!("Inscriptions in block {}:\n{}", hash, serde_json::to_string_pretty(&inscriptions)?);
+                    println!("Inscriptions in block {}:
+{}", hash, serde_json::to_string_pretty(&inscriptions)?);
                 }
                 Ok(())
             },
@@ -2545,7 +2578,8 @@ impl SystemOrd for SystemDeezel {
                 if raw {
                     println!("{}", serde_json::to_string_pretty(&result)?);
                 } else {
-                    println!("Address {}:\n{}", address, serde_json::to_string_pretty(&result)?);
+                    println!("Address {}:
+{}", address, serde_json::to_string_pretty(&result)?);
                 }
                 Ok(())
             },
@@ -2554,13 +2588,15 @@ impl SystemOrd for SystemDeezel {
                 if raw {
                     println!("{}", serde_json::to_string_pretty(&result)?);
                 } else {
-                    println!("Block {}:\n{}", query, serde_json::to_string_pretty(&result)?);
+                    println!("Block {}:
+{}", query, serde_json::to_string_pretty(&result)?);
                 }
                 Ok(())
             },
             OrdCommands::BlockCount => {
                 let result = provider.get_ord_block_count().await?;
-                println!("Block count:\n{}", serde_json::to_string_pretty(&result)?);
+                println!("Block count:
+{}", serde_json::to_string_pretty(&result)?);
                 Ok(())
             },
             OrdCommands::Blocks { raw } => {
@@ -2568,7 +2604,8 @@ impl SystemOrd for SystemDeezel {
                 if raw {
                     println!("{}", serde_json::to_string_pretty(&result)?);
                 } else {
-                    println!("Blocks:\n{}", serde_json::to_string_pretty(&result)?);
+                    println!("Blocks:
+{}", serde_json::to_string_pretty(&result)?);
                 }
                 Ok(())
             },
@@ -2577,7 +2614,8 @@ impl SystemOrd for SystemDeezel {
                 if raw {
                     println!("{}", serde_json::to_string_pretty(&result)?);
                 } else {
-                    println!("Children of {}:\n{}", id, serde_json::to_string_pretty(&result)?);
+                    println!("Children of {}:
+{}", id, serde_json::to_string_pretty(&result)?);
                 }
                 Ok(())
             },
@@ -2592,7 +2630,8 @@ impl SystemOrd for SystemDeezel {
                 if raw {
                     println!("{}", serde_json::to_string_pretty(&result)?);
                 } else {
-                    println!("Output {}:\n{}", outpoint, serde_json::to_string_pretty(&result)?);
+                    println!("Output {}:
+{}", outpoint, serde_json::to_string_pretty(&result)?);
                 }
                 Ok(())
             },
@@ -2601,7 +2640,8 @@ impl SystemOrd for SystemDeezel {
                 if raw {
                     println!("{}", serde_json::to_string_pretty(&result)?);
                 } else {
-                    println!("Parents of {}:\n{}", id, serde_json::to_string_pretty(&result)?);
+                    println!("Parents of {}:
+{}", id, serde_json::to_string_pretty(&result)?);
                 }
                 Ok(())
             },
@@ -2610,7 +2650,8 @@ impl SystemOrd for SystemDeezel {
                 if raw {
                     println!("{}", serde_json::to_string_pretty(&result)?);
                 } else {
-                    println!("Rune {}:\n{}", rune, serde_json::to_string_pretty(&result)?);
+                    println!("Rune {}:
+{}", rune, serde_json::to_string_pretty(&result)?);
                 }
                 Ok(())
             },
@@ -2619,7 +2660,8 @@ impl SystemOrd for SystemDeezel {
                 if raw {
                     println!("{}", serde_json::to_string_pretty(&result)?);
                 } else {
-                    println!("Sat {}:\n{}", sat, serde_json::to_string_pretty(&result)?);
+                    println!("Sat {}:
+{}", sat, serde_json::to_string_pretty(&result)?);
                 }
                 Ok(())
             },
@@ -2628,7 +2670,8 @@ impl SystemOrd for SystemDeezel {
                 if raw {
                     println!("{}", serde_json::to_string_pretty(&result)?);
                 } else {
-                    println!("Transaction {}:\n{}", txid, serde_json::to_string_pretty(&result)?);
+                    println!("Transaction {}:
+{}", txid, serde_json::to_string_pretty(&result)?);
                 }
                 Ok(())
             },
@@ -2647,9 +2690,3 @@ fn expand_tilde(path: &str) -> Result<String> {
         Ok(path.to_string())
     }
 }
-
-
-
-
-
-

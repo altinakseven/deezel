@@ -9,6 +9,68 @@ use crate::traits::*;
 use crate::alkanes::protorunes::{ProtoruneWalletResponse, ProtoruneOutpointResponse};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+
+/// Enum to classify RPC call types
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum RpcCallType {
+    Bitcoin,
+    Metashrew,
+    Sandshrew,
+    Rest,
+    JsonRpc,
+}
+
+use crate::commands::Commands;
+
+/// Determine the type of RPC call based on the method name
+pub fn determine_rpc_call_type(config: &crate::network::RpcConfig, command: &Commands) -> RpcCallType {
+    match command {
+        Commands::Esplora { .. } => {
+            if config.esplora_url.is_some() {
+                RpcCallType::Rest
+            } else {
+                RpcCallType::JsonRpc
+            }
+        }
+        Commands::Ord { .. } => {
+            if config.ord_url.is_some() {
+                RpcCallType::Rest
+            } else {
+                RpcCallType::JsonRpc
+            }
+        }
+        _ => RpcCallType::JsonRpc,
+    }
+}
+
+use crate::network::{RpcConfig, RpcError};
+
+/// Get the RPC URL for a given call type
+pub fn get_rpc_url(config: &crate::network::RpcConfig, command: &Commands) -> Result<String> {
+    let rpc_url = match command {
+        Commands::Bitcoind { .. } => config
+            .bitcoin_rpc_url
+            .clone()
+            .or_else(|| config.sandshrew_rpc_url.clone()),
+        Commands::Metashrew { .. } => config
+            .metashrew_rpc_url
+            .clone()
+            .or_else(|| config.sandshrew_rpc_url.clone()),
+        Commands::Esplora { .. } => config
+            .esplora_url
+            .clone()
+            .or_else(|| config.sandshrew_rpc_url.clone()),
+        Commands::Ord { .. } => config
+            .ord_url
+            .clone()
+            .or_else(|| config.sandshrew_rpc_url.clone()),
+        _ => None,
+    };
+    rpc_url.ok_or_else(|| DeezelError::RpcError(format!("Missing RPC URL for command: {:?}", command.clone())))
+}
+
+
+
 use protobuf::Message;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -19,25 +81,7 @@ use alloc::{vec, string::String};
 #[cfg(target_arch = "wasm32")]
 use spin::Mutex;
 
-/// RPC configuration
-#[derive(Debug, Clone)]
-pub struct RpcConfig {
-    pub bitcoin_rpc_url: String,
-    pub metashrew_rpc_url: String,
-    pub sandshrew_rpc_url: String,
-    pub timeout_seconds: u64,
-}
 
-impl Default for RpcConfig {
-    fn default() -> Self {
-        Self {
-            bitcoin_rpc_url: "http://bitcoinrpc:bitcoinrpc@localhost:8332".to_string(),
-            metashrew_rpc_url: "http://localhost:8080".to_string(),
-            sandshrew_rpc_url: "http://localhost:18888".to_string(),
-            timeout_seconds: 600,
-        }
-    }
-}
 
 /// RPC request structure
 #[derive(Debug, Clone, Serialize)]
@@ -65,17 +109,11 @@ impl RpcRequest {
 pub struct RpcResponse {
     pub jsonrpc: String,
     pub result: Option<JsonValue>,
-    pub error: Option<RpcError>,
+    pub error: Option<JsonValue>,
     pub id: u64,
 }
 
-/// RPC error structure
-#[derive(Debug, Clone, Deserialize)]
-pub struct RpcError {
-    pub code: i32,
-    pub message: String,
-    pub data: Option<JsonValue>,
-}
+
 
 /// Generic RPC client that works with any provider
 pub struct RpcClient<P: DeezelProvider> {
@@ -134,17 +172,20 @@ impl<P: DeezelProvider> RpcClient<P> {
     
     /// Make a Bitcoin Core RPC call
     pub async fn bitcoin_call(&self, method: &str, params: JsonValue) -> Result<JsonValue> {
-        self.call(&self.config.bitcoin_rpc_url, method, params).await
+        let url = get_rpc_url(&self.config, &Commands::Bitcoind { command: crate::commands::BitcoindCommands::Getblockcount })?;
+        self.call(&url, method, params).await
     }
     
     /// Make a Bitcoin Core RPC call
     pub async fn sandshrew_call(&self, method: &str, params: JsonValue) -> Result<JsonValue> {
-        self.call(&self.config.sandshrew_rpc_url, method, params).await
+        let url = self.config.sandshrew_rpc_url.as_ref().ok_or_else(|| DeezelError::RpcError("Missing sandshrew rpc url".to_string()))?;
+        self.call(url, method, params).await
     }
 
     /// Make a Metashrew RPC call
     pub async fn metashrew_call(&self, method: &str, params: JsonValue) -> Result<JsonValue> {
-        self.call(&self.config.metashrew_rpc_url, method, params).await
+        let url = get_rpc_url(&self.config, &Commands::Metashrew { command: crate::commands::MetashrewCommands::Height })?;
+        self.call(&url, method, params).await
     }
     
     /// Get current block count
@@ -255,25 +296,6 @@ impl<P: DeezelProvider> RpcClient<P> {
         self.provider.get_protorunes_by_outpoint(txid, vout, block_tag, 1).await
     }
     
-    /// Make a generic call with method name (for Esplora API compatibility)
-    pub async fn _call(&self, method: &str, params: JsonValue) -> Result<JsonValue> {
-        // Parse method to determine which endpoint to use
-        if method.starts_with("esplora_") {
-            // Use metashrew endpoint for Esplora calls
-            // println!("the method: {}", method);
-            self.sandshrew_call(method, params).await
-        } else if method.starts_with("btc_") || method.starts_with("bitcoin_") {
-            // Use Bitcoin RPC endpoint
-            let bitcoin_method = method.strip_prefix("btc_")
-                .or_else(|| method.strip_prefix("bitcoin_"))
-                .unwrap_or(method);
-            self.sandshrew_call(bitcoin_method, params).await
-        } else {
-            // Default to metashrew for unknown methods
-            self.sandshrew_call(method, params).await
-        }
-    }
-    
     /// Send raw transaction
     pub async fn send_raw_transaction(&self, tx_hex: &str) -> Result<String> {
         <P as BitcoinRpcProvider>::send_raw_transaction(&self.provider, tx_hex).await
@@ -370,7 +392,8 @@ impl StandaloneRpcClient {
             .map_err(|e| DeezelError::Network(e.to_string()))?;
         
         if let Some(error) = rpc_response.error {
-            return Err(DeezelError::RpcError(format!("{}: {}", error.code, error.message)));
+            let rpc_error: RpcError = serde_json::from_value(error).map_err(|e| DeezelError::Serialization(e.to_string()))?;
+            return Err(DeezelError::RpcError(rpc_error.to_string()));
         }
         
         rpc_response.result
@@ -423,7 +446,8 @@ impl StandaloneRpcClient {
             .map_err(|e| DeezelError::Network(e.to_string()))?;
         
         if let Some(error) = rpc_response.error {
-            return Err(DeezelError::RpcError(format!("{}: {}", error.code, error.message)));
+            let rpc_error: RpcError = serde_json::from_value(error).map_err(|e| DeezelError::Serialization(e.to_string()))?;
+            return Err(DeezelError::RpcError(rpc_error.to_string()));
         }
         
         rpc_response.result
@@ -449,10 +473,6 @@ mod tests {
                 "metashrew_height" => Ok(JsonValue::Number(serde_json::Number::from(800001))),
                 _ => Ok(JsonValue::Null),
             }
-        }
-        
-        async fn get_bytecode(&self, _block: &str, _tx: &str) -> Result<String> {
-            Ok("0x608060405234801561001057600080fd5b50".to_string())
         }
     }
     
@@ -518,4 +538,22 @@ mod tests {
         assert_eq!(request.id, 1);
         assert_eq!(request.jsonrpc, "2.0");
     }
+
+    #[test]
+    fn test_rpc_call_routing() {
+        let mut config = RpcConfig::default();
+        config.bitcoin_rpc_url = Some("http://bitcoin".to_string());
+        config.metashrew_rpc_url = Some("http://metashrew".to_string());
+        config.sandshrew_rpc_url = Some("http://sandshrew".to_string());
+
+        // Test `determine_rpc_call_type`
+        assert_eq!(determine_rpc_call_type(&config, &Commands::Esplora { command: crate::commands::EsploraCommands::Block { hash: "".to_string(), raw: false } }), RpcCallType::JsonRpc);
+        assert_eq!(determine_rpc_call_type(&config, &Commands::Bitcoind { command: crate::commands::BitcoindCommands::Getblockcount }), RpcCallType::JsonRpc);
+        assert_eq!(determine_rpc_call_type(&config, &Commands::Metashrew { command: crate::commands::MetashrewCommands::Height }), RpcCallType::JsonRpc);
+
+        // Test `get_rpc_url`
+        assert_eq!(get_rpc_url(&config, &Commands::Bitcoind{ command: crate::commands::BitcoindCommands::Getblockcount }).unwrap(), "http://bitcoin");
+        assert_eq!(get_rpc_url(&config, &Commands::Metashrew{ command: crate::commands::MetashrewCommands::Height }).unwrap(), "http://metashrew");
+    }
+
 }

@@ -7,7 +7,11 @@
 //! - Raw Bitcoin addresses
 
 use crate::{Result, DeezelError};
-use crate::traits::*;
+use crate::traits::{DeezelProvider, KeystoreProvider};
+use crate::{JsonRpcProvider, StorageProvider, NetworkProvider, CryptoProvider, TimeProvider, LogProvider, WalletProvider, BitcoinRpcProvider, MetashrewRpcProvider, EsploraProvider, RunestoneProvider, OrdProvider, MonitorProvider, AlkanesProvider, MetashrewProvider};
+use crate::{WalletConfig, WalletInfo, WalletBalance, AddressInfo, SendParams, UtxoInfo, TransactionInfo, FeeEstimate, FeeRates};
+use crate::{BlockEvent, KeystoreAddress, KeystoreInfo};
+use crate::network::NetworkParams;
 use crate::wallet::AddressType;
 use bitcoin::Network;
 use regex::Regex;
@@ -855,11 +859,11 @@ impl KeystoreProvider for StandaloneAddressResolver {
     async fn get_address(&self, _address_type: &str, _index: u32) -> Result<String> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support keystore operations".to_string()))
     }
-    async fn derive_addresses(&self, _master_public_key: &str, _network_params: &crate::network::NetworkParams, _script_types: &[&str], _start_index: u32, _count: u32) -> Result<Vec<KeystoreAddress>> {
+    async fn derive_addresses(&self, _master_public_key: &str, _network_params: &NetworkParams, _script_types: &[&str], _start_index: u32, _count: u32) -> Result<Vec<KeystoreAddress>> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support keystore operations".to_string()))
     }
     
-    async fn get_default_addresses(&self, _master_public_key: &str, _network_params: &crate::network::NetworkParams) -> Result<Vec<KeystoreAddress>> {
+    async fn get_default_addresses(&self, _master_public_key: &str, _network_params: &NetworkParams) -> Result<Vec<KeystoreAddress>> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support keystore operations".to_string()))
     }
     
@@ -871,7 +875,7 @@ impl KeystoreProvider for StandaloneAddressResolver {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support keystore operations".to_string()))
     }
 
-    async fn derive_address_from_path(&self, _master_public_key: &str, _path: &bitcoin::bip32::DerivationPath, _script_type: &str, _network_params: &crate::network::NetworkParams) -> Result<KeystoreAddress> {
+    async fn derive_address_from_path(&self, _master_public_key: &str, _path: &bitcoin::bip32::DerivationPath, _script_type: &str, _network_params: &NetworkParams) -> Result<KeystoreAddress> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support keystore operations".to_string()))
     }
 }
@@ -939,7 +943,7 @@ impl AlkanesProvider for StandaloneAddressResolver {
         ))
     }
 
-    async fn simulate(&self, _contract_id: &str, _context: &alkanes_support::proto::alkanes::MessageContextParcel) -> Result<crate::JsonValue> {
+    async fn simulate(&self, _contract_id: &str, _context: &crate::proto::alkanes::MessageContextParcel) -> Result<crate::JsonValue> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
     }
 
@@ -947,11 +951,11 @@ impl AlkanesProvider for StandaloneAddressResolver {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
     }
 
-    async fn trace(&self, _outpoint: &str) -> Result<alkanes_support::proto::alkanes::Trace> {
+    async fn trace(&self, _outpoint: &str) -> Result<crate::proto::alkanes::Trace> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
     }
 
-    async fn get_block(&self, _height: u64) -> Result<alkanes_support::proto::alkanes::BlockResponse> {
+    async fn get_block(&self, _height: u64) -> Result<crate::proto::alkanes::BlockResponse> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
     }
 
@@ -963,7 +967,7 @@ impl AlkanesProvider for StandaloneAddressResolver {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
     }
 
-    async fn trace_block(&self, _height: u64) -> Result<alkanes_support::proto::alkanes::Trace> {
+    async fn trace_block(&self, _height: u64) -> Result<crate::proto::alkanes::Trace> {
         Err(DeezelError::NotImplemented("StandaloneAddressResolver does not support alkanes operations".to_string()))
     }
 

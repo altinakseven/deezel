@@ -4,7 +4,7 @@ use alloc::{
     vec::Vec,
 };
 use core::ops::Deref;
-use protorune_support::balance_sheet::{ProtoruneRuneId};
+use crate::alkanes::balance_sheet::{ProtoruneRuneId};
 
 #[derive(Clone, Debug)]
 pub struct Protoburn {

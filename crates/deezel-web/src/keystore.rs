@@ -148,7 +148,7 @@ impl KeystoreProvider for Keystore {
         todo!()
     }
 
-    async fn get_default_addresses(&self, _master_public_key: &str, _network_params: &deezel_common::network::NetworkParams) -> Result<Vec<KeystoreAddress>, DeezelError> {
+    async fn get_default_addresses(&self, _master_public_key: &str, _network_params: &protorune_support::network::NetworkParams) -> Result<Vec<KeystoreAddress>, DeezelError> {
         todo!()
     }
 
@@ -164,7 +164,7 @@ impl KeystoreProvider for Keystore {
         todo!()
     }
 
-    async fn derive_address_from_path(&self, master_public_key: &str, path: &DerivationPath, script_type: &str, network_params: &deezel_common::network::NetworkParams) -> Result<KeystoreAddress, DeezelError> {
+    async fn derive_address_from_path(&self, master_public_key: &str, path: &DerivationPath, script_type: &str, network_params: &protorune_support::network::NetworkParams) -> Result<KeystoreAddress, DeezelError> {
         let address = deezel_common::keystore::derive_address_from_public_key(
             master_public_key,
             path,

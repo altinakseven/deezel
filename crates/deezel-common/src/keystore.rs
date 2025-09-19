@@ -191,12 +191,12 @@ impl Keystore {
     }
 }
 
-use bitcoin::{
-    network::Network,
-    bip32::{DerivationPath, Xpriv, Xpub},
-    secp256k1::{Secp256k1, All},
-    Address,
-};
+use crate::traits::{KeystoreAddress, KeystoreInfo};
+use bitcoin::bip32::{DerivationPath, Xpub};
+use bitcoin::{Network, Address};
+use bitcoin::bip32::{Xpriv};
+use bitcoin::secp256k1::{Secp256k1, All};
+use crate::network::NetworkParams;
 use core::str::FromStr;
 
 
@@ -221,7 +221,7 @@ pub fn derive_address(mnemonic_str: &str, path: &DerivationPath, network: Networ
 pub fn derive_address_from_public_key(
     master_public_key: &str,
     path: &DerivationPath,
-    network_params: &crate::network::NetworkParams,
+    network_params: &NetworkParams,
     address_type: &str,
 ) -> Result<String> {
     use metashrew_support::address::{AddressEncoding, Payload};
@@ -291,22 +291,4 @@ impl DeezelWallet {
         let path = DerivationPath::from_str(&path_str)?;
         derive_address(self.mnemonic.phrase(), &path, self.network)
     }
-}
-
-/// Information about a derived address.
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct KeystoreAddress {
-    /// The derivation path for the address.
-    pub path: String,
-    /// The address string.
-    pub address: String,
-    /// The type of address (e.g., "p2wpkh", "p2tr").
-    pub address_type: String,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct KeystoreInfo {
-    pub master_fingerprint: String,
-    pub created_at: u64,
-    pub version: String,
 }

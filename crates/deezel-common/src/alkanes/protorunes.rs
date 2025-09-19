@@ -1,7 +1,7 @@
 //! Data structures for protorunes commands
 use crate::index_pointer::StubPointer;
 use bitcoin::{TxOut, OutPoint};
-use protorune_support::balance_sheet::BalanceSheetOperations;
+use crate::alkanes::balance_sheet::BalanceSheetOperations;
 use serde::{Deserialize, Serialize};
 
 /// Represents the response for a single outpoint
@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 pub struct ProtoruneOutpointResponse {
     pub output: TxOut,
     pub outpoint: OutPoint,
-    pub balance_sheet: protorune_support::balance_sheet::BalanceSheet<StubPointer>,
+    pub balance_sheet: crate::alkanes::balance_sheet::BalanceSheet<StubPointer>,
 }
 
 impl Default for ProtoruneOutpointResponse {
@@ -17,7 +17,7 @@ impl Default for ProtoruneOutpointResponse {
         Self {
             output: TxOut { value: bitcoin::Amount::from_sat(0), script_pubkey: Default::default() },
             outpoint: OutPoint::null(),
-            balance_sheet: protorune_support::balance_sheet::BalanceSheet::new(),
+            balance_sheet: crate::alkanes::balance_sheet::BalanceSheet::new(),
         }
     }
 }
@@ -28,8 +28,8 @@ pub struct ProtoruneWalletResponse {
     pub balances: Vec<ProtoruneOutpointResponse>,
 }
 use crate::{Result, alkanes::protoburn::Protoburn};
-use protorune_support::{
-    protostone::{Protostone},
+use crate::{
+    alkanes::protostone::{Protostone},
 };
 
 pub trait Protostones {

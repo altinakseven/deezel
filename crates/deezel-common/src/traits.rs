@@ -31,7 +31,8 @@ use crate::alkanes::types::{
     ReadyToSignRevealTx, ReadyToSignTx,
 };
 use crate::alkanes::protorunes::{ProtoruneOutpointResponse, ProtoruneWalletResponse};
-use alkanes_support::proto::alkanes as alkanes_pb;
+use crate::proto::alkanes as alkanes_pb;
+use crate::network::NetworkParams;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::{vec::Vec, boxed::Box, string::String};
@@ -388,15 +389,6 @@ pub struct FeeRates {
     pub slow: f32,
 }
 
-/// Network parameters
-#[derive(Debug, Clone)]
-pub struct NetworkParams {
-    pub network: Network,
-    pub magic: [u8; 4],
-    pub default_port: u16,
-    pub rpc_port: u16,
-    pub bech32_hrp: String,
-}
 
 
 
@@ -420,10 +412,10 @@ pub trait AddressResolver {
 #[async_trait(?Send)]
 pub trait KeystoreProvider {
     /// Derive addresses dynamically from master public key
-    async fn derive_addresses(&self, master_public_key: &str, network_params: &crate::network::NetworkParams, script_types: &[&str], start_index: u32, count: u32) -> Result<Vec<KeystoreAddress>>;
+    async fn derive_addresses(&self, master_public_key: &str, network_params: &NetworkParams, script_types: &[&str], start_index: u32, count: u32) -> Result<Vec<KeystoreAddress>>;
     
     /// Get default addresses for display (first 5 of each type for given network)
-    async fn get_default_addresses(&self, master_public_key: &str, network_params: &crate::network::NetworkParams) -> Result<Vec<KeystoreAddress>>;
+    async fn get_default_addresses(&self, master_public_key: &str, network_params: &NetworkParams) -> Result<Vec<KeystoreAddress>>;
 
     /// Get address for specific type and index
     async fn get_address(&self, address_type: &str, index: u32) -> Result<String>;
@@ -435,7 +427,7 @@ pub trait KeystoreProvider {
     async fn get_keystore_info(&self, master_fingerprint: &str, created_at: u64, version: &str) -> Result<KeystoreInfo>;
 
     /// Derive a single address from a full derivation path
-    async fn derive_address_from_path(&self, master_public_key: &str, path: &DerivationPath, script_type: &str, network_params: &crate::network::NetworkParams) -> Result<KeystoreAddress>;
+    async fn derive_address_from_path(&self, master_public_key: &str, path: &DerivationPath, script_type: &str, network_params: &NetworkParams) -> Result<KeystoreAddress>;
 }
 
 /// Address information for keystore operations
@@ -753,9 +745,9 @@ pub trait AlkanesProvider {
         protocol_tag: u128,
     ) -> Result<ProtoruneOutpointResponse>;
     async fn view(&self, contract_id: &str, view_fn: &str, params: Option<&[u8]>) -> Result<JsonValue>;
-    async fn simulate(&self, contract_id: &str, context: &alkanes_support::proto::alkanes::MessageContextParcel) -> Result<JsonValue> {
+    async fn simulate(&self, contract_id: &str, context: &crate::proto::alkanes::MessageContextParcel) -> Result<JsonValue> {
         let mut buf = Vec::new();
-        <alkanes_support::proto::alkanes::MessageContextParcel as protobuf::Message>::write_to_writer(context, &mut buf)?;
+        <crate::proto::alkanes::MessageContextParcel as protobuf::Message>::write_to_writer(context, &mut buf)?;
         self.view(contract_id, "simulate", Some(&buf)).await
     }
     async fn trace(&self, outpoint: &str) -> Result<alkanes_pb::Trace>;
@@ -1368,7 +1360,7 @@ impl<T: DeezelProvider + ?Sized> AlkanesProvider for Box<T> {
     async fn view(&self, contract_id: &str, view_fn: &str, params: Option<&[u8]>) -> Result<JsonValue> {
         (**self).view(contract_id, view_fn, params).await
     }
-    async fn simulate(&self, contract_id: &str, context: &alkanes_support::proto::alkanes::MessageContextParcel) -> Result<JsonValue> {
+    async fn simulate(&self, contract_id: &str, context: &crate::proto::alkanes::MessageContextParcel) -> Result<JsonValue> {
         (**self).simulate(contract_id, context).await
     }
     async fn trace(&self, outpoint: &str) -> Result<alkanes_pb::Trace> {
@@ -1412,10 +1404,10 @@ impl<T: DeezelProvider + ?Sized> KeystoreProvider for Box<T> {
     async fn get_address(&self, address_type: &str, index: u32) -> Result<String> {
         <T as KeystoreProvider>::get_address(self, address_type, index).await
     }
-   async fn derive_addresses(&self, master_public_key: &str, network_params: &crate::network::NetworkParams, script_types: &[&str], start_index: u32, count: u32) -> Result<Vec<KeystoreAddress>> {
+   async fn derive_addresses(&self, master_public_key: &str, network_params: &NetworkParams, script_types: &[&str], start_index: u32, count: u32) -> Result<Vec<KeystoreAddress>> {
        (**self).derive_addresses(master_public_key, network_params, script_types, start_index, count).await
    }
-   async fn get_default_addresses(&self, master_public_key: &str, network_params: &crate::network::NetworkParams) -> Result<Vec<KeystoreAddress>> {
+   async fn get_default_addresses(&self, master_public_key: &str, network_params: &NetworkParams) -> Result<Vec<KeystoreAddress>> {
        (**self).get_default_addresses(master_public_key, network_params).await
    }
    fn parse_address_range(&self, range_spec: &str) -> Result<(String, u32, u32)> {
@@ -1424,7 +1416,7 @@ impl<T: DeezelProvider + ?Sized> KeystoreProvider for Box<T> {
    async fn get_keystore_info(&self, master_fingerprint: &str, created_at: u64, version: &str) -> Result<KeystoreInfo> {
        (**self).get_keystore_info(master_fingerprint, created_at, version).await
    }
-   async fn derive_address_from_path(&self, master_public_key: &str, path: &DerivationPath, script_type: &str, network_params: &crate::network::NetworkParams) -> Result<KeystoreAddress> {
+   async fn derive_address_from_path(&self, master_public_key: &str, path: &DerivationPath, script_type: &str, network_params: &NetworkParams) -> Result<KeystoreAddress> {
        (**self).derive_address_from_path(master_public_key, path, script_type, network_params).await
    }
 }

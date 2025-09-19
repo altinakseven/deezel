@@ -930,7 +930,6 @@ dependencies = [
 name = "deezel-asc"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "base64 0.22.1",
  "crc24",
  "nom",
@@ -970,6 +969,7 @@ dependencies = [
  "gloo-worker-macros",
  "hex",
  "js-sys",
+ "lazy_static",
  "leb128",
  "log",
  "metashrew-support",
@@ -978,6 +978,9 @@ dependencies = [
  "pbkdf2",
  "prost",
  "protobuf 3.7.2",
+ "protobuf-codegen 3.7.2",
+ "protoc-bin-vendored",
+ "protoc-rust",
  "protorune-support",
  "psbt-v2",
  "rand 0.8.5",
@@ -1044,7 +1047,6 @@ dependencies = [
 name = "deezel-sys"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "async-trait",
  "bitcoin 0.32.6",
  "chrono",
@@ -1073,7 +1075,6 @@ version = "0.1.0"
 dependencies = [
  "aes-gcm",
  "alkanes-support",
- "anyhow",
  "async-trait",
  "base64 0.22.1",
  "bitcoin 0.32.6",
@@ -1086,7 +1087,6 @@ dependencies = [
  "js-sys",
  "pbkdf2",
  "protobuf 3.7.2",
- "protorune-support",
  "rand 0.8.5",
  "serde",
  "serde-wasm-bindgen",

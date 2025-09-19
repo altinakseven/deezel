@@ -8,7 +8,6 @@ default = ["std"]
 std = ["dep:thiserror"]
 
 [dependencies]
-anyhow = "1.0"
 thiserror = { workspace = true, optional = true }
 nom = "7.1"
 crc24 = "0.1.6"

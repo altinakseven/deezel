@@ -32,7 +32,7 @@ async fn main() -> Result<()> {
     // Handle keystore logic
 
     // Create a new SystemDeezel instance
-    let mut system = SystemDeezel::new(&deezel_common::commands::Args::from(&args)).await?;
+    let mut system = SystemDeezel::new(&args).await?;
 
     // Execute the command
     execute_command(&mut system, args.command).await

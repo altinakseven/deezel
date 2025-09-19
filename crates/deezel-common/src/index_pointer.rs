@@ -1,4 +1,4 @@
-use metashrew_support::index_pointer::KeyValuePointer;
+pub use metashrew_support::index_pointer::KeyValuePointer;
 use std::sync::Arc;
 
 #[derive(Clone, Debug, Default)]

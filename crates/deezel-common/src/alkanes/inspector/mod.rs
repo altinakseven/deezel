@@ -100,27 +100,92 @@ impl<P: AlkanesProvider> AlkaneInspector<P> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::traits::JsonRpcProvider;
+    use crate::traits::AlkanesProvider;
+    use crate::DeezelError;
     use async_trait::async_trait;
-    use crate::alkanes::types::AlkaneId;
+    use crate::alkanes::types::{
+        AlkaneId, EnhancedExecuteParams, EnhancedExecuteResult, ExecutionState, ReadyToSignCommitTx,
+        ReadyToSignRevealTx, ReadyToSignTx,
+    };
+    use crate::alkanes::{AlkaneBalance, AlkanesInspectConfig, AlkanesInspectResult};
+    use crate::alkanes::protorunes::{ProtoruneOutpointResponse, ProtoruneWalletResponse};
+    use crate::proto::alkanes as alkanes_pb;
+    use serde_json::Value as JsonValue;
     use super::types::InspectionConfig;
 
     struct MockRpcProvider;
 
     #[async_trait(?Send)]
-    impl JsonRpcProvider for MockRpcProvider {
-        async fn call(
-            &self,
-            _url: &str,
-            _method: &str,
-            _params: serde_json::Value,
-            _id: u64,
-        ) -> Result<serde_json::Value, crate::DeezelError> {
-            Ok(serde_json::json!("0x"))
+    impl AlkanesProvider for MockRpcProvider {
+        async fn execute(&mut self, _params: EnhancedExecuteParams) -> Result<ExecutionState, DeezelError> {
+            unimplemented!()
         }
 
-        async fn get_bytecode(&self, _alkane_id: &str) -> Result<String, crate::DeezelError> {
+        async fn resume_execution(
+            &mut self,
+            _state: ReadyToSignTx,
+            _params: &EnhancedExecuteParams,
+        ) -> Result<EnhancedExecuteResult, DeezelError> {
+            unimplemented!()
+        }
+
+        async fn resume_commit_execution(
+            &mut self,
+            _state: ReadyToSignCommitTx,
+        ) -> Result<ExecutionState, DeezelError> {
+            unimplemented!()
+        }
+
+        async fn resume_reveal_execution(
+            &mut self,
+            _state: ReadyToSignRevealTx,
+        ) -> Result<EnhancedExecuteResult, DeezelError> {
+            unimplemented!()
+        }
+        
+        async fn protorunes_by_address(
+            &self,
+            _address: &str,
+            _block_tag: Option<String>,
+            _protocol_tag: u128,
+        ) -> Result<ProtoruneWalletResponse, DeezelError> {
+            unimplemented!()
+        }
+        async fn protorunes_by_outpoint(
+            &self,
+            _txid: &str,
+            _vout: u32,
+            _block_tag: Option<String>,
+            _protocol_tag: u128,
+        ) -> Result<ProtoruneOutpointResponse, DeezelError> {
+            unimplemented!()
+        }
+        async fn view(&self, _contract_id: &str, _view_fn: &str, _params: Option<&[u8]>) -> Result<JsonValue, DeezelError> {
+            unimplemented!()
+        }
+        async fn trace(&self, _outpoint: &str) -> Result<alkanes_pb::Trace, DeezelError> {
+            unimplemented!()
+        }
+        async fn get_block(&self, _height: u64) -> Result<alkanes_pb::BlockResponse, DeezelError> {
+            unimplemented!()
+        }
+        async fn sequence(&self) -> Result<JsonValue, DeezelError> {
+            unimplemented!()
+        }
+        async fn spendables_by_address(&self, _address: &str) -> Result<JsonValue, DeezelError> {
+            unimplemented!()
+        }
+        async fn trace_block(&self, _height: u64) -> Result<alkanes_pb::Trace, DeezelError> {
+            unimplemented!()
+        }
+        async fn get_bytecode(&self, _alkane_id: &str, _block_tag: Option<String>) -> Result<String, DeezelError> {
             Ok("0x".to_string())
+        }
+        async fn inspect(&self, _target: &str, _config: AlkanesInspectConfig) -> Result<AlkanesInspectResult, DeezelError> {
+            unimplemented!()
+        }
+        async fn get_balance(&self, _address: Option<&str>) -> Result<Vec<AlkaneBalance>, DeezelError> {
+            unimplemented!()
         }
     }
 

@@ -17,8 +17,10 @@ use crate::alkanes::types::{
 	EnhancedExecuteParams, EnhancedExecuteResult, AlkanesInspectConfig, AlkanesInspectResult,
 	AlkaneBalance, AlkaneId,
 };
-use alkanes_support::proto::alkanes as alkanes_pb;
-use protorune_support::proto::protorune as protorune_pb;
+use crate::proto::alkanes as alkanes_pb;
+use crate::proto::alkanes::{BlockRequest, BlockResponse, BytecodeRequest, MessageContextParcel, Trace};
+use crate::proto::protorune as protorune_pb;
+use crate::proto::protorune::Uint128;
 use std::collections::BTreeMap;
 use protobuf::Message;
 use log;
@@ -32,7 +34,10 @@ use alloc::boxed::Box;
 use std::path::PathBuf;
 use core::str::FromStr;
 use crate::keystore::Keystore;
+use crate::network::{NetworkParams, RpcConfig};
+use crate::rpc::get_rpc_url;
 use url::Url;
+use crate::rpc::{determine_rpc_call_type, RpcCallType};
 
 // Import deezel-rpgp types for PGP functionality
 
@@ -94,12 +99,15 @@ pub enum WalletState {
     },
 }
 
+
+
+
+use crate::commands::Commands;
+
 #[derive(Clone)]
 pub struct ConcreteProvider {
-    rpc_url: String,
-    metashrew_rpc_url: String,
-    esplora_url: Option<String>,
-    provider: String,
+    rpc_config: RpcConfig,
+    command: Commands,
     #[cfg(not(target_arch = "wasm32"))]
     wallet_path: Option<PathBuf>,
     #[cfg(target_arch = "wasm32")]
@@ -111,112 +119,40 @@ pub struct ConcreteProvider {
     secp: Secp256k1<All>,
 }
 
+use crate::commands::Args;
+
 impl ConcreteProvider {
-    pub async fn new(
-        bitcoin_rpc_url: Option<String>,
-        metashrew_rpc_url: String,
-        sandshrew_rpc_url: Option<String>,
-        esplora_url: Option<String>,
-        provider: String,
-        #[cfg(not(target_arch = "wasm32"))]
-        wallet_path: Option<PathBuf>,
-        #[cfg(target_arch = "wasm32")]
-        wallet_path: Option<String>,
-    ) -> Result<Self> {
-        let rpc_url = if let Some(url_str) = bitcoin_rpc_url.or(sandshrew_rpc_url) {
-            url_str
-        } else {
-            match provider.as_str() {
-                "mainnet" => "https://mainnet.sandshrew.io/v2/lasereyes".to_string(),
-                "testnet" => "https://testnet.sandshrew.io/v2/lasereyes".to_string(),
-                "signet" => "https://signet.sandshrew.io/v2/lasereyes".to_string(),
-                _ => "http://localhost:18888".to_string(),
-            }
-        };
-
-        log::info!(
-            "ConcreteProvider initialized with: Bitcoin RPC URL: {}, Metashrew RPC URL: {}, Esplora URL: {:?}, Provider: {}",
-            &rpc_url,
-            &metashrew_rpc_url,
-            &esplora_url,
-            &provider
-        );
- 
-       let mut new_self = Self {
-           rpc_url,
-           metashrew_rpc_url,
-           esplora_url,
-           provider,
-           wallet_path: wallet_path.clone(),
-           passphrase: None,
-           wallet_state: WalletState::None,
-           #[cfg(feature = "native-deps")]
-           http_client: reqwest::Client::new(),
-           secp: Secp256k1::new(),
-       };
-
-       // Try to load the keystore metadata if a path is provided
-       #[cfg(not(target_arch = "wasm32"))]
-       if let Some(path) = &wallet_path {
-           if path.exists() {
-                match Keystore::from_file(path) {
-                    Ok(keystore) => new_self.wallet_state = WalletState::Locked(keystore),
-                    Err(e) => log::warn!("Failed to load keystore metadata: {e}"),
-                }
-           }
-       }
-
-       Ok(new_self)
-   }
-
-   pub fn load_keystore_from_memory(&mut self, keystore: Keystore) {
-       self.wallet_state = WalletState::Locked(keystore);
-   }
-   /// Unlock the wallet by decrypting the seed
-   pub async fn unlock_wallet(&mut self, passphrase: &str) -> Result<()> {
-       if let WalletState::Locked(keystore) = &self.wallet_state {
-           let mnemonic = keystore.decrypt_mnemonic(passphrase)?;
-           self.wallet_state = WalletState::Unlocked {
-               keystore: keystore.clone(),
-               mnemonic,
-           };
-           self.passphrase = Some(passphrase.to_string());
-           Ok(())
-       } else if let WalletState::Unlocked { .. } = &self.wallet_state {
-           // Already unlocked, do nothing.
-           Ok(())
-       } else {
-           Err(DeezelError::Wallet("Wallet is not in a locked state".to_string()))
-       }
-   }
-
-    /// Get the wallet path
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn get_wallet_path(&self) -> Option<&PathBuf> {
-        self.wallet_path.as_ref()
-    }
-    #[cfg(target_arch = "wasm32")]
-    pub fn get_wallet_path(&self) -> Option<&String> {
-        self.wallet_path.as_ref()
-    }
-
-    /// Get the current wallet state
-    pub fn get_wallet_state(&self) -> &WalletState {
-        &self.wallet_state
-    }
-
-    /// Get the loaded keystore, if any
-    pub fn get_keystore(&self) -> Option<&Keystore> {
-        match &self.wallet_state {
-            WalletState::Locked(keystore) | WalletState::Unlocked { keystore, .. } => Some(keystore),
-            WalletState::None => None,
+    #[cfg(test)]
+    pub fn new_for_test(rpc_config: RpcConfig, command: Commands) -> Self {
+        Self {
+            rpc_config,
+            command,
+            wallet_path: None,
+            passphrase: None,
+            wallet_state: WalletState::None,
+            #[cfg(feature = "native-deps")]
+            http_client: reqwest::Client::new(),
+            secp: Secp256k1::new(),
         }
     }
 
+    pub fn get_network(&self) -> bitcoin::Network {
+        self.rpc_config.network.0
+    }
 
-    fn select_coins(&self, mut utxos: Vec<UtxoInfo>, target_amount: Amount) -> Result<(Vec<UtxoInfo>, Amount)> {
-        utxos.sort_by(|a, b| b.amount.cmp(&a.amount)); // Largest-first
+    async fn metashrew_view_call(&self, _method: &str, _params: &str, _height: &str) -> Result<Vec<u8>> {
+        unimplemented!()
+    }
 
+    fn get_keystore(&self) -> Result<&Keystore> {
+        match &self.wallet_state {
+            WalletState::Unlocked { keystore, .. } => Ok(keystore),
+            _ => Err(DeezelError::Wallet("Wallet is not unlocked".to_string())),
+        }
+    }
+
+    /// A helper function to select coins for a transaction.
+    fn select_coins(&self, utxos: Vec<UtxoInfo>, target_amount: Amount) -> Result<(Vec<UtxoInfo>, Amount)> {
         let mut selected_utxos = Vec::new();
         let mut total_input_amount = Amount::ZERO;
 
@@ -224,8 +160,10 @@ impl ConcreteProvider {
             if total_input_amount >= target_amount {
                 break;
             }
-            total_input_amount += Amount::from_sat(utxo.amount);
-            selected_utxos.push(utxo);
+            if !utxo.frozen {
+                total_input_amount += Amount::from_sat(utxo.amount);
+                selected_utxos.push(utxo);
+            }
         }
 
         if total_input_amount < target_amount {
@@ -235,87 +173,38 @@ impl ConcreteProvider {
         Ok((selected_utxos, total_input_amount))
     }
 
+    /// A helper function to estimate the virtual size of a transaction.
     fn estimate_tx_vsize(&self, tx: &Transaction, num_inputs: usize) -> u64 {
-        // This is a rough estimation for P2TR inputs and P2TR outputs.
-        // A more accurate estimation would require knowing the exact script types.
+        // A simple estimation logic. This should be improved for accuracy.
+        // Base size + size per input + size per output
         let base_vsize = 10;
-        let input_vsize = 58; // P2TR input
-        let output_vsize = 43; // P2TR output
-
-        base_vsize + (input_vsize * num_inputs) as u64 + (output_vsize * tx.output.len() as u64)
+        let input_vsize = 68; // P2TR input vsize
+        let output_vsize = 43; // P2TR output vsize
+        (base_vsize + (num_inputs as u64 * input_vsize) + (tx.output.len() as u64 * output_vsize))
     }
 
-}
-
-impl ConcreteProvider {
-    fn find_address_info(
-        keystore: &Keystore,
-        address: &Address,
-        network: Network,
-    ) -> Result<crate::keystore::KeystoreAddress> {
-        // Since we removed the address cache, we derive on-the-fly.
-        // This is necessary for signing transactions for addresses that haven't been explicitly
-        // listed or used before. We search a reasonable gap limit.
-        let secp = Secp256k1::<All>::new();
-        let account_xpub = Xpub::from_str(&keystore.account_xpub)
-            .map_err(|e| DeezelError::Wallet(format!("Invalid account xpub in keystore: {e}")))?;
-
-        // Standard gap limit is 20, but we'll search a bit more to be safe.
-        // We need to check both the receive (0) and change (1) branches.
-        for branch in 0..=1 {
-            for i in 0..101 { // Gap limit of 100
-                let address_path_str = format!("{branch}/{i}");
-                let address_path = DerivationPath::from_str(&address_path_str)?;
-                let derived_xpub = account_xpub.derive_pub(&secp, &address_path)?;
-                let (internal_key, _) = derived_xpub.public_key.x_only_public_key();
-                let derived_address = Address::p2tr(&secp, internal_key, None, network);
-
-                if derived_address == *address {
-                    // We found the address!
-                    let base_path = keystore.hd_paths.get("p2tr").map(|s| s.as_str()).unwrap_or("m/86'/0'/0'");
-                    let full_path = format!("{}/{}", base_path.strip_suffix('/').unwrap_or(base_path), address_path_str.strip_prefix("m/").unwrap_or(&address_path_str));
-                    return Ok(crate::keystore::KeystoreAddress {
-                        path: full_path,
-                        address: address.to_string(),
-                        address_type: "p2tr".to_string(),
-                    });
+    /// A helper function to find address info from the keystore.
+    fn find_address_info(keystore: &Keystore, address: &Address, network: Network) -> Result<AddressInfo> {
+        // This is a placeholder. In a real wallet, you'd efficiently search
+        // the keystore's derived addresses. 
+        for i in 0..1000 { // A reasonable search limit
+            for chain in 0..=1 {
+                if let Ok(addrs) = keystore.get_addresses(network, "p2tr", chain, i, 1) {
+                    if let Some(info) = addrs.first() {
+                        if info.address == address.to_string() {
+                            return Ok(info.clone());
+                        }
+                    }
                 }
             }
         }
-
-        Err(DeezelError::Wallet(format!(
-            "Address {address} not found in keystore and could not be derived within the gap limit"
-        )))
-    }
-
-    async fn metashrew_view_call(
-        &self,
-        method: &str,
-        hex_input: &str,
-        block_tag: &str,
-    ) -> Result<Vec<u8>> {
-        let block_param = if block_tag == "latest" {
-            json!("latest")
-        } else {
-            json!(block_tag.parse::<u64>()?)
-        };
-        let result = self
-            .call(
-                &self.metashrew_rpc_url,
-                "metashrew_view",
-                serde_json::json!([method, hex_input, block_param]),
-                1, // Using a static ID for simplicity, can be made dynamic if needed
-            )
-            .await?;
-
-        let hex_response = result.as_str().ok_or_else(|| {
-            DeezelError::RpcError("metashrew_view response was not a string".to_string())
-        })?;
-
-        let bytes = hex::decode(hex_response.strip_prefix("0x").unwrap_or(hex_response))?;
-        Ok(bytes)
+        Err(DeezelError::Wallet(format!("Address {} not found in keystore", address)))
     }
 }
+
+#[async_trait(?Send)]
+
+
 
 #[async_trait(?Send)]
 impl JsonRpcProvider for ConcreteProvider {
@@ -374,11 +263,9 @@ impl JsonRpcProvider for ConcreteProvider {
                 // Check for a standard JSON-RPC error object.
                 if let Some(error_obj) = json_value.get("error") {
                     if !error_obj.is_null() {
-                        if let Ok(rpc_error) = serde_json::from_value::<crate::rpc::RpcError>(error_obj.clone()) {
-                            return Err(DeezelError::RpcError(format!("Code {}: {}", rpc_error.code, rpc_error.message)));
-                        } else {
-                            return Err(DeezelError::RpcError(format!("Non-standard error object received: {error_obj}")));
-                        }
+                        let code = error_obj.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
+                        let message = error_obj.get("message").and_then(|m| m.as_str()).unwrap_or("Unknown RPC error");
+                        return Err(DeezelError::RpcError(format!("Code {}: {}", code, message)));
                     }
                 }
 
@@ -663,7 +550,7 @@ impl WalletProvider for ConcreteProvider {
     
     async fn get_addresses(&self, count: u32) -> Result<Vec<AddressInfo>> {
         log::info!("[WalletProvider] Calling get_addresses with count: {}", count);
-        let keystore = self.get_keystore().ok_or_else(|| DeezelError::Wallet("Keystore not loaded".to_string()))?;
+        let keystore = self.get_keystore()?;
         let addresses = keystore.get_addresses(self.get_network(), "p2tr", 0, 0, count)?;
         Ok(addresses)
     }
@@ -897,7 +784,7 @@ impl WalletProvider for ConcreteProvider {
             
             // This call now takes a mutable keystore and may cache the derived address info.
             let addr_info = Self::find_address_info(keystore, &address, network)?;
-            let path = DerivationPath::from_str(&addr_info.path)?;
+            let path = DerivationPath::from_str(&addr_info.derivation_path)?;
 
             // Derive the private key for this input
             let mnemonic_obj = Mnemonic::from_phrase(mnemonic, bip39::Language::English)?;
@@ -1038,13 +925,7 @@ impl WalletProvider for ConcreteProvider {
     }
 
     fn get_network(&self) -> bitcoin::Network {
-        // Parse the provider string to determine network
-        match self.provider.as_str() {
-            "mainnet" => Network::Bitcoin,
-            "testnet" => Network::Testnet,
-            "signet" => Network::Signet,
-            "regtest" | _ => Network::Regtest, // Default to regtest
-        }
+        self.rpc_config.network.0
     }
     
     async fn get_internal_key(&self) -> Result<(bitcoin::XOnlyPublicKey, (Fingerprint, DerivationPath))> {
@@ -1147,7 +1028,7 @@ impl WalletProvider for ConcreteProvider {
                     .map_err(|e| DeezelError::Wallet(format!("Failed to parse address from script: {e}")))?;
                 
                 let addr_info = Self::find_address_info(keystore, &address, network)?;
-                let path = DerivationPath::from_str(&addr_info.path)?;
+                let path = DerivationPath::from_str(&addr_info.derivation_path)?;
 
                 let mnemonic_obj = Mnemonic::from_phrase(mnemonic, bip39::Language::English)?;
                 let seed = Seed::new(&mnemonic_obj, "");
@@ -1196,7 +1077,7 @@ impl WalletProvider for ConcreteProvider {
     }
 
     async fn get_last_used_address_index(&self) -> Result<u32> {
-        let keystore = self.get_keystore().ok_or_else(|| DeezelError::Wallet("Keystore not loaded".to_string()))?;
+        let keystore = self.get_keystore()?;
         let network = self.get_network();
         let mut last_used_index = 0;
         let gap_limit = 20; // Standard gap limit
@@ -1238,137 +1119,15 @@ impl WalletProvider for ConcreteProvider {
 }
 
 
-#[async_trait(?Send)]
-impl BitcoinRpcProvider for ConcreteProvider {
-    async fn get_block_count(&self) -> Result<u64> {
-        let result = self.call(&self.rpc_url, "getblockcount", serde_json::Value::Null, 1).await?;
-        if let Some(count) = result.as_u64() {
-            return Ok(count);
-        }
-        if let Some(count_str) = result.as_str() {
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(count_str) {
-                if let Some(count) = json.get("result").and_then(|v| v.as_u64()) {
-                    return Ok(count);
-                }
-            }
-            return count_str.parse::<u64>().map_err(|_| DeezelError::RpcError("Invalid block count string response".to_string()));
-        }
-        if let Some(obj) = result.as_object() {
-            if let Some(count) = obj.get("result").and_then(|v| v.as_u64()) {
-                return Ok(count);
-            }
-        }
-        Err(DeezelError::RpcError("Invalid block count response: not a u64, string, or object with a result field".to_string()))
-    }
-    
-    async fn generate_to_address(&self, nblocks: u32, address: &str) -> Result<serde_json::Value> {
-        let params = serde_json::json!([nblocks, address]);
-        self.call(&self.rpc_url, "generatetoaddress", params, 1).await
-    }
 
-    async fn get_blockchain_info(&self) -> Result<serde_json::Value> {
-        self.call(&self.rpc_url, "getblockchaininfo", serde_json::Value::Null, 1).await
-    }
 
-    async fn get_new_address(&self) -> Result<JsonValue> {
-        self.call(&self.rpc_url, "getnewaddress", serde_json::Value::Null, 1).await
-    }
-    
-    async fn get_transaction_hex(&self, txid: &str) -> Result<String> {
-        let params = serde_json::json!([txid]);
-        let result = self.call(&self.rpc_url, "getrawtransaction", params, 1).await?;
-        result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid transaction hex response".to_string()))
-    }
-    
-    async fn get_block(&self, hash: &str, raw: bool) -> Result<serde_json::Value> {
-        let verbosity = if raw { 0 } else { 2 };
-        let params = serde_json::json!([hash, verbosity]);
-        self.call(&self.rpc_url, "getblock", params, 1).await
-    }
-    
-    async fn get_block_hash(&self, height: u64) -> Result<String> {
-        let params = serde_json::json!([height]);
-        let result = self.call(&self.rpc_url, "getblockhash", params, 1).await?;
-        result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid block hash response".to_string()))
-    }
-    
-    async fn send_raw_transaction(&self, tx_hex: &str) -> Result<String> {
-        log::info!("Attempting to broadcast transaction hex: {}", tx_hex);
-        // The second parameter is maxfeerate. Setting it to 0 disables the fee check.
-        let params = serde_json::json!([tx_hex, 0]);
-        let result = self.call(&self.rpc_url, "sendrawtransaction", params, 1).await;
-        
-        log::info!("sendrawtransaction result: {:?}", result);
 
-        match result {
-            Ok(value) => {
-                if let Some(txid) = value.as_str() {
-                    Ok(txid.to_string())
-                } else {
-                    Err(DeezelError::RpcError(format!("Invalid txid response from sendrawtransaction: response was not a string: {value:?}")))
-                }
-            }
-            Err(e) => {
-                log::error!("sendrawtransaction RPC call failed: {e}");
-                Err(e)
-            }
-        }
-    }
-    
-    async fn get_mempool_info(&self) -> Result<serde_json::Value> {
-        self.call(&self.rpc_url, "getmempoolinfo", serde_json::Value::Null, 1).await
-    }
-    
-    async fn estimate_smart_fee(&self, target: u32) -> Result<serde_json::Value> {
-        let params = serde_json::json!([target]);
-        self.call(&self.rpc_url, "estimatesmartfee", params, 1).await
-    }
-    
-    async fn get_esplora_blocks_tip_height(&self) -> Result<u64> {
-        unimplemented!("This method belongs to the EsploraProvider")
-    }
-    
-    async fn trace_transaction(&self, txid: &str, vout: u32, _block: Option<&str>, _tx: Option<&str>) -> Result<serde_json::Value> {
-        <Self as MetashrewRpcProvider>::trace_outpoint(self, txid, vout).await
-    }
-
-    async fn get_network_info(&self) -> Result<JsonValue> {
-        self.call(&self.rpc_url, "getnetworkinfo", serde_json::Value::Null, 1).await
-    }
-
-    async fn get_raw_transaction(&self, txid: &str, block_hash: Option<&str>) -> Result<JsonValue> {
-        let params = serde_json::json!([txid, true, block_hash]);
-        self.call(&self.rpc_url, "getrawtransaction", params, 1).await
-    }
-
-    async fn get_block_header(&self, hash: &str) -> Result<JsonValue> {
-        let params = serde_json::json!([hash, false]);
-        self.call(&self.rpc_url, "getblockheader", params, 1).await
-    }
-
-    async fn get_block_stats(&self, hash: &str) -> Result<JsonValue> {
-        let params = serde_json::json!([hash]);
-        self.call(&self.rpc_url, "getblockstats", params, 1).await
-    }
-
-    async fn get_chain_tips(&self) -> Result<JsonValue> {
-        self.call(&self.rpc_url, "getchaintips", serde_json::Value::Null, 1).await
-    }
-
-    async fn get_raw_mempool(&self) -> Result<JsonValue> {
-        self.call(&self.rpc_url, "getrawmempool", serde_json::json!([false]), 1).await
-    }
-
-    async fn get_tx_out(&self, txid: &str, vout: u32, include_mempool: bool) -> Result<JsonValue> {
-        let params = serde_json::json!([txid, vout, include_mempool]);
-        self.call(&self.rpc_url, "gettxout", params, 1).await
-    }
-}
 
 #[async_trait(?Send)]
 impl MetashrewRpcProvider for ConcreteProvider {
     async fn get_metashrew_height(&self) -> Result<u64> {
-        let json = self.call(&self.metashrew_rpc_url, "metashrew_height", json!([]), 1).await?;
+        let rpc_url = self.get_bitcoin_rpc_url().ok_or_else(|| DeezelError::RpcError("Bitcoin RPC URL not configured".to_string()))?;
+        let json = self.call(&rpc_url, "metashrew_height", json!([]), 1).await?;
         log::debug!("get_metashrew_height response: {:?}", json);
         if let Some(count) = json.as_u64() {
             return Ok(count);
@@ -1394,14 +1153,16 @@ impl MetashrewRpcProvider for ConcreteProvider {
     }
 
     async fn get_state_root(&self, height: JsonValue) -> Result<String> {
+        let rpc_url = self.get_bitcoin_rpc_url().ok_or_else(|| DeezelError::RpcError("Bitcoin RPC URL not configured".to_string()))?;
         let params = serde_json::json!([height]);
-        let result = self.call(&self.metashrew_rpc_url, "metashrew_stateroot", params, 1).await?;
+        let result = self.call(&rpc_url, "metashrew_stateroot", params, 1).await?;
         result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid state root response".to_string()))
     }
 
     async fn get_contract_meta(&self, block: &str, tx: &str) -> Result<serde_json::Value> {
+        let rpc_url = self.get_bitcoin_rpc_url().ok_or_else(|| DeezelError::RpcError("Bitcoin RPC URL not configured".to_string()))?;
         let params = serde_json::json!([block, tx]);
-        self.call(&self.metashrew_rpc_url, "metashrew_view", params, 1).await
+        self.call(&rpc_url, "metashrew_view", params, 1).await
     }
     
     async fn trace_outpoint(&self, txid: &str, vout: u32) -> Result<JsonValue> {
@@ -1426,8 +1187,9 @@ impl MetashrewRpcProvider for ConcreteProvider {
     }
     
     async fn get_spendables_by_address(&self, address: &str) -> Result<serde_json::Value> {
+        let rpc_url = self.get_bitcoin_rpc_url().ok_or_else(|| DeezelError::RpcError("Bitcoin RPC URL not configured".to_string()))?;
         let params = serde_json::json!([address]);
-        self.call(&self.metashrew_rpc_url, "spendablesbyaddress", params, 1).await
+        self.call(&rpc_url, "spendablesbyaddress", params, 1).await
     }
     
     async fn get_protorunes_by_address(
@@ -1487,7 +1249,7 @@ impl MetashrewRpcProvider for ConcreteProvider {
                                     entry.balance.into_option(),
                                 ) {
                                     let protorune_id =
-                                        protorune_support::balance_sheet::ProtoruneRuneId {
+                                        crate::alkanes::balance_sheet::ProtoruneRuneId {
                                             block: height.lo as u128,
                                             tx: txindex.lo as u128,
                                         };
@@ -1496,8 +1258,8 @@ impl MetashrewRpcProvider for ConcreteProvider {
                             }
                         }
                     }
-                    protorune_support::balance_sheet::BalanceSheet {
-                        cached: protorune_support::balance_sheet::CachedBalanceSheet {
+                    crate::alkanes::balance_sheet::BalanceSheet {
+                        cached: crate::alkanes::balance_sheet::CachedBalanceSheet {
                             balances: balances_map,
                         },
                         load_ptrs: vec![],
@@ -1563,7 +1325,7 @@ impl MetashrewRpcProvider for ConcreteProvider {
                                 entry.balance.into_option(),
                             ) {
                                 let protorune_id =
-                                    protorune_support::balance_sheet::ProtoruneRuneId {
+                                    crate::alkanes::balance_sheet::ProtoruneRuneId {
                                         block: height.lo as u128,
                                         tx: txindex.lo as u128,
                                     };
@@ -1572,8 +1334,8 @@ impl MetashrewRpcProvider for ConcreteProvider {
                         }
                     }
                 }
-                protorune_support::balance_sheet::BalanceSheet {
-                    cached: protorune_support::balance_sheet::CachedBalanceSheet {
+                crate::alkanes::balance_sheet::BalanceSheet {
+                    cached: crate::alkanes::balance_sheet::CachedBalanceSheet {
                         balances: balances_map,
                     },
                     load_ptrs: vec![],
@@ -1581,16 +1343,19 @@ impl MetashrewRpcProvider for ConcreteProvider {
             },
         })
     }
-
 }
+
+
 
 #[async_trait(?Send)]
 impl EsploraProvider for ConcreteProvider {
     async fn get_blocks_tip_hash(&self) -> Result<String> {
-        log::info!("[EsploraProvider] Calling get_blocks_tip_hash");
+        let rpc_url = get_rpc_url(&self.rpc_config, &self.command)?;
+        let call_type = determine_rpc_call_type(&self.rpc_config, &self.command);
         #[cfg(feature = "native-deps")]
-        if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{esplora_url}/blocks/tip/hash");
+        if call_type == RpcCallType::Rest {
+            let rpc_url = get_rpc_url(&self.rpc_config, &self.command)?;
+            let url = format!("{}/blocks/tip/hash", rpc_url);
             log::info!("[EsploraProvider] Using direct HTTP GET to {}", url);
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             let text = response.text().await.map_err(|e| DeezelError::Network(e.to_string()))?;
@@ -1599,15 +1364,18 @@ impl EsploraProvider for ConcreteProvider {
         }
  
         log::info!("[EsploraProvider] Falling back to JSON-RPC call: {}", crate::esplora::EsploraJsonRpcMethods::BLOCKS_TIP_HASH);
-        let result = self.call(&self.rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCKS_TIP_HASH, crate::esplora::params::empty(), 1).await?;
+        let rpc_url = get_rpc_url(&self.rpc_config, &self.command)?;
+        let result = self.call(&rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCKS_TIP_HASH, crate::esplora::params::empty(), 1).await?;
         result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid tip hash response".to_string()))
     }
 
     async fn get_blocks_tip_height(&self) -> Result<u64> {
         log::info!("[EsploraProvider] Calling get_blocks_tip_height");
+        let rpc_url = get_rpc_url(&self.rpc_config, &self.command)?;
+        let call_type = determine_rpc_call_type(&self.rpc_config, &self.command);
         #[cfg(feature = "native-deps")]
-        if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{esplora_url}/blocks/tip/height");
+        if call_type == RpcCallType::Rest {
+            let url = format!("{}/blocks/tip/height", rpc_url);
             log::info!("[EsploraProvider] Using direct HTTP GET to {}", url);
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             let text = response.text().await.map_err(|e| DeezelError::Network(e.to_string()))?;
@@ -1616,18 +1384,20 @@ impl EsploraProvider for ConcreteProvider {
         }
         
         log::info!("[EsploraProvider] Falling back to JSON-RPC call: {}", crate::esplora::EsploraJsonRpcMethods::BLOCKS_TIP_HEIGHT);
-        let result = self.call(&self.rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCKS_TIP_HEIGHT, crate::esplora::params::empty(), 1).await?;
+        let result = self.call(&rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCKS_TIP_HEIGHT, crate::esplora::params::empty(), 1).await?;
         result.as_u64().ok_or_else(|| DeezelError::RpcError("Invalid tip height response".to_string()))
     }
 
     async fn get_blocks(&self, start_height: Option<u64>) -> Result<serde_json::Value> {
         log::info!("[EsploraProvider] Calling get_blocks with start_height: {:?}", start_height);
+        let rpc_url = get_rpc_url(&self.rpc_config, &self.command)?;
+        let call_type = determine_rpc_call_type(&self.rpc_config, &self.command);
         #[cfg(feature = "native-deps")]
-        if let Some(esplora_url) = &self.esplora_url {
+        if call_type == RpcCallType::Rest {
             let url = if let Some(height) = start_height {
-                format!("{esplora_url}/blocks/{height}")
+                format!("{}/blocks/{}", rpc_url, height)
             } else {
-                format!("{esplora_url}/blocks")
+                format!("{}/blocks", rpc_url)
             };
             log::info!("[EsploraProvider] Using direct HTTP GET to {}", url);
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
@@ -1637,14 +1407,16 @@ impl EsploraProvider for ConcreteProvider {
         }
         
         log::info!("[EsploraProvider] Falling back to JSON-RPC call: {}", crate::esplora::EsploraJsonRpcMethods::BLOCKS);
-        self.call(&self.rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCKS, crate::esplora::params::optional_single(start_height), 1).await
+        self.call(&rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCKS, crate::esplora::params::optional_single(start_height), 1).await
     }
 
     async fn get_block_by_height(&self, height: u64) -> Result<String> {
         log::info!("[EsploraProvider] Calling get_block_by_height: {}", height);
+        let rpc_url = get_rpc_url(&self.rpc_config, &self.command)?;
+        let call_type = determine_rpc_call_type(&self.rpc_config, &self.command);
         #[cfg(feature = "native-deps")]
-        if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{esplora_url}/block-height/{height}");
+        if call_type == RpcCallType::Rest {
+            let url = format!("{}/block-height/{}", rpc_url, height);
             log::info!("[EsploraProvider] Using direct HTTP GET to {}", url);
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             let text = response.text().await.map_err(|e| DeezelError::Network(e.to_string()))?;
@@ -1653,73 +1425,85 @@ impl EsploraProvider for ConcreteProvider {
         }
         
         log::info!("[EsploraProvider] Falling back to JSON-RPC call: {}", crate::esplora::EsploraJsonRpcMethods::BLOCK_HEIGHT);
-        let result = self.call(&self.rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCK_HEIGHT, crate::esplora::params::single(height), 1).await?;
+        let result = self.call(&rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCK_HEIGHT, crate::esplora::params::single(height), 1).await?;
         result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid block hash response".to_string()))
     }
 
     async fn get_block(&self, hash: &str) -> Result<serde_json::Value> {
+        let rpc_url = get_rpc_url(&self.rpc_config, &self.command)?;
+        let call_type = determine_rpc_call_type(&self.rpc_config, &self.command);
         #[cfg(feature = "native-deps")]
-        if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{esplora_url}/block/{hash}");
+        if call_type == RpcCallType::Rest {
+            let url = format!("{}/block/{}", rpc_url, hash);
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
         
-        self.call(&self.rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCK, crate::esplora::params::single(hash), 1).await
+        self.call(&rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCK, crate::esplora::params::single(hash), 1).await
     }
 
     async fn get_block_status(&self, hash: &str) -> Result<serde_json::Value> {
+        let rpc_url = get_rpc_url(&self.rpc_config, &self.command)?;
+        let call_type = determine_rpc_call_type(&self.rpc_config, &self.command);
         #[cfg(feature = "native-deps")]
-        if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{esplora_url}/block/{hash}/status");
+        if call_type == RpcCallType::Rest {
+            let url = format!("{}/block/{}/status", rpc_url, hash);
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
         
-        self.call(&self.rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCK_STATUS, crate::esplora::params::single(hash), 1).await
+        self.call(&rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCK_STATUS, crate::esplora::params::single(hash), 1).await
     }
 
     async fn get_block_txids(&self, hash: &str) -> Result<serde_json::Value> {
+        let rpc_url = get_rpc_url(&self.rpc_config, &self.command)?;
+        let call_type = determine_rpc_call_type(&self.rpc_config, &self.command);
         #[cfg(feature = "native-deps")]
-        if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{esplora_url}/block/{hash}/txids");
+        if call_type == RpcCallType::Rest {
+            let url = format!("{}/block/{}/txids", rpc_url, hash);
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
         
-        self.call(&self.rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCK_TXIDS, crate::esplora::params::single(hash), 1).await
+        self.call(&rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCK_TXIDS, crate::esplora::params::single(hash), 1).await
     }
 
     async fn get_block_header(&self, hash: &str) -> Result<String> {
+        let rpc_url = get_rpc_url(&self.rpc_config, &self.command)?;
+        let call_type = determine_rpc_call_type(&self.rpc_config, &self.command);
         #[cfg(feature = "native-deps")]
-        if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{esplora_url}/block/{hash}/header");
+        if call_type == RpcCallType::Rest {
+            let url = format!("{}/block/{}/header", rpc_url, hash);
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.text().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
         
-        let result = self.call(&self.rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCK_HEADER, crate::esplora::params::single(hash), 1).await?;
+        let result = self.call(&rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCK_HEADER, crate::esplora::params::single(hash), 1).await?;
         result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid block header response".to_string()))
     }
 
     async fn get_block_raw(&self, hash: &str) -> Result<String> {
+        let rpc_url = get_rpc_url(&self.rpc_config, &self.command)?;
+        let call_type = determine_rpc_call_type(&self.rpc_config, &self.command);
         #[cfg(feature = "native-deps")]
-        if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{esplora_url}/block/{hash}/raw");
+        if call_type == RpcCallType::Rest {
+            let url = format!("{}/block/{}/raw", rpc_url, hash);
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             let bytes = response.bytes().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return Ok(hex::encode(bytes));
         }
         
-        let result = self.call(&self.rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCK_RAW, crate::esplora::params::single(hash), 1).await?;
+        let result = self.call(&rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCK_RAW, crate::esplora::params::single(hash), 1).await?;
         result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid raw block response".to_string()))
     }
 
     async fn get_block_txid(&self, hash: &str, index: u32) -> Result<String> {
         log::info!("[EsploraProvider] Calling get_block_txid for hash: {}, index: {}", hash, index);
+        let rpc_url = get_rpc_url(&self.rpc_config, &self.command)?;
+        let call_type = determine_rpc_call_type(&self.rpc_config, &self.command);
         #[cfg(feature = "native-deps")]
-        if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{esplora_url}/block/{hash}/txid/{index}");
+        if call_type == RpcCallType::Rest {
+            let url = format!("{}/block/{}/txid/{}", rpc_url, hash, index);
             log::info!("[EsploraProvider] Using direct HTTP GET to {}", url);
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             let text = response.text().await.map_err(|e| DeezelError::Network(e.to_string()))?;
@@ -1728,122 +1512,140 @@ impl EsploraProvider for ConcreteProvider {
         }
         
         log::info!("[EsploraProvider] Falling back to JSON-RPC call: {}", crate::esplora::EsploraJsonRpcMethods::BLOCK_TXID);
-        let result = self.call(&self.rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCK_TXID, crate::esplora::params::dual(hash, index), 1).await?;
+        let result = self.call(&rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCK_TXID, crate::esplora::params::dual(hash, index), 1).await?;
         result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid txid response".to_string()))
     }
 
     async fn get_block_txs(&self, hash: &str, start_index: Option<u32>) -> Result<serde_json::Value> {
+        let rpc_url = get_rpc_url(&self.rpc_config, &self.command)?;
+        let call_type = determine_rpc_call_type(&self.rpc_config, &self.command);
         #[cfg(feature = "native-deps")]
-        if let Some(esplora_url) = &self.esplora_url {
+        if call_type == RpcCallType::Rest {
             let url = if let Some(index) = start_index {
-                format!("{esplora_url}/block/{hash}/txs/{index}")
+                format!("{}/block/{}/txs/{}", rpc_url, hash, index)
             } else {
-                format!("{esplora_url}/block/{hash}/txs")
+                format!("{}/block/{}/txs", rpc_url, hash)
             };
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
         
-        self.call(&self.rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCK_TXS, crate::esplora::params::optional_dual(hash, start_index), 1).await
+        self.call(&rpc_url, crate::esplora::EsploraJsonRpcMethods::BLOCK_TXS, crate::esplora::params::optional_dual(hash, start_index), 1).await
     }
 
 
    async fn get_address_info(&self, address: &str) -> Result<serde_json::Value> {
         log::info!("[EsploraProvider] Calling get_address_info for address: {}", address);
+        let rpc_url = get_rpc_url(&self.rpc_config, &self.command)?;
+        let call_type = determine_rpc_call_type(&self.rpc_config, &self.command);
        #[cfg(feature = "native-deps")]
-       if let Some(esplora_url) = &self.esplora_url {
-           let url = format!("{esplora_url}/address/{address}");
+       if call_type == RpcCallType::Rest {
+           let url = format!("{}/address/{}", rpc_url, address);
             log::info!("[EsploraProvider] Using direct HTTP GET to {}", url);
            let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
        }
        
         log::info!("[EsploraProvider] Falling back to JSON-RPC call: {}", crate::esplora::EsploraJsonRpcMethods::ADDRESS);
-       self.call(&self.rpc_url, crate::esplora::EsploraJsonRpcMethods::ADDRESS, crate::esplora::params::single(address), 1).await
+       self.call(&rpc_url, crate::esplora::EsploraJsonRpcMethods::ADDRESS, crate::esplora::params::single(address), 1).await
    }
 
    async fn get_address_utxo(&self, address: &str) -> Result<serde_json::Value> {
         log::info!("[EsploraProvider] Calling get_address_utxo for address: {}", address);
+        let rpc_url = get_rpc_url(&self.rpc_config, &self.command)?;
+        let call_type = determine_rpc_call_type(&self.rpc_config, &self.command);
        #[cfg(feature = "native-deps")]
-       if let Some(esplora_url) = &self.esplora_url {
-           let url = format!("{esplora_url}/address/{address}/utxo");
+       if call_type == RpcCallType::Rest {
+           let url = format!("{}/address/{}/utxo", rpc_url, address);
             log::info!("[EsploraProvider] Using direct HTTP GET to {}", url);
            let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
            return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
        }
        
         log::info!("[EsploraProvider] Falling back to JSON-RPC call: {}", crate::esplora::EsploraJsonRpcMethods::ADDRESS_UTXO);
-       self.call(&self.rpc_url, crate::esplora::EsploraJsonRpcMethods::ADDRESS_UTXO, crate::esplora::params::single(address), 1).await
+       self.call(&rpc_url, crate::esplora::EsploraJsonRpcMethods::ADDRESS_UTXO, crate::esplora::params::single(address), 1).await
    }
 
     async fn get_address_txs(&self, address: &str) -> Result<serde_json::Value> {
+        let rpc_url = get_rpc_url(&self.rpc_config, &self.command)?;
+        let call_type = determine_rpc_call_type(&self.rpc_config, &self.command);
         #[cfg(feature = "native-deps")]
-        if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{esplora_url}/address/{address}/txs");
+        if call_type == RpcCallType::Rest {
+            let url = format!("{}/address/{}/txs", rpc_url, address);
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
         
-        self.call(&self.rpc_url, crate::esplora::EsploraJsonRpcMethods::ADDRESS_TXS, crate::esplora::params::single(address), 1).await
+        self.call(&rpc_url, crate::esplora::EsploraJsonRpcMethods::ADDRESS_TXS, crate::esplora::params::single(address), 1).await
     }
 
     async fn get_address_txs_chain(&self, address: &str, last_seen_txid: Option<&str>) -> Result<serde_json::Value> {
+        let rpc_url = get_rpc_url(&self.rpc_config, &self.command)?;
+        let call_type = determine_rpc_call_type(&self.rpc_config, &self.command);
         #[cfg(feature = "native-deps")]
-        if let Some(esplora_url) = &self.esplora_url {
+        if call_type == RpcCallType::Rest {
             let url = if let Some(txid) = last_seen_txid {
-                format!("{esplora_url}/address/{address}/txs/chain/{txid}")
+                format!("{}/address/{}/txs/chain/{}", rpc_url, address, txid)
             } else {
-                format!("{esplora_url}/address/{address}/txs/chain")
+                format!("{}/address/{}/txs/chain", rpc_url, address)
             };
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
         
-        self.call(&self.rpc_url, crate::esplora::EsploraJsonRpcMethods::ADDRESS_TXS_CHAIN, crate::esplora::params::optional_dual(address, last_seen_txid), 1).await
+        self.call(&rpc_url, crate::esplora::EsploraJsonRpcMethods::ADDRESS_TXS_CHAIN, crate::esplora::params::optional_dual(address, last_seen_txid), 1).await
     }
 
     async fn get_address_txs_mempool(&self, address: &str) -> Result<serde_json::Value> {
+        let rpc_url = get_rpc_url(&self.rpc_config, &self.command)?;
+        let call_type = determine_rpc_call_type(&self.rpc_config, &self.command);
         #[cfg(feature = "native-deps")]
-        if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{esplora_url}/address/{address}/txs/mempool");
+        if call_type == RpcCallType::Rest {
+            let url = format!("{}/address/{}/txs/mempool", rpc_url, address);
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
         
-        self.call(&self.rpc_url, crate::esplora::EsploraJsonRpcMethods::ADDRESS_TXS_MEMPOOL, crate::esplora::params::single(address), 1).await
+        self.call(&rpc_url, crate::esplora::EsploraJsonRpcMethods::ADDRESS_TXS_MEMPOOL, crate::esplora::params::single(address), 1).await
     }
 
 
     async fn get_address_prefix(&self, prefix: &str) -> Result<serde_json::Value> {
+        let rpc_url = get_rpc_url(&self.rpc_config, &self.command)?;
+        let call_type = determine_rpc_call_type(&self.rpc_config, &self.command);
         #[cfg(feature = "native-deps")]
-        if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{esplora_url}/address-prefix/{prefix}");
+        if call_type == RpcCallType::Rest {
+            let url = format!("{}/address-prefix/{}", rpc_url, prefix);
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
         
-        self.call(&self.rpc_url, crate::esplora::EsploraJsonRpcMethods::ADDRESS_PREFIX, crate::esplora::params::single(prefix), 1).await
+        self.call(&rpc_url, crate::esplora::EsploraJsonRpcMethods::ADDRESS_PREFIX, crate::esplora::params::single(prefix), 1).await
     }
 
     async fn get_tx(&self, txid: &str) -> Result<serde_json::Value> {
         log::info!("[EsploraProvider] Calling get_tx for txid: {}", txid);
+        let rpc_url = get_rpc_url(&self.rpc_config, &self.command)?;
+        let call_type = determine_rpc_call_type(&self.rpc_config, &self.command);
         #[cfg(feature = "native-deps")]
-        if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{esplora_url}/tx/{txid}");
+        if call_type == RpcCallType::Rest {
+            let url = format!("{}/tx/{}", rpc_url, txid);
             log::info!("[EsploraProvider] Using direct HTTP GET to {}", url);
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
         
         log::info!("[EsploraProvider] Falling back to JSON-RPC call: {}", crate::esplora::EsploraJsonRpcMethods::TX);
-        self.call(&self.rpc_url, crate::esplora::EsploraJsonRpcMethods::TX, crate::esplora::params::single(txid), 1).await
+        self.call(&rpc_url, crate::esplora::EsploraJsonRpcMethods::TX, crate::esplora::params::single(txid), 1).await
     }
 
     async fn get_tx_hex(&self, txid: &str) -> Result<String> {
         log::info!("[EsploraProvider] Calling get_tx_hex for txid: {}", txid);
+        let rpc_url = get_rpc_url(&self.rpc_config, &self.command)?;
+        let call_type = determine_rpc_call_type(&self.rpc_config, &self.command);
         #[cfg(feature = "native-deps")]
-        if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{esplora_url}/tx/{txid}/hex");
+        if call_type == RpcCallType::Rest {
+            let url = format!("{}/tx/{}/hex", rpc_url, txid);
             log::info!("[EsploraProvider] Using direct HTTP GET to {}", url);
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             let text = response.text().await.map_err(|e| DeezelError::Network(e.to_string()))?;
@@ -1852,133 +1654,155 @@ impl EsploraProvider for ConcreteProvider {
         }
         
         log::info!("[EsploraProvider] Falling back to JSON-RPC call: {}", crate::esplora::EsploraJsonRpcMethods::TX_HEX);
-        let result = self.call(&self.rpc_url, crate::esplora::EsploraJsonRpcMethods::TX_HEX, crate::esplora::params::single(txid), 1).await?;
+        let result = self.call(&rpc_url, crate::esplora::EsploraJsonRpcMethods::TX_HEX, crate::esplora::params::single(txid), 1).await?;
         result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid tx hex response".to_string()))
     }
 
     async fn get_tx_raw(&self, txid: &str) -> Result<String> {
+        let rpc_url = get_rpc_url(&self.rpc_config, &self.command)?;
+        let call_type = determine_rpc_call_type(&self.rpc_config, &self.command);
         #[cfg(feature = "native-deps")]
-        if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{esplora_url}/tx/{txid}/raw");
+        if call_type == RpcCallType::Rest {
+            let url = format!("{}/tx/{}/raw", rpc_url, txid);
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             let bytes = response.bytes().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return Ok(hex::encode(bytes));
         }
         
-        let result = self.call(&self.rpc_url, crate::esplora::EsploraJsonRpcMethods::TX_RAW, crate::esplora::params::single(txid), 1).await?;
+        let result = self.call(&rpc_url, crate::esplora::EsploraJsonRpcMethods::TX_RAW, crate::esplora::params::single(txid), 1).await?;
         result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid raw tx response".to_string()))
     }
 
     async fn get_tx_status(&self, txid: &str) -> Result<serde_json::Value> {
+        let rpc_url = get_rpc_url(&self.rpc_config, &self.command)?;
+        let call_type = determine_rpc_call_type(&self.rpc_config, &self.command);
         #[cfg(feature = "native-deps")]
-        if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{esplora_url}/tx/{txid}/status");
+        if call_type == RpcCallType::Rest {
+            let url = format!("{}/tx/{}/status", rpc_url, txid);
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
         
-        self.call(&self.rpc_url, crate::esplora::EsploraJsonRpcMethods::TX_STATUS, crate::esplora::params::single(txid), 1).await
+        self.call(&rpc_url, crate::esplora::EsploraJsonRpcMethods::TX_STATUS, crate::esplora::params::single(txid), 1).await
     }
 
     async fn get_tx_merkle_proof(&self, txid: &str) -> Result<serde_json::Value> {
+        let rpc_url = get_rpc_url(&self.rpc_config, &self.command)?;
+        let call_type = determine_rpc_call_type(&self.rpc_config, &self.command);
         #[cfg(feature = "native-deps")]
-        if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{esplora_url}/tx/{txid}/merkle-proof");
+        if call_type == RpcCallType::Rest {
+            let url = format!("{}/tx/{}/merkle-proof", rpc_url, txid);
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
         
-        self.call(&self.rpc_url, crate::esplora::EsploraJsonRpcMethods::TX_MERKLE_PROOF, crate::esplora::params::single(txid), 1).await
+        self.call(&rpc_url, crate::esplora::EsploraJsonRpcMethods::TX_MERKLE_PROOF, crate::esplora::params::single(txid), 1).await
     }
 
     async fn get_tx_merkleblock_proof(&self, txid: &str) -> Result<String> {
+        let rpc_url = get_rpc_url(&self.rpc_config, &self.command)?;
+        let call_type = determine_rpc_call_type(&self.rpc_config, &self.command);
         #[cfg(feature = "native-deps")]
-        if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{esplora_url}/tx/{txid}/merkleblock-proof");
+        if call_type == RpcCallType::Rest {
+            let url = format!("{}/tx/{}/merkleblock-proof", rpc_url, txid);
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.text().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
         
-        let result = self.call(&self.rpc_url, crate::esplora::EsploraJsonRpcMethods::TX_MERKLEBLOCK_PROOF, crate::esplora::params::single(txid), 1).await?;
+        let result = self.call(&rpc_url, crate::esplora::EsploraJsonRpcMethods::TX_MERKLEBLOCK_PROOF, crate::esplora::params::single(txid), 1).await?;
         result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid merkleblock proof response".to_string()))
     }
 
     async fn get_tx_outspend(&self, txid: &str, index: u32) -> Result<serde_json::Value> {
+        let rpc_url = get_rpc_url(&self.rpc_config, &self.command)?;
+        let call_type = determine_rpc_call_type(&self.rpc_config, &self.command);
         #[cfg(feature = "native-deps")]
-        if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{esplora_url}/tx/{txid}/outspend/{index}");
+        if call_type == RpcCallType::Rest {
+            let url = format!("{}/tx/{}/outspend/{}", rpc_url, txid, index);
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
         
-        self.call(&self.rpc_url, crate::esplora::EsploraJsonRpcMethods::TX_OUTSPEND, crate::esplora::params::dual(txid, index), 1).await
+        self.call(&rpc_url, crate::esplora::EsploraJsonRpcMethods::TX_OUTSPEND, crate::esplora::params::dual(txid, index), 1).await
     }
 
     async fn get_tx_outspends(&self, txid: &str) -> Result<serde_json::Value> {
+        let rpc_url = get_rpc_url(&self.rpc_config, &self.command)?;
+        let call_type = determine_rpc_call_type(&self.rpc_config, &self.command);
         #[cfg(feature = "native-deps")]
-        if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{esplora_url}/tx/{txid}/outspends");
+        if call_type == RpcCallType::Rest {
+            let url = format!("{}/tx/{}/outspends", rpc_url, txid);
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
         
-        self.call(&self.rpc_url, crate::esplora::EsploraJsonRpcMethods::TX_OUTSPENDS, crate::esplora::params::single(txid), 1).await
+        self.call(&rpc_url, crate::esplora::EsploraJsonRpcMethods::TX_OUTSPENDS, crate::esplora::params::single(txid), 1).await
     }
 
     async fn broadcast(&self, tx_hex: &str) -> Result<String> {
+        let rpc_url = get_rpc_url(&self.rpc_config, &self.command)?;
+        let call_type = determine_rpc_call_type(&self.rpc_config, &self.command);
         #[cfg(feature = "native-deps")]
-        if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{esplora_url}/tx");
+        if call_type == RpcCallType::Rest {
+            let url = format!("{}/tx", rpc_url);
             let response = self.http_client.post(&url).body(tx_hex.to_string()).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.text().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
         
-        let result = self.call(&self.rpc_url, crate::esplora::EsploraJsonRpcMethods::BROADCAST, crate::esplora::params::single(tx_hex), 1).await?;
+        let result = self.call(&rpc_url, crate::esplora::EsploraJsonRpcMethods::BROADCAST, crate::esplora::params::single(tx_hex), 1).await?;
         result.as_str().map(|s| s.to_string()).ok_or_else(|| DeezelError::RpcError("Invalid broadcast response".to_string()))
     }
 
     async fn get_mempool(&self) -> Result<serde_json::Value> {
+        let rpc_url = get_rpc_url(&self.rpc_config, &self.command)?;
+        let call_type = determine_rpc_call_type(&self.rpc_config, &self.command);
         #[cfg(feature = "native-deps")]
-        if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{esplora_url}/mempool");
+        if call_type == RpcCallType::Rest {
+            let url = format!("{}/mempool", rpc_url);
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
         
-        self.call(&self.rpc_url, crate::esplora::EsploraJsonRpcMethods::MEMPOOL, crate::esplora::params::empty(), 1).await
+        self.call(&rpc_url, crate::esplora::EsploraJsonRpcMethods::MEMPOOL, crate::esplora::params::empty(), 1).await
     }
 
     async fn get_mempool_txids(&self) -> Result<serde_json::Value> {
+        let rpc_url = get_rpc_url(&self.rpc_config, &self.command)?;
+        let call_type = determine_rpc_call_type(&self.rpc_config, &self.command);
         #[cfg(feature = "native-deps")]
-        if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{esplora_url}/mempool/txids");
+        if call_type == RpcCallType::Rest {
+            let url = format!("{}/mempool/txids", rpc_url);
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
         
-        self.call(&self.rpc_url, crate::esplora::EsploraJsonRpcMethods::MEMPOOL_TXIDS, crate::esplora::params::empty(), 1).await
+        self.call(&rpc_url, crate::esplora::EsploraJsonRpcMethods::MEMPOOL_TXIDS, crate::esplora::params::empty(), 1).await
     }
 
     async fn get_mempool_recent(&self) -> Result<serde_json::Value> {
+        let rpc_url = get_rpc_url(&self.rpc_config, &self.command)?;
+        let call_type = determine_rpc_call_type(&self.rpc_config, &self.command);
         #[cfg(feature = "native-deps")]
-        if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{esplora_url}/mempool/recent");
+        if call_type == RpcCallType::Rest {
+            let url = format!("{}/mempool/recent", rpc_url);
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
         
-        self.call(&self.rpc_url, crate::esplora::EsploraJsonRpcMethods::MEMPOOL_RECENT, crate::esplora::params::empty(), 1).await
+        self.call(&rpc_url, crate::esplora::EsploraJsonRpcMethods::MEMPOOL_RECENT, crate::esplora::params::empty(), 1).await
     }
 
     async fn get_fee_estimates(&self) -> Result<serde_json::Value> {
+        let rpc_url = get_rpc_url(&self.rpc_config, &self.command)?;
+        let call_type = determine_rpc_call_type(&self.rpc_config, &self.command);
         #[cfg(feature = "native-deps")]
-        if let Some(esplora_url) = &self.esplora_url {
-            let url = format!("{esplora_url}/fee-estimates");
+        if call_type == RpcCallType::Rest {
+            let url = format!("{}/fee-estimates", rpc_url);
             let response = self.http_client.get(&url).send().await.map_err(|e| DeezelError::Network(e.to_string()))?;
             return response.json().await.map_err(|e| DeezelError::Network(e.to_string()));
         }
         
-        self.call(&self.rpc_url, crate::esplora::EsploraJsonRpcMethods::FEE_ESTIMATES, crate::esplora::params::empty(), 1).await
+        self.call(&rpc_url, crate::esplora::EsploraJsonRpcMethods::FEE_ESTIMATES, crate::esplora::params::empty(), 1).await
     }
 }
 
@@ -2073,7 +1897,6 @@ impl AlkanesProvider for ConcreteProvider {
     async fn view(&self, contract_id: &str, view_fn: &str, params: Option<&[u8]>) -> Result<JsonValue> {
         let combined_view = format!("{}/{}", contract_id, view_fn);
         let params_hex = params.map(|p| format!("0x{}", hex::encode(p))).unwrap_or_else(|| "0x".to_string());
-        
         let result_bytes = self.metashrew_view_call(&combined_view, &params_hex, "latest").await?;
 
         // Attempt to deserialize as a simple u64 if it's 8 bytes long.
@@ -2091,12 +1914,12 @@ impl AlkanesProvider for ConcreteProvider {
         Ok(serde_json::json!(format!("0x{}", hex::encode(result_bytes))))
     }
 
-    async fn simulate(&self, contract_id: &str, context: &alkanes_support::proto::alkanes::MessageContextParcel) -> Result<JsonValue> {
+    async fn simulate(&self, contract_id: &str, context: &alkanes_pb::MessageContextParcel) -> Result<JsonValue> {
         let mut buf = Vec::new();
         context.write_to_writer(&mut buf)?;
         let params_hex = format!("0x{}", hex::encode(buf));
         let rpc_params = serde_json::json!([contract_id, params_hex]);
-        self.call(&self.metashrew_rpc_url, "alkanes_simulate", rpc_params, 1).await
+        self.call(self.rpc_config.metashrew_rpc_url.as_deref().ok_or_else(|| DeezelError::RpcError("Metashrew RPC URL not configured".to_string()))?, "alkanes_simulate", rpc_params, 1).await
     }
 
     async fn trace(&self, outpoint: &str) -> Result<alkanes_pb::Trace> {
@@ -2293,8 +2116,84 @@ impl AlkanesProvider for ConcreteProvider {
         Ok(result)
     }
 }
+#[async_trait(?Send)]
+impl DeezelProvider for ConcreteProvider {
+    fn provider_name(&self) -> &str {
+        "ConcreteProvider"
+    }
 
-// Implement DeezelProvider trait for ConcreteProvider
+    fn get_bitcoin_rpc_url(&self) -> Option<String> {
+        self.rpc_config.bitcoin_rpc_url.clone()
+    }
+
+    fn get_esplora_api_url(&self) -> Option<String> {
+        self.rpc_config.esplora_url.clone()
+    }
+
+    fn get_ord_server_url(&self) -> Option<String> {
+        self.rpc_config.ord_url.clone()
+    }
+
+    fn get_metashrew_rpc_url(&self) -> Option<String> {
+        self.rpc_config.metashrew_rpc_url.clone()
+    }
+
+    fn clone_box(&self) -> Box<dyn DeezelProvider> {
+        Box::new(self.clone())
+    }
+
+    async fn initialize(&self) -> Result<()> {
+        Ok(())
+    }
+
+    async fn shutdown(&self) -> Result<()> {
+        Ok(())
+    }
+
+    fn secp(&self) -> &Secp256k1<All> {
+        &self.secp
+    }
+
+    async fn get_utxo(&self, outpoint: &OutPoint) -> Result<Option<TxOut>> {
+        let tx_info = self.get_tx(&outpoint.txid.to_string()).await?;
+        let vout_info = tx_info["vout"].get(outpoint.vout as usize)
+            .ok_or_else(|| DeezelError::Wallet(format!("Vout {} not found for tx {}", outpoint.vout, outpoint.txid)))?;
+
+        let amount = vout_info["value"].as_u64()
+            .ok_or_else(|| DeezelError::Wallet("UTXO value not found".to_string()))?;
+        let script_pubkey_hex = vout_info["scriptpubkey"].as_str()
+            .ok_or_else(|| DeezelError::Wallet("UTXO script pubkey not found".to_string()))?;
+
+        let script_pubkey = ScriptBuf::from(Vec::from_hex(script_pubkey_hex)?);
+        Ok(Some(TxOut { value: Amount::from_sat(amount), script_pubkey }))
+    }
+
+    async fn sign_taproot_script_spend(&self, sighash: bitcoin::secp256k1::Message) -> Result<bitcoin::secp256k1::schnorr::Signature> {
+        let mnemonic = match &self.wallet_state {
+            WalletState::Unlocked { mnemonic, .. } => mnemonic,
+            _ => return Err(DeezelError::Wallet("Wallet must be unlocked to sign".to_string())),
+        };
+        let mnemonic = bip39::Mnemonic::from_phrase(mnemonic, bip39::Language::English)?;
+        let seed = bip39::Seed::new(&mnemonic, "");
+        let network = self.get_network();
+        let root_key = Xpriv::new_master(network, seed.as_bytes())?;
+        let keypair = root_key.to_keypair(&self.secp);
+        #[cfg(not(target_arch = "wasm32"))]
+        let signature = self.secp.sign_schnorr_with_rng(&sighash, &keypair, &mut rand::thread_rng());
+        #[cfg(target_arch = "wasm32")]
+        let signature = self.secp.sign_schnorr_with_rng(&sighash, &keypair, &mut OsRng);
+        Ok(signature)
+    }
+
+    async fn wrap(&mut self, _amount: u64, _address: Option<String>, _fee_rate: Option<f32>) -> Result<String> {
+        Err(DeezelError::NotImplemented("wrap".to_string()))
+    }
+
+    async fn unwrap(&mut self, _amount: u64, _address: Option<String>) -> Result<String> {
+        Err(DeezelError::NotImplemented("unwrap".to_string()))
+    }
+}
+
 #[async_trait(?Send)]
 impl AddressResolver for ConcreteProvider {
     async fn resolve_all_identifiers(&self, input: &str) -> Result<String> {
@@ -2323,88 +2222,6 @@ impl AddressResolver for ConcreteProvider {
     }
 }
 
-#[async_trait(?Send)]
-impl DeezelProvider for ConcreteProvider {
-    fn provider_name(&self) -> &str {
-        "ConcreteProvider"
-    }
-
-    fn clone_box(&self) -> Box<dyn DeezelProvider> {
-        Box::new(self.clone())
-    }
-
-    async fn initialize(&self) -> Result<()> {
-        // Initialize the provider - for now this is a no-op
-        // In a full implementation, this might:
-        // - Verify RPC connections
-        // - Load configuration
-        // - Initialize caches
-        Ok(())
-    }
-
-    async fn shutdown(&self) -> Result<()> {
-        // Shutdown the provider - for now this is a no-op
-        // In a full implementation, this might:
-        // - Close connections
-        // - Save state
-        // - Clean up resources
-        Ok(())
-    }
-
-    fn secp(&self) -> &Secp256k1<All> {
-        &self.secp
-    }
-
-    async fn get_utxo(&self, outpoint: &OutPoint) -> Result<Option<TxOut>> {
-        let tx_info = self.get_tx(&outpoint.txid.to_string()).await?;
-        let vout_info = tx_info["vout"].get(outpoint.vout as usize)
-            .ok_or_else(|| DeezelError::Wallet(format!("Vout {} not found for tx {}", outpoint.vout, outpoint.txid)))?;
-        
-        let amount = vout_info["value"].as_u64()
-            .ok_or_else(|| DeezelError::Wallet("UTXO value not found".to_string()))?;
-        let script_pubkey_hex = vout_info["scriptpubkey"].as_str()
-            .ok_or_else(|| DeezelError::Wallet("UTXO script pubkey not found".to_string()))?;
-        
-        let script_pubkey = ScriptBuf::from(Vec::from_hex(script_pubkey_hex)?);
-        Ok(Some(TxOut { value: Amount::from_sat(amount), script_pubkey }))
-    }
-
-    async fn sign_taproot_script_spend(&self, sighash: bitcoin::secp256k1::Message) -> Result<bitcoin::secp256k1::schnorr::Signature> {
-        let keypair = self.get_keypair().await?;
-        let untweaked_keypair = UntweakedKeypair::from(keypair);
-        let secp = bitcoin::secp256k1::Secp256k1::new();
-        #[cfg(not(target_arch = "wasm32"))]
-        let signature = secp.sign_schnorr_with_rng(&sighash, &untweaked_keypair, &mut thread_rng());
-        #[cfg(target_arch = "wasm32")]
-        let signature = secp.sign_schnorr_with_rng(&sighash, &untweaked_keypair, &mut OsRng);
-        Ok(signature)
-    }
-
-    async fn wrap(&mut self, _amount: u64, _address: Option<String>, _fee_rate: Option<f32>) -> Result<String> {
-        unimplemented!("wrap is not implemented for ConcreteProvider")
-    }
-
-    async fn unwrap(&mut self, _amount: u64, _address: Option<String>) -> Result<String> {
-        unimplemented!("unwrap is not implemented for ConcreteProvider")
-    }
-
-    fn get_bitcoin_rpc_url(&self) -> Option<String> {
-        Some(self.rpc_url.clone())
-    }
-
-    fn get_esplora_api_url(&self) -> Option<String> {
-        self.esplora_url.clone()
-    }
-
-    fn get_ord_server_url(&self) -> Option<String> {
-        // Assuming ord server url is the same as rpc_url for now
-        Some(self.rpc_url.clone())
-    }
-
-    fn get_metashrew_rpc_url(&self) -> Option<String> {
-        Some(self.metashrew_rpc_url.clone())
-    }
-}
 
 #[async_trait(?Send)]
 impl MetashrewProvider for ConcreteProvider {
@@ -2447,11 +2264,11 @@ impl KeystoreProvider for ConcreteProvider {
     async fn get_address(&self, address_type: &str, index: u32) -> Result<String> {
         <Self as AddressResolver>::get_address(self, address_type, index).await
     }
-    async fn derive_addresses(&self, _master_public_key: &str, _network_params: &crate::network::NetworkParams, _script_types: &[&str], _start_index: u32, _count: u32) -> Result<Vec<KeystoreAddress>> {
+    async fn derive_addresses(&self, _master_public_key: &str, _network_params: &NetworkParams, _script_types: &[&str], _start_index: u32, _count: u32) -> Result<Vec<KeystoreAddress>> {
         Err(DeezelError::NotImplemented("KeystoreProvider derive_addresses not yet implemented".to_string()))
     }
 
-    async fn get_default_addresses(&self, _master_public_key: &str, _network_params: &crate::network::NetworkParams) -> Result<Vec<KeystoreAddress>> {
+    async fn get_default_addresses(&self, _master_public_key: &str, _network_params: &NetworkParams) -> Result<Vec<KeystoreAddress>> {
         Err(DeezelError::NotImplemented("KeystoreProvider get_default_addresses not yet implemented".to_string()))
     }
 
@@ -2468,7 +2285,7 @@ impl KeystoreProvider for ConcreteProvider {
         master_public_key: &str,
         path: &DerivationPath,
         script_type: &str,
-        network_params: &crate::network::NetworkParams,
+        network_params: &NetworkParams,
     ) -> Result<KeystoreAddress> {
         let address = crate::keystore::derive_address_from_public_key(
             master_public_key,
@@ -2485,7 +2302,7 @@ impl KeystoreProvider for ConcreteProvider {
                 bitcoin::bip32::ChildNumber::Hardened { index } => index,
             }).unwrap_or(0),
             script_type: script_type.to_string(),
-            network: Some(network_params.network.to_string()),
+            network: Some(network_params.bech32_prefix.clone()),
         })
     }
 }
@@ -2502,23 +2319,89 @@ impl MonitorProvider for ConcreteProvider {
     }
 }
 
+#[async_trait(?Send)]
+impl BitcoinRpcProvider for ConcreteProvider {
+    async fn get_block_count(&self) -> Result<u64> {
+        unimplemented!()
+    }
+    async fn generate_to_address(&self, nblocks: u32, address: &str) -> Result<JsonValue> {
+        unimplemented!()
+    }
+    async fn get_blockchain_info(&self) -> Result<JsonValue> {
+        unimplemented!()
+    }
+    async fn get_new_address(&self) -> Result<JsonValue> {
+        unimplemented!()
+    }
+    async fn get_transaction_hex(&self, txid: &str) -> Result<String> {
+        unimplemented!()
+    }
+    async fn get_block(&self, hash: &str, raw: bool) -> Result<JsonValue> {
+        unimplemented!()
+    }
+    async fn get_block_hash(&self, height: u64) -> Result<String> {
+        unimplemented!()
+    }
+    async fn send_raw_transaction(&self, tx_hex: &str) -> Result<String> {
+        unimplemented!()
+    }
+    async fn get_mempool_info(&self) -> Result<JsonValue> {
+        unimplemented!()
+    }
+    async fn estimate_smart_fee(&self, target: u32) -> Result<JsonValue> {
+        unimplemented!()
+    }
+    async fn get_esplora_blocks_tip_height(&self) -> Result<u64> {
+        unimplemented!()
+    }
+    async fn trace_transaction(&self, txid: &str, vout: u32, block: Option<&str>, tx: Option<&str>) -> Result<serde_json::Value> {
+        unimplemented!()
+    }
+    async fn get_network_info(&self) -> Result<JsonValue> {
+        unimplemented!()
+    }
+    async fn get_raw_transaction(&self, txid: &str, block_hash: Option<&str>) -> Result<JsonValue> {
+        unimplemented!()
+    }
+    async fn get_block_header(&self, hash: &str) -> Result<JsonValue> {
+        unimplemented!()
+    }
+    async fn get_block_stats(&self, hash: &str) -> Result<JsonValue> {
+        unimplemented!()
+    }
+    async fn get_chain_tips(&self) -> Result<JsonValue> {
+        unimplemented!()
+    }
+    async fn get_raw_mempool(&self) -> Result<JsonValue> {
+        unimplemented!()
+    }
+    async fn get_tx_out(&self, txid: &str, vout: u32, include_mempool: bool) -> Result<JsonValue> {
+        unimplemented!()
+    }
+}
+
 #[cfg(all(test, feature = "native-deps"))]
 mod esplora_provider_tests {
     use super::*;
+    use crate::commands::Commands;
+    use std::str::FromStr;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
     use serde_json::json;
 
     async fn setup() -> (MockServer, ConcreteProvider) {
         let server = MockServer::start().await;
-        let provider = ConcreteProvider::new(
-            Some(server.uri()), // bitcoin rpc
-            server.uri(), // metashrew rpc
-            Some(server.uri()), // sandshrew rpc
-            Some(server.uri()), // esplora url
-            "regtest".to_string(),
-            None,
-        ).await.unwrap();
+        let rpc_config = RpcConfig {
+            bitcoin_rpc_url: Some(server.uri()),
+            metashrew_rpc_url: Some(server.uri()),
+            sandshrew_rpc_url: Some(server.uri()),
+            esplora_url: Some(server.uri()),
+            network: crate::network::DeezelNetwork::from_str("regtest").unwrap(),
+            ord_url: None,
+            timeout_seconds: 600,
+        };
+        let command = Commands::Esplora { command: crate::commands::EsploraCommands::BlocksTipHash { raw: false } };
+        let provider = ConcreteProvider::new_for_test(rpc_config, command);
         (server, provider)
     }
 
@@ -3097,27 +2980,32 @@ mod esplora_provider_tests {
 #[async_trait(?Send)]
 impl OrdProvider for ConcreteProvider {
     async fn get_inscription(&self, inscription_id: &str) -> Result<ord::Inscription> {
-        let json = self.call(&self.rpc_url, crate::ord::OrdJsonRpcMethods::INSCRIPTION, crate::esplora::params::single(inscription_id), 1).await?;
+        let rpc_url = self.get_ord_server_url().ok_or_else(|| DeezelError::RpcError("Ord server URL not configured".to_string()))?;
+        let json = self.call(&rpc_url, crate::ord::OrdJsonRpcMethods::INSCRIPTION, crate::esplora::params::single(inscription_id), 1).await?;
         serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
     }
 
     async fn get_inscriptions_in_block(&self, block_hash: &str) -> Result<ord::Inscriptions> {
-        let json = self.call(&self.rpc_url, crate::ord::OrdJsonRpcMethods::INSCRIPTIONS_IN_BLOCK, crate::esplora::params::single(block_hash), 1).await?;
+        let rpc_url = self.get_ord_server_url().ok_or_else(|| DeezelError::RpcError("Ord server URL not configured".to_string()))?;
+        let json = self.call(&rpc_url, crate::ord::OrdJsonRpcMethods::INSCRIPTIONS_IN_BLOCK, crate::esplora::params::single(block_hash), 1).await?;
         serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
     }
 
    async fn get_ord_address_info(&self, address: &str) -> Result<ord::AddressInfo> {
-        let json = self.call(&self.rpc_url, crate::ord::OrdJsonRpcMethods::ADDRESS, crate::esplora::params::single(address), 1).await?;
+        let rpc_url = self.get_ord_server_url().ok_or_else(|| DeezelError::RpcError("Ord server URL not configured".to_string()))?;
+        let json = self.call(&rpc_url, crate::ord::OrdJsonRpcMethods::ADDRESS, crate::esplora::params::single(address), 1).await?;
         serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
    }
 
    async fn get_block_info(&self, query: &str) -> Result<ord::Block> {
-        let json = self.call(&self.rpc_url, crate::ord::OrdJsonRpcMethods::BLOCK, crate::esplora::params::single(query), 1).await?;
+        let rpc_url = self.get_ord_server_url().ok_or_else(|| DeezelError::RpcError("Ord server URL not configured".to_string()))?;
+        let json = self.call(&rpc_url, crate::ord::OrdJsonRpcMethods::BLOCK, crate::esplora::params::single(query), 1).await?;
         serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
    }
 
    async fn get_ord_block_count(&self) -> Result<u64> {
-        let json = self.call(&self.rpc_url, crate::ord::OrdJsonRpcMethods::BLOCK_COUNT, crate::esplora::params::empty(), 1).await?;
+        let rpc_url = self.get_ord_server_url().ok_or_else(|| DeezelError::RpcError("Ord server URL not configured".to_string()))?;
+        let json = self.call(&rpc_url, crate::ord::OrdJsonRpcMethods::BLOCK_COUNT, crate::esplora::params::empty(), 1).await?;
         log::debug!("get_ord_block_count response: {:?}", json);
         if let Some(count) = json.as_u64() {
             return Ok(count);
@@ -3129,53 +3017,63 @@ impl OrdProvider for ConcreteProvider {
    }
 
    async fn get_ord_blocks(&self) -> Result<ord::Blocks> {
-        let json = self.call(&self.rpc_url, crate::ord::OrdJsonRpcMethods::BLOCKS, crate::esplora::params::empty(), 1).await?;
+        let rpc_url = self.get_ord_server_url().ok_or_else(|| DeezelError::RpcError("Ord server URL not configured".to_string()))?;
+        let json = self.call(&rpc_url, crate::ord::OrdJsonRpcMethods::BLOCKS, crate::esplora::params::empty(), 1).await?;
         serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
    }
 
    async fn get_children(&self, inscription_id: &str, page: Option<u32>) -> Result<ord::Children> {
-        let json = self.call(&self.rpc_url, crate::ord::OrdJsonRpcMethods::CHILDREN, crate::esplora::params::optional_dual(inscription_id, page), 1).await?;
+        let rpc_url = self.get_ord_server_url().ok_or_else(|| DeezelError::RpcError("Ord server URL not configured".to_string()))?;
+        let json = self.call(&rpc_url, crate::ord::OrdJsonRpcMethods::CHILDREN, crate::esplora::params::optional_dual(inscription_id, page), 1).await?;
         serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
    }
 
    async fn get_content(&self, inscription_id: &str) -> Result<Vec<u8>> {
-        let result = self.call(&self.rpc_url, crate::ord::OrdJsonRpcMethods::CONTENT, crate::esplora::params::single(inscription_id), 1).await?;
+        let rpc_url = self.get_ord_server_url().ok_or_else(|| DeezelError::RpcError("Ord server URL not configured".to_string()))?;
+        let result = self.call(&rpc_url, crate::ord::OrdJsonRpcMethods::CONTENT, crate::esplora::params::single(inscription_id), 1).await?;
         let hex_str = result.as_str().ok_or_else(|| DeezelError::RpcError("Invalid content response".to_string()))?;
         hex::decode(hex_str.strip_prefix("0x").unwrap_or(hex_str)).map_err(|e| DeezelError::Serialization(e.to_string()))
    }
 
    async fn get_inscriptions(&self, page: Option<u32>) -> Result<ord::Inscriptions> {
-        let json = self.call(&self.rpc_url, crate::ord::OrdJsonRpcMethods::INSCRIPTIONS, crate::esplora::params::optional_single(page), 1).await?;
+        let rpc_url = self.get_ord_server_url().ok_or_else(|| DeezelError::RpcError("Ord server URL not configured".to_string()))?;
+        let json = self.call(&rpc_url, crate::ord::OrdJsonRpcMethods::INSCRIPTIONS, crate::esplora::params::optional_single(page), 1).await?;
         serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
    }
 
    async fn get_output(&self, output: &str) -> Result<ord::Output> {
-        let json = self.call(&self.rpc_url, crate::ord::OrdJsonRpcMethods::OUTPUT, crate::esplora::params::single(output), 1).await?;
+        let rpc_url = self.get_ord_server_url().ok_or_else(|| DeezelError::RpcError("Ord server URL not configured".to_string()))?;
+        let json = self.call(&rpc_url, crate::ord::OrdJsonRpcMethods::OUTPUT, crate::esplora::params::single(output), 1).await?;
         serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
    }
 
    async fn get_parents(&self, inscription_id: &str, page: Option<u32>) -> Result<ord::ParentInscriptions> {
-        let json = self.call(&self.rpc_url, crate::ord::OrdJsonRpcMethods::PARENTS, crate::esplora::params::optional_dual(inscription_id, page), 1).await?;
+        let rpc_url = self.get_ord_server_url().ok_or_else(|| DeezelError::RpcError("Ord server URL not configured".to_string()))?;
+        let json = self.call(&rpc_url, crate::ord::OrdJsonRpcMethods::PARENTS, crate::esplora::params::optional_dual(inscription_id, page), 1).await?;
         serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
    }
 
    async fn get_rune(&self, rune: &str) -> Result<ord::RuneInfo> {
-        let json = self.call(&self.rpc_url, crate::ord::OrdJsonRpcMethods::RUNE, crate::esplora::params::single(rune), 1).await?;
+        let rpc_url = self.get_ord_server_url().ok_or_else(|| DeezelError::RpcError("Ord server URL not configured".to_string()))?;
+        let json = self.call(&rpc_url, crate::ord::OrdJsonRpcMethods::RUNE, crate::esplora::params::single(rune), 1).await?;
         serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
    }
 
    async fn get_runes(&self, page: Option<u32>) -> Result<ord::Runes> {
-        let json = self.call(&self.rpc_url, crate::ord::OrdJsonRpcMethods::RUNES, crate::esplora::params::optional_single(page), 1).await?;
+        let rpc_url = self.get_ord_server_url().ok_or_else(|| DeezelError::RpcError("Ord server URL not configured".to_string()))?;
+        let json = self.call(&rpc_url, crate::ord::OrdJsonRpcMethods::RUNES, crate::esplora::params::optional_single(page), 1).await?;
         serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
    }
 
    async fn get_sat(&self, sat: u64) -> Result<ord::SatResponse> {
-        let json = self.call(&self.rpc_url, crate::ord::OrdJsonRpcMethods::SAT, crate::esplora::params::single(sat), 1).await?;
+        let rpc_url = self.get_ord_server_url().ok_or_else(|| DeezelError::RpcError("Ord server URL not configured".to_string()))?;
+        let json = self.call(&rpc_url, crate::ord::OrdJsonRpcMethods::SAT, crate::esplora::params::single(sat), 1).await?;
         serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
    }
 
    async fn get_tx_info(&self, txid: &str) -> Result<ord::TxInfo> {
-        let json = self.call(&self.rpc_url, crate::ord::OrdJsonRpcMethods::TX, crate::esplora::params::single(txid), 1).await?;
+        let rpc_url = self.get_ord_server_url().ok_or_else(|| DeezelError::RpcError("Ord server URL not configured".to_string()))?;
+        let json = self.call(&rpc_url, crate::ord::OrdJsonRpcMethods::TX, crate::esplora::params::single(txid), 1).await?;
         serde_json::from_value(json).map_err(|e| DeezelError::Serialization(e.to_string()))
    }
 }

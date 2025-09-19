@@ -13,7 +13,6 @@ path = "src/main.rs"
 [dependencies]
 deezel-common = { path = "../deezel-common" }
 deezel-sys = { path = "../deezel-sys" }
-anyhow = { workspace = true }
 clap = { workspace = true }
 env_logger = { workspace = true }
 log = { workspace = true }

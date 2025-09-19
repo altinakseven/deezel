@@ -1,14 +1,3 @@
-//! Wallet functionality for Bitcoin operations
-//!
-//! This module provides comprehensive wallet functionality including:
-//! - Wallet creation and restoration
-//! - Balance management
-//! - Transaction sending and receiving
-//! - UTXO management
-//! - Address generation and management
-//! - Transaction history
-//! - Fee estimation
-
 use crate::{Result, DeezelError};
 use alloc::{string::ToString, format};
 use crate::traits::*;
@@ -20,6 +9,61 @@ use serde::{Deserialize, Serialize};
 use std::{vec, vec::Vec, string::String};
 #[cfg(target_arch = "wasm32")]
 use alloc::{vec, vec::Vec, string::String};
+
+fn network_to_params(network: bitcoin::Network) -> NetworkParams {
+    match network {
+        bitcoin::Network::Bitcoin => NetworkParams {
+            network: bitcoin::Network::Bitcoin,
+            magic: [0xf9, 0xbe, 0xb4, 0xd9],
+            default_port: 8333,
+            rpc_port: 8332,
+            bech32_hrp: "bc".to_string(),
+            bech32_prefix: "bc".to_string(),
+            p2pkh_prefix: 0,
+            p2sh_prefix: 5,
+        },
+        bitcoin::Network::Testnet => NetworkParams {
+            network: bitcoin::Network::Testnet,
+            magic: [0x0b, 0x11, 0x09, 0x07],
+            default_port: 18333,
+            rpc_port: 18332,
+            bech32_hrp: "tb".to_string(),
+            bech32_prefix: "tb".to_string(),
+            p2pkh_prefix: 111,
+            p2sh_prefix: 196,
+        },
+        bitcoin::Network::Signet => NetworkParams {
+            network: bitcoin::Network::Signet,
+            magic: [0x0a, 0x03, 0xcf, 0x40],
+            default_port: 38333,
+            rpc_port: 38332,
+            bech32_hrp: "tb".to_string(),
+            bech32_prefix: "tb".to_string(),
+            p2pkh_prefix: 111,
+            p2sh_prefix: 196,
+        },
+        bitcoin::Network::Regtest => NetworkParams {
+            network: bitcoin::Network::Regtest,
+            magic: [0xfa, 0xbf, 0xb5, 0xda],
+            default_port: 18444,
+            rpc_port: 18443,
+            bech32_hrp: "bcrt".to_string(),
+            bech32_prefix: "bcrt".to_string(),
+            p2pkh_prefix: 111,
+            p2sh_prefix: 196,
+        },
+        _ => NetworkParams {
+            network: bitcoin::Network::Bitcoin,
+            magic: [0xf9, 0xbe, 0xb4, 0xd9],
+            default_port: 8333,
+            rpc_port: 8332,
+            bech32_hrp: "bc".to_string(),
+            bech32_prefix: "bc".to_string(),
+            p2pkh_prefix: 0,
+            p2sh_prefix: 5,
+        },
+    }
+}
 
 /// Wallet configuration
 #[derive(Debug, Clone)]
@@ -43,49 +87,20 @@ impl<P: DeezelProvider> Wallet<P> {
         Self { provider, _config: config }
     }
     
-    /// Create a new wallet
-    pub async fn create_wallet(
+    pub async fn create(
         mut provider: P,
         config: WalletConfig,
         mnemonic: Option<String>,
         passphrase: Option<String>,
     ) -> Result<Self> {
+        let params = network_to_params(config.network);
+        crate::network::set_network(params.clone());
         let trait_config = crate::traits::WalletConfig {
             wallet_path: config.wallet_path.clone(),
             bitcoin_rpc_url: config.bitcoin_rpc_url.clone(),
             metashrew_rpc_url: config.metashrew_rpc_url.clone(),
             network: config.network,
-            network_params: Some(crate::traits::NetworkParams {
-                network: config.network,
-                magic: match config.network {
-                    bitcoin::Network::Bitcoin => [0xd9, 0xb4, 0xbe, 0xf9],
-                    bitcoin::Network::Testnet => [0x07, 0x09, 0x11, 0x0b],
-                    bitcoin::Network::Signet => [0x40, 0xcf, 0x03, 0x0a],
-                    bitcoin::Network::Regtest => [0xda, 0xb5, 0xbf, 0xfa],
-                    _ => [0xd9, 0xb4, 0xbe, 0xf9],
-                },
-                default_port: match config.network {
-                    bitcoin::Network::Bitcoin => 8333,
-                    bitcoin::Network::Testnet => 18333,
-                    bitcoin::Network::Signet => 38333,
-                    bitcoin::Network::Regtest => 18444,
-                    _ => 8333,
-                },
-                rpc_port: match config.network {
-                    bitcoin::Network::Bitcoin => 8332,
-                    bitcoin::Network::Testnet => 18332,
-                    bitcoin::Network::Signet => 38332,
-                    bitcoin::Network::Regtest => 18443,
-                    _ => 8332,
-                },
-                bech32_hrp: match config.network {
-                    bitcoin::Network::Bitcoin => "bc".to_string(),
-                    bitcoin::Network::Testnet => "tb".to_string(),
-                    bitcoin::Network::Signet => "tb".to_string(),
-                    bitcoin::Network::Regtest => "bcrt".to_string(),
-                    _ => "bc".to_string(),
-                },
-            }),
+            network_params: Some(params),
         };
         let wallet_info = provider.create_wallet(trait_config, mnemonic, passphrase).await?;
         provider.info(&format!("Created wallet with address: {}", wallet_info.address));
@@ -95,47 +110,18 @@ impl<P: DeezelProvider> Wallet<P> {
     
     /// Load an existing wallet
     pub async fn load(mut provider: P, config: WalletConfig, passphrase: Option<String>) -> Result<Self> {
+        let params = network_to_params(config.network);
+        crate::network::set_network(params.clone());
         let trait_config = crate::traits::WalletConfig {
             wallet_path: config.wallet_path.clone(),
             bitcoin_rpc_url: config.bitcoin_rpc_url.clone(),
             metashrew_rpc_url: config.metashrew_rpc_url.clone(),
             network: config.network,
-            network_params: Some(crate::traits::NetworkParams {
-                network: config.network,
-                magic: match config.network {
-                    bitcoin::Network::Bitcoin => [0xd9, 0xb4, 0xbe, 0xf9],
-                    bitcoin::Network::Testnet => [0x07, 0x09, 0x11, 0x0b],
-                    bitcoin::Network::Signet => [0x40, 0xcf, 0x03, 0x0a],
-                    bitcoin::Network::Regtest => [0xda, 0xb5, 0xbf, 0xfa],
-                    _ => [0xd9, 0xb4, 0xbe, 0xf9],
-                },
-                default_port: match config.network {
-                    bitcoin::Network::Bitcoin => 8333,
-                    bitcoin::Network::Testnet => 18333,
-                    bitcoin::Network::Signet => 38333,
-                    bitcoin::Network::Regtest => 18444,
-                    _ => 8333,
-                },
-                rpc_port: match config.network {
-                    bitcoin::Network::Bitcoin => 8332,
-                    bitcoin::Network::Testnet => 18332,
-                    bitcoin::Network::Signet => 38332,
-                    bitcoin::Network::Regtest => 18443,
-                    _ => 8332,
-                },
-                bech32_hrp: match config.network {
-                    bitcoin::Network::Bitcoin => "bc".to_string(),
-                    bitcoin::Network::Testnet => "tb".to_string(),
-                    bitcoin::Network::Signet => "tb".to_string(),
-                    bitcoin::Network::Regtest => "bcrt".to_string(),
-                    _ => "bc".to_string(),
-                },
-            }),
+            network_params: Some(params),
         };
         let _wallet_info = provider.load_wallet(trait_config, passphrase).await?;
         Ok(Self { provider, _config: config })
     }
-    
     /// Load wallet with passphrase
     pub async fn load_with_passphrase(
         provider: P,

@@ -1,5 +1,40 @@
-use crate::{alkanes::protorunes::{ProtoruneOutpointResponse, ProtoruneWalletResponse}, *};
-use crate::{Result, DeezelError};
+use crate::traits::{
+    AddressResolver,
+    AlkanesProvider,
+    BitcoinRpcProvider,
+    CryptoProvider,
+    DeezelProvider,
+    EsploraProvider,
+    JsonRpcProvider,
+    KeystoreProvider,
+    LogProvider,
+    MetashrewProvider,
+    MetashrewRpcProvider,
+    MonitorProvider,
+    NetworkProvider,
+    OrdProvider,
+    RunestoneProvider,
+    StorageProvider,
+    TimeProvider,
+    WalletProvider,
+    WalletBalance,
+    WalletConfig,
+    WalletInfo,
+    AddressInfo,
+    SendParams,
+    UtxoInfo,
+    TransactionInfo,
+    FeeEstimate,
+    FeeRates,
+    BlockEvent,
+    KeystoreAddress,
+    KeystoreInfo
+};
+use crate::{
+    alkanes::protorunes::{ProtoruneOutpointResponse, ProtoruneWalletResponse},
+    network::NetworkParams,
+    DeezelError, Result,
+};
 use async_trait::async_trait;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -59,9 +94,7 @@ impl JsonRpcProvider for MockProvider {
             .ok_or_else(|| DeezelError::JsonRpc(format!("No mock response for method: {method}")))
     }
     
-    async fn get_bytecode(&self, _block: &str, _tx: &str) -> Result<String> {
-        Ok("mock_bytecode".to_string())
-    }
+
 }
 
 #[async_trait(?Send)]
@@ -249,8 +282,8 @@ impl WalletProvider for MockProvider {
             weight: Some(0),
             inputs: vec![],
             outputs: vec![],
-            has_protostones: false,
             is_op_return: false,
+            has_protostones: false,
             is_rbf: false,
         }])
     }
@@ -410,7 +443,39 @@ impl BitcoinRpcProvider for MockProvider {
     async fn send_raw_transaction(&self, _tx_hex: &str) -> Result<String> {
         Ok("mock_txid".to_string())
     }
-    
+
+    async fn get_blockchain_info(&self) -> Result<JsonValue> {
+        Ok(JsonValue::Null)
+    }
+
+    async fn get_network_info(&self) -> Result<JsonValue> {
+        Ok(JsonValue::Null)
+    }
+
+    async fn get_raw_transaction(&self, _txid: &str, _block_hash: Option<&str>) -> Result<JsonValue> {
+        Ok(JsonValue::Null)
+    }
+
+    async fn get_block_header(&self, _hash: &str) -> Result<JsonValue> {
+        Ok(JsonValue::Null)
+    }
+
+    async fn get_block_stats(&self, _hash: &str) -> Result<JsonValue> {
+        Ok(JsonValue::Null)
+    }
+
+    async fn get_chain_tips(&self) -> Result<JsonValue> {
+        Ok(JsonValue::Null)
+    }
+
+    async fn get_raw_mempool(&self) -> Result<JsonValue> {
+        Ok(JsonValue::Null)
+    }
+
+    async fn get_tx_out(&self, _txid: &str, _vout: u32, _include_mempool: bool) -> Result<JsonValue> {
+        Ok(JsonValue::Null)
+    }
+
     async fn get_mempool_info(&self) -> Result<JsonValue> {
         Ok(serde_json::json!({"size": 1000}))
     }
@@ -432,6 +497,10 @@ impl BitcoinRpcProvider for MockProvider {
 impl MetashrewRpcProvider for MockProvider {
     async fn get_metashrew_height(&self) -> Result<u64> {
         Ok(800001)
+    }
+
+    async fn get_state_root(&self, _height: JsonValue) -> Result<String> {
+        Ok(String::new())
     }
     
     async fn get_contract_meta(&self, _block: &str, _tx: &str) -> Result<JsonValue> {
@@ -649,7 +718,7 @@ impl AlkanesProvider for MockProvider {
         _address: &str,
         _block_tag: Option<String>,
         _protocol_tag: u128,
-    ) -> Result<alkanes::protorunes::ProtoruneWalletResponse> {
+    ) -> Result<crate::alkanes::protorunes::ProtoruneWalletResponse> {
         Err(DeezelError::NotImplemented(
             "protorunes_by_address".to_string(),
         ))
@@ -660,33 +729,33 @@ impl AlkanesProvider for MockProvider {
         _vout: u32,
         _block_tag: Option<String>,
         _protocol_tag: u128,
-    ) -> Result<alkanes::protorunes::ProtoruneOutpointResponse> {
+    ) -> Result<crate::alkanes::protorunes::ProtoruneOutpointResponse> {
         Err(DeezelError::NotImplemented(
             "protorunes_by_outpoint".to_string(),
         ))
     }
-    async fn simulate(&self, _contract_id: &str, _context: &alkanes_pb::MessageContextParcel) -> Result<JsonValue> {
+    async fn simulate(&self, _contract_id: &str, _context: &crate::proto::alkanes::MessageContextParcel) -> Result<JsonValue> {
         todo!()
     }
     async fn view(&self, _contract_id: &str, _view_fn: &str, _params: Option<&[u8]>) -> Result<JsonValue> {
         todo!()
     }
-    async fn trace(&self, _outpoint: &str) -> Result<alkanes_support::proto::alkanes::Trace> {
+    async fn trace(&self, _outpoint: &str) -> Result<crate::proto::alkanes::Trace> {
         Err(DeezelError::NotImplemented("trace".to_string()))
     }
-    async fn get_block(&self, _height: u64) -> Result<alkanes_support::proto::alkanes::BlockResponse> {
+    async fn get_block(&self, _height: u64) -> Result<crate::proto::alkanes::BlockResponse> {
         Err(DeezelError::NotImplemented("get_block".to_string()))
     }
-    async fn sequence(&self, _txid: &str, _vout: u32) -> Result<JsonValue> {
+    async fn sequence(&self) -> Result<JsonValue> {
         todo!()
     }
     async fn spendables_by_address(&self, _address: &str) -> Result<JsonValue> {
         todo!()
     }
-    async fn trace_block(&self, _height: u64) -> Result<alkanes_support::proto::alkanes::Trace> {
+    async fn trace_block(&self, _height: u64) -> Result<crate::proto::alkanes::Trace> {
         Err(DeezelError::NotImplemented("trace_block".to_string()))
     }
-    async fn get_bytecode(&self, _alkane_id: &str) -> Result<String> {
+    async fn get_bytecode(&self, _alkane_id: &str, _block_tag: Option<String>) -> Result<String> {
         todo!()
     }
     async fn inspect(&self, _target: &str, _config: crate::alkanes::AlkanesInspectConfig) -> Result<crate::alkanes::AlkanesInspectResult> {
@@ -715,30 +784,46 @@ impl MonitorProvider for MockProvider {
 
 #[async_trait(?Send)]
 impl KeystoreProvider for MockProvider {
-    async fn derive_addresses(&self, _master_public_key: &str, _network_params: &crate::network::NetworkParams, _script_types: &[&str], _start_index: u32, _count: u32) -> Result<Vec<KeystoreAddress>> {
-        Ok(vec![])
-    }
-    
-    async fn get_default_addresses(&self, _master_public_key: &str, _network_params: &crate::network::NetworkParams) -> Result<Vec<KeystoreAddress>> {
-        Ok(vec![])
-    }
-    
-    fn parse_address_range(&self, _range_spec: &str) -> Result<(String, u32, u32)> {
-        Ok(("p2tr".to_string(), 0, 10))
-    }
-    
-    async fn get_keystore_info(&self, _master_fingerprint: &str, _created_at: u64, _version: &str) -> Result<KeystoreInfo> {
-        Ok(KeystoreInfo {
-            master_fingerprint: "mock_fingerprint".to_string(),
-            created_at: 0,
-            version: "1".to_string(),
-        })
-    }
-    
     async fn get_address(&self, _address_type: &str, _index: u32) -> Result<String> {
-        Ok("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4".to_string())
+        Ok("mock_address".to_string())
     }
-    async fn derive_address_from_path(&self, _master_public_key: &str, _path: &DerivationPath, _script_type: &str, _network_params: &crate::network::NetworkParams) -> Result<KeystoreAddress> {
+
+    async fn derive_addresses(
+        &self,
+        _master_public_key: &str,
+        _network_params: &NetworkParams,
+        _script_types: &[&str],
+        _start_index: u32,
+        _count: u32,
+    ) -> Result<Vec<KeystoreAddress>> {
+        Ok(vec![])
+    }
+    async fn get_default_addresses(
+        &self,
+        _master_public_key: &str,
+        _network_params: &NetworkParams,
+    ) -> Result<Vec<KeystoreAddress>> {
+        Ok(vec![])
+    }
+    fn parse_address_range(&self, _range_spec: &str) -> Result<(String, u32, u32)> {
+        unimplemented!()
+    }
+    async fn get_keystore_info(
+        &self,
+        _master_fingerprint: &str,
+        _created_at: u64,
+        _version: &str,
+    ) -> Result<KeystoreInfo> {
+        unimplemented!()
+    }
+    async fn derive_address_from_path(
+        &self,
+        _master_public_key: &str,
+        _path: &DerivationPath,
+        _script_type: &str,
+        _network_params: &NetworkParams,
+    ) -> Result<KeystoreAddress> {
+
         Ok(KeystoreAddress {
             address: "mock_address".to_string(),
             derivation_path: "m/0/0".to_string(),
